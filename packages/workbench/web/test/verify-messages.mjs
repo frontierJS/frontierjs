@@ -1127,6 +1127,7 @@ try {
   const literal = `//away is a message ${tag}`
   await typeAndEnter(box, literal)
   check('// sends a message that begins with /', !!(await poll(() => sinkPostBy(literal.slice(1)))), { box: await evaluate(`document.querySelector(${sel(box)}).value`), answer: await textOf('[data-composer-answer]'), error: await textOf('[data-composer-error]'), posts: (await channelPosts()).slice(-3).map(p => p.message) })
+  await until(`document.querySelector(${sel(box)}).value`, v => v === '', 'the box never cleared after the // post', 15_000)
   await typeAndEnter(box, `/search quokka ${tag}`)
   await until(`location.pathname + location.search`, p => p === `/messages/search/?q=quokka%20${tag}`, '/search never opened the search route', 15_000)
   ok('/search <terms> opens the search route')
@@ -1134,6 +1135,30 @@ try {
   await typeAndEnter(box, '/leave')
   await until(`!document.querySelector('[data-chat-sidebar] [data-channel="${ids.secret}"]')`, v => v, '/leave never left the channel', 20_000)
   check('/leave leaves the channel and posts nothing', (await sinkCall(`/channels/${ids.secret}/members`, tokens.alice)).json?.every(m => m.user_id !== ids.alice) !== false, 'alice is still a member')
+
+  console.log('\n  Nav unread badge')
+  const navBadge = (scope = '.topbar-nav') => evaluate(`(() => { const e = document.querySelector('${scope} [data-nav-badge]'); return e ? { kind: e.dataset.navBadge, text: e.textContent.replace(/\\s+/g, ' ').trim() } : null })()`)
+  // Start from a reader with nothing unread: every room alice is still in is opened once.
+  const aliceRooms = (await apiRows('/channelMembers')).filter(m => m.profileExternalId === ids.alice).map(m => m.channelExternalId)
+  for (const id of aliceRooms) { await roomReady(id); await sleep(400) }
+  await goto('/home/')
+  await until(`!!document.querySelector('.topbar-nav a[href="/messages/"]')`, v => v, 'the nav never drew Messages', 20_000)
+  await until(`!document.querySelector('.topbar-nav [data-nav-badge]')`, v => v, 'a read reader still shows a badge', 20_000)
+  check('on another screen the Messages entry shows no badge for a reader with nothing unread', (await navBadge()) === null && (await navBadge('.navlist')) === null, await navBadge())
+  await sinkPost(tokens.bob, ids.open, `badge @alice ${tag}`)
+  const counted = await until(`(() => { const e = document.querySelector('.topbar-nav [data-nav-badge]'); return e ? e.dataset.navBadge + ':' + e.textContent.trim() : null })()`, v => v === 'count:1', 'a post naming the reader never showed 1 on the nav, which was not reloaded', 20_000)
+  check('a sink post naming the reader shows 1 on the Messages entry without a reload', counted === 'count:1', counted)
+  check('and the drawer\'s copy of the entry shows it too', (await navBadge('.navlist'))?.text === '1', await navBadge('.navlist'))
+  await roomReady(ids.open)
+  await until(`!document.querySelector('.topbar-nav [data-nav-badge]')`, v => v, 'opening the room never cleared the mention badge', 20_000)
+  ok('opening the room clears the count, in the nav on the Messages screen')
+  await goto('/home/')
+  await sinkPost(tokens.bob, ids.open, `badge plain ${tag}`)
+  const dotted = await until(`document.querySelector('.topbar-nav [data-nav-badge]')?.dataset.navBadge ?? null`, v => v === 'dot', 'an unread plain post never showed the dot', 20_000)
+  check('an unread post with no mention in an unmuted open room shows the dot, not a count', dotted === 'dot' && !/\d/.test((await navBadge())?.text ?? ''), await navBadge())
+  await roomReady(ids.open)
+  await until(`!document.querySelector('.topbar-nav [data-nav-badge]')`, v => v, 'opening the room never cleared the dot', 20_000)
+  ok('opening the room clears the dot')
   }
 
   console.log('\n  Chrome')

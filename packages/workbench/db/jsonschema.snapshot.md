@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-18 definitions · 15 models · 3 enums · 0 other
+27 definitions · 21 models · 6 enums · 0 other
 ```
 
 ## Definitions
@@ -40,9 +40,18 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Thread` | model |
 | `Reaction` | model |
 | `FileInfo` | model |
+| `Draft` | model |
+| `SavedPost` | model |
+| `ChatSection` | model |
+| `ScheduledPost` | model |
+| `ChatGroup` | model |
+| `QuietSchedule` | model |
 | `ComputeProvider` | enum |
 | `TeamType` | enum |
 | `ChannelType` | enum |
+| `Presence` | enum |
+| `SectionKind` | enum |
+| `ScheduledPostStatus` | enum |
 
 ## Enums
 
@@ -52,6 +61,9 @@ validates, and a select that silently drops an option.
 - `ComputeProvider` — `hetzner`, `digitalocean`
 - `TeamType` — `open`, `invite`
 - `ChannelType` — `open`, `private`, `direct`, `group`
+- `Presence` — `online`, `away`, `offline`, `dnd`
+- `SectionKind` — `favorites`, `channels`, `direct`, `custom`
+- `ScheduledPostStatus` — `scheduled`, `sent`, `failed`, `cancelled`
 
 ## Models
 
@@ -224,6 +236,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `roles` | `string` | — | — | `x-litestone-kind` | — |
 | `locale` | `string`? | — | — | `x-litestone-kind` | — |
 | `isBot` | `boolean` | — | — | `x-litestone-kind` | — |
+| `status` | `Presence`? | — | — | `x-litestone-kind` | — |
+| `statusManual` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
+| `lastActivityAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `dndEndAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `customEmoji` | `string`? | — | — | `x-litestone-kind` | — |
+| `customText` | `string`? | — | — | `x-litestone-kind` | — |
+| `customExpiresAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`
@@ -274,6 +293,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `messageCountRoot` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `mentionCountRoot` | `integer` = `0` | — | — | `x-litestone-kind` | — |
 | `muted` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
+| `isFavorite` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`
@@ -304,6 +324,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `replyCount` | `integer` | — | — | `x-litestone-kind` | — |
 | `lastReplyAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `editedAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `embeds` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`
@@ -369,3 +390,104 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`
+
+### `Draft`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `rootExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `message` | `string` | — | — | `x-litestone-kind` | — |
+| `props` | `json` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `fileExternalIds` | `json` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `SavedPost`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `postExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `ChatSection`
+
+- gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `externalId` | `string` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `teamExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `name` | `string` | — | — | `x-litestone-kind` | — |
+| `kind` | `SectionKind` | — | — | `x-litestone-kind` | — |
+| `sortOrder` | `integer` = `0` | — | — | `x-litestone-kind` | — |
+| `channelExternalIds` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — nothing · not accepted — `id`
+
+### `ScheduledPost`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `memberId` | `integer` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | yes | — | — | — |
+| `rootExternalId` | `string`? | — | — | — | — |
+| `message` | `string` = `""` | — | — | — | — |
+| `fileExternalIds` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `sendAt` | `string` | yes | — | `format: "date-time"` | — |
+| `status` | `ScheduledPostStatus` = `"scheduled"` | — | — | — | — |
+| `error` | `string`? | — | — | `x-litestone-kind` | — |
+| `sentPostExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `sentAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+
+**On create**: required — `channelExternalId`, `sendAt` · not accepted — `id`
+
+### `ChatGroup`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `handle` | `string` | yes | — | `pattern: "^[a-z0-9-]+$"` `minLength: 2` `maxLength: 32` `x-transforms` | `pattern` `regex` |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
+| `profileExternalIds` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `createdByProfileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `handle`, `name` · not accepted — `id`
+
+### `QuietSchedule`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `enabled` | `boolean` = `true` | — | — | — | — |
+| `days` | `json` = `[0,1,2,3,4,5,6]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `fromMinute` | `integer` | yes | — | `minimum: 0` `maximum: 1439` | — |
+| `toMinute` | `integer` | yes | — | `minimum: 0` `maximum: 1439` | — |
+| `timezone` | `string` | yes | — | — | — |
+
+**On create**: required — `fromMinute`, `toMinute`, `timezone` · not accepted — `id`

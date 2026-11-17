@@ -541,7 +541,7 @@ export default createService({
     // revoked since is refused by name before anything moves (FJS-D2182). The
     // way out is asked for, and the replacement then records the revisions it
     // really ships, so its configuration never claims a credential it lacks.
-    const todays = (($.data ?? {}) as Record<string, unknown>).withTodaysSecrets === true
+    const todays = (($.data ?? {}) as Record<string, unknown>).hasTodaysSecrets === true
     const shipped = (target.configSnapshot ?? {}) as Partial<ReleaseVariables>
     const revoked = await revokedSecretsOf(db(), shipped)
     if (revoked.length && !todays) throw new BadRequest(new RevokedSecret(revoked).message)

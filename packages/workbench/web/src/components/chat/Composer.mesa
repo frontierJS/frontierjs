@@ -163,6 +163,7 @@
   async function send() {
     let message = text.trim()
     if ((!message && !ready.length) || !channelId || sending || uploading) return
+    const typed = text
     sending = true
     error = null
     answer = null
@@ -181,7 +182,10 @@
         channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message: expandGroups(message, lists.groups.rows, people), pendingPostId: crypto.randomUUID(),
         ...(ready.length ? { fileExternalIds: ready.map(f => f.id) } : {}),
       })
+      // Words typed while the post was on its way are the next message, not this one.
+      const since = text === typed ? '' : text.startsWith(typed) ? text.slice(typed.length).trimStart() : text
       clearBox()
+      text = since
       onsent?.()
     } catch (e) {
       error = e.message

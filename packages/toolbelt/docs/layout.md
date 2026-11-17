@@ -350,7 +350,9 @@ src/keys/            a key sequence read against a keymap — vim's chord
                      a keypress before the runtime makes a keydown of it. `browserOwned` lists the rows a
                      tab never receives — `BROWSER_ROWS` and `OS_ROWS`, read from Chromium's
                      and Firefox's reserved keys and the OS defaults — on BOTH
-                     platforms, so a refusal is the same on every machine; a
+                     platforms, so a refusal is the same on every machine (a row
+                     for one platform is `{ mac: keymap(a).mac, other: keymap(b).other }`,
+                     `FJS-D2226`); a
                      key a page may cancel (`<Mod-s>`) is not on it. `{ browserChords: true }`
                      is a desktop shell's webview: only the OS's rows remain.
                      `withOverrides(table, changes, { actions })` is khat's:

@@ -50,6 +50,9 @@ Rules:
 auth()                — current auth object (null if unauthenticated)
 auth().field          — field on auth object (e.g. auth().id, auth().role)
 auth().level          — the gate's grade for THIS model, getLevel(auth, model); on no principal
+auth().userType       — the caller's KIND: 'user' · 'bot' · 'peer' · 'service'. The gate grades a
+                        machine like a person, so `auth().userType == 'user'` is how a rule says
+                        "people only" (FJS-D2228); a principal stating no kind reads it as null
 auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to the related model's policy for THIS rule's operation
@@ -747,6 +750,57 @@ model Message {
   policy does.
 - **Messages and ordering follow `@@deny`**: the message is the third argument,
   and a refusal is an `AccessDeniedError`.
+
+#### Two rows whose states agree
+
+A requirement grades the row being written, so a rule tying two rows' states
+holds from ONE side. Declare it on the row that moves second, and let the
+service that moves the first row move the second in the same transaction.
+There is no keyword for the pair (`FJS-D2227`).
+
+```lite
+model Issue {
+  id    Int    @id @default(autoincrement())
+  state String @default("open")
+}
+
+model PullRequest {
+  id      Int    @id @default(autoincrement())
+  state   String @default("open")
+  issueId Int
+  issue   Issue  @relation(fields: [issueId], references: [id])
+
+  @@require(postUpdate, (state == 'open') == (issue.state == 'open'), 'A pull request is open while its issue is.')
+}
+```
+
+```js
+const sys   = db.asSystem()
+const issue = await sys.issue.create({ data: {} })
+const pull  = await sys.pullRequest.create({ data: { issueId: issue.id } })
+
+// The pull cannot move first: its issue is still open
+try {
+  await sys.pullRequest.update({ where: { id: pull.id }, data: { state: 'closed' } })
+  throw new Error('expected the requirement to refuse')
+} catch (e) {
+  if (e.name !== 'AccessDeniedError') throw e
+}
+
+// issues.close moves the issue, then its pull
+await sys.$transaction(async tx => {
+  await tx.issue.update({ where: { id: issue.id }, data: { state: 'closed' } })
+  await tx.pullRequest.update({ where: { id: pull.id }, data: { state: 'closed' } })
+})
+const after = await sys.pullRequest.findUnique({ where: { id: pull.id } })
+if (after.state !== 'closed') throw new Error('expected the pull closed with its issue')
+```
+
+- **The same rule on `Issue` as well refuses both orders** — whichever row
+  moves first disagrees with the other — so it is declared once.
+- **A write to the issue alone is not graded against the pull.** Closing an
+  issue and leaving its pull open passes; keeping them in step is the service's
+  half.
 
 ### Field-level policies
 

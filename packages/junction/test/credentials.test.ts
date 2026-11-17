@@ -165,3 +165,38 @@ describe('credentials: a signed request replayed', () => {
     expect(await verify(req)).toBe(ROBOT)
   })
 })
+
+// FJS-4344 / FJS-D2223 — a refusal challenges the scheme the caller tried. git
+// sends a personal access token as Basic and prompts again only on a Basic
+// challenge, so a wrong token answered Bearer, or no challenge, was a dead end.
+describe('credentials: a refused credential', () => {
+  function refusingBasic() {
+    const app = createApp({
+      config: { ...defaultConfig, port: 0 },
+      credentials: [req => /^basic /i.test(req.headers.authorization ?? '') ? REFUSE : null],
+    })
+    app.get('/repo.git/info/refs', (ctx: any) => ctx.text('refs'))
+    return app
+  }
+
+  it('answers a Basic challenge to a refused Basic credential', async () => {
+    const app = refusingBasic()
+    await app.start()
+    const res = await app.http.fetch(new Request('http://git.test/repo.git/info/refs', {
+      headers: { authorization: `Basic ${btoa('alice:wrong-token')}` },
+    }))
+    expect(res.status).toBe(401)
+    expect(res.headers.get('www-authenticate')).toBe('Basic realm="git.test"')
+    expect((await res.json()).name).toBe('Unauthorized')
+    await app.stop()
+  })
+
+  it('answers a Bearer challenge to a refused signature, which names no scheme', async () => {
+    const app = appWith()
+    await app.start()
+    const res = await app.http.fetch(await signed('{"n":1}', { tamper: true }))
+    expect(res.status).toBe(401)
+    expect(res.headers.get('www-authenticate')).toBe('Bearer')
+    await app.stop()
+  })
+})

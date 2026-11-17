@@ -8568,6 +8568,19 @@ function validate(schema) {
         `Model '${model.name}': has @@deny and no @@allow. The deny restricts the operations it names; ` +
         `every OTHER operation stays unrestricted, because a model with no @@allow for an operation is open. ` +
         `If that is the intent this is nothing to fix — say so with an @@allow naming the level you mean.`)
+
+    // `all` covers postUpdate and `update`/`write` do not, so the update rule's
+    // caller passes the WHERE and is rolled back by the all rule (FJS-D2222).
+    const allows = model.attributes.filter(a => a.kind === 'allow' && !a.generated)
+    const allRule = allows.find(a => a.operations.length > 1 && a.operations.includes('postUpdate'))
+    const updateOnly = allows.filter(a => a.operations.includes('update') && !a.operations.includes('postUpdate'))
+    const declaresPost = allows.some(a => a.operations.length === 1 && a.operations[0] === 'postUpdate')
+    if (allRule && updateOnly.length && !declaresPost)
+      warnings.push(
+        `Model '${model.name}': @@allow(all, ${policyExprToString(allRule.expr)}) also grades postUpdate, so a caller ` +
+        `admitted only by ${updateOnly.map(a => `@@allow(update, ${policyExprToString(a.expr)})`).join(' or ')} passes ` +
+        `the update and is rolled back after it. Add ` +
+        `${updateOnly.map(a => `@@allow(postUpdate, ${policyExprToString(a.expr)})`).join(' and ')} to admit that caller's write.`)
   }
 
   // ── Trail database validation ────────────────────────────────────────────────

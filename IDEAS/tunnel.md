@@ -1,12 +1,12 @@
 ---
 id: tunnel
-status: proposed
+status: shipped
 dated: 2026-10-14
 ---
 
 # Idea — `fli tunnel`: a dev port on a public URL, with the visitor's address intact
 
-**Status: PROPOSED. Phase 0's Bun probe is run; nothing is built. Q3 recommends our own relay (Phase 3) over a third party's.** Dated
+**Status: Phases 0–1 built 2026-11-16, uncommitted: `fli dev --tunnel` and `fli tunnel [port]`. Q1–Q4 ruled: no own relay (`FJS-D2247`), no blind tunnel until a client's data needs one (`FJS-D2248`). Phase 2 built and proved live 2026-11-17, uncommitted: with `FLI_TUNNEL_DOMAIN=awe.dev`, `fli dev --tunnel` serves example at `https://example.awe.dev` (`FJS-D2249`). Every box is closed.** Dated
 2026-10-14. Do not cite this file as behavior — see `VERIFYING.md`.
 
 **The ask.** Put a local dev server on a public HTTPS URL with one command:
@@ -158,54 +158,96 @@ Done when: a request through each tunnel shows its `clientAddress` result.
 
 - [x] 0.1 Probe `Bun.serve` with PROXY v1 and v2 headers
   - Both are a 400 on Bun 1.4.2; the probe is above.
-- [ ] 0.2 Run a quick tunnel to a Junction app under `trustProxy: 1` and read
-  the logged client address — outward-facing, so the owner runs it
+- [x] 0.2 Run a quick tunnel to a Junction app under `trustProxy: 1` and read
+  the logged client address
+  - Through `fli tunnel` → a Vite proxy → Junction's own `extractIP`: Cloudflare
+    sends `X-Forwarded-For: <visitor>`, the Vite hop passes it untouched, and
+    trust 1 reads the visitor while trust 0 reads 127.0.0.1. A forged header
+    arrives as `<forged>, <visitor>` and trust 1 still reads the visitor.
+    The example's own sessions could not show it: `FJS-4402`.
 
 ### Phase 1 — `fli tunnel <port>` is a quick tunnel
 
 Goal: one command, no account, the visitor's address intact.
 Done when: 0.2's check passes through `fli tunnel`, not by hand.
 
-- [ ] 1.1 The positional is a port, defaulting to the app's `FLI_PORT_BE`; a
-  named tunnel moves to `--name`
-- [ ] 1.2 `fli dev --tunnel` starts the API with `FRONTIER_TRUST_PROXY=1` and the
+- [x] 1.1 The positional is a port
+  - The default is the app's WEB port, not its API's: vite proxies `/api` and
+    `/ws`, so the web port serves the whole app; the API's only without one.
+- [x] 1.2 `fli dev --tunnel` starts the API with `FRONTIER_TRUST_PROXY=1` and the
   quick tunnel together, so the setting and the proxy cannot drift apart
-- [ ] 1.3 The startup line prints the public URL and the trust setting it chose
+  - It also sets `FRONTIER_APP_URL` to the tunnel's URL, and Sierra's vite config
+    allows that host (vite 8 answers an unknown Host 403). Driven on example:
+    page, `/api`, `/ws` and a sign-in through the URL; another host still 403.
+- [x] 1.3 The startup line prints the public URL and the trust setting it chose
+  - And the summary's title carries the URL, so it survives the scroll.
 
-### Phase 2 — A blind tunnel, for plaintext that must not cross a relay
+### Phase 2 — A fixed hostname, through a Cloudflare named tunnel
 
-Goal: `preview-branch.md` over production data without Cloudflare reading it.
-Done when: Q1 and Q2 are ruled and the chosen half runs. Q3 may make this
-phase unnecessary.
+Goal: the same `https://<app>.<domain>` every run, on a zone the person's `cf`
+login reaches, with the visitor's address intact.
+Done when: `fli dev --tunnel` with `FLI_TUNNEL_DOMAIN=awe.dev` serves example at
+`https://example.awe.dev` twice in a row, and a name another record holds is refused.
 
-- [ ] 2.1 `fli tunnel --blind` runs `opentunnel route add`, with
-  `trustProxy: false` forced and the startup line saying the limiter is global
-- [ ] 2.2 Visitor address behind a blind tunnel — whichever Q2 picks
+Measured 2026-11-17 by hand: `cf tunnels create --config-src local` answers the
+run token; a proxied CNAME `<host>` → `<id>.cfargotunnel.com` and `cloudflared
+tunnel run --token … --url http://localhost:<port>` served a header echo at
+`https://example.awe.dev` with Cloudflare's certificate, `X-Forwarded-For` the
+visitor and a forged one kept in front of it — the quick tunnel's shape, so
+trust 1 holds. The laptop's `~/.cloudflared/cert.pem` is a DIFFERENT account
+from `cf`'s, which is why this goes through `cf` and a token, never
+`cloudflared tunnel route dns`.
 
-### Phase 3 — The own relay, on a fleet machine
+- [x] 2.1 `core/cloudflare.js` gains the tunnel verbs (list, create, token); the
+  hostname is `--tunnel=<host>`, else `<package.json name>.<FLI_TUNNEL_DOMAIN>`,
+  else a quick tunnel — a set domain or a given host never degrades to one
+  - Built: `tunnels`, `createTunnel`, `tunnelToken` in `core/cloudflare.js`;
+    `tunnelLabel`/`tunnelHost` in `core/public-tunnel.js` (`--tunnel` is now a
+    string flag, bare `--tunnel` arriving as `'true'`); a bad host or a domain
+    that cannot label one throws instead of choosing the quick shape.
+- [x] 2.2 One tunnel per hostname, `fli-<host, dots as dashes>`, reused; a record
+  on the name that is not this tunnel's CNAME is refused by name
+  - Built: `prepareNamedTunnel` (zone, tunnel, CNAME; any `cf` failure throws) and
+    `openNamedTunnel` (token in `TUNNEL_TOKEN`, up on `Registered tunnel
+    connection`); `fli dev --tunnel` names its shape on the startup line.
+- [x] 2.3 `fli tunnel --name` goes; `fli tunnel [port] --host <host>` shares a
+  running server the same way
+  - Built: `--name` removed with no alias; `--host`, else `FLI_TUNNEL_DOMAIN` with a
+    `package.json` in the directory, else the quick tunnel.
+  - Proved 2026-11-17: two runs of `fli dev --tunnel` in example served
+    `https://example.awe.dev` — page, `/api/health` and a `/ws` upgrade (101) —
+    through one tunnel `fli-example-awe-dev` and one CNAME, the second run
+    reusing both through `tunnelToken`; Ctrl-C left no cloudflared or port behind.
+    `--tunnel=my-site.awe.dev` refused on its A record, before any server or
+    tunnel was made.
 
-Goal: no third party sees plaintext, and the visitor's address survives.
-Done when: `fli tunnel --via <box>` serves a dev API on
-`<name>.tunnel.<domain>` and 0.2's check passes through it.
+### Not built
 
-- [ ] 3.1 By hand: `ssh -R` to a fleet box, `POST /route` with a bare port,
-  `*.tunnel.<domain>` in DNS; measure first-certificate time and whether a
-  WebSocket holds
-- [ ] 3.2 `fli tunnel --via <box>` opens the `ssh -R`, claims the route, and
-  unroutes it on exit
-- [ ] 3.3 The remote port comes from the ports schema (`core/ports.js`), so two
-  developers on one box cannot collide
+- **A blind tunnel** (`fli tunnel --blind` over OpenTunnel) waits for a client
+  whose data Cloudflare must not see (`FJS-D2248`); its visitor address is
+  then Q2's question again.
+- **The own relay** (`ssh -R` to a fleet box behind Outpost's `/route`) is
+  not built (`FJS-D2247`): each run gets a new trycloudflare.com link.
 
 ## Open questions
 
-- **Q1 — Is the blind tunnel worth a dependency now?**
+- ~~**Q5 — How is a fixed tunnel hostname chosen?**~~ **Answered 2026-11-17 (`FJS-D2249`): A — `FLI_TUNNEL_DOMAIN` through `loadFliEnv` (machine `.env`, a project's `.env` over it), the label from `package.json` `name` with its scope stripped, and `--tunnel=<host>` for one run.**
+  - **A** — `FLI_TUNNEL_DOMAIN` through `loadFliEnv` (machine `.env`, a project's
+    `.env` over it), the label from `package.json` `name` with its scope
+    stripped, and `--tunnel=<host>` for one run.
+  - **B** — a `config.json` key and a `fli tunnel:domain` command to set it.
+  - **C** — the hostname typed on every run.
+  - **Recommend A** — one origin, the env layering `FLI_PROFILE` already rides;
+    B is a second writer of what `.env` carries, C restates the domain each run.
+
+- ~~**Q1 — Is the blind tunnel worth a dependency now?**~~ **Answered 2026-11-17 (`FJS-D2248`): B — no; Phase 1 only, and Phase 2 waits for a client whose data rules out Cloudflare seeing it.**
   - **A** — yes, Phase 2 after Phase 1.
   - **B** — no; Phase 1 only, and Phase 2 waits for a client whose data
     rules out Cloudflare seeing it.
   - **Recommend B** — every listed use is dev data except preview-branch, and
     that one has not run its slice 0 yet. If Q3 is A, B is final: the own
     relay covers the plaintext case with no new dependency.
-- **Q2 — Where a blind tunnel's visitor address comes from.**
+- ~~**Q2 — Where a blind tunnel's visitor address comes from.**~~ **Answered 2026-11-17 (`FJS-D2248`): no blind tunnel is built, so no visitor address to recover.**
   - **A** — wait for `Bun.serve` to read PROXY protocol, and keep loopback
     until then.
   - **B** — a local shim on `Bun.listen` that strips the header and records
@@ -213,14 +255,14 @@ Done when: `fli tunnel --via <box>` serves a dev API on
     `clientAddress`.
   - **Recommend A** — B is a second listener and a port map in front of the
     transport for a dev tool; re-probe on each Bun upgrade (`bun-natives.md`).
-- **Q3 — Build our own relay?**
+- ~~**Q3 — Build our own relay?**~~ **Answered 2026-11-17 (`FJS-D2247`): B — no; cloudflared for everything, OpenTunnel where plaintext matters.**
   - **A** — yes, Phase 3: `ssh -R` into a fleet machine's Caddy through
     Outpost's `/route`.
   - **B** — no; cloudflared for everything, OpenTunnel where plaintext matters.
   - **C** — a full OpenTunnel clone: blind, its own protocol and certificates.
   - **Recommend A** — private, keeps the visitor's address, and no new
     protocol. C is all seven pieces to protect us from ourselves.
-- **Q4 — Who signs the `/route` a tunnel claims?**
+- ~~**Q4 — Who signs the `/route` a tunnel claims?**~~ **Answered 2026-11-17 (`FJS-D2247`): no own relay, so no route to sign.**
   - **A** — Basecamp: `fli` asks Basecamp, which signs as it does for a
     deploy.
   - **B** — `fli` holds a signing key of its own that Outpost accepts.

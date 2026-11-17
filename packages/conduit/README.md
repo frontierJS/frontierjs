@@ -141,12 +141,13 @@ A Provider that dials you — Stripe posting an event, a carrier posting a recei
 - the **app** declares the `Receiver` — the path, which credential verifies a delivery, whose tenant an event is about, and what to do with it.
 - **conduit** mounts the route and runs the order: credential → verify → parse → owner → receipt → apply → mark.
 
-```ts fragment
-// the connector's half is `stripeDialect` from @frontierjs/conduit-stripe:
-//   verify     Stripe-Signature over the raw bytes, the clock passed in
-//   parse      the event out of the body, or null
-//   dedupeKey  the event id
-import { stripeDialect } from '@frontierjs/conduit-stripe'
+```ts
+// the connector's half, as @frontierjs/conduit-stripe exports it
+export const stripeDialect: Dialect<string, StripeEvent> = {
+  verify:    (d, secret, { now }) => verifyStripeSignature({ rawBody: d.rawBody, header: d.headers['stripe-signature'], secret, now }),
+  parse:     (d)                  => isEvent(d.body) ? { id: d.body.id, type: d.body.type, payload: d.body } : null,
+  dedupeKey: (_d, ev)             => ev.id,
+}
 
 // the app's half
 app.conduit.receive({

@@ -688,6 +688,58 @@ describe('a @@deny with no @@allow', () => {
   })
 })
 
+// ─── an @@allow(all, …) beside an @@allow(update, …) ─────────────────────────
+//
+// `all` covers postUpdate and `update` does not, so the update rule's caller
+// passes the WHERE and is rolled back by the all rule graded after the write
+// (FJS-4381, FJS-D2222).
+
+describe('an @@allow(all, …) beside an @@allow(update, …) and no postUpdate rule', () => {
+  const SIGNUP = (extra = '') => `
+    model Signup {
+      id       Int @id
+      memberId Int
+      note     String?
+      @@allow(all, auth().organizerRole != null)
+      @@allow(update, memberId == auth().memberId)
+      ${extra}
+    }`
+  const warningOf = (src: string) =>
+    parse(src).warnings.find((x: string) => x.includes('@@allow(all') && x.includes('postUpdate'))
+
+  test('rolls the update caller back, which is what the warning is for', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db = await createClient({ schema: SIGNUP(), db: ':memory:' })
+    await db.asSystem().signup.create({ data: { id: 1, memberId: 7 } })
+    await expect(db.$setAuth({ id: 7, memberId: 7 }).signup.update({ where: { id: 1 }, data: { note: 'x' } }))
+      .rejects.toThrow(/post-update policy/)
+    db.$close()
+  })
+
+  test('warns at parse time, naming the postUpdate rule that fixes it', () => {
+    const w = warningOf(SIGNUP())
+    expect(w).toBeTruthy()
+    expect(w).toContain("Model 'Signup'")
+    expect(w).toContain('@@allow(postUpdate, memberId == auth().memberId)')
+  })
+
+  test('is silent once a postUpdate rule is declared, and the update caller is admitted', async () => {
+    const fixed = SIGNUP('@@allow(postUpdate, memberId == auth().memberId)')
+    expect(warningOf(fixed)).toBeUndefined()
+    const { createClient } = await import('../src/index.js')
+    const db = await createClient({ schema: fixed, db: ':memory:' })
+    await db.asSystem().signup.create({ data: { id: 1, memberId: 7 } })
+    await db.$setAuth({ id: 7, memberId: 7 }).signup.update({ where: { id: 1 }, data: { note: 'x' } })
+    expect((await db.asSystem().signup.findUnique({ where: { id: 1 } })).note).toBe('x')
+    db.$close()
+  })
+
+  test('is silent on an all rule alone and an update rule alone', () => {
+    expect(warningOf(`model S { id Int @id  @@allow(all, auth() != null) }`)).toBeUndefined()
+    expect(warningOf(`model S { id Int @id  o Int  @@allow(update, o == auth().id) }`)).toBeUndefined()
+  })
+})
+
 describe('sync-reference-to-a-server-assigned-id', () => {
   const ID = 'sync-reference-to-a-server-assigned-id'
 
@@ -1260,6 +1312,82 @@ describe('create-reaches-unpickable-relation', () => {
   test('silent when the related model narrows its own read', () => {
     expect(findings(SCHEMA(`@@allow(create, schedule.hostId == auth().id || auth().isAdmin)`,
       `@@allow(read, hostId == auth().id)`), 'create-reaches-unpickable-relation')).toEqual([])
+  })
+})
+
+describe('create-allow-blind-to-a-read-ruled-parent', () => {
+  // FJS-4359, FJS-D2229: a foreign key is a read (FJS-D576), so the create rule a
+  // runner passes is refused by the Repository it cannot read.
+  const SCHEMA = (allow: string, { read = '@@gate(1.1.1.1)  @@allow(read, ownerId == auth().id)', stamp = '' } = {}) => `
+    model User { id Int @id  runnerId Int?  repositoryId Int?  @@auth }
+    model Repository { id Int @id  ownerId Int  ${read} }
+    model WorkflowJob { id Int @id  runnerId Int  @@gate(1.1.1.1) }
+    model CommitStatus {
+      id           Int @id
+      repositoryId Int ${stamp}
+      repository   Repository  @relation(fields: [repositoryId], references: [id])
+      jobId        Int
+      job          WorkflowJob @relation(fields: [jobId], references: [id])
+      ${allow}
+    }`
+  const RULE = 'create-allow-blind-to-a-read-ruled-parent'
+
+  test('a runner the rule admits is refused as naming no Repository, which is what the finding is for', async () => {
+    const { createClient } = await import('../src/index.js')
+    const db  = await createClient({ schema: SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`), db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.repository.create({ data: { id: 78, ownerId: 1 } })
+    await sys.workflowJob.create({ data: { id: 5, runnerId: 9 } })
+    await expect(db.$setAuth({ id: 2, runnerId: 9 }).commitStatus.create({ data: { id: 1, repositoryId: 78, jobId: 5 } }))
+      .rejects.toThrow(/repositoryId 78 names no Repository/)
+    db.$close()
+  })
+
+  test('fires naming the key, the parent and the rule that does not read it', () => {
+    const f = findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`), RULE)
+    expect(f.length).toBe(1)
+    expect(f[0].model).toBe('CommitStatus')
+    expect(f[0].field).toBe('repositoryId')
+    expect(f[0].message).toContain('@@allow(create, job.runnerId == auth().runnerId)')
+    expect(f[0].message).toContain('Repository')
+    expect(f[0].message).toContain('asSystem()')
+  })
+
+  test('fires on a disjunct that does not read the parent beside one that does', () => {
+    const f = findings(SCHEMA(`@@allow(create, check(repository, 'update') || job.runnerId == auth().runnerId)`), RULE)
+    expect(f.map(x => x.field)).toEqual(['repositoryId'])
+  })
+
+  test('fires when the key is compared to another row, which asks nothing about the caller', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId && repositoryId == job.runnerId)`), RULE)
+      .map(x => x.field)).toEqual(['repositoryId'])
+  })
+
+  test('silent when the key is pinned to a claim, which names the caller\'s own parent', () => {
+    expect(findings(SCHEMA(`@@allow(create, repositoryId == auth().repositoryId && job.runnerId == auth().runnerId)`), RULE)).toEqual([])
+  })
+
+  test('silent on an optional key, which only a caller choosing a parent names', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`).replace('repositoryId Int ', 'repositoryId Int? ')
+      .replace('repository   Repository ', 'repository   Repository? '), RULE)).toEqual([])
+  })
+
+  test('fires when the parent declares no gate and no rule, so only the system reads it', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`, { read: '' }), RULE)
+      .map(x => x.field)).toEqual(['repositoryId'])
+  })
+
+  test('silent when the create rule reads that parent too', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId && repository.ownerId == auth().id)`), RULE)).toEqual([])
+    expect(findings(SCHEMA(`@@allow(create, check(repository) && job.runnerId == auth().runnerId)`), RULE)).toEqual([])
+  })
+
+  test('silent when the parent\'s gate is its whole read rule', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`, { read: '@@gate(1.1.1.1)' }), RULE)).toEqual([])
+  })
+
+  test('silent when the engine stamps the key, which is not graded', () => {
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`, { stamp: '@default(auth().repositoryId)' }), RULE)).toEqual([])
   })
 })
 

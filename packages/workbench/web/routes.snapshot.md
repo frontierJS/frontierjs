@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-26 routes · 2 layouts · target spa · trailing slash always
+29 routes · 2 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -28,6 +28,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/atlas/decide/` | `src/routes/atlas/decide/index.mesa` | `src/routes/_module.mesa` | — |
 | `/basecamps/` | `src/routes/basecamps/index.mesa` | `src/routes/_module.mesa` | — |
 | `/basecamps/new/` | `src/routes/basecamps/new/index.mesa` | `src/routes/_module.mesa` | — |
+| `/capture/` | `src/routes/capture/index.mesa` | `src/routes/_module.mesa` | — |
 | `/charter/` | `src/routes/charter/index.mesa` | `src/routes/_module.mesa` | — |
 | `/charter/drill/` | `src/routes/charter/drill/index.mesa` | `src/routes/_module.mesa` | — |
 | `/git-activity/local/` | `src/routes/git-activity/local.mesa` | `src/routes/_module.mesa` | — |
@@ -39,7 +40,9 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/messages/activity/` | `src/routes/messages/activity/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/browse/` | `src/routes/messages/browse/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/drafts/` | `src/routes/messages/drafts/index.mesa` | `src/routes/messages/_module.mesa` | — |
+| `/messages/groups/` | `src/routes/messages/groups/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/saved/` | `src/routes/messages/saved/index.mesa` | `src/routes/messages/_module.mesa` | — |
+| `/messages/scheduled/` | `src/routes/messages/scheduled/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/search/` | `src/routes/messages/search/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/threads/` | `src/routes/messages/threads/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
@@ -62,6 +65,7 @@ this section exists to show.
 - `/atlas/decide/` — siteName: `Workbench` · title: `Decide`
 - `/basecamps/` — siteName: `Workbench` · title: `Basecamps`
 - `/basecamps/new/` — siteName: `Workbench` · title: `New Basecamp`
+- `/capture/` — siteName: `Workbench` · title: `Capture`
 - `/charter/` — siteName: `Workbench` · title: `Charter`
 - `/charter/drill/` — siteName: `Workbench` · title: `Restore drill`
 - `/git-activity/local/` — siteName: `Workbench` · title: `Local repositories`
@@ -73,7 +77,9 @@ this section exists to show.
 - `/messages/activity/` — siteName: `Workbench` · title: `Activity`
 - `/messages/browse/` — siteName: `Workbench` · title: `Browse channels`
 - `/messages/drafts/` — siteName: `Workbench` · title: `Drafts`
+- `/messages/groups/` — siteName: `Workbench` · title: `Groups`
 - `/messages/saved/` — siteName: `Workbench` · title: `Saved`
+- `/messages/scheduled/` — siteName: `Workbench` · title: `Scheduled`
 - `/messages/search/` — siteName: `Workbench` · title: `Search`
 - `/messages/threads/` — siteName: `Workbench` · title: `Threads`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
@@ -88,5 +94,5 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 18 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
-- `src/routes/messages/_module.mesa` — 8 routes: `/messages/`, `/messages/:id/`, `/messages/activity/`, `/messages/browse/`, `/messages/drafts/`, `/messages/saved/`, `/messages/search/`, `/messages/threads/`
+- `src/routes/_module.mesa` — 19 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/capture/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
+- `src/routes/messages/_module.mesa` — 10 routes: `/messages/`, `/messages/:id/`, `/messages/activity/`, `/messages/browse/`, `/messages/drafts/`, `/messages/groups/`, `/messages/saved/`, `/messages/scheduled/`, `/messages/search/`, `/messages/threads/`

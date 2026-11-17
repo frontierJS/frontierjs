@@ -23,6 +23,13 @@ import { join, relative, resolve } from 'path'
 import { homedir } from 'os'
 import { pathToFileURL } from 'url'
 import { spawnSync } from 'child_process'
+
+// A failing shortcut is printed and the install still succeeds.
+function reportShortcut(echo, shortcut) {
+  if (shortcut.state === 'missing') return echo`  {dim capture} not on PATH, so the screenshot shortcut was skipped`
+  if (shortcut.state === 'done') return echo`  {dim capture} ran install-shortcut${shortcut.output ? `: ${shortcut.output}` : ''}`
+  echo`  {yellow capture} install-shortcut failed, so the shortcut was not installed${shortcut.output ? `: ${shortcut.output}` : ''}`
+}
 </script>
 
 **Linux only.** It writes one XDG desktop entry under
@@ -35,6 +42,11 @@ there. A change under the screens is seen after the next `fli desktop:run`.
 With `--release` the entry opens the release shell, and the rebuild that
 reaches it is `fli desktop:run --release`.
 
+**With `capture` on PATH it also runs `capture install-shortcut`**, the
+screenshot shortcut Workbench's tray Capture item shares. Without it the
+step is skipped in one line, and a shortcut that fails is reported without
+failing the install.
+
 **The entry carries this shell's PATH, this checkout's path and the API origin
 `desktop.config.js` names here.** A launcher starts the process without the
 shell's rc files, so bun would not be found otherwise, and without
@@ -44,7 +56,7 @@ from the shell that built the binary. After a bun upgrade or moving the checkout
 and running this command again rewrites it.
 
 ```js
-const { desktopLauncher, desktopBinary } =
+const { desktopLauncher, desktopBinary, captureShortcut } =
   await import(resolve(global.fliRoot, 'core/desktop-surface.js'))
 
 if (process.platform !== 'linux') {
@@ -92,6 +104,7 @@ if (!existsSync(binary)) {
 if (flag.dry) {
   log.dry(`write ${entry.file}`)
   echo(entry.body)
+  log.dry('capture install-shortcut (when capture is on PATH)')
   return
 }
 
@@ -110,4 +123,5 @@ spawnSync('update-desktop-database', [join(entry.file, '..')])
 
 log.done(`${replaced ? 'Replaced' : 'Wrote'} ${entry.file}`)
 log.info('Search for it in the app launcher. fli desktop:install --remove takes it out.')
+reportShortcut(echo, captureShortcut())
 ```

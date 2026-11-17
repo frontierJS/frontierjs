@@ -119,9 +119,9 @@ const _ALL_OPS = ['read', 'create', 'update', 'postUpdate', 'delete']
 //
 // The set has four sources and no fifth is possible:
 //
-//   the fixed nine     names this package itself reads, so no app spells them:
+//   the fixed ten      names this package itself reads, so no app spells them:
 //                      `id` (`auth()` bare IS the id), `capabilities` (the
-//                      grid, `FJS-D151`), the six `FrontierGateGetLevel` grades
+//                      grid, `FJS-D151`), `userType` (the caller's kind), the six `FrontierGateGetLevel` grades
 //                      a caller by — `role`, `isAdmin`, `isOwner`,
 //                      `isSystemAdmin`, `verifiedAt`, `activatedAt`
 //                      (`src/plugins/gate.js`) — and `level`, the grade itself,
@@ -147,6 +147,10 @@ const _ALL_OPS = ['read', 'create', 'update', 'postUpdate', 'delete']
 
 const FRAMEWORK_CLAIMS = [
   'id', 'capabilities',
+  // The caller's KIND — `user`, `bot`, `peer`, `service` (`FJS-D1198`). The
+  // ladder grades a machine principal like a person, so this is the one name a
+  // rule can tell them apart by (`FJS-D2228`); a row may not decide it.
+  'userType',
   // The standing `FrontierGateGetLevel` reads, named by the kit beside the
   // grader. Taken from the kit and not from the plugin because the plugin is
   // optional and this list is about what a schema may NAME, not what is installed.

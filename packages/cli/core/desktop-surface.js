@@ -40,12 +40,13 @@
  * the page a release ships.
  */
 
-import { spawn }                                from 'node:child_process'
+import { spawn, spawnSync }                     from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { resolve, basename, isAbsolute, relative, sep } from 'node:path'
 import { encodePng }                            from './png.js'
 import { frontmatterValue }                     from './compiler.js'
 import { portAnswering }                        from './probe.js'
+import { onPath }                               from './doctor.js'
 import { appPorts, describeProcess, pidsOnPort, processCwd } from './ports.js'
 import { writeApiOrigin, FJS_PACKAGES, VITE_VERSION } from './app-config.js'
 import { packageHostUrl }                   from './publish-hosts.js'
@@ -809,6 +810,20 @@ export function desktopLauncher({ root, surface, bun, fli, path, dataHome, relea
     file: resolve(dataHome, 'applications', `${conf.identifier ?? basename(binary)}.desktop`),
     body: lines.join('\n') + '\n',
   }
+}
+
+/**
+ * Registers the capture tool's screenshot shortcut, when `capture` is on PATH. A launcher
+ * entry is the install's job and the shortcut a convenience on top, so a refusal
+ * is an answer the command prints rather than a reason to fail the install.
+ *
+ * @returns {{ state: 'missing' } | { state: 'done' | 'failed', output: string }}
+ */
+export function captureShortcut({ has = onPath, run = spawnSync } = {}) {
+  if (!has('capture')) return { state: 'missing' }
+  const r = run('capture', ['install-shortcut'], { encoding: 'utf8' })
+  const output = `${r.stdout ?? ''}${r.stderr ?? ''}`.trim() || (r.error ? String(r.error.message) : '')
+  return { state: r.status === 0 && !r.error ? 'done' : 'failed', output }
 }
 
 // The Exec key is parsed twice: as a string value, then as a quoted argv.

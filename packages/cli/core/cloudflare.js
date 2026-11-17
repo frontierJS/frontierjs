@@ -23,7 +23,7 @@
  * is always passed by id, because a zone NAME with two accounts reachable is a
  * refusal in non-interactive mode; `findZone` turns a name into one here.
  *
- * Pages and Workers verbs take no `--account-id`, and with two accounts
+ * Pages, Workers and tunnel verbs take no `--account-id`, and with two accounts
  * reachable they refuse the same way, so their account rides the spawn as
  * `CLOUDFLARE_ACCOUNT_ID`. Pages lists cap at 10 a page — above that is a 400.
  *
@@ -50,6 +50,7 @@ const ZONE_PAGE = 50
 const RECORD_PAGE = 1000
 const PAGES_PAGE = 10
 const WORKER_PAGE = 50
+const TUNNEL_PAGE = 100
 const ZONE_ID = /^[a-f0-9]{32}$/i
 
 /**
@@ -179,6 +180,24 @@ export async function activeVersion(profile, accountId, worker) {
   const id = deployments[0]?.versions?.[0]?.version_id
   return id ? cf(profile, 'workers versions get', [id, '--worker-id', worker], accountId) : null
 }
+
+// ─── Tunnels ──────────────────────────────────────────────────────────────
+
+/** An account's tunnels that are not deleted — a deleted one keeps its name. */
+export const tunnels = (profile, accountId) =>
+  walk(profile, 'tunnels list', ['--is-deleted', 'false'], TUNNEL_PAGE, accountId)
+
+/**
+ * Create a locally-configured tunnel: one the origin runs with its token, with
+ * no ingress held in the dashboard. `secret` is base64 of 32 random bytes. The
+ * answer carries `id` and `token`.
+ */
+export const createTunnel = (profile, accountId, name, secret) =>
+  cf(profile, 'tunnels create', ['--name', name, '--config-src', 'local', '--tunnel-secret', secret], accountId)
+
+/** The token that runs a tunnel, as a string. Treat it as a secret. */
+export const tunnelToken = (profile, accountId, tunnelId) =>
+  cf(profile, 'tunnels token get', [tunnelId], accountId)
 
 // ─── Sign in ──────────────────────────────────────────────────────────────
 

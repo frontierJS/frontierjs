@@ -19,7 +19,7 @@
 // must be answerable about a schema that has never been migrated.
 
 import { parseGateString } from '../plugins/gate.js'
-import { authClaimsUsed, buildClaimSet, pickWhere } from './policy.js'
+import { authClaimsUsed, buildClaimSet, pickWhere, policyExprToString } from './policy.js'
 import { inferFromHop }    from './schema-maps.js'
 import { ID_GENERATORS }   from './ids.js'
 import { sealingModels }   from './seal.js'
@@ -1320,6 +1320,73 @@ export const RULES = [
                 `stating the same rows.`,
             })
           }
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'create-allow-blind-to-a-read-ruled-parent',
+    severity: 'warn',
+    title:    'a create rule admits a caller the row\'s other foreign key refuses',
+    blurb:    'A foreign key is a read (FJS-D576): a create naming a parent its caller cannot read is ' +
+              'refused as naming no such row, after the create @@allow has admitted it. A rule that ' +
+              'admits through one relation (job.runnerId == auth().runnerId) while the row also names ' +
+              'a parent with its own read rule admits only the callers that parent\'s read rule admits ' +
+              'too — a runner on a private repository never. Make the parent\'s read rule admit that ' +
+              'caller, or write the row asSystem() after the app\'s own check of the same thing (FJS-D2229); ' +
+              'where only callers who read the parent are meant, check(rel) in the rule says so.',
+    run(schema) {
+      const byName = new Map((schema.models ?? []).map(m => [m.name, m]))
+      // A parent its every reader may not see: a read rule filters it, a read
+      // gate of 8 is system-only, and a model declaring no gate and no rule is
+      // system-only by default.
+      const readRuled = p => {
+        const rules = (p?.attributes ?? []).filter(a => (a.kind === 'allow' || a.kind === 'deny') && !a.generated)
+        const gate  = gateOf(p)
+        if (!gate) return !rules.length || rules.some(a => a.operations?.includes('read'))
+        return gate.read >= 8 || rules.some(a => a.operations?.includes('read'))
+      }
+      // A disjunct that never touches the relation admits a caller who has not
+      // been asked about the parent at all. The key compared to a claim
+      // (cartId == auth().cartId) names the caller's own parent, so it counts
+      // as asked; compared to another row's column it does not.
+      const pins = (a, b, fks) => a?.type === 'field' && fks.includes(a.name) && b?.type === 'auth'
+      const reads = (n, rel, fks) => {
+        if (!n || typeof n !== 'object') return false
+        if (n.type === 'or') return reads(n.left, rel, fks) && reads(n.right, rel, fks)
+        if ((n.type === 'path' || n.type === 'some') && n.rel === rel) return true
+        if (n.type === 'check' && n.field === rel) return true
+        if (n.type === 'compare' && (pins(n.left, n.right, fks) || pins(n.right, n.left, fks))) return true
+        return Object.values(n).some(v => Array.isArray(v) ? v.some(x => reads(x, rel, fks)) : reads(v, rel, fks))
+      }
+      const stamped = f => (f?.attributes ?? []).some(a =>
+        a.kind === 'createdBy' || (a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'auth'))
+
+      const out = []
+      for (const model of schema.models ?? []) {
+        const allows = (model.attributes ?? []).filter(a => a.kind === 'allow' && !a.generated && a.operations?.includes('create'))
+        if (!allows.length) continue
+        for (const field of model.fields ?? []) {
+          const fks = field.attributes?.find(a => a.kind === 'relation')?.fields
+          if (field.type?.kind !== 'relation' || field.type.array || !fks?.length) continue
+          const cols = fks.map(k => model.fields.find(f => f.name === k))
+          // An optional key is named only by a caller choosing a parent, which
+          // is the ruling's intent rather than a rule nobody can pass.
+          if (cols.every(stamped) || cols.every(f => f?.type?.optional)) continue
+          const parent = byName.get(field.type.name)
+          if (!readRuled(parent)) continue
+          const blind = allows.find(a => !reads(a.expr, field.name, fks))
+          if (!blind) continue
+          out.push({
+            model: model.name, field: fks.join(', '),
+            message: `${model.name}.${fks.join(', ')}: @@allow(create, ${policyExprToString(blind.expr)}) admits a ` +
+              `caller without reading ${field.name}, and ${parent.name} restricts who reads it — a foreign key is a ` +
+              `read (FJS-D576), so that caller naming a ${parent.name} it cannot read is refused as naming no ` +
+              `${parent.name}. Make ${parent.name}'s read rule admit the caller, or write the row asSystem() after ` +
+              `the app's own check; if only callers who read it are meant, say so with check(${field.name}) in the rule.`,
+          })
         }
       }
       return out

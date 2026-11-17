@@ -29,7 +29,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { Forbidden } from '@frontierjs/junction'
-import type { IAuth, ServiceContext, Hook } from '@frontierjs/junction'
+import type { IAuth, SignInOrigin, ServiceContext, Hook } from '@frontierjs/junction'
 
 /** What this app puts on a session beyond what auth issues. */
 export interface BasecampSession {
@@ -95,12 +95,12 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
 
   return {
     ...auth,
-    async login(email: string, password: string) {
+    async login(email: string, password: string, from?: SignInOrigin) {
       // AFTER the password check, never before. Refusing on the email alone
       // tells anyone who asks which addresses are suspended accounts here,
       // which is the same disclosure auth's own InvalidCredentialsError is
       // careful not to make.
-      const result = await auth.login(email, password)
+      const result = await auth.login(email, password, from)
 
       // A half-finished login carries no session to refuse yet, and nothing is
       // disclosed by letting it through: the ticket is worth nothing without a
@@ -114,8 +114,8 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
     // optional and spreading an absent method would define the key as undefined
     // — which reads as *implemented* to every `auth.completeLogin ?` check.
     ...(auth.completeLogin ? {
-      async completeLogin(challenge: string, code: string) {
-        return refuseIfSuspended(await auth.completeLogin!(challenge, code))
+      async completeLogin(challenge: string, code: string, from?: SignInOrigin) {
+        return refuseIfSuspended(await auth.completeLogin!(challenge, code, from))
       },
     } : {}),
   } as IAuth & { _sessionTtl: string }

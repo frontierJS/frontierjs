@@ -2300,7 +2300,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
 | `isRestoringVolume` | `boolean`? | — | — | — | — |
-| `withTodaysSecrets` | `boolean`? | — | — | — | — |
+| `hasTodaysSecrets` | `boolean`? | — | — | — | — |
 
 **On create**: required — nothing
 

@@ -22,7 +22,15 @@
 //
 // A webview with no new-window handler drops every target=_blank link without
 // a sound, so each one goes to the system browser instead.
+//
+// One shell runs at a time: a second launch hands its argv to the running one
+// and exits, and `--go <path>` there opens that screen (go.rs), as the Capture
+// tool does with `workbench-desktop --go /capture/`. A first launch ignores
+// `--go`. A debug shell on FRONTIER_DESKTOP_URL or FRONTIER_DESKTOP_PROBE is
+// left out, so a dev window or a drive runs beside the installed app instead
+// of raising it and exiting.
 
+mod go;
 mod tray;
 
 use tauri::webview::NewWindowResponse;
@@ -86,12 +94,25 @@ fn open_in_browser(url: &tauri::Url) {
 
 fn main() {
     let probe = probe_script();
-    let page = match dev_url() {
+    let dev = dev_url();
+    let single = probe.is_none() && dev.is_none();
+    let page = match dev {
         Some(url) => WebviewUrl::External(url),
         None => WebviewUrl::App("index.html".into()),
     };
 
     let builder = tauri::Builder::default();
+    // First of every plugin, as the plugin requires.
+    let builder = if single {
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            match go::arg(&argv) {
+                Some(path) => tray::go(app, path),
+                None => tray::present(app),
+            }
+        }))
+    } else {
+        builder
+    };
     #[cfg(debug_assertions)]
     let builder = if probe.is_some() {
         builder.invoke_handler(tauri::generate_handler![probe_report, probe_done])

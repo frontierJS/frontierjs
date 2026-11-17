@@ -41,14 +41,16 @@ export class FrameworkError extends Error {
 
 export class BadRequest       extends FrameworkError { constructor(m?: string, d?: unknown, c?: unknown) { super(m ?? 'Bad Request',                d, c); this.code = 400 } }
 /**
- * A 401. `challenge` is the auth-params of the `WWW-Authenticate: Bearer`
- * every 401 carries (RFC 9110 § 11.6.1): an MCP client starts a sign-in only
- * from `resource_metadata` there (`FJS-D1936`). It is header-only and never
+ * A 401. `challenge` is the auth-params of the `WWW-Authenticate` every 401
+ * carries (RFC 9110 § 11.6.1): an MCP client starts a sign-in only from
+ * `resource_metadata` there (`FJS-D1936`). It is header-only and never
  * reaches the body. Names and values are refused here, at the throw, when they
- * could not be written as a header.
+ * could not be written as a header. `scheme` is `Bearer` except where
+ * `refusedCredential` answers the scheme a caller tried.
  */
 export class Unauthorized extends FrameworkError {
   challenge?: Readonly<Record<string, string>>
+  scheme: string = 'Bearer'
   constructor(m?: string, d?: unknown, c?: unknown, challenge?: Record<string, string>) {
     super(m ?? 'Unauthorized', d, c)
     this.code = 401
@@ -81,12 +83,32 @@ function checkedChallenge(params: Record<string, string>): Record<string, string
   return { ...params }
 }
 
-/** The `WWW-Authenticate` value of a 401: `Bearer`, then each param quoted. */
-export function bearerChallenge(fe: FrameworkError): string {
+/** The `WWW-Authenticate` value of a 401: the scheme, then each param quoted. */
+export function challengeOf(fe: FrameworkError): string {
+  const scheme = (fe as Unauthorized).scheme ?? 'Bearer'
   const params = (fe as Unauthorized).challenge
-  if (!params) return 'Bearer'
+  if (!params) return scheme
   const quoted = Object.entries(params).map(([k, v]) => `${k}="${v.replace(/[\\"]/g, '\\$&')}"`)
-  return quoted.length ? `Bearer ${quoted.join(', ')}` : 'Bearer'
+  return quoted.length ? `${scheme} ${quoted.join(', ')}` : scheme
+}
+
+/**
+ * The 401 for a credential a verifier REFUSED (`FJS-D2223`), challenging the
+ * scheme the caller's `Authorization` header tried. git sends a personal access
+ * token as Basic and asks for another only on a Basic challenge, so a Bearer
+ * one left a wrong token unrecoverable. Basic requires a `realm` (RFC 7617),
+ * named for the host. A credential that names no scheme — a signed request —
+ * is challenged Bearer, as every other 401 is.
+ */
+export function refusedCredential(authorization: string | undefined, host: string | null): Unauthorized {
+  const fe     = new Unauthorized()
+  const scheme = /^([!#$%&'*+.^_`|~0-9A-Za-z-]+)(?: |$)/.exec(authorization ?? '')?.[1]
+  if (!scheme || /^bearer$/i.test(scheme)) return fe
+  if (/^basic$/i.test(scheme)) {
+    fe.scheme    = 'Basic'
+    fe.challenge = Object.freeze(checkedChallenge({ realm: host ?? 'api' }))
+  } else fe.scheme = scheme
+  return fe
 }
 
 // ─── The error boundary ────────────────────────────────────────────────────

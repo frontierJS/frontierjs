@@ -172,7 +172,8 @@ entry exists — including one added only to carry an `input:` — every verb it
 does not name is a 405.
 
 **A CRUD verb's body is checked against the model's fields, even when you write
-the method.** A key naming no field is a 400 before your code runs. A key stored
+the method.** A key naming no field, or a required column left out, is a 400
+before your code runs. A key stored
 beside the row is `@transient`; a body that is not the row at all — `{ specId }`,
 from which a before hook derives a required column — declares a `type` and lists
 the verb as `{ method: 'create', input: 'ShareSpec' }`, which replaces the model

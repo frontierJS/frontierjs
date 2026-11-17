@@ -2348,6 +2348,10 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 *warn*. A create @@allow that reads a related row (schedule.hostId == auth().id) accepts only some of that model, and a generated picker offers every row the caller can READ. Litestone derives the narrowing for a top-level rel.col == auth().claim conjunct (x-pick-where); any other shape — an ||, an in, a computed value — it cannot state, so the picker offers rows the write refuses unless the related model's own read policy already narrows them.
 
+### `create-allow-blind-to-a-read-ruled-parent` — a create rule admits a caller the row's other foreign key refuses
+
+*warn*. A foreign key is a read (FJS-D576): a create naming a parent its caller cannot read is refused as naming no such row, after the create @@allow has admitted it. A rule that admits through one relation (job.runnerId == auth().runnerId) while the row also names a parent with its own read rule admits only the callers that parent's read rule admits too — a runner on a private repository never. Make the parent's read rule admit that caller, or write the row asSystem() after the app's own check of the same thing (FJS-D2229); where only callers who read the parent are meant, check(rel) in the rule says so.
+
 ### `read-allow-hides-tenant-members` — a read @@allow written for a claim the tenant's members do not carry hides the model from them
 
 *warn*. Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.

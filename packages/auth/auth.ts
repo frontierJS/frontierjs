@@ -5,7 +5,7 @@
 // Never touches HTTP — that is the plugin's job.
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
-import type { IAuth, LoginResult, ProofResult, EmailVerificationResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import type { IAuth, SignInOrigin, LoginResult, ProofResult, EmailVerificationResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
 import { parseTtl } from '@frontierjs/junction'
 import { authModelOf } from '@frontierjs/litestone'
 import { modelToAccessor } from '@frontierjs/litestone/ddl'
@@ -335,6 +335,7 @@ export function createLitestoneAuth(
     authMethod: SessionContext['authMethod'],
     meta:       Record<string, unknown> = {},
     held        = false,
+    from:       SignInOrigin = {},
   ): Promise<{ token: string; user: SessionContext }> {
     await refuseUnlessPerson(user, meta)
     await appVeto(user, authMethod, meta)
@@ -348,6 +349,8 @@ export function createLitestoneAuth(
         expiresAt: expiresAt(sessionTtl, sys.$now()),
         reauthenticatedAt: sys.$now().toISOString(),
         ...(held ? { isEnrollmentOnly: true } : {}),
+        ...(from.ipAddress ? { ipAddress: from.ipAddress } : {}),
+        ...(from.userAgent ? { userAgent: from.userAgent } : {}),
       }
     })
 
@@ -447,8 +450,8 @@ export function createLitestoneAuth(
   // line, so a password spent at that screen is not missing from the account's
   // history. A held session cannot be held at a screen that issues none, so an
   // account owing enrollment is refused there and sent to finish it.
-  async function endProven(user: any, ending: Ending, meta: Record<string, unknown>, held = false): Promise<LoginResult | ProofResult> {
-    if (ending === 'session') return issueSession(user, 'session', meta, held)
+  async function endProven(user: any, ending: Ending, meta: Record<string, unknown>, held = false, from: SignInOrigin = {}): Promise<LoginResult | ProofResult> {
+    if (ending === 'session') return issueSession(user, 'session', meta, held, from)
     await refuseUnlessPerson(user, meta)
     // Not handed to `onLoginFailed`: the password was right, and a lockout
     // counting it would lock out a person for not having enrolled yet.
@@ -472,9 +475,9 @@ export function createLitestoneAuth(
   // `totp` credential EXISTING — enrollment writes `totpPending` and only
   // `confirmTotp` promotes it, so an unproven secret never gates a login
   // (`FJS-D261`).
-  async function firstFactorProven(user: any, meta?: Record<string, unknown>): Promise<LoginResult>
-  async function firstFactorProven(user: any, meta: Record<string, unknown>, ending: Ending): Promise<LoginResult | ProofResult>
-  async function firstFactorProven(user: any, meta: Record<string, unknown> = {}, ending: Ending = 'session'): Promise<LoginResult | ProofResult> {
+  async function firstFactorProven(user: any, meta?: Record<string, unknown>, ending?: 'session', from?: SignInOrigin): Promise<LoginResult>
+  async function firstFactorProven(user: any, meta: Record<string, unknown>, ending: Ending, from?: SignInOrigin): Promise<LoginResult | ProofResult>
+  async function firstFactorProven(user: any, meta: Record<string, unknown> = {}, ending: Ending = 'session', from: SignInOrigin = {}): Promise<LoginResult | ProofResult> {
     const totp = await liveTotp(user.id)
     if (!totp) {
       // A session that exists before the factor does (`FJS-D1008`): the plugin
@@ -482,7 +485,7 @@ export function createLitestoneAuth(
       // the predicate is only asked about a person.
       const owed = (user.kind ?? 'user') === 'user' && typeof requireSecondFactor === 'function'
         ? await requireSecondFactor(user) : requireSecondFactor === true
-      return endProven(user, ending, meta, owed)
+      return endProven(user, ending, meta, owed, from)
     }
 
     // One live ticket per person. A second sign-in supersedes the first rather
@@ -512,7 +515,7 @@ export function createLitestoneAuth(
 
   // ── login ────────────────────────────────────────────────────────────
 
-  async function passwordFirstFactor(email: string, password: string, ending: Ending): Promise<LoginResult | ProofResult> {
+  async function passwordFirstFactor(email: string, password: string, ending: Ending, from: SignInOrigin = {}): Promise<LoginResult | ProofResult> {
     // Every refusal records the same way and answers the same error. The three
     // branches are distinguishable in the trail by `reason` and nowhere else —
     // telling a caller whether the address exists is an enumeration oracle.
@@ -567,7 +570,7 @@ export function createLitestoneAuth(
       await sys.credential.update({ where: { id: cred.id }, data: { value: await hashPassword(password) } })
     }
 
-    return firstFactorProven(user, {}, ending)
+    return firstFactorProven(user, {}, ending, from)
   }
 
   // ── The second step ──────────────────────────────────────────────────
@@ -584,7 +587,7 @@ export function createLitestoneAuth(
   // per attempt would only hand an attacker a way to cost the server 220ms a
   // request.
 
-  async function secondFactor(challenge: string, code: string, ending: Ending): Promise<LoginResult | ProofResult> {
+  async function secondFactor(challenge: string, code: string, ending: Ending, from: SignInOrigin = {}): Promise<LoginResult | ProofResult> {
     const spend = async (reason: string, row: any, retryable = true) => {
       await audit('login.failed', {
         model:   'LoginChallenge',
@@ -652,7 +655,7 @@ export function createLitestoneAuth(
       })
       if (!count) throw await spend('code-replayed', row, await attemptsLeft(sys.loginChallenge, row.id))
       if (!await spendTicket()) throw await spend('no-such-challenge', row, false)
-      return endProven(user, ending, { factor: 'totp' })
+      return endProven(user, ending, { factor: 'totp' }, false, from)
     }
 
     // Not a TOTP code — a recovery code is the other thing a person types into
@@ -673,7 +676,7 @@ export function createLitestoneAuth(
         actorType: 'user',
         meta:    { remaining: left },
       })
-      return endProven(user, ending, { factor: 'recovery', recoveryCodesRemaining: left })
+      return endProven(user, ending, { factor: 'recovery', recoveryCodesRemaining: left }, false, from)
     }
 
     throw await spend('bad-code', row, await attemptsLeft(sys.loginChallenge, row.id))
@@ -681,8 +684,8 @@ export function createLitestoneAuth(
 
   // A provider click is a first factor like a password (FJS-D915). An OAuth
   // branch that called `issueSession` itself would be a way past the code.
-  async function oauthFirstFactor(user: any, meta: Record<string, unknown>): Promise<OAuthResolution> {
-    const result = await firstFactorProven(user, meta)
+  async function oauthFirstFactor(user: any, meta: Record<string, unknown>, from?: SignInOrigin): Promise<OAuthResolution> {
+    const result = await firstFactorProven(user, meta, 'session', from)
     return 'token' in result
       ? { outcome: 'signed-in', ...result }
       : { outcome: 'code-required', ...result }
@@ -1073,6 +1076,7 @@ export function createLitestoneAuth(
 
   async function verifyMagicLink(
     proof: { token: string } | { email: string; code: string },
+    from?: SignInOrigin,
   ): Promise<LoginResult> {
     let row: any
     if ('token' in proof) {
@@ -1108,7 +1112,7 @@ export function createLitestoneAuth(
         model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
         meta:  MAGIC_META,
       })
-      return firstFactorProven(made, MAGIC_META)
+      return firstFactorProven(made, MAGIC_META, 'session', from)
     }
 
     // Re-asked at the click: a provider linked between the mail and the click
@@ -1120,7 +1124,7 @@ export function createLitestoneAuth(
       await sys[person].update({ where: { id: user.id }, data: { isEmailVerified: true } })
     }
 
-    return firstFactorProven({ ...user, isEmailVerified: true }, MAGIC_META)
+    return firstFactorProven({ ...user, isEmailVerified: true }, MAGIC_META, 'session', from)
   }
 
   // ─── IAuth ────────────────────────────────────────────────────────────────
@@ -1505,12 +1509,12 @@ export function createLitestoneAuth(
       return { ended: true }
     },
 
-    async login(email: string, password: string): Promise<LoginResult> {
-      return passwordFirstFactor(email, password, 'session') as Promise<LoginResult>
+    async login(email: string, password: string, from?: SignInOrigin): Promise<LoginResult> {
+      return passwordFirstFactor(email, password, 'session', from) as Promise<LoginResult>
     },
 
-    async completeLogin(challenge: string, code: string): Promise<{ token: string; user: SessionContext }> {
-      return secondFactor(challenge, code, 'session') as Promise<{ token: string; user: SessionContext }>
+    async completeLogin(challenge: string, code: string, from?: SignInOrigin): Promise<{ token: string; user: SessionContext }> {
+      return secondFactor(challenge, code, 'session', from) as Promise<{ token: string; user: SessionContext }>
     },
 
     // The same two steps for a screen that must not sign anybody in (`FJS-D1948`).
@@ -1852,7 +1856,7 @@ export function createLitestoneAuth(
     // that nothing refreshes pays the whole security cost of keeping one and
     // buys a capability that expires within the hour.
 
-    async oauthResolve(providerName: string, identity: OAuthIdentity): Promise<OAuthResolution> {
+    async oauthResolve(providerName: string, identity: OAuthIdentity, from?: SignInOrigin): Promise<OAuthResolution> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
 
@@ -1872,7 +1876,7 @@ export function createLitestoneAuth(
           model: personModel, records: [known.id], actorId: known.id,
           meta:  { provider: providerName },
         })
-        return oauthFirstFactor(known, { provider: providerName })
+        return oauthFirstFactor(known, { provider: providerName }, from)
       }
       const before = await seen()
       if (before) return before
@@ -1957,7 +1961,7 @@ export function createLitestoneAuth(
           model: personModel, records: [made.id], actorId: made.id,
           meta:  { provider: providerName, isEmailVerified: true },
         })
-        return oauthFirstFactor(made, { provider: providerName })
+        return oauthFirstFactor(made, { provider: providerName }, from)
       }
 
       // ── 4. Somebody holds it → three conditions ───────────────────────
@@ -1992,7 +1996,7 @@ export function createLitestoneAuth(
         model: personModel, records: [existing.id], actorId: existing.id,
         meta:  { provider: providerName },
       })
-      return oauthFirstFactor(existing, { provider: providerName })
+      return oauthFirstFactor(existing, { provider: providerName }, from)
     },
 
     // ── OAuth: prove the address AND the identity, then attach ───────────
@@ -2024,6 +2028,7 @@ export function createLitestoneAuth(
       token: string,
       providerName: string,
       identity: OAuthIdentity,
+      from?: SignInOrigin,
     ): Promise<LoginResult> {
       const pending = await sys.verification.findFirst({
         where: {
@@ -2074,7 +2079,7 @@ export function createLitestoneAuth(
           model: personModel, records: [made.id], actorId: made.id,
           meta:  { provider: pending.provider, isEmailVerified: true, viaProof: true },
         })
-        return firstFactorProven(made, { provider: pending.provider })
+        return firstFactorProven(made, { provider: pending.provider }, 'session', from)
       }
 
       const wasUnverified = user.isEmailVerified !== true
@@ -2102,7 +2107,7 @@ export function createLitestoneAuth(
         meta:  { provider: pending.provider, viaProof: true, evictedPriorCredentials: wasUnverified },
       })
 
-      return firstFactorProven(verified, { provider: pending.provider })
+      return firstFactorProven(verified, { provider: pending.provider }, 'session', from)
     },
 
     // ── OAuth: what is attached to this account ──────────────────────────
@@ -2458,9 +2463,9 @@ export function createLitestoneAuth(
     // person who registered and was answered 202 otherwise lands on a sign-in
     // form asking for the password they typed a minute ago.
 
-    async verifyEmail(token: string, opts?: { keepSessionId?: string }): Promise<EmailVerificationResult> {
+    async verifyEmail(token: string, opts?: { keepSessionId?: string; from?: SignInOrigin }): Promise<EmailVerificationResult> {
       const spent = await spendVerification(token, opts?.keepSessionId)
-      if ('registered' in spent) return { signedIn: await firstFactorProven(spent.registered, { via: 'registration' }) }
+      if ('registered' in spent) return { signedIn: await firstFactorProven(spent.registered, { via: 'registration' }, 'session', opts?.from) }
       return spent
     },
 

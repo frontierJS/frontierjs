@@ -409,7 +409,7 @@ type DeploymentRollback {
   isRestoringVolume Boolean?
   // Put back a release whose secret a rotation revoked, with today's value in
   // its place; absent, that rollback is refused by name (FJS-D2182).
-  withTodaysSecrets Boolean?
+  hasTodaysSecrets Boolean?
 }
 
 /// What `apps.restoreReplica` accepts: the machine whose volume takes the

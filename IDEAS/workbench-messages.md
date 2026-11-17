@@ -181,29 +181,29 @@ A Mattermost-backed step is a connector verb, a mirror model where rows are
 kept, a sync frame and the ported screen. A local step is a model in `chat.db`
 and the ported screen.
 
-- [ ] 3.1 Drafts
-- [ ] 3.2 Saved posts and the saved route
-- [ ] 3.3 Status, custom status, presence
-- [ ] 3.4 Typing
-- [ ] 3.5 Search and the search route
-- [ ] 3.6 Activity (mentions and replies)
-- [ ] 3.7 Edit history
-- [ ] 3.8 Link previews
-- [ ] 3.9 Sidebar sections
-- [ ] 3.10 Scheduled posts and the scheduled route
-- [ ] 3.11 Reminders
-- [ ] 3.12 Groups
-- [ ] 3.13 Quiet hours and nudge
-- [ ] 3.14 Slash commands (`lib/chat-commands.js`)
+- [x] 3.1 Drafts
+- [x] 3.2 Saved posts and the saved route
+- [x] 3.3 Status, custom status, presence
+- [x] 3.4 Typing — shown, not sent: the held socket has no outbound write (`FJS-4398`).
+- [x] 3.5 Search and the search route
+- [x] 3.6 Activity (mentions and replies)
+- [x] 3.7 Edit history
+- [x] 3.8 Link previews
+- [x] 3.9 Sidebar sections
+- [x] 3.10 Scheduled posts and the scheduled route — local, sent only while Workbench runs.
+- [x] 3.11 Reminders
+- [x] 3.12 Groups — local; a handle is expanded to names at send.
+- [x] 3.13 Quiet hours and nudge — the schedule is kept (`QuietSchedule`) and read by nothing until 4.1; nudge is dropped, the server has no such thing.
+- [x] 3.14 Slash commands (`lib/chat-commands.js`)
 
 ### Phase 4 — Workbench wiring
 
 Goal: a mention or a DM reaches the owner when the tab is closed.
 Done when: a sink post naming the member raises a bell row and an ntfy push.
 
-- [ ] 4.1 `ChatMention` and `ChatDm` notifications through the bell and push.
-- [ ] 4.2 Unread total on the nav entry and the tray.
-- [ ] 4.3 The desktop shell builds and opens `/messages/`.
+- [x] 4.1 `ChatMention` and `ChatDm` notifications through the bell and push. Only the owner gets the phone push; a quiet schedule holds the push and keeps the bell row.
+- [x] 4.2 Unread total on the nav entry and the tray. The nav entry carries it; the tray is a fixed menu with no counts, so none is drawn there.
+- [x] 4.3 The desktop shell builds and opens `/messages/`. The tray entry compiles (`cargo check`); the window was not opened.
 
 ### Phase 5 — What belongs in the UI package
 

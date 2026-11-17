@@ -13,7 +13,7 @@ const PER_PAGE    = 3
 // \b is ASCII-only, so a word beside an accented letter would count as whole.
 const WORD = '[\\p{L}\\p{N}]'
 
-const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 /**
  * The words of a query as patterns, empty for blank input. Each is a whole
@@ -24,7 +24,7 @@ export function patternsOf(query) {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   const typing = /\S$/.test(query) ? words.at(-1) : null
   return [...new Set(words)]
-    .map((w) => new RegExp(`(?<!${WORD})${escape(w)}${w === typing ? '' : `(?!${WORD})`}`, 'iu'))
+    .map((w) => new RegExp(`(?<!${WORD})${escapeRegExp(w)}${w === typing ? '' : `(?!${WORD})`}`, 'iu'))
 }
 
 /** A short run of `text` around the first matched word, cut at word edges. */

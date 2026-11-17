@@ -35,7 +35,7 @@ export function secretRefsOf(snapshot: Partial<ReleaseVariables>): Record<string
 /** A release that would start with a credential a rotation revoked. */
 export class RevokedSecret extends Error {
   constructor(readonly refs: string[]) {
-    super(`${refs.join(', ')} ${refs.length === 1 ? 'was' : 'were'} rotated out since this release shipped, and putting back a revoked credential is refused — roll back with today's value instead (withTodaysSecrets: true)`)
+    super(`${refs.join(', ')} ${refs.length === 1 ? 'was' : 'were'} rotated out since this release shipped, and putting back a revoked credential is refused — roll back with today's value instead (hasTodaysSecrets: true)`)
     this.name = 'RevokedSecret'
   }
 }

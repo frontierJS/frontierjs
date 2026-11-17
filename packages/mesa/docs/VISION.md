@@ -1485,6 +1485,11 @@ Options, written last — after the optional `(key)`:
 
 An unrecognized option is refused by name at compile time.
 
+The source is what `{#each}` takes. An array, or an array-like with no iterator
+(`length` and numeric indexes, a `Proxy` over a piece table), is read only at the
+window's indexes and never copied, so a million-row source costs a window per
+change. Any other iterable is copied on every change.
+
 > **RULE 34** — `{#virtual each}` takes `height=N`, a fixed item height in pixels, and
 > `viewport="Npx"`. A height not declared is measured from the first rendered row;
 > variable height is not supported.

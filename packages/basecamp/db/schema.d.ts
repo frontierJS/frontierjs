@@ -383,7 +383,7 @@ export interface AppVolumeRestore {
  */
 export interface DeploymentRollback {
   isRestoringVolume?: boolean | null
-  withTodaysSecrets?: boolean | null
+  hasTodaysSecrets?: boolean | null
 }
 
 /**

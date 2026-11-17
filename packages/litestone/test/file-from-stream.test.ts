@@ -8,12 +8,13 @@
 
 import { describe, test, expect, afterAll } from 'bun:test'
 import { createHash } from 'crypto'
-import { readdirSync, readFileSync, rmSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, rmSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { Readable } from 'stream'
 import { createClient, autoMigrate } from '../src/index.js'
 import { FileStorage, fromStream, fromPath } from '../src/storage/file-storage.js'
 import { S3Provider } from '../src/storage/providers/s3.js'
+import { useStorage } from '../src/storage/index.js'
 import { tempDir } from '../src/tmp-dirs.js'
 
 const root = tempDir('file-from-stream')
@@ -406,5 +407,69 @@ model Doc {
     const body = create.slice(0, create.indexOf('\n}'))
     expect(body).toMatch(/\n\s+sha256\?: string/)
     expect(body).toMatch(/\n\s+other: string/)
+  })
+})
+
+// ─── A ranged read ───────────────────────────────────────────────────────────
+// A video's seek asks for bytes a..b. A store that ignores the range answers
+// the whole object with a 200, which a caller would pass on as the slice.
+
+describe('stream(ref, { start, end }) returns exactly those bytes on every provider', () => {
+  const bytes = new Uint8Array(5000).map((_, i) => (i * 13) % 251)
+  const read = async (s: ReadableStream<Uint8Array>) => new Uint8Array(await new Response(s).arrayBuffer())
+  const ref = { key: 'k.bin' } as any
+
+  // A fake S3 holding `bytes`; `honors: false` is a store that ignores Range.
+  const rangedS3 = (honors = true) => {
+    const real = globalThis.fetch
+    const seen: (string | null)[] = []
+    globalThis.fetch = (async (_url: string, init: any) => {
+      const range = new Headers(init.headers).get('range')
+      seen.push(range)
+      const m = honors && range ? /^bytes=(\d+)-(\d*)$/.exec(range) : null
+      if (!m) return new Response(bytes)
+      const end = m[2] === '' ? bytes.length - 1 : Math.min(Number(m[2]), bytes.length - 1)
+      return new Response(bytes.slice(Number(m[1]), end + 1), { status: 206 })
+    }) as any
+    return { seen, restore: () => { globalThis.fetch = real } }
+  }
+  const remote = { provider: 'r2', bucket: 'b', endpoint: 'https://s3.example.com', accessKeyId: 'k', secretAccessKey: 's' } as any
+  const local = () => {
+    const dir = join(root, `ranged${n++}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, 'k.bin'), bytes)
+    return { provider: 'local', localPath: dir } as any
+  }
+  const cases: [string, { start?: number, end?: number }, Uint8Array][] = [
+    ['a middle slice', { start: 100, end: 199 }, bytes.slice(100, 200)],
+    ['one byte', { start: 7, end: 7 }, bytes.slice(7, 8)],
+    ['an open end', { start: 4990 }, bytes.slice(4990)],
+    ['an end past the object', { start: 4990, end: 99_999 }, bytes.slice(4990)],
+    ['no range', {}, bytes],
+  ]
+
+  for (const [name, range, want] of cases) {
+    test(`${name}: local and S3 agree`, async () => {
+      expect(sha(await read(await useStorage(local()).stream(ref, range)))).toBe(sha(want))
+      const s3 = rangedS3()
+      try {
+        expect(sha(await read(await useStorage(remote).stream(ref, range)))).toBe(sha(want))
+        expect(s3.seen).toEqual([range.start == null ? null : `bytes=${range.start}-${range.end ?? ''}`])
+      } finally { s3.restore() }
+    })
+  }
+
+  test('a store that answers 200 to a ranged read is refused, not passed on', async () => {
+    const s3 = rangedS3(false)
+    try {
+      await expect(useStorage(remote).stream(ref, { start: 100, end: 199 })).rejects.toThrow(/ignored its byte range.*bytes=100-199.*200/)
+    } finally { s3.restore() }
+  })
+
+  test('a range that is not whole offsets in order is refused by name', async () => {
+    const storage = useStorage(local())
+    await expect(storage.stream(ref, { start: -1 })).rejects.toThrow(/start must be/)
+    await expect(storage.stream(ref, { end: 1.5 })).rejects.toThrow(/end must be/)
+    await expect(storage.stream(ref, { start: 10, end: 9 })).rejects.toThrow(/end 9 is before start 10/)
   })
 })

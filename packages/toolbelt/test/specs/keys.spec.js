@@ -232,6 +232,15 @@ test('keys: browserOwned — browserChords reports only the rows the OS takes', 
   assert.deepEqual(chords({ '<A-Tab>': 'x', '<A-F4>': 'y', '<Mod-h>': 'z' }, { browserChords: true }), ['<Mod-h> <D-h>', '<A-Tab> <A-Tab>', '<A-F4> <A-F4>'], 'window switching, the window manager\'s close, and macOS Hide')
 })
 
+test('keys: browserOwned — a row meant for one platform is a keymap built from two tables, one half from each (FJS-D2226)', function () {
+  const byPlatform = (mac, other) => ({ mac: keymap(mac).mac, other: keymap(other).other })
+  const cursor = { '<C-Up>': 'add-cursor-up', '<C-Down>': 'add-cursor-down' }
+  assert.deepEqual(browserOwned(keymap(cursor)).map((r) => r.chord), ['<C-Up>', '<C-Down>'], 'Mission Control takes them on a Mac, so one table is refused everywhere')
+  assert.deepEqual(browserOwned(byPlatform({}, cursor)), [], 'an empty Mac half lays them off a Mac only')
+  assert.deepEqual(browserOwned(byPlatform({ '<D-S-z>': 'redo' }, { '<C-y>': 'redo' })), [], 'a Cmd row in the Mac half alone is not the Windows key')
+  assert.deepEqual(browserOwned(byPlatform(cursor, {})).map((r) => r.reason.includes('on a Mac')), [true, true], 'the half that holds the row is still read')
+})
+
 test('keys: pending_sequences — a prefix is pending, the sequence fires, and a miss starts over', function () {
   const c = ctx([keymap({ gg: 'top', dd: 'delete', ']u': 'unread', j: 'down' })])
   assert.deepEqual(run(c, 'gg').outcomes, [{ pending: 'g' }, { action: 'top' }])

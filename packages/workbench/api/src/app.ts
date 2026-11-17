@@ -18,6 +18,7 @@ import { resolvePush }                        from './push.ts'
 import { notificationChannelName, CHAT_CHANNELS } from './core/channels.ts'
 import { chatProvider }                   from './providers/chat/index.ts'
 import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH } from './domain/chat/files.ts'
+import { connectedRoute, CONNECTED_PATH } from './domain/capture/connect.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
 import { conduitSend, type SendFor }          from './domain/servers/servers.ts'
@@ -132,6 +133,8 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL })
   app.configure(a => {
     a.get(FILE_PATH, fileRoute(app))
+    // The share app's browser lands here with no Workbench cookie; the pending state is its proof.
+    a.get(CONNECTED_PATH, connectedRoute())
     a.post(FILES_PATH, uploadRoute(app), { body: 'stream' } as any)
   })
 

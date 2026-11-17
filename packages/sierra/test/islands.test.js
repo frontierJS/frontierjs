@@ -462,6 +462,43 @@ describe('island loader', () => {
     expect(loader.mountIsland(island, stub('c'))).toBe(null)
   })
 
+  // FJS-4313: an island is replaced, not hydrated, so a provider above it on the
+  // server is absent here and its `$context` read comes back undefined.
+  test('an island reading $context with no provider on the client warns, naming both', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    win.document.body.innerHTML = marker({ component: 'Cart', directive: 'load' }, '<b>c</b>')
+    const [island] = loader.findIslands(win.document.body)
+    let got = 'unread'
+    const reads = (anchor) => {
+      mesa.push_component()
+      got = mesa.contextRead('cart')
+      mesa.pop_component()
+    }
+    loader.mountIsland(island, reads)
+    expect(got).toBe(null)
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/Cart.*\$context\.cart/s)
+    warn.mockRestore()
+  })
+
+  test('a $context read an ancestor inside the island answers does not warn', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    win.document.body.innerHTML = marker({ component: 'Shop', directive: 'load' }, '<b>s</b>')
+    const [island] = loader.findIslands(win.document.body)
+    let got = null
+    const provides = (anchor) => {
+      mesa.push_component()
+      mesa.contextProvide('cart', () => 3)
+      mesa.push_component()
+      got = mesa.contextRead('cart')
+      mesa.pop_component()
+      mesa.pop_component()
+    }
+    loader.mountIsland(island, provides)
+    expect(got?.()).toBe(3)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+  })
+
   test('client:static under a live ancestor warns — it cannot be honored', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     win.document.body.innerHTML = marker({ component: 'Outer', directive: 'load' },

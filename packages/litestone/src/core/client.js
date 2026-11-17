@@ -4173,8 +4173,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
   // folded into the WHERE, so a refusal reaches the caller as a miss: null, [],
   // { count: 0 }. It is told from a real miss by asking the same where once
   // more without the policy, on that empty answer only. A thrown refusal (a
-  // create policy, a sealed document, a move's gate) is one already. A system
-  // caller is refused by nothing it can be blamed for, and files none.
+  // create policy, a sealed document, a move's gate) is one already. The one
+  // rule a system caller is held to on a stored row is `@@require`, and a
+  // write it refuses throws as well as filing, or a job is told nothing
+  // (FJS-D2218).
   const REFUSED = [AccessDeniedError, SealedDocumentError, TransitionGateError, TransitionSystemError]
   const DENIABLE = {
     findUnique: r => r == null, findFirst: r => r == null, findMany: r => r.length === 0,
@@ -4194,22 +4196,43 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
   function refusalsFiled(table) {
     for (const [verb, empty] of Object.entries(DENIABLE)) {
       const attempted = VERBS[verb] ?? 'create'
-      if (!hearsDenied(attempted)) continue
+      const hears = hearsDenied(attempted)
+      const requires = requireRules(attempted)
+      if (!hears && !requires) continue
       const fn = table[verb]
       if (typeof fn !== 'function') continue
       table[verb] = async function (args = {}) {
-        const heard = !ctx.isSystem && !args?.[UNTRAILED]
+        const system = ctx.isSystem && requires
+        const heard = hears && !args?.[UNTRAILED] && (!ctx.isSystem || system)
         let result
         try { result = await fn.call(this, args) }
         catch (e) {
-          if (heard && REFUSED.some(E => e instanceof E)) emitDenied(attempted, args?.where)
+          if (heard && !ctx.isSystem && REFUSED.some(E => e instanceof E)) emitDenied(attempted, args?.where)
           throw e
         }
-        if (heard && empty(result) && policyEmptied(verb, args?.where, args)) emitDenied(attempted, args?.where)
+        if ((heard || system) && empty(result) && policyEmptied(verb, args?.where, args)) {
+          if (heard) emitDenied(attempted, args?.where)
+          if (system) throw requireRefusal(attempted, requires)
+        }
         return result
       }
     }
     return table
+  }
+
+  // The `@@require` rules on a write `op`, or null: the rules `asSystem()` keeps.
+  function requireRules(op) {
+    if (op !== 'update' && op !== 'delete') return null
+    const rules = (shape.policy?.[op]?.denies ?? []).filter(d => d.generated === 'require')
+    return rules.length ? rules : null
+  }
+
+  // The stored row is not read, so which of several rules refused is unknown;
+  // a rule's own message is used only when it is the one rule there is.
+  function requireRefusal(op, rules) {
+    return new AccessDeniedError(
+      (rules.length === 1 && rules[0].message) || `${op} on ${modelName} refused by @@require(${op}): the stored row fails it`,
+      { model: modelName, operation: op })
   }
 
   return installHooks(refusalsFiled(settlingWrites({

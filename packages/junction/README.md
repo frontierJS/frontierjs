@@ -1098,11 +1098,17 @@ export const GET = async (ctx) => {
 
 // api/src/routes/files/[id].ts      →  GET /files/{id}, read as ctx.route.id
 // api/src/routes/index.ts           →  GET /
+
+// api/src/routes/content.ts         →  PUT /content, its body unread
+export const options = { PUT: { body: 'stream' } }
+export const PUT = async (ctx) => { /* pipe ctx.body somewhere */ }
 ```
 
-`apiPrefix` applies as it does to `app.get`. A file or folder beginning `_` is
-private to the files beside it. Boot refuses, naming the files, a file that
-exports no verb, one that threw, and two that answer one URL (`routes/a.ts` and
+`options` is keyed by verb, and each value is that verb's third argument to
+`app.put`, `app.get` and the rest (`FJS-D2219`). `apiPrefix` applies as it does
+to `app.get`. A file or folder beginning `_` is private to the files beside it.
+Boot refuses, naming the files, a file that exports no verb, one whose `options`
+names a verb it does not export, one that threw, and two that answer one URL (`routes/a.ts` and
 `routes/a/index.ts`, or `[id]` and `[slug]` at one position). A route that must
 sit outside the prefix still goes through `app.http.router`. An app with no
 `root` loads neither.
@@ -1122,6 +1128,54 @@ app.configure(authPlugin({ auth }))  // mounts /auth/* routes
 Junction defines the `IAuth` interface and ships no vendor adapter. An app that wants another library implements `IAuth` over it and mounts the library's handler on a raw route.
 
 The transport reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()` and stamps `ctx.user`; the `authenticate` hook only refuses a call that has no `ctx.user`.
+
+### Credentials that are not a bearer token
+
+`createApp({ credentials: [...] })` is an ordered list of verifiers the
+transport asks before the bearer path (`FJS-D475`). Each is shown the request
+and answers a session, `null` (*not mine*, ask the next) or `REFUSE` (*mine and
+wrong*). A refusal is a 401 at once, never anonymous, and its `WWW-Authenticate`
+names the scheme the caller tried: a refused `Authorization: Basic` is answered
+`Basic realm="<host>"`, which is what makes git ask for another token
+(`FJS-D2223`). `signedRequest({ keyFor })` is the shipped verifier for a
+request signed with `@frontierjs/toolbelt/signature`.
+
+```ts
+import { createApp, REFUSE, type CredentialVerifier } from '@frontierjs/junction'
+
+const tokens = new Map([['pat-alice', { id: 'alice' }]])
+
+// git sends a personal access token as HTTP Basic
+const basicToken: CredentialVerifier = (req) => {
+  const m = /^basic (.+)$/i.exec(req.headers.authorization ?? '')
+  if (!m) return null
+  return tokens.get(atob(m[1]).split(':')[1] ?? '') ?? REFUSE
+}
+const app = createApp({ credentials: [basicToken] })
+app.get('/whoami', (ctx) => ctx.json({ id: ctx.user?.id ?? null }))
+await app._startForTest()
+
+const res = await app.http.fetch(new Request('http://git.test/whoami', {
+  headers: { authorization: `Basic ${btoa('alice:wrong')}` },
+}))
+if (res.headers.get('www-authenticate') !== 'Basic realm="git.test"') throw new Error('not a Basic challenge')
+await app.stop()
+```
+
+A raw route holds `ctx.user` and no client. The schema still decides who may
+read and write (Invariant 6): read through the caller's own scoped client, and
+ask a write the route makes outside a table method with `$checkWrite`, which
+grades `@@allow` and the gate without writing.
+
+```ts
+app.post('/{owner}/{repo}.git/git-receive-pack', async (ctx) => {
+  const db   = ctx.app.db.$setAuth(ctx.user ?? null)
+  const repo = await db.repository.findFirst({ where: { slug: ctx.route.repo } })
+  if (!repo) return ctx.json({ message: 'Not Found' }, 404)
+  if (!(await db.$checkWrite('repository', 'update', repo)).ok) return ctx.json({ message: 'Forbidden' }, 403)
+  // ...the push
+})
+```
 
 ### Sessions from a cookie
 

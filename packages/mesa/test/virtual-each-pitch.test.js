@@ -82,3 +82,48 @@ describe('{#virtual each} scroll', () => {
     }
   })
 })
+
+// FJS-4188 -- a source too big to copy (an editor's lines over a piece table)
+// is handed over as an array-like; the window is the only part ever read.
+describe('{#virtual each} lazy source', () => {
+  function countingSource(target, n, reads) {
+    return new Proxy(target, {
+      get(t, k) {
+        if (k === 'length') return n
+        if (typeof k === 'string' && /^\d+$/.test(k)) { reads.n++; return { id: Number(k) } }
+        return Reflect.get(t, k)
+      },
+    })
+  }
+
+  function mountSource(get) {
+    const scroller = document.createElement('div')
+    scroller.style.overflowY = 'auto'
+    Object.defineProperty(scroller, 'clientHeight', { value: 500 })
+    document.body.appendChild(scroller)
+    $$virtualEach(scroller, get, null, () => {
+      const el = document.createElement('div')
+      el.dataset.h = '20'
+      return el
+    }, { height: 20 })
+    flushSync()
+    return scroller
+  }
+
+  for (const [name, target] of [['a Proxy over an array', () => []], ['an array-like with no iterator', () => ({})]]) {
+    it(`reads only the window of ${name}, on first render and on change`, () => {
+      const reads = { n: 0 }
+      const [get, set] = createSignal(countingSource(target(), 1_000_000, reads))
+      const scroller = mountSource(get)
+      expect(reads.n).toBeGreaterThan(0)
+      expect(reads.n).toBeLessThan(200)
+      const bot = scroller.lastElementChild
+      expect(parseFloat(bot.style.height)).toBeGreaterThan(19_000_000)
+      reads.n = 0
+      set(countingSource(target(), 1_000_001, reads))
+      flushSync()
+      expect(reads.n).toBeGreaterThan(0)
+      expect(reads.n).toBeLessThan(200)
+    })
+  }
+})

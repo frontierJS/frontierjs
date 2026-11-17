@@ -20,6 +20,7 @@ import {
 } from '@frontierjs/conduit-mattermost'
 import { notificationChannelName } from '../../core/channels.ts'
 import { asCaller, sysOf } from './index.ts'
+import { raiseChatNotice } from '../../domain/chat/notice.ts'
 
 const ACCESSOR = {
   Team: 'team', Profile: 'profile', Channel: 'channel', ChannelMember: 'channelMember',
@@ -503,7 +504,8 @@ export async function applyFrame(app: App, memberId: string, profile: string, ev
       await countReply(app, ev.payload.post)
       await countFor(app, profile, ev.payload.post, ev.payload.mentions)
       await land(app, 'Post', [ev.payload.post])
-      return land(app, 'FileInfo', ev.payload.files ?? [])
+      await land(app, 'FileInfo', ev.payload.files ?? [])
+      return raiseChatNotice(app, sysOf(app), memberId, profile, ev.payload.post)
     case 'post_edited': case 'post_deleted':
       await land(app, 'Post', [ev.payload.post])
       return land(app, 'FileInfo', ev.payload.files ?? [])

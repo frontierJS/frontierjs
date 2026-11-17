@@ -1,3 +1,9 @@
+---
+id: site-search
+status: partial
+dated: 2026-11-15
+---
+
 # Idea — search and a table of contents for a site-kit site
 
 A visitor to a site-kit site can neither search it nor see a long page's

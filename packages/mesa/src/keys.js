@@ -45,6 +45,9 @@
  * that declares `globalThis.__frontierShell = { browserChords: true }`
  * delivers the browser's chords (its webview has no tabs to close), so only
  * the OS's (`<D-Tab>`, `<D-Space>`, the Windows key) are refused there.
+ * Both platforms' halves are read on every machine, so a chord one OS takes
+ * is bound only elsewhere by a keymap whose halves come from two tables
+ * (`browserOwned`'s doc).
  *
  * A getter may also answer `mode`, the mode the element keeps (a vim box's
  * 'normal' or 'insert'). A terminal shell shows it and follows it while the

@@ -9,6 +9,9 @@
 // several, and a Pages list over 10 a page is a 400. `CF_LOG`, when set, gets
 // one JSON line per spawn — the argv, the token and the account that reached it.
 //
+// A tunnel verb takes its account from the env like Pages; the fixture's
+// optional `tunnels` table is per account, and a create answers `tun-created`.
+//
 // While the file `CF_SIGNED_OUT` names exists no profile is signed in, and
 // `auth login` prints the device text, then waits for the file to go — the
 // drive deleting it is the person approving the code.
@@ -115,6 +118,14 @@ if (verb.startsWith('dns records')) {
   }
   if (verb === 'dns records delete' && process.env.CF_STATE && !rows.some(r => r.id === words[3])) answer({ id: words[3] })
   if (verb === 'dns records delete') keep(rows.filter(r => r.id !== target().id), { id: words[3] })
+}
+
+if (verb.startsWith('tunnels')) {
+  const acct = account()
+  const rows = fixture.tunnels?.[acct] ?? []
+  if (verb === 'tunnels list') page(rows, 'tunnels')
+  if (verb === 'tunnels create') answer({ id: 'tun-created', name: flags.name, config_src: flags['config-src'], status: 'inactive', token: 'token-created' })
+  if (verb === 'tunnels token get') answer(`token-${words[3]}`)
 }
 
 if (verb === 'cache purge') {

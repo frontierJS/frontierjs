@@ -1,0 +1,10 @@
+<script module>
+  // src/resources/Capture.mesa — the Resource layer for Capture's settings file
+  // (api services/capture).
+  //
+  // No model, like Laptop: the file is the Capture tool's, read and written by
+  // the API that runs on this machine.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const capture = createResource('capture', { model: null })
+</script>

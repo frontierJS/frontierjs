@@ -9,6 +9,8 @@ examples:
   - fli dev --debug
   - fli dev --verbose
   - fli dev --host
+  - fli dev --tunnel
+  - fli dev --tunnel=demo.example.com
   - fli dev --api production
   - fli dev --api stage
   - fli dev --api my-box:3001
@@ -21,6 +23,10 @@ flags:
     type: boolean
     description: Serve the web surface on every interface, so a phone on the LAN can open it
     defaultValue: false
+  tunnel:
+    type: string
+    description: "Put the app on a public https URL to share, with the API trusting that one proxy hop: bare --tunnel is <package>.$FLI_TUNNEL_DOMAIN through a Cloudflare named tunnel, else a random trycloudflare.com URL; --tunnel=<host> names the host"
+    defaultValue: ''
   basecamp:
     type: string
     description: The Basecamp holding the App BASECAMP_APP_ID names, by its name in basecamps.json (default the only one; none resolvable means no port lookup)
@@ -124,6 +130,41 @@ interface and prints a Network URL. Only the web port has to be reachable — vi
 proxies `/api` and `/ws` to the API on localhost. An app config that replaces
 `server` rather than spreading `base.server` drops the setting, and vite's banner
 then shows no Network line.
+
+**`--tunnel` puts the app on a public URL to share** (`core/public-tunnel.js`),
+through one of two cloudflared tunnels, picked once before anything starts:
+
+- `--tunnel=<host>` is a Cloudflare NAMED tunnel at that hostname, and a bare
+  `--tunnel` with `FLI_TUNNEL_DOMAIN` set (the shell, the project's `.env` or
+  `~/.config/fli/.env`) is `<package name>.<domain>`. The same URL every run, on
+  a zone the `cf` login reaches: fli finds or makes the tunnel `fli-<host, dots
+  as dashes>` and its proxied CNAME, and runs cloudflared with the tunnel's
+  token (`TUNNEL_TOKEN`, never argv). A record already on the name that is not
+  this tunnel's CNAME is refused by name; fli never replaces one.
+- A bare `--tunnel` with no domain is a quick tunnel: no account, a fresh
+  `*.trycloudflare.com` name each run.
+
+**A host or a domain never falls back to a quick tunnel.** A run that cannot
+make the named tunnel (no zone for the host, no `cf` login, a held name) stops
+with the cause, because the person would otherwise share a random URL while
+believing it was `example.awe.dev`.
+
+It tunnels the web port alone, for the same reason `--host` only binds it,
+and the API's when there is no web surface. Three settings ride with it, so
+none can be left behind:
+
+- `FRONTIER_TRUST_PROXY=1` on the API. Cloudflare appends the visitor's
+  address to `X-Forwarded-For` in both shapes; without the setting every
+  visitor is 127.0.0.1, and one stranger's failed logins lock out everyone
+  (`FJS-1841`).
+- `FRONTIER_APP_URL` is the tunnel's URL, since that is where a person reaches
+  the app: a reset link names it, and Sierra's vite config allows its host,
+  which vite otherwise answers 403.
+- The summary's title carries the URL.
+
+Anyone with the URL reaches the dev database. `--api` refuses it: the API
+whose trust it sets is not this run's. `--dry` names the shape and makes no
+`cf` call.
 
 **`--api <target>` runs every surface but the API, against a deployed one**
 (`core/api-tunnel.js`). A deployed API listens on its box's loopback only, so
@@ -352,6 +393,68 @@ async function openTunnelFor({ echo, log, chalk, tty }, remote, verbose) {
   return tunnel
 }
 
+// The web surface serves the whole app, since vite proxies /api and /ws.
+function sharedRow(session) {
+  return session.rows.find(r => r.surface === 'web') ?? session.rows.find(r => r.surface === 'api')
+}
+
+// A host or domain that cannot be used is an error here, before any server starts.
+async function chooseTunnel({ log, flag }, manifest) {
+  const { tunnelHost } = await core('public-tunnel')
+  try {
+    return tunnelHost({ flag: flag.tunnel, domain: process.env.FLI_TUNNEL_DOMAIN, packageName: manifest.name })
+  } catch (err) {
+    log.error(err.message)
+    process.exit(1)
+  }
+}
+
+async function sayTunnelDry({ log }, share, row) {
+  const { quickTunnelArgs, namedTunnelArgs, tunnelName } = await core('public-tunnel')
+  if (share.mode === 'quick') { log.dry(`Would run:   cloudflared ${quickTunnelArgs(row.port).join(' ')}`); return }
+  log.dry(`Would find or make the Cloudflare tunnel ${tunnelName(share.host)} and a proxied CNAME for ${share.host}`)
+  log.dry(`Would run:   cloudflared ${namedTunnelArgs(row.port).join(' ')}   (token in TUNNEL_TOKEN)`)
+  log.dry(`Would serve: https://${share.host} → ${row.surface} ${row.port}`)
+}
+
+function requireCloudflared({ echo, log, chalk }, hasCloudflared) {
+  if (hasCloudflared()) return
+  log.error('--tunnel needs cloudflared on the PATH')
+  echo.lines([chalk.dim('https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/')], { indent: 2 })
+  process.exit(1)
+}
+
+// Any refusal here ends the run: the named tunnel has no quick-tunnel fallback.
+async function startTunnel({ log }, share, row) {
+  const pub = await core('public-tunnel')
+  try {
+    if (share.mode === 'quick') return { ...await pub.openQuickTunnel(row.port), shape: 'quick tunnel' }
+    const prepared = await pub.prepareNamedTunnel(share.host)
+    const made = prepared.created.tunnel || prepared.created.record
+    return { ...await pub.openNamedTunnel(row.port, prepared), shape: `named tunnel ${pub.tunnelName(share.host)}${made ? ' (created)' : ''}` }
+  } catch (err) {
+    log.error(`the tunnel did not open: ${err.message}`)
+    process.exit(1)
+  }
+}
+
+async function openPublicTunnel($, session, share) {
+  const { echo, log, chalk, tty, flag } = $
+  const { hasCloudflared } = await core('public-tunnel')
+  const row = sharedRow(session)
+  if (!row) { log.error('--tunnel shares the web or API surface, and this app\'s dev starts neither'); process.exit(1) }
+  if (flag.dry) { await sayTunnelDry($, share, row); return null }
+  requireCloudflared($, hasCloudflared)
+  const tunnel = await startTunnel($, share, row)
+  echo(chalk`{dim ·} tunnel {bold ${tunnel.url}} {dim → ${row.surface} ${row.port} · ${tunnel.shape} · API trusts 1 proxy hop · anyone with the URL reaches the dev database}`)
+  let quitting = false
+  tty.onExit(() => { quitting = true; tunnel.child.kill() })
+  tunnel.child.on('close', () => {
+    if (!quitting) log.error(`the tunnel closed — ${tunnel.url} answers nothing until fli dev restarts`)
+  })
+  return tunnel
+}
+
 // The keys wait for the summary, so the first thing on screen is whether the app came up.
 function keyHints({ chalk }, run) {
   return run.summarized && [
@@ -393,6 +496,8 @@ const { encryptionKeyState, KEY } = await core('env-preflight')
 const manifest = readManifest(root)
 const session = await claimSlot($, root, manifest)
 const remote = flag.api ? await resolveRemote($, root, session) : null
+if (flag.tunnel && remote) { log.error('--tunnel shares this run\'s API, and --api replaces it'); process.exit(1) }
+const share = flag.tunnel ? await chooseTunnel($, manifest) : null
 
 const verbose = flag.verbose === true
 const at = [session.branch && `branch ${session.branch}`, session.slot && `slot ${session.slot}`].filter(Boolean).join(' · ')
@@ -417,6 +522,9 @@ if (flag.check) {
   if (!remote && !declined) await warnIfEmpty($, verbose)
 }
 
+// After the port check, so a ghost on the web port is never the one shared.
+const tunnel = share ? await openPublicTunnel($, session, share) : null
+
 const runner = detectRunner(root)
 // `env:` and never an assignment to process.env, which a child under bun does not see.
 const env = {
@@ -424,6 +532,7 @@ const env = {
   ...session.vars,
   ...(flag.debug && { DEBUG: '1' }),
   ...(flag.host && { FRONTIER_HOST: '1' }),
+  ...(tunnel && { FRONTIER_TRUST_PROXY: '1', FRONTIER_APP_URL: tunnel.url }),
   ...(generatedKey && { [KEY]: generatedKey }),
 }
 
@@ -454,7 +563,11 @@ if (remote) {
 if (verbose) echo(chalk.dim(composed.map(r => `${runner} run ${r.script}`).join('  ·  ')))
 if (flag.dry) return
 
-const title = [(manifest.name ?? '').replace(/^@[^/]+\//, ''), at, remote && chalk.yellow(`API → ${remote.label}`)].filter(Boolean).join(chalk.dim(' · '))
+const title = [
+  (manifest.name ?? '').replace(/^@[^/]+\//, ''), at,
+  remote && chalk.yellow(`API → ${remote.label}`),
+  tunnel && chalk.cyan(`shared at ${tunnel.url}`),
+].filter(Boolean).join(chalk.dim(' · '))
 let footer = null
 const run = runSurfaces({
   root, runner, rows: composed, env, echo, onExit: tty.onExit, compact: !verbose, title,

@@ -11,7 +11,7 @@
 // handlers to translate them — which only covered these routes, and left an
 // auth error raised from a SERVICE surfacing as a 500.
 
-import type { IAuth, SessionContext, ServiceContext, App, Plugin, TransportContext } from '@frontierjs/junction'
+import type { IAuth, SignInOrigin, SessionContext, ServiceContext, App, Plugin, TransportContext } from '@frontierjs/junction'
 import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, refuseDelegated } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { AuthPluginOptions }                                  from './types.ts'
@@ -291,7 +291,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         }
 
         await auth.createUser({ email, password, name })
-        const result = await auth.login(email, password)
+        const result = await auth.login(email, password, signInOrigin(ctx))
 
         // An account created a line ago has no second factor, so this branch is
         // unreachable — asserted rather than assumed, because the alternative is
@@ -323,7 +323,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         accountLimiter(ctx)
         if (!password) throw new BadRequest('password is required')
 
-        const result = await auth.login(email, password)
+        const result = await auth.login(email, password, signInOrigin(ctx))
         await endArrivingSession(auth, ctx, sessionCookie(), result)
         return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
       })
@@ -353,7 +353,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
         let result
         try {
-          result = await auth.completeLogin(ticket, code)
+          result = await auth.completeLogin(ticket, code, signInOrigin(ctx))
         } catch (err) {
           // A refusal that cannot be retried has spent the ticket, and leaving
           // the cookie in place means the next failed password login answers
@@ -447,8 +447,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
           const { token, email, code } = body(ctx)
           if (email && code) accountLimiter(ctx)
           let result
-          if (token)              result = await verifyMagicLink.call(auth, { token })
-          else if (email && code) result = await verifyMagicLink.call(auth, { email, code })
+          if (token)              result = await verifyMagicLink.call(auth, { token }, signInOrigin(ctx))
+          else if (email && code) result = await verifyMagicLink.call(auth, { email, code }, signInOrigin(ctx))
           else throw new BadRequest('token, or email and code, is required')
 
           return respond(ctx, result, cookieAuth, cookieMaxAge, grade)
@@ -582,7 +582,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
         // the account (`FJS-D1208`) and keeps the one that posted the click.
         const arrived  = extractToken(ctx, sessionCookie())
         const clicking = arrived ? (await auth.verifySession(arrived))?.sessionId : undefined
-        const verified = await auth.verifyEmail(token, clicking ? { keepSessionId: clicking } : undefined)
+        const verified = await auth.verifyEmail(token, { ...(clicking ? { keepSessionId: clicking } : {}), from: signInOrigin(ctx) })
         if (!('signedIn' in verified)) return ctx.json({ ok: true })
         await endArrivingSession(auth, ctx, sessionCookie(), verified.signedIn)
         return respond(ctx, verified.signedIn, cookieAuth, cookieMaxAge, grade)
@@ -708,7 +708,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
             if (!oauthAuth.confirmOAuthLink) return oauthFailure(ctx, oauth, 'unavailable')
             let issued
             try {
-              issued = await oauthAuth.confirmOAuthLink(link, provider, identity)
+              issued = await oauthAuth.confirmOAuthLink(link, provider, identity, signInOrigin(ctx))
             } catch {
               return oauthFailure(ctx, oauth, 'state')
             }
@@ -727,7 +727,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
           let resolved
           try {
-            resolved = await oauthAuth.oauthResolve(provider, identity)
+            resolved = await oauthAuth.oauthResolve(provider, identity, signInOrigin(ctx))
           } catch {
             return oauthFailure(ctx, oauth, 'exchange')
           }
@@ -883,6 +883,17 @@ function closeSockets(app: { channels?: { disconnectSession?: (id: string, reaso
 
 // The cookie as the transport names it, `__Host-session` when Secure
 // (`FJS-D1957`); `session` where no transport took cookie mode.
+// What the Session row records about where it came from. `ctx.ip` is the
+// proxied visitor only where the app trusts its proxy; behind an untrusted one
+// it is the proxy, which is still the truth about the socket.
+function signInOrigin(ctx: TransportContext): SignInOrigin {
+  const userAgent = ctx.headers?.['user-agent']
+  return {
+    ...(ctx.ip    ? { ipAddress: ctx.ip } : {}),
+    ...(userAgent ? { userAgent }         : {}),
+  }
+}
+
 function extractToken(ctx: TransportContext, cookie: string): string | null {
   const header = ctx.headers?.authorization ?? ''
   if (header.startsWith('Bearer ')) return header.slice(7).trim()

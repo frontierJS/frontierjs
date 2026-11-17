@@ -26,17 +26,17 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4614 source file(s) read
+27 package(s) · 4661 source file(s) read
 364 entry point(s), 34 imported by nothing outside their package, 14 emitted
-1799 value export(s), 656 reached by nothing outside, 189 emitted
-470 type export(s), 342 reached by nothing outside
+1799 value export(s), 656 reached by nothing outside, 185 emitted
+471 type export(s), 342 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 41 | 5 | 276 | 129 | 44 | 1 | 1 |
-| `junction` | 28 | 3 | 282 | 121 | 13 | 276 | 212 |
-| `mesa` | 34 | 4 | 326 | 110 | 79 | 0 | 0 |
+| `litestone` | 41 | 5 | 276 | 129 | 43 | 1 | 1 |
+| `junction` | 28 | 3 | 282 | 121 | 13 | 277 | 212 |
+| `mesa` | 34 | 4 | 326 | 110 | 76 | 0 | 0 |
 | `sierra` | 49 | 6 | 205 | 85 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 90 | 0 | 325 | 42 | 12 | 0 | 0 |
@@ -170,7 +170,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/junction`
 
-`packages/junction` · 28 entry point(s) · 282 value, 276 type export(s)
+`packages/junction` · 28 entry point(s) · 282 value, 277 type export(s)
 
 **Entries imported by nothing outside (3):** `./cache` `./otlp` `./webhooks`
 
@@ -192,7 +192,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (129):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
 
-**Emitted (44):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `FORMATS` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
+**Emitted (43):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -218,7 +218,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (110):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `replaceKeyword` `resetAttributeWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
-**Emitted (79):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `captureRemount` `captureScope` `componentApi` `contentFallback` `contextProvide` `contextRead` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `push_component` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
+**Emitted (76):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `boundaryBlock` `captureRemount` `captureScope` `componentApi` `contentFallback` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 

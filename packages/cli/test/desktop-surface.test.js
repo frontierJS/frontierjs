@@ -20,7 +20,7 @@ import { tmpdir } from 'os'
 
 import {
   scaffoldDesktopSurface, desktopScripts, desktopDevDeps, desktopNames, desktopAppName, desktopSurfaceDirs,
-  desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs,
+  desktopBinary, desktopApiTarget, desktopLauncher, desktopMainRs, captureShortcut,
   ensureServer, movedShellBuild, surfaceRow, desktopApiEnv, desktopIcon, desktopIconIco,
 } from '../core/desktop-surface.js'
 import { importSpecifiers, frontierSpecifiers, npmImports, bundledSource } from '../core/desktop-sidecar.js'
@@ -342,6 +342,19 @@ describe('what desktop:install writes', () => {
 
   test('no crate is no entry', () => {
     expect(launcher(join(ROOT, 'nowhere'))).toBeNull()
+  })
+
+  // The launcher entry is the install; the shortcut is a convenience that must not fail it.
+  test('capture install-shortcut runs only when capture is on PATH, and a refusal is reported, not thrown', () => {
+    const calls = []
+    const run = status => (...args) => (calls.push(args), { status, stdout: 'bound\n', stderr: '' })
+    expect(captureShortcut({ has: () => false, run: run(0) })).toEqual({ state: 'missing' })
+    expect(calls).toEqual([])
+    expect(captureShortcut({ has: c => c === 'capture', run: run(0) })).toEqual({ state: 'done', output: 'bound' })
+    expect(calls[0].slice(0, 2)).toEqual(['capture', ['install-shortcut']])
+    expect(captureShortcut({ has: () => true, run: run(1) }).state).toBe('failed')
+    expect(captureShortcut({ has: () => true, run: () => ({ status: null, error: new Error('ENOENT') }) }))
+      .toEqual({ state: 'failed', output: 'ENOENT' })
   })
 })
 

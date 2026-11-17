@@ -15,13 +15,19 @@ siteName: Workbench
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
   import { paletteItems, visible } from '@frontierjs/ui/nav'
   import Bell from '../components/Bell.mesa'
+  import NavBadge from '../components/chat/NavBadge.mesa'
+  import UnreadBadge from '../components/chat/UnreadBadge.mesa'
   import { session, signOut } from '../lib/session.js'
-  import { groups } from '../lib/nav.js'
+  import { chat } from '../lib/chat.js'
+  import { groups, badgeOf } from '../lib/nav.js'
   import { pageCommands } from '../lib/commands.js'
 
   $: (page.pathname, page.title)
   $: (session.user)
   $: commandPalette.open
+  // A standalone read: badgeOf() is called from the template, and a leading read
+  // inside a comma expression does not subscribe to an imported field.
+  $: chat.badge
 
   const shown   = () => visible(groups, { user: session.user })
   const current = (e) => e.exact ? page.pathname === e.href : page.pathname.startsWith(e.href)
@@ -104,12 +110,12 @@ siteName: Workbench
                   </Button>
                 {/snippet}
                 {#each g.entries as e}
-                  <DropdownItem href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</DropdownItem>
+                  <DropdownItem href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}<NavBadge badge={badgeOf(e)} /></DropdownItem>
                 {/each}
               </DropdownMenu>
             {:else}
               {#each g.entries as e}
-                <Button treatment="ghost" size="sm" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</Button>
+                <Button treatment="ghost" size="sm" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}<NavBadge badge={badgeOf(e)} /></Button>
               {/each}
             {/if}
           {/each}
@@ -121,6 +127,7 @@ siteName: Workbench
         <Button treatment="ghost" size="sm" id="palette-open" onclick={() => commandPalette.show()}>
           <span class="spare">Search</span> <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
+        {#if session.user.profileExternalId}<UnreadBadge />{/if}
         <Bell />
         <a href="/settings/" class="text-sm text-muted" title="Settings"
            aria-current={page.pathname.startsWith('/settings/') ? 'page' : undefined}>{session.user.nick}</a>
@@ -142,7 +149,7 @@ siteName: Workbench
         {#if g.label}<div class="navlist-label">{g.label}</div>{/if}
         <ul class="navlist">
           {#each g.entries as e}
-            <li><a class="navlink" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}</a></li>
+            <li><a class="navlink" href={e.href} title={e.sub} aria-current={current(e) ? 'page' : undefined}>{e.label}<NavBadge badge={badgeOf(e)} /></a></li>
           {/each}
         </ul>
       {/each}

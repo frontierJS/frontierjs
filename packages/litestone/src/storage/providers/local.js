@@ -67,10 +67,10 @@ export class LocalProvider {
   }
 
   // The bytes as a stream, so a large object is never held whole in heap.
-  async stream(/** @type {string} */ key) {
+  async stream(/** @type {string} */ key, /** @type {{ start?: number, end?: number }} */ { start, end } = {}) {
     const path = this._filePath(key)
     if (!existsSync(path)) throw new Error(`File not found: ${key}`)
-    return /** @type {ReadableStream<Uint8Array>} */ (/** @type {unknown} */ (Readable.toWeb(createReadStream(path))))
+    return /** @type {ReadableStream<Uint8Array>} */ (/** @type {unknown} */ (Readable.toWeb(createReadStream(path, { start, end }))))
   }
 
   // The file's absolute path, for a tool that reads a file by name (ffmpeg).

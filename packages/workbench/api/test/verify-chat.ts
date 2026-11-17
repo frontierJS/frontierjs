@@ -26,11 +26,13 @@ const WORK = mkdtempSync(join(tmpdir(), 'workbench-chat-'))
 process.env.JOBS_DATABASE_URL = join(WORK, 'jobs.db')
 process.env.XDG_CONFIG_HOME   = WORK
 process.env.WORKBENCH_DIR     = join(WORK, 'workbench')
+process.env.WORKBENCH_PUSH_FILE = join(WORK, 'push.json')
 
 const { startMattermostSink } = await import('@frontierjs/conduit-mattermost/sink')
 const { createTestEnv, session } = await import('@frontierjs/testing')
 const { createJunctionClient } = await import('@frontierjs/junction/client')
 const { buildWorkbenchApp } = await import('../src/app.ts')
+const { applyFrame } = await import('../src/providers/chat/sync.ts')
 
 const DB = join(import.meta.dir, '..', '..', 'db')
 let failed = 0
@@ -59,11 +61,13 @@ const sinkCall = async (path: string, token: string, init: { method?: string, bo
   return { status: res.status, json: await res.json().catch(() => null) as any }
 }
 
+// Every ntfy send the app makes lands here: a drive's push never leaves the machine.
+const pushes: { url: string, title: string, body: string }[] = []
 let env: any
 try {
   env = await createTestEnv({
     schema: join(DB, 'schema.lite'), migrations: join(DB, 'migrations'), encryptionKey: '0'.repeat(64),
-    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, deliver: (async () => new Response('', { status: 200 })) as unknown as typeof fetch }),
+    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
     listen: true,
   } as any)
   const sys = env.system
@@ -541,6 +545,59 @@ try {
   check(codeOf(qhSecond) >= 400 && codeOf(qhSecond) < 500, 'a second row for the same member is refused', shown_(qhSecond))
   const qhZone = await errOf(quiet(bo).create({ fromMinute: 0, toMinute: 60, timezone: 'Mars/Olympus' }))
   check(codeOf(qhZone) === 400, 'a timezone that is not one is a 400', shown_(qhZone))
+
+  // ── chat notifications (4.1) ──────────────────────────────────────────
+  const noteSettle = () => new Promise(r => setTimeout(r, 600))
+  const noteBellOf = (post: string) => sys.notification.findMany({ where: { userId: ada.id, deliveryKey: `chat:${post}` } })
+  const notePushesOf = (text: string) => pushes.filter(p => p.body.includes(text))
+  const noteSetMute = async (on: boolean) => {
+    await sinkCall(`/channels/${ids.open}/members/${ids.alice}/notify_props`, sink.tokens.alice, { method: 'PUT', body: { mark_unread: on ? 'mention' : 'all' } })
+    return until(async () => (await mirrorMember(ids.open, ids.alice))?.muted === on)
+  }
+  check(await noteSetMute(false), 'the open room starts unmuted for alice')
+  const noteStamp = Date.now()
+  const noteOpenRoom = await sys.channel.findUnique({ where: { externalId: ids.open }, select: { name: true } })
+  const noteNamed = await say(sink.tokens.bob, ids.open, `look here @alice n${noteStamp}`)
+  const noteNamedRows = await until(async () => { const r = await noteBellOf(noteNamed.id); return r.length ? r : null })
+  check(noteNamedRows?.length === 1 && noteNamedRows[0].type === 'ChatMention' && noteNamedRows[0].data?.title === `bob in #${noteOpenRoom?.name}` && noteNamedRows[0].data?.action?.url === `/messages/${ids.open}/`, 'a sink post naming alice raises one ChatMention bell row for her, titled with the author and room, linked to the room', noteNamedRows)
+  check(await until(() => notePushesOf(`n${noteStamp}`).length === 1) && notePushesOf(`n${noteStamp}`)[0].title === `bob in #${noteOpenRoom?.name}`, 'and one push, caught here and never sent', notePushesOf(`n${noteStamp}`))
+
+  const noteDm = (await sinkCall('/channels/direct', sink.tokens.bob, { method: 'POST', body: [ids.bob, ids.alice] })).json
+  check(await until(() => mirrorMember(noteDm?.id, ids.alice)), 'a direct room bob opens lands alice\'s membership', noteDm)
+  const noteDirect = await say(sink.tokens.bob, noteDm?.id, `just us d${noteStamp}`)
+  const noteDmRows = await until(async () => { const r = await noteBellOf(noteDirect.id); return r.length ? r : null })
+  check(noteDmRows?.length === 1 && noteDmRows[0].type === 'ChatDm' && noteDmRows[0].data?.title === 'bob' && noteDmRows[0].data?.body === `just us d${noteStamp}`, 'a DM from bob raises one ChatDm row', noteDmRows)
+  check(await until(() => notePushesOf(`d${noteStamp}`).length === 1), 'and one push', notePushesOf(`d${noteStamp}`))
+
+  const noteOwn = await say(sink.tokens.alice, ids.open, `@channel @alice mine o${noteStamp}`)
+  await until(() => sys.post.findUnique({ where: { externalId: noteOwn.id } })); await noteSettle()
+  check((await noteBellOf(noteOwn.id)).length === 0, 'alice\'s own post raises nothing for her', await noteBellOf(noteOwn.id))
+
+  check(await noteSetMute(true), 'alice mutes the open room')
+  const noteWide = await say(sink.tokens.bob, ids.open, `@channel heads up w${noteStamp}`)
+  await until(() => sys.post.findUnique({ where: { externalId: noteWide.id } })); await noteSettle()
+  check((await noteBellOf(noteWide.id)).length === 0, 'an @channel in a muted room raises nothing for her', await noteBellOf(noteWide.id))
+  const notePointed = await say(sink.tokens.bob, ids.open, `@alice still you m${noteStamp}`)
+  check(await until(async () => (await noteBellOf(notePointed.id)).length === 1), 'a direct @mention there still raises one')
+  check(await noteSetMute(false), 'and the room is unmuted again')
+
+  const noteLanded = await sys.post.findUnique({ where: { externalId: noteNamed.id } })
+  const noteAgain = { externalId: noteLanded.externalId, channelExternalId: noteLanded.channelExternalId, profileExternalId: noteLanded.profileExternalId, rootExternalId: noteLanded.rootExternalId, message: noteLanded.message, createdAt: noteLanded.createdAt }
+  await applyFrame(env.app, String(ada.id), ids.alice, { id: `again-${noteStamp}`, type: 'posted', payload: { post: noteAgain, files: [], mentions: [ids.alice], channelType: 'O', senderName: '@bob' } } as any)
+  await noteSettle()
+  check((await noteBellOf(noteNamed.id)).length === 1 && notePushesOf(`n${noteStamp}`).length === 1, 'the same frame twice raises one', { rows: (await noteBellOf(noteNamed.id)).length, pushes: notePushesOf(`n${noteStamp}`).length })
+
+  await quiet(ada).patch(qh?.id, { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], fromMinute: 0, toMinute: 0, timezone: 'UTC' })
+  const noteHushed = await say(sink.tokens.bob, ids.open, `@alice at night q${noteStamp}`)
+  const noteHushedRows = await until(async () => { const r = await noteBellOf(noteHushed.id); return r.length ? r : null })
+  await noteSettle()
+  check(noteHushedRows?.length === 1 && noteHushedRows[0].data?.held === true && notePushesOf(`q${noteStamp}`).length === 0, 'inside quiet hours the bell row is written and no push is sent', { noteHushedRows, pushes: notePushesOf(`q${noteStamp}`) })
+  await quiet(ada).patch(qh?.id, { enabled: false })
+
+  const noteBoPost = await say(sink.tokens.alice, ids.open, `@bob not the owner b${noteStamp}`)
+  const noteBoRows = await until(async () => { const r = await sys.notification.findMany({ where: { userId: bo.id, deliveryKey: `chat:${noteBoPost.id}` } }); return r.length ? r : null })
+  await noteSettle()
+  check(noteBoRows?.length === 1 && noteBoRows[0].type === 'ChatMention' && notePushesOf(`b${noteStamp}`).length === 0, 'a mention of bo, who is not the owner, writes his bell row and sends no push', { noteBoRows, pushes: notePushesOf(`b${noteStamp}`) })
 
   // ── unlink ────────────────────────────────────────────────────────────
   await as(ada).service('chat').call('disconnect', null, {})

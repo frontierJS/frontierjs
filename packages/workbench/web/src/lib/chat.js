@@ -27,7 +27,7 @@ import { chatGroups } from '../resources/ChatGroup.mesa'
 import { glyphOf } from './emoji.js'
 
 /** The channel on screen, so the sidebar marks it and a post arriving in it is read at once. */
-export const chat = watchProxy({ activeChannelId: null, held: {} })
+export const chat = watchProxy({ activeChannelId: null, held: {}, badge: null })
 
 /** The reader's own `profileExternalId`, or null when the member has not linked. */
 export const me = () => session.user?.profileExternalId ?? null
@@ -121,6 +121,26 @@ export function countsOf(channelList, memberships) {
     }
   }
   return out
+}
+
+/**
+ * What the nav's Messages entry shows, from the reader's rooms: a number (mentions, plus every
+ * unread message of a direct or group room, unmuted or not for a mention), else 'dot' when any
+ * unmuted room has unread, else null. A direct room counts the larger of its two numbers: the
+ * server may count a DM as a mention too, and one message is one.
+ */
+export function navBadgeOf(channelList, memberships) {
+  const counts = countsOf(channelList, memberships)
+  let count = 0
+  let dot = false
+  for (const c of channelList) {
+    const n = counts[c.externalId]
+    if (!n || c.deletedAt) continue
+    const direct = c.type === 'direct' || c.type === 'group'
+    count += direct ? Math.max(n.mentions, n.unread) : n.mentions
+    if (n.unread > 0) dot = true
+  }
+  return count > 0 ? count : dot ? 'dot' : null
 }
 
 // ── Opening a channel ──

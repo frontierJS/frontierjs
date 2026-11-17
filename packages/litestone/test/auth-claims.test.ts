@@ -130,11 +130,12 @@ model Note {
   @@allow(read, ${expr})
 }`
 
-  test('the framework fixes eight names, and this package reads all eight', async () => {
-    // `id` and `capabilities` are the two the engine spells; the other six are
-    // what `FrontierGateGetLevel` grades a caller by (src/plugins/gate.js), so
-    // a standing is a claim even on an app whose User has no such column.
-    for (const claim of ['id', 'capabilities', 'role', 'isAdmin', 'isOwner',
+  test('the framework fixes nine names, and this package reads all nine', async () => {
+    // `id`, `capabilities` and `userType` are the three the engine spells; the
+    // other six are what `FrontierGateGetLevel` grades a caller by
+    // (src/plugins/gate.js), so a standing is a claim even on an app whose User
+    // has no such column.
+    for (const claim of ['id', 'capabilities', 'userType', 'role', 'isAdmin', 'isOwner',
                          'isSystemAdmin', 'verifiedAt', 'activatedAt'])
       expect(await build(AUTH_USER + note(`auth().${claim} != null`))).toBeTruthy()
   })
@@ -203,6 +204,27 @@ model Note {
     const err = await refusal('claim cartToken\nclaim cartToken\n' + AUTH_USER + note('auth().cartToken == ownerId'))
     expect(err).toContain("claim 'cartToken' is declared twice")
   })
+
+  // FJS-4358 / FJS-D2228 — the ladder grades a machine principal like a person,
+  // so the kind is the one thing a rule can tell them apart by. Anvil's runner
+  // declares `claim runnerId`, which switches the set on, and every `userType`
+  // naming that followed was refused at startup.
+  test('the caller kind is the framework\'s userType, admitting a person and refusing a service', async () => {
+    const schema = `claim runnerId
+${AUTH_USER}
+model Issue {
+  id    Int    @id @default(autoincrement())
+  title String
+  @@allow(read, true)
+  @@allow(create, auth().userType == 'user')
+}`
+    const db: any = await build(schema)
+    const person = db.$setAuth({ id: 1, userType: 'user' })
+    const runner = db.$setAuth({ id: 'runner:7', userType: 'service', runnerId: 7 })
+    expect(await person.issue.create({ data: { title: 'a' } })).toMatchObject({ title: 'a' })
+    await expect(runner.issue.create({ data: { title: 'b' } })).rejects.toThrow()
+    expect(await db.asSystem().issue.count()).toBe(1)
+  })
 })
 
 describe('the set only grades when there is one', () => {
@@ -221,7 +243,7 @@ model Note {
   })
 
   test('claims: [] is a statement where absent is silence', async () => {
-    // An empty array says the principal carries the framework's eight and
+    // An empty array says the principal carries the framework's nine and
     // nothing else, so it grades — which is what makes `[]` distinguishable
     // from a caller who passed nothing at all.
     expect(await refusal(bare, { claims: [] })).toContain("'isStaff' is not a claim")

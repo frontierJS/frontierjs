@@ -950,7 +950,11 @@ ${withName ? `  const saveName = () => run(async () => {
   })
 
 ` : ``}  const changePassword = () => run(async () => {
-    await auth().changePassword(current, next)
+    // The server never reads a current password: changePassword needs a session
+    // that proved one inside the sudo window, and passing it here as the only
+    // argument set the password to itself and answered success.
+    await auth().reauthenticate(current)
+    await auth().changePassword(next)
     current = ''; next = ''
     return 'Password changed.'
   })

@@ -45,8 +45,8 @@ export declare function fileUrls(refs: (FileRef | string)[] | string | null | un
 export declare function useStorage(options: FileStorageOptions): {
   sign(ref: FileRef, opts?: { expiresIn?: number }): Promise<string>
   download(ref: FileRef): Promise<Buffer>
-  /** The bytes as a stream, for an object too large to hold whole. */
-  stream(ref: FileRef): Promise<ReadableStream<Uint8Array>>
+  /** The bytes as a stream, for an object too large to hold whole. `start` and `end` are inclusive byte offsets (HTTP's `bytes=a-b`), and either may be left out; a store that ignores the range throws. */
+  stream(ref: FileRef, range?: { start?: number; end?: number }): Promise<ReadableStream<Uint8Array>>
   /** The file's absolute path under provider 'local', null for any other, for a tool that reads a file by name. */
   path(ref: FileRef): string | null
   /** Removes the stored object a ref names. A bare key string is refused: pass the ref, or its JSON text. */

@@ -83,11 +83,17 @@ export function useStorage(/** @type {any} */ config) {
       return provider.get(ref.key)
     },
 
-    // The file bytes as a ReadableStream, for an object too large to hold whole
-    async stream(/** @type {any} */ value) {
+    // The file bytes as a ReadableStream, for an object too large to hold whole.
+    // `start` and `end` are inclusive byte offsets, as in HTTP's `bytes=a-b`;
+    // either may be left out. Parsing a Range header and answering 416 are the
+    // caller's: the ref's `size` is what it measures against.
+    async stream(/** @type {any} */ value, /** @type {{ start?: number, end?: number }} */ { start, end } = {}) {
       const ref = parseRef(value)
       if (!ref) throw new Error('useStorage.stream: invalid file reference')
-      return provider.stream(ref.key)
+      for (const [name, at] of /** @type {const} */ ([['start', start], ['end', end]]))
+        if (at != null && !(Number.isInteger(at) && at >= 0)) throw new Error(`useStorage.stream: ${name} must be a whole byte offset of 0 or more, got ${at}`)
+      if (start != null && end != null && end < start) throw new Error(`useStorage.stream: end ${end} is before start ${start}`)
+      return provider.stream(ref.key, { start, end })
     },
 
     // The file's absolute path on the local provider, null on any other, for a

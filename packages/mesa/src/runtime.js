@@ -1185,7 +1185,28 @@ export function contextRead(key) {
   for (let i = _contextStack.length - 2; i >= 0; i--) {
     if (_contextStack[i].has(k)) return _contextStack[i].get(k)
   }
+  _warnIslandContextMiss(key)
   return null
+}
+
+// An island is replaced, not hydrated (FJS-4313): a provider above it on the
+// server page is not above it on the client, so its read is undefined here
+// while the prerendered markup showed the value. A miss elsewhere can be an
+// optional context and stays quiet. Once per island and key.
+const ISLAND_ROOT = Symbol('mesa.islandRoot')
+const _warnedIslandMiss = new Set()
+function _warnIslandContextMiss(key) {
+  if (typeof console === 'undefined' || !console.warn) return
+  let island = null
+  for (let i = _contextStack.length - 1; i >= 0 && island === null; i--) {
+    if (_contextStack[i].has(ISLAND_ROOT)) island = _contextStack[i].get(ISLAND_ROOT)
+  }
+  if (island === null || _warnedIslandMiss.has(island + '\0' + key)) return
+  _warnedIslandMiss.add(island + '\0' + key)
+  console.warn(
+    `[Mesa] island <${island}> read $context.${key}, which no client provider answers: ` +
+    `an island mounts with its props alone. Pass it as a prop or provide it inside.`
+  )
 }
 
 // The imperative `$context.use(key)` / `.provide(key, getter)` — the same
@@ -2952,7 +2973,10 @@ export function mount(label, component, option) {
   // tests write `disposeRoot(); instance.destroy()` — which is the shape that
   // says the handle is missing half a teardown.
   let disposeRoot = () => {}
-  if (styleRoot) _contextStack.push(new Map([[STYLE_ROOT, styleRoot]]))
+  const rootFrame = new Map()
+  if (styleRoot) rootFrame.set(STYLE_ROOT, styleRoot)
+  if (option?.island) rootFrame.set(ISLAND_ROOT, option.island)
+  if (rootFrame.size) _contextStack.push(rootFrame)
   try {
     createRoot((dispose) => {
       disposeRoot = dispose
@@ -3124,8 +3148,16 @@ export const eachDefaultKey = (_item, index) => index
 export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
   const withContext = captureContext()
   if (!_isBrowser) return
-  // Same contract as {#each} — see eachItems().
-  const getArray = () => eachItems(getItems())
+  // Same contract as {#each} (eachItems), but an array-like is read by index
+  // rather than copied: render reads only length and the window's indexes, and
+  // a million-row source copied on every change is the cost a virtual list is
+  // for avoiding (FJS-4188). An iterable with no length is still copied.
+  const getArray = () => {
+    const v = getItems()
+    if (v && typeof v === 'object' && typeof v.length === 'number' &&
+        typeof v[Symbol.iterator] !== 'function') return v
+    return eachItems(v)
+  }
 
   const OVERSCAN    = 5     // extra rows to render above and below viewport
   const DEFAULT_ROW = 40    // fallback row height (px) before measurement

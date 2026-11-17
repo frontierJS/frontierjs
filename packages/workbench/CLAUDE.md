@@ -54,7 +54,7 @@ slot. `api/index.ts` states 5501; `web/config/vite.config.js` states 5508 with
 - **`asSystem()` reads `Session.tokenHash`**, as Haven's does: `@guarded` hides it from everyone else.
 - **A page and a service share a URL** (`/workbench/` is both). The dev proxy tells them apart by `Accept`; `web/config/api-paths.js` derives the proxied paths from `app.snapshot.md`, so regenerate it (`junction app --app api/src/app.ts`) after adding a service.
 - **A preview's freeze builds on Basecamp's disk**: `freeze` sends `branch.path` and is refused unless the entry's `url` is loopback (`IDEAS/workbench-package.md` § 3.1 Q). Open, thaw and retire work over the wire.
-- **`/ws` carries one channel**, `notifications:user:<memberId>` (`core/channels.ts`); the inApp driver pushes there and the bell's tether merges the frame. `notifications` is the service's name for that reason -- the client routes a frame by the service named in its first word.
+- **`/ws` carries a member's own channel and the chat's**: `notifications:user:<memberId>` (`core/channels.ts`), where the inApp driver pushes and the bell's tether merges the frame, and where `chat typing` arrives as an event with no row behind it; and each name in `CHAT_CHANNELS`, joined by every connection and graded per frame by the `claims` resolver in `app.ts` -- without that resolver a private room's rows are refused on the socket to the members a fetch answers (`FJS-4395`). `notifications` is the service's name for that reason -- the client routes a frame by the service named in its first word.
 
 ## Desktop
 
@@ -72,6 +72,13 @@ screen through the `traygoto` event `routes/_module.mesa` listens for, starts
 the API and turns Start at login on. Start API runs the checkout, bun and
 origin `build.mjs` compiled in, so a shell from a bare `cargo build` offers none.
 
+One shell runs at a time (`tauri-plugin-single-instance`): a second launch hands
+its argv to the running window and exits, and `workbench-desktop --go /capture/`
+opens that screen through the tray's own `go` (`shell/src/go.rs` refuses a path
+not starting with one `/`). A first launch ignores `--go`; a debug shell on
+`FRONTIER_DESKTOP_URL` or `_PROBE` stays out, so a drive runs beside the owner's.
+A rebuilt shell only raises the old one until the old one quits.
+
 The drive holds no port: the global block has no slot for one, so it builds the
 bundle against whatever port the OS hands its scratch API. The binary it leaves
 behind points there; `bun run build:desktop` puts 5501 back.
@@ -82,4 +89,4 @@ behind points there; `bun run build:desktop` puts 5501 back.
 against a stub door; `services.test.ts` the bell's service). For anything under `web/`, start
 `bun run api` and `bun run web`, sign in, and see `/workbench/`; stop both after. The drives,
 by `DRIVES.md`: `verify:desktop` (the shell, the door and the local scan) and `verify:atlas`
-(`/atlas/` over the real registers, signed in at this door; holds no port). The live peer call needs a running Basecamp with this key enrolled.
+(`/atlas/` over the real registers, signed in at this door; holds no port) and `verify:capture` (`/capture/` over a temp `XDG_CONFIG_HOME`; the real `~/.config/capture` is never touched). The live peer call needs a running Basecamp with this key enrolled.

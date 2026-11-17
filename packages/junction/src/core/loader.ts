@@ -241,7 +241,8 @@ export async function loadServiceFile(
 // `routes/hooks/calendar.ts` answers `/hooks/calendar`, and each of its `GET`,
 // `POST`, `PUT`, `PATCH` and `DELETE` exports is that method's handler. A
 // `[id]` segment is the `{id}` capture, and `index` is its folder. A file or
-// folder beginning `_` is private to the files beside it.
+// folder beginning `_` is private to the files beside it. `export const options
+// = { PUT: { body: 'stream' } }` is each verb's third argument (`FJS-D2219`).
 
 const ROUTE_VERBS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
 
@@ -306,9 +307,17 @@ export async function autoloadRoutes(opts: RouteLoaderOptions): Promise<void> {
           `Export each method's handler by its verb, e.g. export const GET = (ctx) => …`)
         continue
       }
+      const options = (mod.options ?? {}) as Record<string, unknown>
+      const stray   = Object.keys(options).filter(k => !verbs.includes(k as typeof verbs[number]))
+      if (stray.length) {
+        fail(`loader:${file}:options`,
+          `${join('routes', rel)} exports options for ${stray.join(', ')}, which it does not export as a verb, ` +
+          `so ${url} would answer without them. Key options by an exported verb: ${verbs.join(', ')}.`)
+        continue
+      }
       for (const v of verbs) {
-        const register = app[v.toLowerCase()] as (path: string, handler: unknown) => unknown
-        register.call(app, url, mod[v])
+        const register = app[v.toLowerCase()] as (path: string, handler: unknown, opts?: unknown) => unknown
+        register.call(app, url, mod[v], options[v])
       }
     } catch (err) {
       fail(`loader:${file}:threw`,

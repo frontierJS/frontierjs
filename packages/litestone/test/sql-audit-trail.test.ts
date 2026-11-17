@@ -734,3 +734,49 @@ describe('an entry with no tenant on the call takes the described row\'s tenant 
     expect(await tenants(sys)).toEqual(['create Region null', 'create Flag null'])
   })
 })
+
+// A `@@require` holds under `asSystem()`, and a system write it refused came
+// back null or { count: 0 }: a job that tried to delete a signed note was told
+// nothing and left nothing (FJS-4321). FJS-D2218: it throws and files `denied`.
+describe('a system write @@require refuses throws and files a denied entry (FJS-4321)', () => {
+  const lite = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Note { id Int @id  body String  signedAt DateTime?  @@trail(main)  @@allow(all, true)
+      @@require(update, signedAt == null, 'A signed note is frozen.')
+      @@require(delete, signedAt == null) }
+  `
+  const denied = async (sys: any) =>
+    (await sys.auditRow.findMany({ where: { operation: 'denied' }, orderBy: { id: 'asc' } }))
+      .map((r: any) => `${r.meta?.attempted} ${r.model} ${JSON.stringify(r.records)} ${r.actorId}`)
+
+  async function seeded() {
+    const db = await client(lite)
+    const sys = db.asSystem()
+    await sys.note.create({ data: { id: 1, body: 'signed', signedAt: new Date().toISOString() } })
+    await sys.note.create({ data: { id: 2, body: 'draft' } })
+    await tick()
+    await sys.auditRow.deleteMany({})
+    return { db, sys }
+  }
+
+  test('a single-row write throws the rule\'s message and names the id it tried', async () => {
+    const { sys } = await seeded()
+    await expect(sys.note.update({ where: { id: 1 }, data: { body: 'x' } })).rejects.toThrow('A signed note is frozen.')
+    await expect(sys.note.delete({ where: { id: 1 } })).rejects.toThrow(/refused by @@require/)
+    await tick()
+    expect(await denied(sys)).toEqual(['update Note [1] null', 'delete Note [1] null'])
+    expect((await sys.note.findUnique({ where: { id: 1 } })).body).toBe('signed')
+  })
+
+  test('a bulk write that reaches no row throws; one that narrows, and a miss, do not', async () => {
+    const { sys } = await seeded()
+    await expect(sys.note.deleteMany({ where: { id: 1 } })).rejects.toThrow(/refused by @@require/)
+    await expect(sys.note.updateMany({ where: { id: 1 }, data: { body: 'x' } })).rejects.toThrow('A signed note is frozen.')
+    expect(await sys.note.updateMany({ where: {}, data: { body: 'y' } })).toEqual({ count: 1 })
+    expect(await sys.note.delete({ where: { id: 9 } })).toBeNull()
+    await tick()
+    expect(await denied(sys)).toEqual(['delete Note [1] null', 'update Note [1] null'])
+    expect(await sys.note.count()).toBe(2)
+  })
+})

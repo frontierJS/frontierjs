@@ -4,14 +4,19 @@
 // carries its own `@@gate`, so hiding a link changes what is worth clicking and
 // nothing about what is reachable.
 
+import { chat } from './chat.js'
+
 const member = ({ user }) => !!user
+
+/** An entry's badge: a number, 'dot' or null, read live from where its owner publishes it. */
+export const badgeOf = (e) => e.badge ? e.badge() : null
 
 // An unlabeled group is links on the bar; a labeled one is a menu there and a
 // headed list in the drawer.
 export const groups = [
   { label: null, show: member, entries: [
     { href: '/workbench/',          label: 'Bench',           icon: 'workbench',     sub: 'a Claude Code chat per pinned checkout' },
-    { href: '/messages/',          label: 'Messages',        icon: 'workbench',     sub: 'the team\'s Mattermost: channels, direct messages and what is unread' },
+    { href: '/messages/',          label: 'Messages',        icon: 'workbench',     sub: 'the team\'s Mattermost: channels, direct messages and what is unread', badge: () => chat.badge },
     { href: '/terminal/',           label: 'Terminal',        icon: 'workbench',     sub: 'a shell in your home folder that outlives the tab' },
   ] },
   { label: 'Atlas', show: member, entries: [
@@ -25,6 +30,7 @@ export const groups = [
     { href: '/basecamps/',          label: 'Basecamps',       icon: 'workbench',     sub: 'every Basecamp this laptop made — whether it answers, Back up now, Restart' },
     { href: '/charter/',            label: 'Charter',         icon: 'workbench',     sub: 'run Charter\'s cases on its Basecamp and watch each stage — Reinstall its box' },
     { href: '/servers/',            label: 'Servers',         icon: 'workbench',     sub: 'the machines and IPs this laptop\'s accounts reach' },
-    { href: '/laptop/',             label: 'Laptop',          icon: 'workbench',     sub: 'fli\'s files on this machine — disk, keys, what is running' },
+    { href: '/capture/',            label: 'Capture',         icon: 'workbench',     sub: 'the screenshot tool\'s settings — folder, file name, format, delay, share server' },
+    { href: '/laptop/',             label: 'Laptop',         icon: 'workbench',     sub: 'fli\'s files on this machine — disk, keys, what is running' },
   ] },
 ]

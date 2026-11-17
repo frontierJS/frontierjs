@@ -116,6 +116,15 @@ function withoutPostBuildHook(plugin) {
   return hooks
 }
 
+// The host of `FRONTIER_APP_URL`, where a person reaches the app, unless that is
+// localhost, which Vite already allows. A malformed value allows nothing.
+function appHost() {
+  try {
+    const { hostname } = new URL(process.env.FRONTIER_APP_URL ?? '')
+    return hostname && hostname !== 'localhost' && hostname !== '127.0.0.1' ? hostname : null
+  } catch { return null }
+}
+
 /**
  * Create a complete Vite config from a Sierra config object.
  *
@@ -286,6 +295,10 @@ function buildBaseConfig(config, sierraPlugins, userPlugins) {
       // `fli dev --host` sets it. An app config that replaces `server` rather
       // than spreading this one drops it, and the flag does nothing.
       host: !!process.env.FRONTIER_HOST,
+      // Vite refuses a Host it was not told about, so a page reached through
+      // `fli dev --tunnel` (which sets the app's URL to the tunnel's) is a 403.
+      // A `.env` naming a deployed URL allows that host too: the app's own name.
+      ...(appHost() && { allowedHosts: [appHost()] }),
       open: false,
       hmr: {
         overlay: true,

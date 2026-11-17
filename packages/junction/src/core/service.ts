@@ -1170,6 +1170,13 @@ export interface BaseServiceOptions {
   inputMethods?: readonly string[]
 
   /**
+   * The CRUD verbs the service wrote itself. A create among them that is
+   * refused for a missing column tells the author how to step the model check
+   * aside, since the handler that would compute the column never ran.
+   */
+  ownMethods?: readonly string[]
+
+  /**
    * Hook pipeline. Merged with the derived layer and carried onto the returned
    * object; dropping it runs a service declaring `authenticate` with no hooks.
    */
@@ -2226,7 +2233,7 @@ export function buildBase(
   //     it unless a request-scoped client is already there (withLitestoneDb
   //     always wins).
 
-  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, methodGates, methodClaims, inputMethods } = opts
+  const { model, name, hooks, db, paginate, allowBulk, bulkMax, idField, softDelete, cache, schema, methodGates, methodClaims, inputMethods, ownMethods } = opts
 
   const base = model === null ? overNoModel(name) : createLitestoneBase({
     model,
@@ -2318,7 +2325,7 @@ export function buildBase(
   // A declared input replaces the row validator on its verb; the filter and
   // sort hooks are not validators and stay.
   const rowValidator = (method: string, mode: 'create' | 'patch'): Hook[] =>
-    inputMethods?.includes(method) ? [] : derived(autoValidate(model as string | undefined, mode))
+    inputMethods?.includes(method) ? [] : derived(autoValidate(model as string | undefined, mode, ownMethods?.includes(method)))
 
   // The per-method levels a `methods:` list declares. The floor `gateAuthAround`
   // derives needs no declaration; this is only what sits above it.
@@ -2782,6 +2789,7 @@ export function buildService(def: ServiceDefinition): Service {
   const methodInputs   = collectMethodInputs(def.methods, (def.name as string) ?? '(unnamed)', def)
   const base = buildBase({
     inputMethods: Object.keys(methodInputs),
+    ownMethods:   ['create', 'patch', 'update'].filter(m => typeof def[m] === 'function'),
     model:      def.model,
     name:       def.name,
     db:         def.db,

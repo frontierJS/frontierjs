@@ -77,6 +77,11 @@ export function withOverrides(table?: any, changes?: any, { actions }?: {}): {
  * a key with Cmd off a Mac is the Windows key, which Windows takes whole.
  * A sequence is listed when any of its chords is.
  *
+ * A row meant for one platform is a keymap built from two tables, one half
+ * from each (`FJS-D2226`): `{ mac: keymap({}).mac, other: keymap({ '<C-Up>':
+ * 'add-cursor' }).other }` binds Ctrl+Up off a Mac only, where one table is
+ * refused everywhere because Mission Control takes it on a Mac.
+ *
  * `{ browserChords: true }` is a host that delivers the browser's own chords
  * (a desktop shell's webview, which has no tabs to close): only the rows the
  * OS takes are listed, so `<Mod-w>` passes and `<D-Tab>` is still refused.

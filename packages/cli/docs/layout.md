@@ -61,6 +61,10 @@ core/
                 line each (`@frontierjs/toolbelt/devline`), laid out as one summary;
                 every other line is HELD until it prints, never dropped, and a
                 surface that exits or stays silent past `settleMs` releases it
+  public-tunnel.js  a local port on a public URL through cloudflared — a quick
+                tunnel's random name, or a named tunnel's fixed host under
+                `FLI_TUNNEL_DOMAIN` (`FJS-D2249`) made through `cloudflare.js`;
+                `fli dev --tunnel`, `fli tunnel [port]` (`IDEAS/tunnel.md`)
   open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
                 `fli gui --open`
   clipboard.js  text onto the clipboard over stdin, never a shell string —

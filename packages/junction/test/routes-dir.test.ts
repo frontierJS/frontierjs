@@ -113,6 +113,31 @@ describe('routes/ — a file\'s path is the URL it answers', () => {
   })
 })
 
+// FJS-4229 / FJS-D2219. A 50 MB upload must read its body as a stream, and a
+// file here registered its verbs with no options, so it moved to app.ts.
+describe('routes/ — export const options is each verb\'s third argument', () => {
+  const STREAM = `export const options = { PUT: { body: 'stream' } }\n` +
+    `export const PUT = (ctx: any) => new Response(String(ctx.body instanceof ReadableStream))\n` +
+    `export const POST = (ctx: any) => new Response(String(ctx.body instanceof ReadableStream))\n`
+
+  it('the verb it names reads its body as a stream, and a verb it does not name is parsed', async () => {
+    await withApp({ 'content.ts': STREAM }, async base => {
+      const put  = await fetch(`${base}/content`, { method: 'PUT', body: '{"a":1}', headers: { 'content-type': 'application/json' } })
+      const post = await fetch(`${base}/content`, { method: 'POST', body: '{"a":1}', headers: { 'content-type': 'application/json' } })
+      expect(await put.text()).toBe('true')
+      expect(await post.text()).toBe('false')
+    })
+  })
+
+  it('a key naming no exported verb is refused, since its options would apply to nothing', async () => {
+    const msg = await startError({
+      'content.ts': `export const options = { Put: { body: 'stream' } }\nexport const PUT = () => new Response('x')\n`,
+    })
+    expect(msg).toContain('content.ts')
+    expect(msg).toContain('Put')
+  })
+})
+
 // FJS-3596 / FJS-D1663. A route file is handed only its TransportContext, so a
 // handler needing the app's client, logger or sqlite path had to stay a plugin.
 describe('routes/ — a handler reaches the app as ctx.app', () => {

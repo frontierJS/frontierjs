@@ -118,6 +118,26 @@ describe('the dev server port', () => {
       else process.env.FRONTIER_HOST = before
     }
   })
+
+  // `fli dev --tunnel` sets the app's URL to the tunnel's; without its host
+  // allowed, vite answers every request through the tunnel 403.
+  test('the host FRONTIER_APP_URL names is allowed, and localhost or a bad value adds nothing', () => {
+    const before = process.env.FRONTIER_APP_URL
+    const allowed = () => createSierraViteConfig({ target: 'spa' }).server.allowedHosts
+    try {
+      process.env.FRONTIER_APP_URL = 'https://declined-sonic-sociology-sega.trycloudflare.com'
+      expect(allowed()).toEqual(['declined-sonic-sociology-sega.trycloudflare.com'])
+      process.env.FRONTIER_APP_URL = 'http://localhost:8000'
+      expect(allowed()).toBeUndefined()
+      process.env.FRONTIER_APP_URL = 'not a url'
+      expect(allowed()).toBeUndefined()
+      delete process.env.FRONTIER_APP_URL
+      expect(allowed()).toBeUndefined()
+    } finally {
+      if (before === undefined) delete process.env.FRONTIER_APP_URL
+      else process.env.FRONTIER_APP_URL = before
+    }
+  })
 })
 
 describe('what import.meta.env.DEV says in a build', () => {

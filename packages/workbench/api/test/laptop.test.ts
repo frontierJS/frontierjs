@@ -376,11 +376,21 @@ describe('setup', () => {
   })
 
   test('a missing git is an error on Run fli; a missing cargo only warns Desktop builds', async () => {
-    const out = await setup({ ...common, has: (c) => c !== 'git' && c !== 'cargo' })
+    const out = await setup({ ...common, has: (c) => c !== 'git' && c !== 'cargo' && c !== 'capture' })
     expect(goal(out, 'fli').state).toBe('error')
     expect(goal(out, 'fli').rows.find(r => r.id === 'bin:git')).toMatchObject({ ok: false, level: 'error', fix: { copy: 'sudo apt install git' } })
     expect(goal(out, 'desktop')).toMatchObject({ state: 'unset' })
     expect(goal(out, 'desktop').rows.find(r => r.id === 'bin:cargo')!.fix).toEqual({ url: 'https://rustup.rs', note: expect.any(String) })
+  })
+
+  test('a missing capture only warns Desktop builds, with the command to install it to copy', async () => {
+    const out = await setup({ ...common, has: (c) => c !== 'capture' })
+    expect(goal(out, 'desktop').state).toBe('warn')
+    expect(goal(out, 'desktop').rows.find(r => r.id === 'bin:capture')).toMatchObject({
+      ok: false, level: 'warn', fix: { copy: 'cargo install --path ~/code/FRONTIER/fjs-prototypes/capture/native --no-default-features' },
+    })
+    const here = await setup({ ...common, has: () => true })
+    expect(goal(here, 'desktop').rows.find(r => r.id === 'bin:capture')).toMatchObject({ ok: true, level: 'ok', fix: null })
   })
 
   test('an optional goal with nothing present reads unset, not warn', async () => {

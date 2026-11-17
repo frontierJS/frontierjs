@@ -47,7 +47,12 @@
     },
     {
       "includes": ["**/*.d.ts"],
-      "linter": { "rules": { "correctness": { "noUnusedVariables": "off" } } }
+      "linter": {
+        "rules": {
+          "correctness": { "noUnusedVariables": "off", "noUnusedImports": "off" },
+          "suspicious": { "noRedeclare": "off", "noShadowRestrictedNames": "off" }
+        }
+      }
     }
   ]
 }

@@ -213,7 +213,7 @@ export function mountIsland(island, Component) {
   island.nodes.length = 0
 
   // The open marker is the anchor; see the header on why this is `mount`.
-  const handle = mount(island.open, Component, { props: island.meta.props ?? {} })
+  const handle = mount(island.open, Component, { props: island.meta.props ?? {}, island: island.meta.component })
   _mounted.add({ open: island.open, handle, name: island.meta.component })
   return handle
 }

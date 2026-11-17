@@ -739,6 +739,16 @@ db.$levelOf('order')       // the level THIS client's principal is graded at for
                            // level: junction's method gate and its gate-mode
                            // broadcast grading fall back to the shipped grader
                            // there, which is what such a schema auto-installs
+await db.$checkWrite('repo', 'update', row, changes)
+                           // { ok, message?, rule? } — would THIS client's
+                           // principal be let make this write, asked without
+                           // making it: a raw route grading a git push, a
+                           // mirror's forward (FJS-3147). 'create' grades row
+                           // as the payload, 'update' the stored row then
+                           // changes over it, 'delete' the stored row; the gate
+                           // and @@capabilities first. Field @allow(write) and
+                           // @@transitions are not graded. Fails closed: an
+                           // undecidable policy throws, a refusal is a verdict
 db.$protectedFields('secret')
                            // { data: 'encrypted' } — which columns must never be
                            // written down in plain text, and which protection

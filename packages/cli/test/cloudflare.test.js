@@ -13,7 +13,7 @@ import { tmpdir } from 'os'
 
 import {
   profiles, profileFor, accounts, reachable, zones, findZone, records, record, marked, createRecord, updateRecord, deleteRecord, purge,
-  pagesProjects, createPagesProject, pagesDeployments, deployPages, workers, worker, activeVersion, login,
+  pagesProjects, createPagesProject, pagesDeployments, deployPages, workers, worker, activeVersion, login, tunnels, createTunnel, tunnelToken,
   CloudflareError, TOKEN_ENV, MIN_CF, unbox,
 } from '../core/cloudflare.js'
 
@@ -323,6 +323,28 @@ describe('Pages and Workers take their account from the env', () => {
     fixtureWith(f => { f.pages['acc-own'] = Array.from({ length: 11 }, (_, i) => ({ ...f.pages['acc-own'][1], name: `p${i}` })) })
     expect((await pagesProjects(DEFAULT, 'acc-own')).length).toBe(11)
     expect(calls().map(c => c.argv[c.argv.indexOf('--per-page') + 1])).toEqual(['10', '10'])
+  })
+})
+
+describe('Tunnels', () => {
+  test('a list walks the non-deleted tunnels of the account the env names', async () => {
+    fixtureWith(f => { f.tunnels = { 'acc-agency': [{ id: 'tun-1', name: 'fli-app-example-com', status: 'healthy' }] } })
+    expect((await tunnels(DEFAULT, 'acc-agency')).map(t => t.name)).toEqual(['fli-app-example-com'])
+    const [call] = calls()
+    expect(call.account).toBe('acc-agency')
+    expect(call.argv.slice(0, 4)).toEqual(['tunnels', 'list', '--is-deleted', 'false'])
+    expect(call.argv).toContain('--page')
+  })
+
+  test('a create is a local-config tunnel with the secret it was given', async () => {
+    const made = await createTunnel(DEFAULT, 'acc-own', 'fli-app-example-com', 'c2VjcmV0')
+    expect(made).toMatchObject({ id: 'tun-created', name: 'fli-app-example-com', token: 'token-created' })
+    expect(calls()[0].argv).toEqual(['tunnels', 'create', '--name', 'fli-app-example-com', '--config-src', 'local', '--tunnel-secret', 'c2VjcmV0', '--profile', 'default'])
+  })
+
+  test('a token comes back as the string cf printed', async () => {
+    expect(await tunnelToken(DEFAULT, 'acc-own', 'tun-1')).toBe('token-tun-1')
+    expect(calls()[0].argv.slice(0, 4)).toEqual(['tunnels', 'token', 'get', 'tun-1'])
   })
 })
 

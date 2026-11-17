@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-15 model(s) · 3 enum(s) · 2 database(s)
+21 model(s) · 6 enum(s) · 2 database(s)
 chat → sqlite · main → sqlite
 ```
 
@@ -22,6 +22,9 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | --- | --- |
 | `ChannelType` | `direct` · `group` · `open` · `private` |
 | `ComputeProvider` | `digitalocean` · `hetzner` |
+| `Presence` | `away` · `dnd` · `offline` · `online` |
+| `ScheduledPostStatus` | `cancelled` · `failed` · `scheduled` · `sent` |
+| `SectionKind` | `channels` · `custom` · `direct` · `favorites` |
 | `TeamType` | `invite` · `open` |
 
 ## Models
@@ -72,6 +75,7 @@ table `channel_member` · db `chat` · gate `3.3.8.3`
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
 | `id` | `Int` | no | — | id |
 | `isAdmin` | `Boolean` | no | — | @system · **required on write** |
+| `isFavorite` | `Boolean` | no | `0` | @system |
 | `lastViewedAt` | `DateTime` | yes | — | @system |
 | `mentionCount` | `Int` | no | — | @system · **required on write** |
 | `mentionCountRoot` | `Int` | no | `0` | @system |
@@ -90,6 +94,47 @@ table `channel_member` · db `chat` · gate `3.3.8.3`
 @@allow(create, check(channel, 'read'))
 @@allow(delete, profileExternalId == auth().profileExternalId)
 @@allow(read, check(channel))
+```
+
+### `ChatGroup`
+
+table `chat_group` · db `chat` · gate `3.3.3.3`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `createdByProfileExternalId` | `String` | no | — | @system · **required on write** |
+| `handle` | `String` | no | — | unique · **required on write** |
+| `id` | `Int` | no | — | id |
+| `name` | `String` | no | — | **required on write** |
+| `profileExternalIds` | `Json` | no | `'[]'` | — |
+
+```
+@@allow(create, createdByProfileExternalId == auth().profileExternalId)
+@@allow(delete, createdByProfileExternalId == auth().profileExternalId)
+@@allow(read, true)
+@@allow(update, createdByProfileExternalId == auth().profileExternalId)
+```
+
+### `ChatSection`
+
+table `chat_section` · db `chat` · gate `3.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `channelExternalIds` | `Json` | no | `'[]'` | @system |
+| `externalId` | `String` | no | — | unique · @system · **required on write** |
+| `id` | `Int` | no | — | id |
+| `kind` | `SectionKind` | no | — | @system · **required on write** |
+| `missingSince` | `DateTime` | yes | — | @system |
+| `name` | `String` | no | — | @system · **required on write** |
+| `profileExternalId` | `String` | no | — | @system · **required on write** |
+| `sortOrder` | `Int` | no | `0` | @system |
+| `teamExternalId` | `String` | no | — | @system · **required on write** |
+
+```
+@@index(profileExternalId, teamExternalId)
+@@allow(read, profileExternalId == auth().profileExternalId)
 ```
 
 ### `ClaudeMessage`
@@ -168,6 +213,29 @@ table `claude_write` · db `main` · gate `5.8`
 
 ```
 @@index(createdAt)
+```
+
+### `Draft`
+
+table `draft` · db `chat` · gate `3.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `channelExternalId` | `String` | no | — | @system · **required on write** |
+| `createdAt` | `DateTime` | yes | — | @system |
+| `externalId` | `String` | no | — | unique · @system · **required on write** |
+| `fileExternalIds` | `Json` | no | — | @system · **required on write** |
+| `id` | `Int` | no | — | id |
+| `message` | `String` | no | — | @system · **required on write** |
+| `missingSince` | `DateTime` | yes | — | @system |
+| `profileExternalId` | `String` | no | — | @system · **required on write** |
+| `props` | `Json` | no | — | @system · **required on write** |
+| `rootExternalId` | `String` | yes | — | @system |
+| `updatedAt` | `DateTime` | yes | — | @system |
+
+```
+@@index(profileExternalId)
+@@allow(read, profileExternalId == auth().profileExternalId)
 ```
 
 ### `FileInfo`
@@ -254,6 +322,7 @@ table `post` · db `chat` · gate `3.3.3.3`
 | `createdAt` | `DateTime` | yes | — | @system |
 | `deletedAt` | `DateTime` | yes | — | @system |
 | `editedAt` | `DateTime` | yes | — | @system |
+| `embeds` | `Json` | no | `'[]'` | @system |
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
 | `files` | `FileInfo[]` | — | — | relation |
 | `hashtags` | `String` | no | — | @system · **required on write** |
@@ -290,13 +359,18 @@ table `profile` · db `chat` · gate `3.8.8.8`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | yes | — | @system |
+| `customEmoji` | `String` | yes | — | @system |
+| `customExpiresAt` | `DateTime` | yes | — | @system |
+| `customText` | `String` | yes | — | @system |
 | `deletedAt` | `DateTime` | yes | — | @system |
+| `dndEndAt` | `DateTime` | yes | — | @system |
 | `email` | `String` | yes | — | @system · `@allow(read: externalId == auth().profileExternalId)` |
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
 | `files` | `FileInfo[]` | — | — | relation |
 | `firstName` | `String` | no | — | @system · **required on write** |
 | `id` | `Int` | no | — | id |
 | `isBot` | `Boolean` | no | — | @system · **required on write** |
+| `lastActivityAt` | `DateTime` | yes | — | @system |
 | `lastName` | `String` | no | — | @system · **required on write** |
 | `locale` | `String` | yes | — | @system |
 | `memberships` | `ChannelMember[]` | — | — | relation |
@@ -305,6 +379,8 @@ table `profile` · db `chat` · gate `3.8.8.8`
 | `posts` | `Post[]` | — | — | relation |
 | `reactions` | `Reaction[]` | — | — | relation |
 | `roles` | `String` | no | — | @system · **required on write** |
+| `status` | `Presence` | yes | — | @system |
+| `statusManual` | `Boolean` | no | `0` | @system |
 | `threads` | `Thread[]` | — | — | relation |
 | `updatedAt` | `DateTime` | yes | — | @system |
 | `username` | `String` | no | — | @system · **required on write** |
@@ -324,6 +400,28 @@ table `provider_account` · db `main` · gate `5.8`
 | `label` | `String` | no | — | **required on write** |
 | `provider` | `ComputeProvider` | no | — | **required on write** |
 | `token` | `String` | no | — | @encrypted · **required on write** |
+
+### `QuietSchedule`
+
+table `quiet_schedule` · db `chat` · gate `3.3.3.3`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `days` | `Json` | no | `'[0,1,2,3,4,5,6]'` | — |
+| `enabled` | `Boolean` | no | `1` | — |
+| `fromMinute` | `Int` | no | — | **required on write** |
+| `id` | `Int` | no | — | id |
+| `profileExternalId` | `String` | no | — | unique · @system · **required on write** |
+| `timezone` | `String` | no | — | **required on write** |
+| `toMinute` | `Int` | no | — | **required on write** |
+
+```
+@@allow(create, profileExternalId == auth().profileExternalId)
+@@allow(delete, profileExternalId == auth().profileExternalId)
+@@allow(postUpdate, profileExternalId == auth().profileExternalId)
+@@allow(read, profileExternalId == auth().profileExternalId)
+@@allow(update, profileExternalId == auth().profileExternalId)
+```
 
 ### `Reaction`
 
@@ -347,6 +445,53 @@ table `reaction` · db `chat` · gate `3.3.8.3`
 @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read'))
 @@allow(delete, profileExternalId == auth().profileExternalId)
 @@allow(read, check(post))
+```
+
+### `SavedPost`
+
+table `saved_post` · db `chat` · gate `3.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `externalId` | `String` | no | — | unique · @system · **required on write** |
+| `id` | `Int` | no | — | id |
+| `missingSince` | `DateTime` | yes | — | @system |
+| `postExternalId` | `String` | no | — | @system · **required on write** |
+| `profileExternalId` | `String` | no | — | @system · **required on write** |
+
+```
+@@index(profileExternalId)
+@@allow(read, profileExternalId == auth().profileExternalId)
+```
+
+### `ScheduledPost`
+
+table `scheduled_post` · db `chat` · gate `3.3.3.3`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `channelExternalId` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `error` | `String` | yes | — | @system |
+| `fileExternalIds` | `Json` | no | `'[]'` | — |
+| `id` | `Int` | no | — | id |
+| `memberId` | `Int` | no | — | @system · **required on write** |
+| `message` | `String` | no | `''` | — |
+| `profileExternalId` | `String` | no | — | @system · **required on write** |
+| `rootExternalId` | `String` | yes | — | — |
+| `sendAt` | `DateTime` | no | — | **required on write** |
+| `sentAt` | `DateTime` | yes | — | @system |
+| `sentPostExternalId` | `String` | yes | — | @system |
+| `status` | `ScheduledPostStatus` | no | `'scheduled'` | — |
+
+```
+@@index(memberId)
+@@index(status, sendAt)
+@@allow(create, memberId == auth().id)
+@@allow(delete, memberId == auth().id)
+@@allow(postUpdate, memberId == auth().id)
+@@allow(read, memberId == auth().id)
+@@allow(update, memberId == auth().id)
 ```
 
 ### `Session`

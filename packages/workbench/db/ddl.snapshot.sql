@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 15 models · 2 databases
+-- 21 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -151,7 +151,91 @@ CREATE TABLE IF NOT EXISTS "profile" (
   "createdAt" TEXT,
   "updatedAt" TEXT,
   "deletedAt" TEXT,
+  "status" TEXT,
+  "statusManual" INTEGER NOT NULL DEFAULT 0,
+  "lastActivityAt" TEXT,
+  "dndEndAt" TEXT,
+  "customEmoji" TEXT,
+  "customText" TEXT,
+  "customExpiresAt" TEXT,
+  "missingSince" TEXT,
+  CHECK ("status" IN ('online', 'away', 'offline', 'dnd'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "draft" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "externalId" TEXT NOT NULL UNIQUE,
+  "profileExternalId" TEXT NOT NULL,
+  "channelExternalId" TEXT NOT NULL,
+  "rootExternalId" TEXT,
+  "message" TEXT NOT NULL,
+  "props" TEXT NOT NULL,
+  "fileExternalIds" TEXT NOT NULL,
+  "createdAt" TEXT,
+  "updatedAt" TEXT,
   "missingSince" TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_draft_profileExternalId" ON "draft" ("profileExternalId");
+
+CREATE TABLE IF NOT EXISTS "saved_post" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "externalId" TEXT NOT NULL UNIQUE,
+  "profileExternalId" TEXT NOT NULL,
+  "postExternalId" TEXT NOT NULL,
+  "missingSince" TEXT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_saved_post_profileExternalId" ON "saved_post" ("profileExternalId");
+
+CREATE TABLE IF NOT EXISTS "chat_section" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "externalId" TEXT NOT NULL UNIQUE,
+  "profileExternalId" TEXT NOT NULL,
+  "teamExternalId" TEXT NOT NULL,
+  "name" TEXT NOT NULL,
+  "kind" TEXT NOT NULL,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  "channelExternalIds" TEXT NOT NULL DEFAULT '[]',
+  "missingSince" TEXT,
+  CHECK ("kind" IN ('favorites', 'channels', 'direct', 'custom'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_chat_section_profileExternalId_teamExternalId" ON "chat_section" ("profileExternalId", "teamExternalId");
+
+CREATE TABLE IF NOT EXISTS "scheduled_post" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "memberId" INTEGER NOT NULL,
+  "profileExternalId" TEXT NOT NULL,
+  "channelExternalId" TEXT NOT NULL,
+  "rootExternalId" TEXT,
+  "message" TEXT NOT NULL DEFAULT '',
+  "fileExternalIds" TEXT NOT NULL DEFAULT '[]',
+  "sendAt" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'scheduled',
+  "error" TEXT,
+  "sentPostExternalId" TEXT,
+  "sentAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('scheduled', 'sent', 'failed', 'cancelled'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_scheduled_post_status_sendAt" ON "scheduled_post" ("status", "sendAt");
+CREATE INDEX IF NOT EXISTS "idx_scheduled_post_memberId" ON "scheduled_post" ("memberId");
+
+CREATE TABLE IF NOT EXISTS "chat_group" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "handle" TEXT NOT NULL UNIQUE,
+  "name" TEXT NOT NULL,
+  "profileExternalIds" TEXT NOT NULL DEFAULT '[]',
+  "createdByProfileExternalId" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "quiet_schedule" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "profileExternalId" TEXT NOT NULL UNIQUE,
+  "enabled" INTEGER NOT NULL DEFAULT 1,
+  "days" TEXT NOT NULL DEFAULT '[0,1,2,3,4,5,6]',
+  "fromMinute" INTEGER NOT NULL,
+  "toMinute" INTEGER NOT NULL,
+  "timezone" TEXT NOT NULL
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "channel" (
@@ -189,6 +273,7 @@ CREATE TABLE IF NOT EXISTS "channel_member" (
   "messageCountRoot" INTEGER NOT NULL DEFAULT 0,
   "mentionCountRoot" INTEGER NOT NULL DEFAULT 0,
   "muted" INTEGER NOT NULL DEFAULT 0,
+  "isFavorite" INTEGER NOT NULL DEFAULT 0,
   "updatedAt" TEXT,
   "missingSince" TEXT
 ) STRICT;
@@ -212,6 +297,7 @@ CREATE TABLE IF NOT EXISTS "post" (
   "updatedAt" TEXT,
   "editedAt" TEXT,
   "deletedAt" TEXT,
+  "embeds" TEXT NOT NULL DEFAULT '[]',
   "missingSince" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_post_channelExternalId_createdAt" ON "post" ("channelExternalId", "createdAt");

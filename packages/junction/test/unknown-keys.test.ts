@@ -289,6 +289,27 @@ describe('the refusal does not hand the caller the author\'s advice', () => {
     expect(out).toMatch(/\{ method: 'create', input: /)
   })
 
+  // FJS-4354: a body that names only model columns and leaves out one a
+  // handler computes (`path, line` in, the anchor column out) is refused for
+  // the missing column, not an unknown key — and said nothing to the author.
+  test('a required column left out of an own create names the input: on the verb', async () => {
+    const db  = await createClient({ db: ':memory:', schema: SCHEMA })
+    const app = createApp({ db: db as never })
+    app.services.register(createService({
+      name: 'posts', model: 'Post', db: db as never,
+      async create(ctx: any) { return ctx.db.post.create({ data: { ...ctx.data, title: 'computed' } }) },
+    } as never))
+    await app._startForTest()
+    const out = (await warns(() => call(app, 'create', null, { body: 'x' }).catch(() => {}))).join('\n')
+    expect(out).toMatch(/Post requires\. title:/)
+    expect(out).toMatch(/\{ method: 'create', input: /)
+  })
+
+  test('…and a plain create missing one says nothing: the caller left it out', async () => {
+    const { app } = await mkApp()
+    expect(await warns(() => call(app, 'create', null, { body: 'x' }).catch(() => {}))).toEqual([])
+  })
+
   test('…once per shape, so a stranger cannot flood the log', async () => {
     const { app } = await mkApp()
     const out = await warns(async () => {

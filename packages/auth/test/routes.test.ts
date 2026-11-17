@@ -212,6 +212,18 @@ describe('POST /auth/login', () => {
     expect((res.body as any).token).toBeTruthy()
   })
 
+  // The session list names each sign-in by where it came from; a provider
+  // never sees the request, so the route must hand it down (FJS-4402).
+  test('the session it mints records the address and browser it arrived from', async () => {
+    const res = await request(app).post('/auth/login')
+      .set('user-agent', 'RoutesTest/1.0')
+      .send({ email: email('l-user'), password: 'pw-1' })
+
+    const row = await h.sys.session.findFirst({ where: { token: (res.body as any).token } })
+    expect(row.userAgent).toBe('RoutesTest/1.0')
+    expect(row.ipAddress).toBeTruthy()
+  })
+
   // THE regression test. A wrong password answering 500 meant a client could
   // not tell a typo from an outage, and Sierra's browser client — which keys
   // off 401 to clear a stale token — never got its signal.

@@ -10,7 +10,10 @@ export class LocalProvider {
     }): Promise<void>;
     adopt(key?: string, from?: string): Promise<void>;
     get(key?: string): Promise<NonSharedBuffer>;
-    stream(key?: string): Promise<ReadableStream<Uint8Array<ArrayBufferLike>>>;
+    stream(key?: string, { start, end }?: {
+        start?: number;
+        end?: number;
+    }): Promise<ReadableStream<Uint8Array<ArrayBufferLike>>>;
     path(key?: string): string;
     delete(key?: string): Promise<void>;
     sign(key?: string, { expiresIn, now }?: {

@@ -80,6 +80,51 @@ test('markdown: an image is a link to it, never loaded', function () {
   assert.equal(markdown('![a cat](https://a.test/cat.png)'), '<p><a href="https://a.test/cat.png" target="_blank" rel="noopener noreferrer">a cat</a></p>')
 })
 
+/* ── resolveUrl: a base for a relative URL, and an image shown inline (FJS-D2221) ── */
+
+// A repository README: a link resolves against the file's directory, an image
+// against the raw route that serves it.
+const repo = (url, kind) => /^[a-z]+:|^\/\/|^#/i.test(url) ? null
+  : kind === 'image' ? `/raw/main/${url}` : `/blob/main/${url}`
+
+test('markdown: resolveUrl gives a relative link its base', function () {
+  assert.equal(markdown('[guide](docs/guide.md)', { resolveUrl: repo }), '<p><a href="/blob/main/docs/guide.md">guide</a></p>')
+  // A resolver that answers nothing leaves the URL as written.
+  assert.equal(markdown('[top](#top)', { resolveUrl: repo }), '<p><a href="#top">top</a></p>')
+})
+
+test('markdown: an image the resolver answers is shown inline', function () {
+  assert.equal(markdown('![the "logo"](img/logo.png "Our logo")', { resolveUrl: repo }),
+    '<p><img src="/raw/main/img/logo.png" alt="the &quot;logo&quot;" title="Our logo"></p>')
+})
+
+test('markdown: an image the resolver declines is a link, resolved as one', function () {
+  const linksOnly = (url, kind) => kind === 'link' ? `/blob/main/${url}` : null
+  assert.equal(markdown('![logo](img/logo.png)', { resolveUrl: linksOnly }), '<p><a href="/blob/main/img/logo.png">logo</a></p>')
+})
+
+test('markdown: a badge inside a link is an image inside the anchor', function () {
+  assert.equal(markdown('[![ci](ci.svg)](https://ci.test)', { resolveUrl: repo }),
+    '<p><a href="https://ci.test" target="_blank" rel="noopener noreferrer"><img src="/raw/main/ci.svg" alt="ci"></a></p>')
+  // Declined inside a link, it is its alt text: an anchor never holds an anchor.
+  assert.equal(markdown('[![ci](ci.svg)](https://ci.test)', { resolveUrl: () => null }),
+    '<p><a href="https://ci.test" target="_blank" rel="noopener noreferrer">ci</a></p>')
+})
+
+test('markdown: a resolver cannot let a refused scheme through', function () {
+  const seen = []
+  const answer = (url, kind) => { seen.push(url); return kind === 'image' ? 'javascript:alert(1)' : 'data:text/html,x' }
+  assert.equal(markdown('[x](javascript:alert(1)) ![y](a.png) [z](b.md)', { resolveUrl: answer }), '<p>x y z</p>')
+  assert.deepEqual(seen, ['a.png', 'a.png', 'b.md'])
+  for (const src of HOSTILE) {
+    const html = markdown(src, { resolveUrl: (url) => url })
+    for (const t of tags(html)) assert.ok(OURS.has(t) || t === 'img', `${JSON.stringify(src)} wrote <${t}>: ${html}`)
+    const names = html.replace(/"[^"]*"/g, '""')
+    assert.ok(!/<[^>]*\son[a-z]+=/i.test(names), `${JSON.stringify(src)} wrote a handler: ${html}`)
+    for (const m of html.matchAll(/src="([^"]*)"/g)) assert.ok(!/^\s*(javascript|data|vbscript):/i.test(m[1]), `${JSON.stringify(src)}: ${html}`)
+  }
+})
+
 test('markdown: safeUrl reads the scheme the browser would', function () {
   assert.equal(safeUrl('https://a.test/x'), 'https://a.test/x')
   assert.equal(safeUrl('/apps/1'), '/apps/1')

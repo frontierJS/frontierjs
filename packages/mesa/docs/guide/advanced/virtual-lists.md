@@ -53,6 +53,10 @@ it. A row that scrolls out loses its local state when it is disposed.
 
 - **Fixed height only.** Rows of varying height are not supported. A row taller
   or shorter than `height` makes the scroll position drift.
+- **A huge source is an array-like, not a Set.** An array, or an object with
+  `length` and numeric indexes and no iterator (a `Proxy` answering both), is read
+  only at the visible indexes. A Set, a Map or a generator is copied whole on
+  every change.
 - **The block's parent is the scroller.** Put the block in its own element so
   the spacers do not mix with other children. A block with no element around
   it, at a component's root or straight inside an `{#if}`, is a compile error.

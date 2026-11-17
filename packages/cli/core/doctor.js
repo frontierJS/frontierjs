@@ -63,6 +63,7 @@ export const BINARIES = [
   { name: 'chromium', required: false, for: ['build'],   any: ['chromium', 'chromium-browser', 'google-chrome'], install: 'sudo apt install chromium-browser', why: 'the browser drives run in it' },
   { name: 'firefox',  required: false, for: ['build'],   install: 'sudo apt install firefox', why: 'the CSP drives need Firefox, which enforces what Chromium does not' },
   { name: 'cargo',    required: false, for: ['desktop'], install: 'https://rustup.rs', why: 'builds the desktop shells' },
+  { name: 'capture',  required: false, for: ['desktop'], install: 'cargo install --path ~/code/FRONTIER/fjs-prototypes/capture/native --no-default-features', why: 'the screenshot tool Workbench\'s tray starts' },
   { name: 'ssh',      required: false, for: ['deploy'],  install: 'sudo apt install openssh-client', why: 'reaches a Basecamp box' },
   { name: 'rsync',    required: false, for: ['deploy'],  install: 'sudo apt install rsync', why: 'needed for deploy:' },
   { name: 'docker',   required: false, for: ['deploy'],  install: 'https://docs.docker.com/engine/install/', why: 'builds the image a release ships' },

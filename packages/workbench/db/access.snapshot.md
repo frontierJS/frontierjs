@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-15 models · 15 gated · 0 unrestricted
-10 with row policies · 12 with protected fields · 0 declared moves · 0 @system · 0 @seals
+21 models · 21 gated · 0 unrestricted
+16 with row policies · 18 with protected fields · 0 declared moves · 0 @system · 0 @seals
 ```
 
 ## Gates
@@ -23,16 +23,22 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | --- | --- | --- | --- | --- |
 | `Channel` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
 | `ChannelMember` | 3 CREATOR | 3 CREATOR | 8 SYSTEM | 3 CREATOR |
+| `ChatGroup` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
+| `ChatSection` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeMessage` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeTranscript` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Draft` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `FileInfo` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Member` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `Post` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
 | `Profile` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ProviderAccount` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `QuietSchedule` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
 | `Reaction` | 3 CREATOR | 3 CREATOR | 8 SYSTEM | 3 CREATOR |
+| `SavedPost` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `ScheduledPost` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Team` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Thread` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -55,6 +61,21 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `check(channel)`
 - allow **create** — `check(channel, 'read')`
 - allow **delete** — `profileExternalId == auth().profileExternalId`
+
+### `ChatGroup`
+
+- allow **read** — `true`
+- allow **create** — `createdByProfileExternalId == auth().profileExternalId`
+- allow **update** — `createdByProfileExternalId == auth().profileExternalId`
+- allow **delete** — `createdByProfileExternalId == auth().profileExternalId`
+
+### `ChatSection`
+
+- allow **read** — `profileExternalId == auth().profileExternalId`
+
+### `Draft`
+
+- allow **read** — `profileExternalId == auth().profileExternalId`
 
 ### `FileInfo`
 
@@ -80,11 +101,31 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `true`
 
+### `QuietSchedule`
+
+- allow **read** — `profileExternalId == auth().profileExternalId`
+- allow **create** — `profileExternalId == auth().profileExternalId`
+- allow **update** — `profileExternalId == auth().profileExternalId`
+- allow **postUpdate** — `profileExternalId == auth().profileExternalId`
+- allow **delete** — `profileExternalId == auth().profileExternalId`
+
 ### `Reaction`
 
 - allow **read** — `check(post)`
 - allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read')`
 - allow **delete** — `profileExternalId == auth().profileExternalId`
+
+### `SavedPost`
+
+- allow **read** — `profileExternalId == auth().profileExternalId`
+
+### `ScheduledPost`
+
+- allow **read** — `memberId == auth().id`
+- allow **create** — `memberId == auth().id`
+- allow **update** — `memberId == auth().id`
+- allow **postUpdate** — `memberId == auth().id`
+- allow **delete** — `memberId == auth().id`
 
 ### `Team`
 
@@ -129,9 +170,29 @@ rather than refusing the row.
 | `ChannelMember` | `messageCountRoot` | `@system` |
 | `ChannelMember` | `mentionCountRoot` | `@system` |
 | `ChannelMember` | `muted` | `@system` |
+| `ChannelMember` | `isFavorite` | `@system` |
 | `ChannelMember` | `updatedAt` | `@system` |
 | `ChannelMember` | `missingSince` | `@system` |
+| `ChatGroup` | `createdByProfileExternalId` | `@system` |
+| `ChatSection` | `externalId` | `@system` |
+| `ChatSection` | `profileExternalId` | `@system` |
+| `ChatSection` | `teamExternalId` | `@system` |
+| `ChatSection` | `name` | `@system` |
+| `ChatSection` | `kind` | `@system` |
+| `ChatSection` | `sortOrder` | `@system` |
+| `ChatSection` | `channelExternalIds` | `@system` |
+| `ChatSection` | `missingSince` | `@system` |
 | `ClaudeWrite` | `before` | `@encrypted` |
+| `Draft` | `externalId` | `@system` |
+| `Draft` | `profileExternalId` | `@system` |
+| `Draft` | `channelExternalId` | `@system` |
+| `Draft` | `rootExternalId` | `@system` |
+| `Draft` | `message` | `@system` |
+| `Draft` | `props` | `@system` |
+| `Draft` | `fileExternalIds` | `@system` |
+| `Draft` | `createdAt` | `@system` |
+| `Draft` | `updatedAt` | `@system` |
+| `Draft` | `missingSince` | `@system` |
 | `FileInfo` | `externalId` | `@system` |
 | `FileInfo` | `postExternalId` | `@system` |
 | `FileInfo` | `profileExternalId` | `@system` |
@@ -164,6 +225,7 @@ rather than refusing the row.
 | `Post` | `updatedAt` | `@system` |
 | `Post` | `editedAt` | `@system` |
 | `Post` | `deletedAt` | `@system` |
+| `Post` | `embeds` | `@system` |
 | `Post` | `missingSince` | `@system` |
 | `Profile` | `externalId` | `@system` |
 | `Profile` | `username` | `@system` |
@@ -177,14 +239,31 @@ rather than refusing the row.
 | `Profile` | `createdAt` | `@system` |
 | `Profile` | `updatedAt` | `@system` |
 | `Profile` | `deletedAt` | `@system` |
+| `Profile` | `status` | `@system` |
+| `Profile` | `statusManual` | `@system` |
+| `Profile` | `lastActivityAt` | `@system` |
+| `Profile` | `dndEndAt` | `@system` |
+| `Profile` | `customEmoji` | `@system` |
+| `Profile` | `customText` | `@system` |
+| `Profile` | `customExpiresAt` | `@system` |
 | `Profile` | `missingSince` | `@system` |
 | `ProviderAccount` | `token` | `@encrypted` |
+| `QuietSchedule` | `profileExternalId` | `@system` |
 | `Reaction` | `externalId` | `@system` |
 | `Reaction` | `postExternalId` | `@system` |
 | `Reaction` | `profileExternalId` | `@system` |
 | `Reaction` | `emojiName` | `@system` |
 | `Reaction` | `createdAt` | `@system` |
 | `Reaction` | `missingSince` | `@system` |
+| `SavedPost` | `externalId` | `@system` |
+| `SavedPost` | `profileExternalId` | `@system` |
+| `SavedPost` | `postExternalId` | `@system` |
+| `SavedPost` | `missingSince` | `@system` |
+| `ScheduledPost` | `memberId` | `@system` |
+| `ScheduledPost` | `profileExternalId` | `@system` |
+| `ScheduledPost` | `error` | `@system` |
+| `ScheduledPost` | `sentPostExternalId` | `@system` |
+| `ScheduledPost` | `sentAt` | `@system` |
 | `Session` | `tokenHash` | `@guarded @system` |
 | `Session` | `lastUsedAt` | `@system` |
 | `Team` | `externalId` | `@system` |

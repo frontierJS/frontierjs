@@ -792,7 +792,8 @@ model Doc {
   it('refuses an update of an archived row, system or not, and admits an open one', async () => {
     const { db, sys, open, archived } = await build()
     // The WHERE excludes the row, as an update policy does: nothing is reached.
-    expect(await sys.doc.update({ where: { id: archived.id }, data: { status: 'open' } })).toBeNull()
+    // The system caller is told so (FJS-D2218); a scoped one sees a miss.
+    await expect(sys.doc.update({ where: { id: archived.id }, data: { status: 'open' } })).rejects.toThrow(/refused by @@require\(update\)/)
     expect(await db.$setAuth({ id: 1 }).doc.update({ where: { id: archived.id }, data: { status: 'open' } })).toBeNull()
     expect((await sys.doc.findUnique({ where: { id: archived.id } })).status).toBe('archived')
     await sys.doc.update({ where: { id: open.id }, data: { status: 'archived' } })
@@ -810,7 +811,7 @@ model Doc {
 
   it('refuses a delete of a built-in row, system or not, and admits another', async () => {
     const { db, sys, open, builtIn } = await build()
-    expect(await sys.doc.delete({ where: { id: builtIn.id } })).toBeNull()
+    await expect(sys.doc.delete({ where: { id: builtIn.id } })).rejects.toThrow(/refused by @@require\(delete\)/)
     expect(await sys.doc.count({ where: { id: builtIn.id } })).toBe(1)
     await sys.doc.delete({ where: { id: open.id } })
     expect(await sys.doc.count({ where: { id: open.id } })).toBe(0)

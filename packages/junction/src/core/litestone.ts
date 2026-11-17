@@ -2167,9 +2167,14 @@ const _toldAuthor = new WeakMap<object, Set<string>>()
  * the schema's seams (`FJS-2082`). Once per service, method and shape, so a
  * caller varying the key cannot write the log at request rate.
  */
-function tellAuthor(ctx: ServiceContext, what: string, remedy: string): void {
+function tellAuthor(
+  ctx:     ServiceContext,
+  what:    string,
+  remedy:  string,
+  refused: string = `a key that ${what} does not declare`,
+): void {
   const client = callDb(ctx) as object | undefined
-  const id     = `${ctx.service}.${String(ctx.method)}|${what}`
+  const id     = `${ctx.service}.${String(ctx.method)}|${what}|${refused}`
   if (client) {
     let told = _toldAuthor.get(client)
     if (!told) { told = new Set(); _toldAuthor.set(client, told) }
@@ -2177,7 +2182,7 @@ function tellAuthor(ctx: ServiceContext, what: string, remedy: string): void {
     told.add(id)
   }
   console.warn(
-    `[Junction] service '${ctx.service}': ${String(ctx.method)} refused a key that ${what} does not declare. ${remedy}`,
+    `[Junction] service '${ctx.service}': ${String(ctx.method)} refused ${refused}. ${remedy}`,
   )
 }
 
@@ -2233,6 +2238,21 @@ export function checkUnknownKeys(
         : `is @guarded on ${what}, a system-context column no caller writes. Leave it out of the payload.`,
     })),
   ])
+}
+
+/** A create body missing a required column, said to the author with the way out. */
+function tellMissing(ctx: ServiceContext, row: unknown, err: unknown, what: string): void {
+  const src    = row && typeof row === 'object' && !Array.isArray(row) ? row as Record<string, unknown> : null
+  const errors = (err as { data?: unknown })?.data
+  if (!src || !Array.isArray(errors)) return
+  const missing = errors
+    .map(e => (e as { field?: unknown })?.field)
+    .filter((f): f is string => typeof f === 'string' && src[f] == null)
+  if (!missing.length) return
+  tellAuthor(ctx, what,
+    `${missing.join(', ')}: if the method or a before hook computes it from the body, the body is not the row, so declare its type and list the verb as \`{ method: '${String(ctx.method)}', input: '<Type>' }\`, which replaces this check.`,
+    `a body missing a column ${what} requires`,
+  )
 }
 
 /**
@@ -2375,7 +2395,7 @@ export function isDerivedHook(fn: unknown): boolean {
  * Everything is resolved at call time: the client is not known when the service
  * module is imported, and neither is the schema.
  */
-export function autoValidate(accessorOpt: string | undefined, mode: 'create' | 'patch') {
+export function autoValidate(accessorOpt: string | undefined, mode: 'create' | 'patch', own = false) {
   // Named for the same reason as gateAuth — see the note there.
   return async function autoValidate(ctx: ServiceContext): Promise<void> {
     // accessor omitted → resolve from the service name, as getTable does.
@@ -2456,7 +2476,15 @@ export function autoValidate(accessorOpt: string | undefined, mode: 'create' | '
         `or, when the body is not the row (a hook derives the row from it), declare its type and list the verb as \`{ method: '${String(ctx.method)}', input: '<Type>' }\`, which replaces this check.`,
         compiled.guarded,
       )
-      const parsed = compiled[mode].parse(row) as Record<string, unknown>
+      let parsed: Record<string, unknown>
+      try {
+        parsed = compiled[mode].parse(row) as Record<string, unknown>
+      } catch (err) {
+        // The row check runs before a create the service wrote, so a handler
+        // that computes a required column from the body never runs (FJS-4354).
+        if (own && mode === 'create') tellMissing(ctx, row, err, compiled.model)
+        throw err
+      }
       // Carried unvalidated: the Data boundary grades a nested write — the
       // target's gate, its @guarded columns, its own field rules — and this
       // schema has no shape for one to check.

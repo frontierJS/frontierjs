@@ -168,6 +168,7 @@ await storage.sign(user.avatar, { expiresIn: 3600 })  // presigned URL; the loca
 const bytes = await storage.download(user.avatar)      // → Buffer
 if (bytes.length !== 70) throw new Error('expected the uploaded bytes back')
 // await storage.stream(user.avatar)  → ReadableStream, any provider: an object too large to hold whole
+// await storage.stream(user.avatar, { start: 0, end: 1023 })  → those bytes only, inclusive, any provider (a video's seek)
 // storage.path(user.avatar)          → absolute file path under provider 'local', null otherwise (ffmpeg)
 await storage.delete(user.avatar)                      // manual cleanup
 ```

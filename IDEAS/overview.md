@@ -801,6 +801,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `workbench.md` — the Workbench after V1: what comes next, ranked against prior art
 - `workbench-branches.md` — a branch per chat in the Workbench: a linked worktree pinned beside its parent, Land and Archive
 - `workbench-messages.md` — a Messages screen in Workbench: serpgrid's chat UI over the Mattermost mirror, in its own `chat` database
+- `workbench-capture.md` — a Flameshot replacement: Kapture (`~/code/KOBAMI/kapture`, Wayland-only) gains an X11 backend; Workbench's tray and the GNOME Print shortcut run it
 - `workbench-package-chats.md` — a Workbench chat knows its workspace package (inferred from its writes, overridable); tabs group by package like Chrome tab groups; Q1–Q3 ruled D1958–D1960 (all as recommended), 0.1 next
 - `workspace-onboarding.md` — Basecamp's `/onboarding` grades each connection missing → present → proven, with vendor links, scopes and Verify; D1578–D1580 ruled, Q4 open, Phase 0 prior art next
 - `zero-to-live.md` — a DigitalOcean account to an FJS app on a Cloudflare domain; Phase 1 ruled, Phase 0's real-droplet run next

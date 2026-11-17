@@ -1,0 +1,307 @@
+---
+title: Capture
+---
+<script>
+  // Capture's settings: the Rust screenshot tool's ~/.config/capture/config.toml,
+  // read and written through api services/capture, which refuses what the tool
+  // would refuse. A save sends every field on the screen and nothing else, so the
+  // settings the old settings window never offered (capture mode, webcam, audio,
+  // annotation styles) are left as the file has them.
+  //
+  // The share key is never sent here: the page learns only whether one is set and
+  // its masked tail. Connect sends the browser to the share app, which hands the
+  // key back to the API, never to this page; Remove key is the one way to clear it.
+  // Connect works from the SAVED address, so it waits for a Save after an edit.
+  //
+  // Reset to defaults asks first on the page, then the API writes Capture's
+  // defaults (it owns them) and keeps the share address and key, as the old
+  // settings window's Reset did.
+
+  import { capture } from '../../resources/Capture.mesa'
+  import { toasts }  from '@frontierjs/ui/stores/toastStore'
+
+  import Card    from '@frontierjs/ui/components/layout/Card.mesa'
+  import Switch  from '@frontierjs/ui/components/forms/Switch.mesa'
+  import Button  from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input   from '@frontierjs/ui/components/forms/Input.mesa'
+  import Select  from '@frontierjs/ui/components/forms/Select.mesa'
+  import NumberInput from '@frontierjs/ui/components/forms/NumberInput.mesa'
+
+  const PRESETS = ['Screenshot_%Y-%m-%d_%H-%M-%S', '%Y%m%d-%H%M%S', 'Screenshot-%n']
+  const FORMATS = [
+    { value: 'webp',   label: 'WebP — lossless, smallest lossless files' },
+    { value: 'png256', label: 'PNG 256 — quantized to 256 colors, smallest files' },
+    { value: 'png',    label: 'PNG — 24-bit, widest compatibility' },
+  ]
+  const FPS = [
+    { value: '30', label: '30 fps' },
+    { value: '60', label: '60 fps' },
+  ]
+  const SCALES = [
+    { value: 'auto', label: 'Auto' },
+    { value: '1',    label: '100%' },
+    { value: '1.25', label: '125%' },
+    { value: '1.5',  label: '150%' },
+    { value: '1.75', label: '175%' },
+    { value: '2',    label: '200%' },
+  ]
+
+  let info     = null
+  let loadErr  = null
+  let saving   = false
+  let removing = false
+  let resetting = false
+  let confirmReset = false
+
+  let saveToFile = true
+  let saveDir    = ''
+  let template   = ''
+  let format     = 'webp'
+  let delay      = 5
+  let scale      = 'auto'
+  let fps        = '30'
+  let cursor     = true
+  let inkNever   = false
+  let inkSecs    = 3
+  let webUrl     = ''
+
+  let connectUrl  = null
+  let connectBusy = false
+  let waiting     = false
+  let testing     = false
+  let testResult  = null
+  let poller      = null
+
+  const scaleOptions = () => {
+    if (SCALES.some(s => s.value === scale)) return SCALES
+    return [...SCALES, { value: scale, label: `${Math.round(Number(scale) * 100)}%` }]
+  }
+
+  function fill(out) {
+    info       = out
+    saveToFile = out.saveToFile
+    saveDir    = out.saveDir
+    template   = out.nameTemplate
+    format     = out.fileFormat
+    delay      = out.delaySecs
+    scale      = out.uiScale === null ? 'auto' : String(out.uiScale)
+    fps        = String(out.videoFps)
+    cursor     = out.videoCursorHighlight
+    inkNever   = out.videoInkSecs === 0
+    inkSecs    = inkNever ? 3 : out.videoInkSecs
+    webUrl     = out.webUrl
+  }
+
+  async function load() {
+    try {
+      fill(await capture.service.invoke('config'))
+      loadErr = null
+      // A reload while the browser is away picks the wait back up.
+      if (info.connecting) watchConnect()
+    } catch (err) {
+      loadErr = err.message
+    }
+  }
+
+  async function save() {
+    saving = true
+    const patch = {
+      saveToFile, saveDir, nameTemplate: template, fileFormat: format, delaySecs: delay,
+      uiScale: scale === 'auto' ? null : Number(scale), webUrl: webUrl.trim(),
+      videoFps: Number(fps), videoCursorHighlight: cursor, videoInkSecs: inkNever ? 0 : inkSecs,
+    }
+    try {
+      fill(await capture.service.invoke('setConfig', null, patch))
+      toasts.success('Capture settings saved')
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      saving = false
+    }
+  }
+
+  async function removeKey() {
+    removing = true
+    try {
+      fill(await capture.service.invoke('setConfig', null, { webKey: '' }))
+      toasts.success('Share key removed')
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      removing = false
+    }
+  }
+
+  // The same `config` the screen loaded with, but only `info` moves, so what is
+  // being typed in the other fields survives the poll.
+  async function watchConnect() {
+    waiting = true
+    clearInterval(poller)
+    poller = setInterval(async () => {
+      try {
+        const out = await capture.service.invoke('config')
+        info = out
+        if (out.connecting) return
+        clearInterval(poller)
+        waiting = false
+        if (out.webKeySet) toasts.success('Connected to the share server')
+        else toasts.error('The connection was not completed')
+      } catch (err) {
+        clearInterval(poller)
+        waiting = false
+        toasts.error(err.message)
+      }
+    }, 2000)
+  }
+
+  async function connect() {
+    connectBusy = true
+    testResult = null
+    try {
+      const out = await capture.service.invoke('connect', null, {})
+      connectUrl = out.url
+      // A new window is the system browser in the desktop shell, and the link below is the fallback.
+      window.open(out.url, '_blank', 'noopener')
+      watchConnect()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      connectBusy = false
+    }
+  }
+
+  async function test() {
+    testing = true
+    testResult = null
+    try {
+      testResult = await capture.service.invoke('test')
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      testing = false
+    }
+  }
+
+  async function reset() {
+    resetting = true
+    try {
+      fill(await capture.service.invoke('resetConfig', null, {}))
+      confirmReset = false
+      toasts.success('Capture settings reset to defaults')
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      resetting = false
+    }
+  }
+
+  $.onDestroy(() => clearInterval(poller))
+  load()
+</script>
+
+<header class="stack gap-sm">
+  <h1 class="h3">Capture</h1>
+  <p class="text-sm text-muted">
+    The screenshot tool's settings{#if info}, kept in <code>{info.path}</code>{/if}. Saving writes the file the tool reads, so the next capture uses it.
+  </p>
+</header>
+
+{#if loadErr}
+  <article class="alert danger" id="capture-error"><div class="alert-content">{loadErr}</div></article>
+{/if}
+{#if info && info.invalid}
+  <article class="alert warning" id="capture-invalid">
+    <div class="alert-content">The tool cannot load that file ({info.invalid}), so it runs on its defaults. Fix or remove the file before saving here.</div>
+  </article>
+{/if}
+
+{#if info}
+  <form id="capture-form" class="stack gap-md" novalidate onsubmit={(e) => { e.preventDefault(); save() }}>
+    <Card id="capture-files">
+      <h2 class="h5">Saved files</h2>
+      <Switch id="capture-save-to-file" label="Save captures to a folder"
+              description="The clipboard always gets a copy; this also writes a file"
+              bind:checked={saveToFile} />
+      <Input id="capture-save-dir" name="saveDir" label="Save folder" autocomplete="off" required bind:value={saveDir} />
+      <Input id="capture-template" name="nameTemplate" label="File name"
+             hint="%Y %m %d %H %M %S for the time, %n for a counter, %% for a percent sign" autocomplete="off" required bind:value={template} />
+      <div class="cluster" data-presets>
+        {#each PRESETS as p (p)}
+          <Button size="xs" treatment="outlined" data-preset={p} onclick={() => { template = p }}>{p}</Button>
+        {/each}
+      </div>
+      <Select id="capture-format" name="fileFormat" label="Format" placeholder="" options={FORMATS} bind:value={format} />
+    </Card>
+
+    <Card id="capture-timing">
+      <h2 class="h5">Delay and size</h2>
+      <NumberInput id="capture-delay" name="delaySecs" label="Capture delay (seconds)" min={1} max={30} step={1} bind:value={delay} />
+      <Select id="capture-scale" name="uiScale" label="Interface size"
+              hint="Scales the capture toolbar. Auto enlarges it on 4K monitors at 100%."
+              placeholder="" options={(scale, scaleOptions())} bind:value={scale} />
+    </Card>
+
+    <Card id="capture-recording">
+      <h2 class="h5">Recording</h2>
+      <Select id="capture-fps" name="videoFps" label="Video frame rate" placeholder="" options={FPS} bind:value={fps} />
+      <Switch id="capture-cursor" label="Highlight the mouse pointer in videos" bind:checked={cursor} />
+      <NumberInput id="capture-ink" name="videoInkSecs" label="Drawings fade after (seconds)" min={1} max={10} step={0.5}
+                   disabled={inkNever} bind:value={inkSecs}
+                   hint="Drawings made while recording vanish after this long" />
+      <Switch id="capture-ink-never" label="Never fade" description="Drawings stay until the recording ends" bind:checked={inkNever} />
+    </Card>
+
+    <Card id="capture-share">
+      <h2 class="h5">Share server</h2>
+      <p class="text-sm text-muted">
+        The Share buttons upload a capture to your own server and copy its link. Sharing is off while the address or the key is empty.
+      </p>
+      <Input id="capture-web-url" name="webUrl" label="Address" placeholder="https://share.example.com/" autocomplete="off" bind:value={webUrl} />
+      <p class="text-sm text-muted" data-key-state>
+        {info.webKeySet ? `A key is set (${info.webKeyHint}).` : 'No key is set.'}
+        {info.shareOn ? ' Sharing is on.' : ' Sharing is off.'}
+      </p>
+      <div class="cluster">
+        <Button size="sm" tone="primary" id="capture-connect" loading={connectBusy} disabled={waiting || !info.webUrl || webUrl.trim() !== info.webUrl} onclick={connect}>
+          {info.webKeySet ? 'Connect again' : 'Connect'}
+        </Button>
+        <Button size="sm" treatment="outlined" id="capture-test" loading={testing} onclick={test}>Test</Button>
+        {#if info.webKeySet}
+          <Button size="sm" treatment="outlined" tone="danger" id="capture-remove-key" loading={removing} onclick={removeKey}>Remove key</Button>
+        {/if}
+      </div>
+      {#if !info.webUrl || webUrl.trim() !== info.webUrl}
+        <p class="text-sm text-muted" id="capture-connect-hint">Save the address first; Connect asks the share server for a key.</p>
+      {/if}
+      {#if waiting}
+        <p class="text-sm" id="capture-waiting">
+          Waiting for approval in your browser…
+          {#if connectUrl}<a id="capture-connect-link" href={connectUrl} target="_blank" rel="noopener">Open the approval page</a>{/if}
+        </p>
+      {/if}
+      {#if testResult}
+        <article class={`alert ${testResult.ok ? 'success' : 'danger'}`} id="capture-test-result" data-part={testResult.part ?? 'ok'}>
+          <div class="alert-content">{testResult.message}</div>
+        </article>
+      {/if}
+    </Card>
+
+    <div class="cluster">
+      <Button type="submit" tone="primary" id="capture-save" loading={saving}>Save</Button>
+      {#if !confirmReset}
+        <Button treatment="outlined" id="capture-reset" onclick={() => { confirmReset = true }}>Reset to defaults</Button>
+      {/if}
+    </div>
+    {#if confirmReset}
+      <article class="alert warning" id="capture-reset-confirm">
+        <div class="alert-content stack gap-sm">
+          <p>Put every setting back to Capture's defaults? The share address and key are kept; anything unsaved on this screen is lost.</p>
+          <div class="cluster">
+            <Button tone="danger" id="capture-reset-yes" loading={resetting} onclick={reset}>Reset</Button>
+            <Button treatment="outlined" id="capture-reset-no" disabled={resetting} onclick={() => { confirmReset = false }}>Cancel</Button>
+          </div>
+        </div>
+      </article>
+    {/if}
+  </form>
+{/if}

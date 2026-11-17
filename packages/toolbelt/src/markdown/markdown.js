@@ -16,8 +16,10 @@
  *     `vbscript:`, spelled with tabs or case in it — draws the text and no
  *     anchor. An entity in a URL is escaped, never decoded, so `javascript&#58;`
  *     cannot become a colon in the browser after the check passed.
- *   - **An image is a link to it.** `![alt](src)` loading on sight would let
- *     anyone who writes the text learn who read it, and when.
+ *   - **An image is a link to it** unless the caller's `resolveUrl` answers
+ *     it a URL. `![alt](src)` loading on sight would let anyone who writes
+ *     the text learn who read it, and when; a resolver that answers only for
+ *     the app's own files keeps that to the app.
  *
  * What it reads: ATX headings, paragraphs, hard breaks, fenced code (painted
  * by glow when the fence names a language), block quotes, bullet, ordered and
@@ -30,6 +32,7 @@
  *   markdown('## Hello **world**')                → '<h2>Hello <strong>world</strong></h2>'
  *   markdown(reply, { headingBase: 3 })            → `#` is an <h3>, for a heading inside a page
  *   markdown(note, { breaks: true })               → every newline is a <br>, as a chat writes it
+ *   markdown(readme, { resolveUrl })               → relative links and images against the file's own directory
  */
 
 import { glow } from '../glow/glow.js'
@@ -98,6 +101,30 @@ function anchor(href, label, title = '') {
   return `<a href="${esc(href)}"${title}${out}>${label}</a>`
 }
 
+/*
+ * Where `[text](url)` and `![alt](src)` point (`FJS-D2221`). The resolver is
+ * asked only about a URL that may already be a link, and its answer is
+ * checked again, since a resolver that prefixes or rewrites can still build a
+ * refused scheme. A link the resolver leaves unanswered stays as written; an
+ * image it leaves unanswered is not loaded, and is drawn as a link instead.
+ */
+const answer = (url, kind, opts) => {
+  const to = opts.resolveUrl(url, kind)
+  return typeof to === 'string' && to ? to : null
+}
+function linkTo(url, opts) {
+  const safe = safeUrl(url)
+  if (safe == null || !opts.resolveUrl) return safe
+  const to = answer(safe, 'link', opts)
+  return to == null ? safe : safeUrl(to)
+}
+function imageSrc(url, opts) {
+  const safe = safeUrl(url)
+  if (safe == null || !opts.resolveUrl) return null
+  const to = answer(safe, 'image', opts)
+  return to == null ? null : safeUrl(to)
+}
+
 function inline(src, opts, inLink = false) {
   const toks = []
   let text = ''
@@ -152,13 +179,22 @@ function inline(src, opts, inLink = false) {
       }
     }
 
-    if ((c === '[' || (c === '!' && src[i + 1] === '[')) && !inLink) {
-      const link = readLink(src, c === '!' ? i + 1 : i)
+    // `[![badge](ci.svg)](ci)` is a README's commonest line, so an image the
+    // resolver can answer is read inside a link's text as well.
+    const image = c === '!' && src[i + 1] === '['
+    if ((c === '[' && !inLink) || (image && (!inLink || opts.resolveUrl))) {
+      const link = readLink(src, image ? i + 1 : i)
       if (link) {
-        const label = c === '!' ? escText(link.text) || esc(link.url) : inline(link.text, opts, true)
-        const href = safeUrl(link.url)
         const title = link.title ? ` title="${esc(link.title)}"` : ''
-        push(href == null ? label : anchor(href, label, title))
+        const img = image ? imageSrc(link.url, opts) : null
+        if (img != null) push(`<img src="${esc(img)}" alt="${escText(link.text)}"${title}>`)
+        // An anchor inside an anchor is not HTML; a declined badge is its words.
+        else if (inLink) push(escText(link.text))
+        else {
+          const label = image ? escText(link.text) || esc(link.url) : inline(link.text, opts, true)
+          const href = linkTo(link.url, opts)
+          push(href == null ? label : anchor(href, label, title))
+        }
         i = link.end
         continue
       }
@@ -439,12 +475,21 @@ function table(lines, i, opts, out) {
 
 /* ── Entry ──────────────────────────────────────────────────────────── */
 
-/*
+/**
  * `opts.headingBase` is the level a `#` is drawn at — 3 inside a card whose
  * page already has an <h1> and <h2>. Deeper headings shift with it and stop
  * at <h6>. `opts.breaks` draws every newline in a paragraph as a <br>.
  * `opts.classes.table` is the class a <table> carries — the caller's
  * stylesheet's word for a table, which this file does not know.
+ * `opts.resolveUrl(url, kind)` answers where a link or image goes -- a
+ * README's `docs/guide.md` is relative to its file, not the page. `kind` is
+ * `'link'` or `'image'`; an image it answers is an <img>. It sees only a URL
+ * already allowed, and a refused scheme in its answer draws the text alone.
+ *
+ * @param {unknown} [src]
+ * @param {{ headingBase?: number, breaks?: boolean, classes?: { table?: string },
+ *   resolveUrl?: (url: string, kind: 'link' | 'image') => string | null | undefined }} [opts]
+ * @returns {string}
  */
 export function markdown(src, opts = {}) {
   if (src == null || src === '') return ''

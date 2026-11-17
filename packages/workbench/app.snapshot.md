@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-25 services · 21 routes · 8 plugins · prefix (none)
+26 services · 22 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -102,6 +102,27 @@ name when it declares none.
   - `download` — standing 5 or above — declared `gate: 5`
   - `archiveLink` — standing 5 or above — declared `gate: 5`
   - `saveKey` — standing 5 or above — declared `gate: 5`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `capture` · model `capture`
+
+- **methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`
+- **custom methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`
+- **who may call** —
+  - `config` — standing 5 or above — declared `gate: 5`
+  - `setConfig` — standing 5 or above — declared `gate: 5`
+  - `resetConfig` — standing 5 or above — declared `gate: 5`
+  - `connect` — standing 5 or above — declared `gate: 5`
+  - `test` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -606,6 +627,7 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/{service}/{id}` | service |
 | PUT | `/{service}/{id}` | service |
 | OPTIONS | `/*` | raw |
+| GET | `/capture-connected` | raw |
 | POST | `/door/login` | raw |
 | POST | `/door/logout` | raw |
 | GET | `/door/me` | raw |

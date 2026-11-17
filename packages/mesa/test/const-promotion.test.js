@@ -162,6 +162,45 @@ describe('every movable root promotes a const that names it (FJS-D212)', () => {
   })
 })
 
+// ─── building once from a prop ───────────────────────────────────────────────
+
+// An object that owns memory outside the DOM (a three Mesh) made by a const is
+// made again per prop change and the old one leaks; a var is how a component
+// says build it once (FJS-4175, VISION RULE 13).
+describe('a constructor called with a prop (FJS-4175)', () => {
+  const made = () => {
+    const calls = []
+    return { calls, make: opts => { calls.push(opts.color); return { color: opts.color } } }
+  }
+
+  it('a const makes a new one on every change to the prop', async () => {
+    const m = made()
+    const c = await mount(`<script>
+  import { make } from './x'
+  export let color = 'red'
+  const mesh = make({ color })
+</script>
+<p>{mesh.color}</p>`, { make: m.make }, { color: 'red' })
+    c.push({ color: 'blue' })
+    expect(m.calls).toEqual(['red', 'blue'])
+  })
+
+  it('a var makes it once, and a $: block carries the prop to it', async () => {
+    const m = made()
+    const c = await mount(`<script>
+  import { make } from './x'
+  export let color = 'red'
+  var mesh = make({ color })
+  let shown = ''
+  $: { mesh.color = color; shown = mesh.color }
+</script>
+<p>{shown}</p>`, { make: m.make }, { color: 'red' })
+    c.push({ color: 'blue' })
+    expect(m.calls).toEqual(['red'])
+    expect(c.text()).toBe('blue')
+  })
+})
+
 // ─── a computed member is a read ─────────────────────────────────────────────
 
 describe('a computed member names a variable (FJS-D212)', () => {

@@ -263,7 +263,7 @@ describe('a secret is put back at the revision that shipped (FJS-D2182)', () => 
   test('with today\'s secrets it ships the current value and records the revision it ships', async () => {
     const { current } = await rotatedBetweenReleases()
     const replacement: any = await env.as(admin).service('deployments')
-      .call('rollback', current.id, { withTodaysSecrets: true })
+      .call('rollback', current.id, { hasTodaysSecrets: true })
     expect(await statusOf(current.id)).toBe('rolledBack')
     expect(secretRefsOf(replacement.configSnapshot)).toEqual({ API_TOKEN: 'API_TOKEN@2' })
     expect((await releaseEnv(env.system, replacement.configSnapshot)).API_TOKEN).toBe('tok-2')

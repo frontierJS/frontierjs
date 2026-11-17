@@ -5483,6 +5483,10 @@ The hook carries the caller's args, not the row: `ExternalRefPlugin` keys what o
 
 Asked in chat, through the question tool, closing `FJS-3911`. Measured in one process, min of chunks, at load average 15–27. The trims save 1.6–4.9 µs of 16–21 µs, which puts the update at about 5x raw. A throwaway fast path for a plain model (pk-only where, scalar patch, no plugins, policies, logs or listeners; `writeData`, one `UPDATE … RETURNING *`, `read`, the query event) took ~8.5 µs against ~16 µs for the trimmed path, about 2.2x raw. **Trims only** was picked over **a fast path gated by a write-rule registry** and **trims with the row left open**, as recommended. The nine: owner — update has one owner, and a fast path would be a second whose gate restates about fifteen stages of `prepareUpdate` (Invariant 4); failure — a rule the gate misses is skipped silently, as `@map` was on the read fast paths (`FJS-969`); silence — `update-by-id` reports a regression. Reopen if a profiled app shows single-row updates dominating its time. Then build the registry form, where each stage declares when it is idle and is refused at load when it does not (as `READ_RULES` `narrows` is), proved against `update-by-id` and a rule-by-rule parity test. Never build a hand-written eligibility list.
 
+### <a id="fjs-d2250"></a>2026-11-17 · `FJS-D2250` — A ranged read is an option on the reader: `useStorage(config).stream(ref, { start, end })`, inclusive byte offsets as in HTTP's `bytes=a-b`, either one optional. Every provider returns exactly those bytes; the S3 provider sends a `Range` GET and throws unless the answer is 206. Parsing a `Range` header and answering 416 stay the app's, measured against the ref's stored `size`.
+
+Asked through the question tool while deploying fjs-prototypes/capture: the owner picked R2 over the box's disk, knowing it needed a ranged read first, and the spelling is the main thread's. An option on `stream` was picked over **a second verb `storage.range(ref, start, end)`** (two verbs that read bytes, Invariant 4) and **a 302 to `storage.sign(ref)`** (no framework change, but the app loses its cache headers and stable-bytes route). As recommended. The nine: owner — `stream` already owns "the bytes of a File as a stream", and `sign` and `put` take options the same way; silence — a store that ignores `Range` answers 200 with the whole object, so the 206 check is what keeps a seek from playing the wrong bytes, and `test/file-from-stream.test.ts` reads five ranges back on local and a fake S3 and asserts they agree. Not driven against a live bucket: capture's Phase 5 does that. Reopen as its own verb if a ranged read ever has to return metadata beside the bytes.
+
 ### <a id="fjs-d1808"></a>2026-11-03 · `FJS-D1808` — `fromStream` to a remote provider takes a stated size: `fromStream(readable, { name, type, size })`. The S3 provider refuses a stream with no `size` by name and sends it as one unsigned PUT over https; over plain http it refuses a stream by name, since a signed payload would buffer the file. The local provider needs no size. A stream whose byte count disagrees with a stated `size` is refused and its partial object deleted, by one check in `file-storage.js` and not one per provider (Invariant 4). Multipart, for an object past S3's 5 GB single-PUT ceiling or of unknown length, is `FJS-3905`.
 
 Asked in chat, through the question tool, while starting `FJS-D1159`'s Data half: a plain S3 PUT carries Content-Length and a chunked request body has none. **Require size, single PUT** was picked over **multipart upload for streams** (one ~8 MB part buffered at a time, no size and no 5 GB cap, but create/part/complete/abort, part signing and retries in the provider) and **spool to disk, then PUT** (no size needed and no new S3 code, at the file's size in disk and a second write, the 5 GB cap kept). As recommended. A route has the size in its Content-Length; vellum's library is local, so no current app reaches the cap. The nine: owner — the provider keeps what its wire needs; failure — every refusal names the provider and the missing size; silence — no stored object's length disagrees with its stated size, and the mismatch, missing-size and plain-http refusals are tested on both providers. Reopen if an app develops against MinIO on `http://localhost`: allow a stream over plain http to a loopback host only.
@@ -17817,6 +17821,36 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2246"></a>2026-11-16 · `FJS-D2246` — Q6 — How does Workbench find `kapture` — On `PATH`, installed with `cargo install`; Workbench checks for it and never builds it.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (Workbench builds Kapture from a checkout path it is given).
+
+The paper's recommendation, taken as written: it is how Workbench already treats `claude` and `gh`: a binary it checks for and never builds.
+
+### <a id="fjs-d2245"></a>2026-11-17 · `FJS-D2245` — Q4 — Which Flameshot extras are in v1 — Pin to screen, delayed capture, and a size readout with a magnifier.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (The core only: region, tools, undo, copy and save).
+
+The paper's recommendation, taken as written: Kapture already has the delay and the size readout, so A adds two things: a magnifier and a pin window.
+
+### <a id="fjs-d2244"></a>2026-11-17 · `FJS-D2244` — Q3 — Where does a finished capture go in v1 — Clipboard and file, as Kapture already does.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (A, and attach the capture to a Workbench Claude chat), **C** (A, and a capture history in Workbench's database).
+
+The paper's recommendation, taken as written: It is what Kapture does today. B and C need a Workbench API that a separate binary calls, so they wait for the port to be working.
+
+### <a id="fjs-d2243"></a>2026-11-17 · `FJS-D2243` — Q2 — How does a capture start — A GNOME custom shortcut on Print that runs `kapture`, plus a Capture item in Workbench's tray.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (Tauri's global-shortcut plugin grabs the key), **C** (The tray item only).
+
+The paper's recommendation, taken as written: GNOME holds Print for its own screenshot UI, so B fails to grab the key, and B does not work on Wayland. Flameshot's docs tell GNOME users to set it up this way.
+
+### <a id="fjs-d2242"></a>2026-11-17 · `FJS-D2242` — Q1 — How does Workbench get a capture tool — Add an X11 backend to Kapture. Workbench's tray and the GNOME shortcut run `kapture`.
+
+Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (The same X11 work, but the Tauri shell links Kapture's crates into one binary), **C** (A new webview overlay in Workbench, drawing with TPM's `ink.js` copied out of git history).
+
+The paper's recommendation, taken as written: Kapture already does the job. One codebase serves both display servers, and Workbench's build does not grow a tiny-skia renderer or depend on a sibling checkout's path. C rewrites in JS what is already written in Rust.
+
 ### <a id="fjs-d2226"></a>2026-11-16 · `FJS-D2226` — `keys()` cannot write a Linux-only binding: a per-binding platform filter, or document `byPlatform` — Document the `byPlatform` spelling with an empty Mac half, which already works, and keep the everywhere check strict.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a per-binding platform filter).
@@ -22484,6 +22518,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2249"></a>2026-11-17 · `FJS-D2249` — Q5 — How is a fixed tunnel hostname chosen — `FLI_TUNNEL_DOMAIN` through `loadFliEnv` (machine `.env`, a project's `.env` over it), the label from `package.json` `name` with its scope stripped, and `--tunnel=<host>` for one run.
+
+Asked in [`IDEAS/tunnel.md`](IDEAS/tunnel.md) § Open questions. **A** was picked over **B** (a `config.json` key and a `fli tunnel:domain` command to set it), **C** (the hostname typed on every run).
+
+The paper's recommendation, taken as written: one origin, the env layering `FLI_PROFILE` already rides; B is a second writer of what `.env` carries, C restates the domain each run.
+
+### <a id="fjs-d2248"></a>2026-11-17 · `FJS-D2248` — Q1 — Is the blind tunnel worth a dependency now — No; Phase 1 only, and Phase 2 waits for a client whose data rules out Cloudflare seeing it.
+
+Asked in [`IDEAS/tunnel.md`](IDEAS/tunnel.md) § Open questions. **B** was picked over **A** (yes, Phase 2 after Phase 1).
+
+As recommended: with no own relay (Q3 = B), this waits until a client's data rules out Cloudflare seeing it; that client brings OpenTunnel.
+
+### <a id="fjs-d2247"></a>2026-11-17 · `FJS-D2247` — Q3 — Build our own relay — No; cloudflared for everything, OpenTunnel where plaintext matters.
+
+Asked in [`IDEAS/tunnel.md`](IDEAS/tunnel.md) § Open questions. **B** was picked over **A** (yes, Phase 3: `ssh -R` into a fleet machine's Caddy through Outpost's `/route`), **C** (a full OpenTunnel clone: blind, its own protocol and certificates).
+
+Against the recommendation (**A**): cloudflared covers sharing a dev port; a stable link is not worth running and securing a relay on the fleet.
 
 ### <a id="fjs-d2220"></a>2026-11-16 · `FJS-D2220` — Where do recurrence expansion in a named zone and an iCalendar writer live — Stay in grouppi until a second consumer.
 

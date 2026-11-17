@@ -1,0 +1,19 @@
+<script>
+  // UnreadBadge.mesa -- keeps `chat.badge` current for the nav's Messages entry.
+  //
+  // Draws nothing. Mount it only for a member linked to the chat: a member with no
+  // profile has nothing for a read to be graded against, and its tethers would sit
+  // asking. The tethers are its own and not the Messages frame's, because that
+  // frame's lists exist only while the screen is on show and the badge is for every other one.
+  import { chat, me, navBadgeOf } from '../../lib/chat.js'
+  import { channels } from '../../resources/Channel.mesa'
+  import { channelMembers } from '../../resources/ChannelMember.mesa'
+
+  const rooms = channels.tethered({ state: 'local', all: true })
+  const mine  = channelMembers.tethered({ state: 'local', all: true, where: { profileExternalId: me() } })
+
+  $: chat.badge = navBadgeOf(rooms.rows, mine.rows)
+
+  // A signed-out shell must not keep the last member's count.
+  $.onDestroy(() => { rooms.destroy(); mine.destroy(); chat.badge = null })
+</script>

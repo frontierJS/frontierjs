@@ -21,7 +21,7 @@ import { REFUSE, resolvePrincipal, resolveCaller, bearerPrincipal, type Credenti
 import type { StaticOptions }             from './static.ts'
 import { BAKED_CACHE_CONTROL, errorResponse, own, isOwned, ownedText } from './bridge.ts'
 import { enterRequest }                  from '../core/context.ts'
-import { BadRequest, TooManyRequests, isDevelopmentEnv, type ErrorMapper } from '../core/errors.ts'
+import { BadRequest, TooManyRequests, isDevelopmentEnv, refusedCredential, type ErrorMapper } from '../core/errors.ts'
 import { createStats, SESSION_SOCKET }    from './types.ts'
 import { wsSend, flushSendQueue, dropSendQueue, setMaxQueuedBytes } from './send-queue.ts'
 import type { TransportStats }            from './types.ts'
@@ -1030,16 +1030,19 @@ export class HttpTransport {
     // header at all, because Host is a forbidden header name for a Request
     // the platform did not put on a socket. The URL still names it.
     let user: SessionContext | null = null
+    const host = (headers.host ?? url.host) || null
     const principal = await resolvePrincipal({
       verifiers: this._opts.credentials,
       req: {
         method, path, query: url.search.slice(1), headers,
-        body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host: (headers.host ?? url.host) || null,
+        body: parsed.bytes ? new Uint8Array(parsed.bytes) : (parsed.raw ?? ''), host,
       },
       auth:  this._opts.auth,
       token: this._opts.auth ? extractToken(headers, this.authCookie) : null,
     }).catch(() => null)
-    if (principal === REFUSE) return new Response('Unauthorized', { status: 401 })
+    if (principal === REFUSE) {
+      return this._withSecurityHeaders(this._errorResponse(refusedCredential(headers.authorization, host)))
+    }
     user = principal
 
     // After the credential, which may be a signature over exactly these bytes.

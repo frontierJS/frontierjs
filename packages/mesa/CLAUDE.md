@@ -101,7 +101,7 @@ Same word as the API realm's request context, unrelated concept. Reaching for
 | Lives until | that component's frame unwinds — and the stack is truncated on error, because a dead frame left on it makes every component mounted afterwards inherit the dead one's provides |
 | Scoped by | the component TREE, not by a call. It is React-context-shaped, not request-shaped |
 | Reaches | content a block creates LATER, but only because each block captures the stack and reinstates it (`captureContext`, `FJS-311`). The stack itself is setup-time state, so an `{#if}` that flips, an `{#each}` row that arrives or a portal would otherwise instantiate its content with the provider already popped — which broke every compound component behind a conditional. **A new block kind that builds content after setup needs the same wrap** |
-| Reads as | `undefined` outside a provider, and every fallback is silent — `@frontierjs/ui`'s controls are written so that an absent form context means *what the control does standing alone* |
+| Reads as | `undefined` outside a provider, and silently — except under a root `mount({ island })` names, which warns once per key, since a server-side provider is never above an island on the client (`FJS-4313`). `@frontierjs/ui`'s controls are written so that an absent form context means *what the control does standing alone* |
 
 `$context.form` is the one the kit uses: `Form.mesa` provides
 `{ errors, submitting, disabled, fields, submitted }` and nine controls resolve

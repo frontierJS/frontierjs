@@ -70,7 +70,7 @@ const server = Bun.serve({
     m = /^\/repos\/([^/]+)\/([^/]+)\/pulls$/.exec(path)
     if (m) {
       if (`${m[1]}/${m[2]}` !== 'ana/r0') return Response.json({ message: 'not found' }, { status: 404 })
-      return paged(pulls.filter(p => url.searchParams.get('state') !== 'closed'))
+      return paged(pulls.filter(() => url.searchParams.get('state') !== 'closed'))
     }
     return Response.json({ message: 'not found' }, { status: 404 })
   },

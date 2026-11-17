@@ -1,0 +1,17 @@
+<script>
+  // NavBadge.mesa -- a nav entry's `badge`: a number in the bell's plain Badge, or a tone dot.
+  import Badge from '@frontierjs/ui/components/display/Badge.mesa'
+  import Dot from '@frontierjs/ui/components/display/Dot.mesa'
+
+  export let badge = null
+</script>
+
+{#if badge === 'dot'}
+  <span class="nav-badge" data-nav-badge="dot"><Dot tone="primary" label="Unread messages" /></span>
+{:else if badge}
+  <span class="nav-badge" data-nav-badge="count"><Badge tone="danger" title={`${badge} unread`}>{badge}</Badge></span>
+{/if}
+
+<style>
+  .nav-badge { display: inline-flex; align-items: center; margin-inline-start: var(--space-2xs); }
+</style>

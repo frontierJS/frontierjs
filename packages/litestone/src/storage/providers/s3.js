@@ -199,14 +199,22 @@ export class S3Provider {
   }
 
   // The response body unread, so a large object is never held whole in heap.
-  async stream(/** @type {string} */ key) {
-    const url    = this._objectUrl(key)
-    const signed = await signRequest('GET', url, {}, null, this._opts())
+  // A ranged read must come back 206: a store that ignores Range answers 200
+  // with the whole object, and passing that on hands a seek the wrong bytes.
+  async stream(/** @type {string} */ key, /** @type {{ start?: number, end?: number }} */ range = {}) {
+    const url     = this._objectUrl(key)
+    const ranged  = range.start != null || range.end != null
+    const headers = /** @type {Record<string, string>} */ (ranged ? { range: `bytes=${range.start ?? 0}-${range.end ?? ''}` } : {})
+    const signed  = await signRequest('GET', url, headers, null, this._opts())
 
-    const res = await fetch(url, { headers: signed })
+    const res = await fetch(url, { headers: { ...headers, ...signed } })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       throw new Error(`S3 GET failed (${res.status}): ${text}`)
+    }
+    if (ranged && res.status !== 206) {
+      await res.body?.cancel().catch(() => {})
+      throw new Error(`S3 GET of ${key} ignored its byte range: asked ${headers.range}, got ${res.status} and not 206`)
     }
     if (!res.body) throw new Error(`S3 GET returned no body for ${key}`)
     return res.body

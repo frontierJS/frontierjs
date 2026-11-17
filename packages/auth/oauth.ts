@@ -507,9 +507,9 @@ export interface AuthOAuth {
     args: { code: string; state: string; cookieState: string | null; redirectUri: string },
   ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null; link: string | null }>
 
-  oauthResolve(providerName: string, identity: OAuthIdentity): Promise<OAuthResolution>
+  oauthResolve(providerName: string, identity: OAuthIdentity, from?: import('@frontierjs/junction').SignInOrigin): Promise<OAuthResolution>
 
-  confirmOAuthLink(token: string, providerName: string, identity: OAuthIdentity): Promise<import('@frontierjs/junction').LoginResult>
+  confirmOAuthLink(token: string, providerName: string, identity: OAuthIdentity, from?: import('@frontierjs/junction').SignInOrigin): Promise<import('@frontierjs/junction').LoginResult>
 
   listConnections(userId: string): Promise<Array<{ id: string; provider: string; createdAt: string }>>
   removeConnection(userId: string, credentialId: string): Promise<{ id: string }>

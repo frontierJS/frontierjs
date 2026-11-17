@@ -185,10 +185,20 @@ export type EmailVerificationResult =
   | { signedIn: LoginResult }
   | { verified: SessionContext }
 
+/**
+ * The request a sign-in arrived on, written onto the Session it mints so a
+ * person's list of sessions can say where each one is. Passed by whoever holds
+ * the request -- the `/auth/*` routes -- because the provider never sees it.
+ */
+export interface SignInOrigin {
+  ipAddress?: string
+  userAgent?: string
+}
+
 export interface IAuth {
   // Session
   verifySession(token: string, from?: CredentialOrigin): Promise<SessionContext | null>
-  login(email: string, password: string):    Promise<LoginResult>
+  login(email: string, password: string, from?: SignInOrigin): Promise<LoginResult>
   logout(token: string):                     Promise<void>
 
   /**
@@ -201,7 +211,7 @@ export interface IAuth {
    * typing it is answering one question and a caller cannot be asked to know
    * which kind of string it holds.
    */
-  completeLogin?(challenge: string, code: string): Promise<{ token: string; user: SessionContext }>
+  completeLogin?(challenge: string, code: string, from?: SignInOrigin): Promise<{ token: string; user: SessionContext }>
 
   /**
    * `login` and `completeLogin` that sign nobody in: the same throttle on the
@@ -241,7 +251,7 @@ export interface IAuth {
   requestEmailVerification?(userId: string):           Promise<void>
   /** `keepSessionId` is the session that posted the click: a confirmed change of
    *  address ends every other one and keeps it. */
-  verifyEmail?(token: string, opts?: { keepSessionId?: string }): Promise<EmailVerificationResult>
+  verifyEmail?(token: string, opts?: { keepSessionId?: string; from?: SignInOrigin }): Promise<EmailVerificationResult>
 
   /**
    * Register through the mailbox: answers before it knows whether the address is
@@ -261,7 +271,7 @@ export interface IAuth {
    * is one factor, so an account with a second one still owes its code.
    */
   requestMagicLink?(email: string):                    Promise<void>
-  verifyMagicLink?(proof: { token: string } | { email: string; code: string }): Promise<LoginResult>
+  verifyMagicLink?(proof: { token: string } | { email: string; code: string }, from?: SignInOrigin): Promise<LoginResult>
 
   /**
    * SUPPORT MODE — start an episode on the session this token belongs to.

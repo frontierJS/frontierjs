@@ -22,8 +22,10 @@ on the definition is what holds it still.
 | --- | --- |
 | `AutopilotAsk` | `inApp` · `push` |
 | `AutopilotReport` | `inApp` · `push` |
+| `ChatDm` | `inApp` · `push` |
+| `ChatMention` | `inApp` · `push` |
 
-2 notification(s).
+4 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each
