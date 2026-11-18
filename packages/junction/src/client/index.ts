@@ -2077,6 +2077,17 @@ export class JunctionClient extends EventEmitter {
     // The superseded request is not cancelled — its caller awaited those rows
     // and still receives them. Only the SHARED tether has an ordering problem.
     let issued = 0
+    // A question the server did not answer is asked again on the socket's
+    // backoff while it is still the newest one: nothing else re-asks it, and
+    // the socket's first connect is not a reconnect, so a list whose load went
+    // unanswered while the API booted held only rows pushed after it
+    // (`FJS-4437`). A status the server chose is an answer and is not re-asked.
+    let retries = 0
+    let retry: ReturnType<typeof setTimeout> | null = null
+    const unanswered = (e: unknown): boolean => {
+      const status = (e as { code?: unknown } | null)?.code
+      return typeof status !== 'number' || status === 408 || status === 429 || status >= 500
+    }
     // `extent` is how many rows the answer must reach before it replaces the
     // tether. It is walked by cursor rather than asked as one `$limit`, because
     // the server clamps a limit to its `paginate.max` and a window past it
@@ -2090,15 +2101,31 @@ export class JunctionClient extends EventEmitter {
       const stamp = ++issued
       issuedQuery  = query
       issuedParams = params
-      const first = await svc.find(query, params)
-      let res  = first
-      let rows = first.data
-      while (stamp === issued && rows.length < extent && res.hasMore === true && typeof res.endCursor === 'string') {
-        res = await svc.find(query, { ...params, after: res.endCursor })
-        if (!res.data.length) break
-        rows = [...rows, ...res.data]
+      let first: Awaited<ReturnType<typeof svc.find>>
+      let res:   typeof first
+      let rows:  T[]
+      try {
+        first = await svc.find(query, params)
+        res   = first
+        rows  = first.data
+        while (stamp === issued && rows.length < extent && res.hasMore === true && typeof res.endCursor === 'string') {
+          res = await svc.find(query, { ...params, after: res.endCursor })
+          if (!res.data.length) break
+          rows = [...rows, ...res.data]
+        }
+      } catch (e) {
+        if (stamp === issued && unanswered(e)) {
+          if (retry !== null) clearTimeout(retry)
+          retry = setTimeout(() => {
+            retry = null
+            if (stamp === issued) refetch()
+          }, Math.min(this._reconnectDelay * Math.pow(1.5, retries), this._reconnectMax))
+          retries++
+        }
+        throw e
       }
       if (stamp === issued) {
+        retries = 0
         lastQuery  = query
         lastParams = params
         // The envelope's, not the params': the effective limit is the server's
@@ -2431,6 +2458,7 @@ export class JunctionClient extends EventEmitter {
       disposed = true
       for (const off of offs.splice(0)) off()
       if (tick !== null) { clearTimeout(tick); tick = null }
+      if (retry !== null) { clearTimeout(retry); retry = null }
     }
 
     return { service: svc, tether, load, stale, record, mutate, more: more_, hasMore, total: () => total, dispose }

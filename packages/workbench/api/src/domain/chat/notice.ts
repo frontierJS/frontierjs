@@ -12,6 +12,7 @@
 import type { App } from '@frontierjs/junction'
 import chatDm from '../../notifications/ChatDm.notification.ts'
 import chatMention from '../../notifications/ChatMention.notification.ts'
+import chatFollowUp from '../../notifications/ChatFollowUp.notification.ts'
 
 export interface QuietWindow {
   enabled:    boolean
@@ -99,6 +100,27 @@ function firstRaise (key: string): boolean {
   return true
 }
 
+/** `/messages/<channel>/`, with `?thread=<root>` for a reply. */
+export const postLink = (p: { channelExternalId: string, rootExternalId?: string | null }) =>
+  `/messages/${p.channelExternalId}/${p.rootExternalId ? `?thread=${p.rootExternalId}` : ''}`
+
+/**
+ * How a bell row reaches this member, the same for every kind of chat notice:
+ * `held` is quiet hours (the row is written and the push is not sent), and
+ * `phone` is whether they own the machine's one ntfy topic. Another member's
+ * ping would land on the owner's lock screen, and a push with no topic fails
+ * the whole notify, so the recipient carries the topic only when it is theirs.
+ */
+async function deliveryOf (app: App, sys: any, memberId: number, profile: string, now: Date) {
+  const owner    = await sys.member.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
+  const schedule = await sys.quietSchedule.findFirst({ where: { profileExternalId: profile } })
+  return {
+    held:      inQuietHours(schedule, now),
+    phone:     owner?.id === memberId,
+    recipient: { id: memberId, pushTopic: (app as any).push?.topic },
+  }
+}
+
 export interface LivePost {
   externalId:        string
   channelExternalId: string
@@ -127,24 +149,48 @@ export async function raiseChatNotice (app: App, sys: any, memberId: string, pro
     if (!firstRaise(`${id}:${key}`)) return
     if (await sys.notification.findFirst({ where: { userId: id, deliveryKey: key }, select: { id: true } })) return
 
-    const owner    = await sys.member.findFirst({ orderBy: { id: 'asc' }, select: { id: true } })
     const author   = await sys.profile.findUnique({ where: { externalId: post.profileExternalId }, select: { username: true, nickname: true } })
-    const schedule = await sys.quietSchedule.findFirst({ where: { profileExternalId: profile } })
+    const { held, phone, recipient } = await deliveryOf(app, sys, id, profile, now)
     const payload = {
       postExternalId:    post.externalId,
       channelExternalId: post.channelExternalId,
       author:            author?.nickname || author?.username || 'Someone',
       room:              room.name,
       excerpt:           noticeExcerpt(String(room.type), post.message ?? ''),
-      link:              `/messages/${post.channelExternalId}/${post.rootExternalId ? `?thread=${post.rootExternalId}` : ''}`,
-      held:              inQuietHours(schedule, now),
-      phone:             owner?.id === id,
+      link:              postLink(post),
+      held,
+      phone,
     }
-    // The machine's one ntfy topic is the owner's phone: another member's ping would land on
-    // the owner's lock screen, and a push with no topic fails the whole notify.
-    const recipient = { id, pushTopic: (app as any).push?.topic }
     await (app as any).notify(recipient, kind === 'dm' ? chatDm(payload) : chatMention(payload))
   } catch (err) {
     app.logger?.warn?.(`chat notice for post ${post.externalId} not raised: ${(err as Error)?.message ?? err}`)
+  }
+}
+
+/**
+ * Raise the bell row for a follow-up whose post nobody has answered. Never
+ * throws, and the row's key is the follow-up's own, so a pass that runs twice
+ * writes one. A DM's or private room's text stays out of the row, as in `noticeExcerpt`.
+ */
+export async function raiseFollowUp (app: App, sys: any, followUpId: number, memberId: number, profile: string, post: LivePost, now = new Date()): Promise<void> {
+  try {
+    const room = await sys.channel.findUnique({ where: { externalId: post.channelExternalId }, select: { type: true, name: true } })
+    if (!room) return
+    const key = `followup:${followUpId}`
+    if (await sys.notification.findFirst({ where: { userId: memberId, deliveryKey: key }, select: { id: true } })) return
+    const direct = room.type === 'direct' || room.type === 'group'
+    const { held, phone, recipient } = await deliveryOf(app, sys, memberId, profile, now)
+    await (app as any).notify(recipient, chatFollowUp({
+      followUpId,
+      postExternalId:    post.externalId,
+      channelExternalId: post.channelExternalId,
+      room:              direct ? '' : room.name,
+      excerpt:           noticeExcerpt(String(room.type), post.message ?? ''),
+      link:              postLink(post),
+      held,
+      phone,
+    }))
+  } catch (err) {
+    app.logger?.warn?.(`follow-up ${followUpId} for post ${post.externalId} not raised: ${(err as Error)?.message ?? err}`)
   }
 }

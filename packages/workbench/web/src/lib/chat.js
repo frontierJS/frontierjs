@@ -23,6 +23,7 @@ import { posts } from '../resources/Post.mesa'
 import { savedPosts } from '../resources/SavedPost.mesa'
 import { chatSections } from '../resources/ChatSection.mesa'
 import { scheduledPosts } from '../resources/ScheduledPost.mesa'
+import { followUps } from '../resources/FollowUp.mesa'
 import { chatGroups } from '../resources/ChatGroup.mesa'
 import { glyphOf } from './emoji.js'
 
@@ -45,8 +46,9 @@ export function openLists() {
     // Everyone's memberships of a readable channel are readable; the reader's own are what count.
     mine:     channelMembers.tethered({ state: 'local', all: true, where: { profileExternalId: me() } }),
     people:   profiles.tethered({ state: 'local', all: true }),
-    // Thread rows are one person's view of a thread, and only the reader's own are readable.
-    threads:  threads.tethered({ state: 'local', all: true, where: { profileExternalId: me() } }),
+    // Thread rows are one person's view of a thread, and only the reader's own are readable;
+    // one whose root was deleted is stamped missing and its counts are stale.
+    threads:  threads.tethered({ state: 'local', all: true, where: { profileExternalId: me(), missingSince: null } }),
     // Own rows only: the schema's policy refuses another person's, so no filter is needed to keep them out.
     drafts:   drafts.tethered({ state: 'local', all: true }),
     saved:    savedPosts.tethered({ state: 'local', all: true }),
@@ -461,8 +463,30 @@ export const searchPosts = async (terms) => (await say('search', { terms })).pos
 /** `{ mentions, threads }`: the posts naming the reader, and the roots of followed threads with unread replies. */
 export const loadActivity = async () => { const a = await say('activity', {}); return { mentions: a.mentions ?? [], threads: a.threads ?? [] } }
 /** The earlier versions of one of the reader's own posts, newest first; another person's post is the server's 404. */
+/** `{ onMe, onOthers }`: the posts waiting on the reader, and the reader's own last posts nobody has answered, each with the reminder pending on it. */
+export const loadWaiting = async () => { const w = await say('waiting', {}); return { onMe: w.onMe ?? [], onOthers: w.onOthers ?? [] } }
+/** `[{ key, channelExternalId, rootExternalId, since, postExternalIds, more }]`: what the reader has not read, a group per room and per followed thread. */
+export const loadCatchUp = async () => (await say('catchUp', {})).groups ?? []
+/** One group's recap: a single tool-less Claude run on the server, over the group's posts since `since`; asked only on a press, kept nowhere. */
+export const recapGroup = (g) => say('recap', { channelExternalId: g.channelExternalId, ...(g.rootExternalId ? { rootExternalId: g.rootExternalId } : {}), since: g.since })
+/** Nudge the reader at `at` if nobody has replied to their own post by then. */
+export const nudgeIfNoReply = (post, at) => followUps.service.create({ postExternalId: post.externalId, remindAt: at.toISOString() })
+export const cancelNudge = (followUpId) => followUps.service.patch(followUpId, { status: 'cancelled' })
 export const editHistory = async (post) => (await say('editHistory', { postExternalId: post.externalId })).versions ?? []
 export const remindAt = (post, at) => say('remind', { postExternalId: post.externalId, at: at.toISOString() })
+
+// ── A post as a Basecamp to-do ──
+let todosKnown = null
+/** Whether this machine has Basecamp configured; asked once, and a failed ask is no. */
+export const todosConfigured = () => (todosKnown ??= say('status', {}).then(s => !!s.todos, () => false))
+/** A post's first line, as the title a to-do starts with. */
+export const todoTitleOf = (post) => (String(post?.message ?? '').split('\n').map(l => l.trim()).find(Boolean) ?? '').slice(0, 255)
+export const todoProjects = async () => (await say('todoProjects', {})).projects ?? []
+export const todoLists = async (projectId) => (await say('todoLists', { projectId })).lists ?? []
+/** The notes a to-do from this post carries: the permalink, computed on the server. */
+export const todoNotes = async (post) => (await say('todoNotes', { postExternalId: post.externalId })).notes
+/** `{ id, appUrl }`; what is sent is the title, the two ids and the post's id, and the server adds the permalink. */
+export const makeTodo = (post, { projectId, listId, title }) => say('makeTodo', { postExternalId: post.externalId, projectId, listId, title })
 
 /** A tether over posts landed by id; null for none, which is not a read of everything. */
 export const postsById = (ids) => ids.length ? posts.tethered({ state: 'local', all: true, where: { externalId: { in: ids } }, directives: { limit: 200 } }) : null

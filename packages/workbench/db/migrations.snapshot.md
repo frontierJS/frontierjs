@@ -14,3 +14,4 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/chat/20261116183352_chat_extras.sql` | `d5a3608eae5bf937` |
 | `migrations/chat/20261116184517_chat_sections.sql` | `750dd56e75f369fd` |
 | `migrations/chat/20261116192453_chat_local.sql` | `7be83a628a9ac44c` |
+| `migrations/chat/20261118053336_chat_followup.sql` | `952747b8e13f679d` |

@@ -539,7 +539,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.d.ts` `controls.js` `dnd.d.ts` `dnd.js` `drag.d.ts` `drag.js` `nav.d.ts` `nav.js` `package.json` `rowlist.d.ts` `rowlist.js` `selection.d.ts` `selection.js` `stores/` `utils.d.ts` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.d.ts` `controls.js` `dnd.d.ts` `dnd.js` `drag.d.ts` `drag.js` `nav.d.ts` `nav.js` `package.json` `resize.d.ts` `resize.js` `rowlist.d.ts` `rowlist.js` `selection.d.ts` `selection.js` `stores/` `utils.d.ts` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -549,6 +549,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./dnd (default)` | `dnd.js` | yes |
 | exports | `./drag (types)` | `drag.d.ts` | yes |
 | exports | `./drag (default)` | `drag.js` | yes |
+| exports | `./resize (types)` | `resize.d.ts` | yes |
+| exports | `./resize (default)` | `resize.js` | yes |
 | exports | `./nav (types)` | `nav.d.ts` | yes |
 | exports | `./nav (default)` | `nav.js` | yes |
 | exports | `./selection (types)` | `selection.d.ts` | yes |

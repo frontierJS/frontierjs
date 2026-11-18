@@ -21,13 +21,14 @@
 export const holds = []
 
 import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { openChrome } from '../../../mesa/src/drive.js'
 import { startMattermostSink } from '@frontierjs/conduit-mattermost/sink'
+import { startBasecampSink } from '@frontierjs/conduit-37signals/sink'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PKG  = join(HERE, '..', '..')
@@ -47,6 +48,7 @@ const children = []
 let passed = 0, failed = 0
 let browser = null
 let sink = null
+let todoSink = null   // Basecamp, the 37signals product, standing in for 3.basecampapi.com
 let SCRATCH = null
 let rootId = null   // the thread the drive is on, so a miss can be told from the API's side
 
@@ -61,6 +63,7 @@ async function cleanup() {
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
   await browser?.close()
   sink?.stop()
+  todoSink?.stop()
   if (SCRATCH) rmSync(SCRATCH, { recursive: true, force: true })
 }
 function fail(msg) { console.error(`\n✗ ${msg}\n`); cleanup().then(() => process.exit(1)) }
@@ -73,10 +76,11 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 
 // Nothing here may name a real server.
 const env = { ...process.env }
-for (const k of Object.keys(env)) if (k.startsWith('CHAT_')) delete env[k]
+for (const k of Object.keys(env)) if (k.startsWith('CHAT_') || k.startsWith('BASECAMP_')) delete env[k]
 
 SCRATCH = mkdtempSync(join(tmpdir(), 'workbench-messages-'))
 sink = startMattermostSink({ port: 0 })
+todoSink = startBasecampSink({ port: 0 })
 const { ids, tokens } = sink
 const sinkCall = async (path, token, init = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -93,11 +97,29 @@ const earlier = `backfilled ${Date.now()}`
 await sinkPost(tokens.bob, ids.open, earlier)
 await sinkPost(tokens.bob, ids.open, 'a second line, with **bold** and a mention of @alice')
 
+// A recap spawns CLAUDE_BIN; this stands in for it so the real `claude` is never run, and keeps what it was handed.
+const FAKE_CLAUDE = join(SCRATCH, 'fake-claude')
+const FAKE_STDIN  = join(SCRATCH, 'fake-claude.stdin')
+const FAKE_ARGV   = join(SCRATCH, 'fake-claude.argv')
+const FAKE_CALLS  = join(SCRATCH, 'fake-claude.calls')
+writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
+const fs = require('fs')
+// Only a recap is recorded: the API also runs claude auth status on the same binary.
+if (!process.argv.includes('--system-prompt')) process.exit(1)
+fs.writeFileSync(${JSON.stringify(FAKE_STDIN)}, fs.readFileSync(0, 'utf8'))
+fs.writeFileSync(${JSON.stringify(FAKE_ARGV)}, JSON.stringify(process.argv.slice(2)))
+fs.appendFileSync(${JSON.stringify(FAKE_CALLS)}, 'x\\n')
+process.stdout.write('STUB RECAP: the room agreed on nothing.\\n')
+`)
+chmodSync(FAKE_CLAUDE, 0o755)
+const recapCalls = () => existsSync(FAKE_CALLS) ? readFileSync(FAKE_CALLS, 'utf8').split('\n').filter(Boolean).length : 0
+
 children.push(spawn('bun', ['api/index.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...env, DATABASE_URL: join(SCRATCH, 'workbench.db'), CHAT_DATABASE_URL: join(SCRATCH, 'chat.db'),
          JOBS_DATABASE_URL: join(SCRATCH, 'jobs.db'), AUDIT_PATH: join(SCRATCH, 'audit.db'),
-         XDG_CONFIG_HOME: SCRATCH, WORKBENCH_DIR: join(SCRATCH, 'workbench'),
+         XDG_CONFIG_HOME: SCRATCH, WORKBENCH_DIR: join(SCRATCH, 'workbench'), CLAUDE_BIN: FAKE_CLAUDE,
+         BC3_ACCOUNT_ID: String(todoSink.account), BC3_TOKEN: todoSink.token, BC3_API_ORIGIN: todoSink.url,
          CHAT_URL: sink.url, FRONTIER_APP_URL: BASE, PORT: String(API_PORT), WORKBENCH_KEY: KEY },
 }))
 children.push(spawn('bun', ['run', 'web'], {
@@ -1092,6 +1114,105 @@ try {
   const quiet2 = await poll(async () => { const rows = await apiRows('/quietSchedules'); return rows[0]?.enabled === false ? rows : null })
   check('a second Save patches the same row (off, the window kept)', quiet2?.length === 1 && quiet2[0].id === quiet.id && quiet2[0].fromMinute === 1260, quiet2)
 
+  console.log('\n  Waiting on me, waiting on others, and the nudge')
+  // The query and the job are graded in api/test/verify-chat.ts; here, that the screen draws them,
+  // follows the mirror live, and that the post menu and the row's Cancel reach the follow-up rows.
+  const waitTag = Date.now()
+  const askedOf = (await sinkPost(tokens.bob, ids.open, `waiting ask @alice ${waitTag}`)).json
+  await sleep(1100)
+  const waitRootPost = (await sinkPost(tokens.bob, ids.open, `waiting thread root ${waitTag}`)).json
+  await sleep(1100)
+  await goto('/messages/')
+  await until(`!!document.querySelector('[data-waiting-link]')`, v => v, 'the sidebar never offered Waiting', 20_000)
+  await click('[data-waiting-link]')
+  await until(`location.pathname`, p => p === '/messages/waiting/', 'the sidebar entry never opened Waiting')
+  await until(`!!document.querySelector('[data-waiting-group="me"] [data-waiting-row="${askedOf.id}"]')`, v => v, 'a mention nobody answered never listed under Waiting on you', 25_000)
+  ok('Waiting on you lists a mention the reader has not answered, drawn as a post with its room')
+  check('its jump link opens the room', (await evaluate(`document.querySelector('[data-waiting-row="${askedOf.id}"] [data-waiting-jump]').getAttribute('href')`)) === `/messages/${ids.open}/`)
+  const askedAgain = (await sinkPost(tokens.bob, ids.open, `waiting second @alice ${waitTag}`)).json
+  await until(`!!document.querySelector('[data-waiting-row="${askedAgain.id}"]')`, v => v, 'a mention arriving while Waiting is open never joined the list', 25_000)
+  const order = await evaluate(`[...document.querySelectorAll('[data-waiting-group="me"] [data-waiting-row]')].map(e => e.dataset.waitingRow)`)
+  check('it joins without a reload, after the older one (oldest first)', order.indexOf(askedOf.id) >= 0 && order.indexOf(askedOf.id) < order.indexOf(askedAgain.id), order)
+  await sleep(1100)
+  const waitAnswer = (await sinkPost(tokens.alice, ids.open, `waiting answered ${waitTag}`)).json
+  await until(`!document.querySelector('[data-waiting-group="me"] [data-waiting-row="${askedOf.id}"]') && !document.querySelector('[data-waiting-row="${askedAgain.id}"]')`, v => v, 'the reader\'s own post never cleared Waiting on you', 25_000)
+  ok('a post of the reader\'s in the room clears both, live')
+
+  const mineInThread = (await sinkCall('/posts', tokens.alice, { method: 'POST', body: { channel_id: ids.open, message: `waiting my reply ${waitTag}`, root_id: waitRootPost.id } })).json
+  await until(`!!document.querySelector('[data-waiting-group="others"] [data-waiting-row="${mineInThread.id}"]')`, v => v, 'the reader\'s unanswered reply never listed under Waiting on others', 25_000)
+  ok('Waiting on others lists the reader\'s last reply in a thread nobody has answered')
+  check('and shows no reminder on it yet', !(await exists(`[data-waiting-row="${mineInThread.id}"] [data-waiting-reminder]`)))
+  const nudgeRows = async () => (await apiRows('/followUps')).filter(r => r.postExternalId === mineInThread.id)
+  await menuPick(`[data-post="${mineInThread.id}"]`, '[data-post-more]', 'Remind me if nobody replies')
+  await until(`!!document.querySelector('[data-when-input]')?.closest('dialog')?.open`, v => v, 'Remind me if nobody replies never opened its time dialog')
+  await fillSel('[data-when-input]', stamp(new Date(Date.now() + 2 * 3_600_000)))
+  await click('[data-when-save]')
+  const nudged = await poll(async () => { const r = await nudgeRows(); return r.length ? r : null })
+  check('the post menu stores a pending FollowUp for alice, two hours out', nudged?.length === 1 && nudged[0].status === 'pending' && nudged[0].profileExternalId === ids.alice && Math.abs(Date.parse(nudged[0].remindAt) - (Date.now() + 2 * 3_600_000)) < 300_000, nudged)
+  await until(`!!document.querySelector('[data-waiting-row="${mineInThread.id}"] [data-waiting-reminder]')`, v => v, 'the row never showed its pending reminder', 25_000)
+  ok('the waiting row shows the pending reminder')
+  await click(`[data-waiting-row="${mineInThread.id}"] [data-waiting-cancel]`)
+  await until(`!document.querySelector('[data-waiting-row="${mineInThread.id}"] [data-waiting-reminder]')`, v => v, 'Cancel never took the reminder off the row', 25_000)
+  check('Cancel clears it from the row and cancels the FollowUp, which stays', (await nudgeRows()).length === 1 && (await nudgeRows())[0].status === 'cancelled', await nudgeRows())
+  const apiSend = (path, method, body) => fetch(`${API}${path}`, { method, headers: { authorization: `Bearer ${login.token}`, accept: 'application/json', 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json())
+  const elsewhere = await apiSend('/followUps', 'POST', { postExternalId: mineInThread.id, remindAt: new Date(Date.now() + 3_600_000).toISOString() })
+  const elsewhereId = elsewhere?.data?.id ?? elsewhere?.id
+  check('another window can set a reminder on the same post', !!elsewhereId, elsewhere)
+  await until(`!!document.querySelector('[data-waiting-row="${mineInThread.id}"] [data-waiting-reminder]')`, v => v, 'a reminder set in another window never reached the open Waiting screen', 25_000)
+  ok('a reminder set in another window reaches the open Waiting screen, live')
+  await apiSend(`/followUps/${elsewhereId}`, 'PATCH', { status: 'cancelled' })
+  await until(`!document.querySelector('[data-waiting-row="${mineInThread.id}"] [data-waiting-reminder]')`, v => v, 'a reminder cancelled in another window stayed on the open Waiting screen', 25_000)
+  ok('and one cancelled there leaves it, live')
+  await sleep(1100)
+  await sinkCall('/posts', tokens.bob, { method: 'POST', body: { channel_id: ids.open, message: `waiting bob replies ${waitTag}`, root_id: waitRootPost.id } })
+  await until(`!document.querySelector('[data-waiting-group="others"] [data-waiting-row="${mineInThread.id}"]')`, v => v, 'an answer never took the row off Waiting on others', 25_000)
+  ok('someone else\'s reply takes it off Waiting on others, live')
+
+  console.log('\n  Catch-up and the recap')
+  // The query is graded in api/test/verify-chat.ts; here, that the screen groups, that passing a group's end
+  // reads it through the room's own door, and that a recap is asked by a press and shown, never kept.
+  const catchTag = Date.now()
+  await goto('/messages/waiting/')
+  await until(`!!document.querySelector('[data-catchup-link]')`, v => v, 'the sidebar never offered Catch-up', 20_000)
+  const catchPosts = []
+  for (let i = 1; i <= 24; i++) catchPosts.push((await sinkPost(tokens.bob, ids.open, `catch-up post ${i} ${catchTag} ${'and more words '.repeat(14)}`)).json)
+  await sleep(1500)
+  await click('[data-catchup-link]')
+  await until(`location.pathname`, p => p === '/messages/catch-up/', 'the sidebar entry never opened Catch-up')
+  const groupSel = `[data-catchup-group="c:${ids.open}"]`
+  await until(`document.querySelectorAll('${groupSel} [data-post]').length`, n => n >= 24, 'the room\'s unread posts never filled its Catch-up group', 25_000)
+  const catchOrder = await evaluate(`[...document.querySelectorAll('${groupSel} [data-post]')].map(e => e.textContent.match(/catch-up post (\\d+)/)?.[1]).filter(Boolean).map(Number)`)
+  check('Catch-up lists the room\'s unread posts as one group, oldest first', catchOrder.length >= 24 && catchOrder.every((n, i) => i === 0 || n > catchOrder[i - 1]), catchOrder)
+  check('nothing has gone to Claude for the screen opening', recapCalls() === 0 && !existsSync(FAKE_STDIN))
+  const unreadPill = `document.querySelector('[data-chat-sidebar] [data-channel="${ids.open}"] [data-pill]')`
+  check('a group whose end is below the fold is not read yet: the room still shows its pill', !(await exists(`${groupSel}[data-passed]`)) && (await evaluate(`!!${unreadPill}`)), await evaluate(`${unreadPill}?.textContent ?? null`))
+  // The page is what scrolls, and headless Chrome paints no frames, so the scroll event a real scroll queues is sent by hand.
+  await evaluate(`(() => { const s = document.scrollingElement; s.scrollTop = s.scrollHeight; document.dispatchEvent(new Event('scroll')) })()`)
+  await until(`!!document.querySelector('${groupSel}[data-passed]')`, v => v, 'scrolling past the group never passed it', 20_000)
+  await until(`${unreadPill} === null`, v => v === true, 'passing the group never read the room (its pill stayed)', 25_000)
+  ok('scrolling past a group marks its room read through chat.view: the pill clears, and the group stays on screen marked Read')
+  check('the Read mark is drawn', await exists(`${groupSel} [data-catchup-read]`))
+
+  await click(`${groupSel} [data-catchup-summarize]`)
+  const recapText = await until(`document.querySelector('${groupSel} [data-catchup-summary-text]')?.textContent ?? ''`, t => t.length > 0, 'Summarize never showed a summary', 30_000)
+  check('Summarize shows the stub\'s text under the group', recapText === 'STUB RECAP: the room agreed on nothing.', recapText)
+  const sentStdin = existsSync(FAKE_STDIN) ? readFileSync(FAKE_STDIN, 'utf8') : ''
+  const sentArgv = existsSync(FAKE_ARGV) ? JSON.parse(readFileSync(FAKE_ARGV, 'utf8')) : []
+  check('one press ran one Claude, handed the group\'s posts as author: text lines on stdin, though the room was read first', recapCalls() === 1 && sentStdin.includes(`catch-up post 1 ${catchTag}`) && sentStdin.includes(`catch-up post 24 ${catchTag}`) && /\] [^:\n]+: catch-up post 1 /.test(sentStdin), sentStdin.slice(0, 300))
+  check('the run was offered no tool and the posts were not in argv', sentArgv[sentArgv.indexOf('--tools') + 1] === '' && !sentArgv.some(a => a.includes(`${catchTag}`)), sentArgv)
+  check('the summary says it is not saved', /Not saved/.test(await evaluate(`document.querySelector('${groupSel} [data-catchup-summary]').textContent`)))
+
+  await sinkPost(tokens.bob, ids.open, `catch-up arrives later ${catchTag}`)
+  await until(`!!document.querySelector('[data-catchup-fresh]')`, v => v, 'a post arriving never offered a refresh', 20_000)
+  ok('a post arriving while Catch-up is open offers a refresh and does not move the page')
+  await click('[data-catchup-refresh]')
+  await until(`document.querySelectorAll('${groupSel} [data-post]').length`, n => n === 1, 'Refresh never narrowed the group to the new post', 25_000)
+  check('Refresh asks again: the read posts are gone and only the new one is left, unsummarized', !(await exists(`${groupSel} [data-catchup-summary]`)) && recapCalls() === 1, recapCalls())
+  await until(`!!document.querySelector('${groupSel}[data-passed]')`, v => v, 'the refreshed group, short enough to be seen whole, was never passed', 20_000)
+  await goto('/messages/catch-up/')
+  await sleep(3000)
+  check('a reload lists nothing for the room, the one new post having been read where it stood, and sends nothing to Claude', !(await exists(groupSel)) && recapCalls() === 1, recapCalls())
+
   console.log('\n  Slash commands')
   await roomReady(ids.open)
   await typeKeys(box, '/')
@@ -1160,6 +1281,40 @@ try {
   await roomReady(ids.open)
   await until(`!document.querySelector('.topbar-nav [data-nav-badge]')`, v => v, 'opening the room never cleared the dot', 20_000)
   ok('opening the room clears the dot')
+  }
+
+  console.log('\n  A post as a Basecamp to-do')
+  {
+  // The sink is the connector's, never 3.basecampapi.com. A direct message is the post that must not leak.
+  const todoCall = (path, init = {}) => fetch(`${todoSink.url}${path}`, init).then(r => r.json())
+  const todoSeen = async () => (await todoCall('/_sink/seen')).requests
+  const dmRoom = ((await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels`, tokens.alice)).json ?? []).find(c => c.type === 'D')
+  const secret = `private to the two of us, never in Basecamp ${Date.now()}`
+  const dmPost = (await sinkPost(tokens.bob, dmRoom.id, secret)).json
+  await goto(`/messages/${dmRoom.id}/`)
+  await until(`!!document.querySelector('[data-post="${dmPost.id}"]')`, v => v, 'the direct message never drew', 25_000)
+  await menuPick(`[data-post="${dmPost.id}"]`, '[data-post-more]', 'Make a Basecamp to-do')
+  await until(`!!document.querySelector('[data-todo-dialog]') && document.querySelectorAll('[data-todo-list] option').length > 0`, v => v, 'the dialog never loaded a project and a list', 25_000)
+  const permalink = `${sink.url}/town/pl/${dmPost.id}`
+  check('the notes show the permalink and nothing else', await evaluate(`document.querySelector('[data-todo-notes]').value`) === permalink)
+  check('and they cannot be edited', await evaluate(`document.querySelector('[data-todo-notes]').readOnly`))
+  check('the title starts as the post\'s first line', await evaluate(`document.querySelector('[data-todo-title]').value`) === secret)
+  check('the project picker lists what the connector walked', await evaluate(`document.querySelectorAll('[data-todo-project] option').length`) > 1)
+  const edited = `Call the client back ${Date.now()}`
+  await fillSel('[data-todo-title]', edited)
+  const before = (await todoSeen()).filter(r => r.method === 'POST').length
+  await click('[data-todo-save]')
+  await until(`document.querySelector('[data-todo-link]')?.getAttribute('href') ?? null`, h => !!h, 'the dialog never showed the to-do\'s link', 25_000)
+  const sent = (await todoSeen()).filter(r => r.method === 'POST')
+  check('one create reached the sink', sent.length === before + 1, sent.length - before)
+  const made = sent[sent.length - 1]
+  check('it is a to-do on the list picked', /\/todolists\/\d+\/todos\.json$/.test(made?.path ?? ''), made?.path)
+  check('the title sent is the edited one', made?.body?.content === edited, made?.body)
+  check('the notes hold the permalink alone', (made?.body?.description ?? '').replace(/<[^>]+>/g, '') === permalink, made?.body)
+  check('the direct message\'s text appears nowhere in the request', !JSON.stringify(made).includes(secret) && !JSON.stringify(made).includes('private to the two'), made)
+  check('the author and the channel are not in it either', !JSON.stringify(made?.body).includes(ids.bob) && !JSON.stringify(made?.body).includes(dmRoom.id), made?.body)
+  check('the dialog links the to-do Basecamp made', /^https?:\/\/[^ ]+$/.test(await evaluate(`document.querySelector('[data-todo-link]').getAttribute('href')`)))
+  await click('[data-todo-done] button')
   }
 
   console.log('\n  Sidebar width')

@@ -160,6 +160,29 @@ export async function viewed(app: App, profile: string, channel: string, at: Dat
 export async function landThreads(app: App, threads: ThreadRow[], roots: PostRow[]): Promise<void> {
   await land(app, 'Post', roots)
   await land(app, 'Thread', threads)
+  await endThreads(app, roots)
+}
+
+/**
+ * A deleted root ends its thread. The server stops listing the thread and no
+ * since-read names it again, so its unread counts stood here for good and the
+ * sidebar counted them; stamped as any row the server stopped answering is.
+ */
+async function endThreads(app: App, posts: ReadonlyArray<Pick<PostRow, 'externalId' | 'rootExternalId' | 'deletedAt'>>): Promise<void> {
+  const roots = posts.filter(p => p.deletedAt && !p.rootExternalId).map(p => p.externalId)
+  if (!roots.length) return
+  await table(app, 'Thread').updateMany({ where: { rootExternalId: { in: roots }, missingSince: null }, data: { missingSince: new Date() } })
+}
+
+/** A person's threads whose root is already a tombstone here, from a delete no frame reached. */
+async function endOrphanedThreads(app: App, profile: string): Promise<void> {
+  const live = await table(app, 'Thread').findMany({ where: { profileExternalId: profile, missingSince: null }, select: { rootExternalId: true } })
+  if (!live.length) return
+  const gone = await table(app, 'Post').findMany({
+    where: { externalId: { in: live.map(t => t.rootExternalId) }, rootExternalId: null, deletedAt: { not: null } },
+    select: { externalId: true, rootExternalId: true, deletedAt: true },
+  })
+  await endThreads(app, gone as Array<Pick<PostRow, 'externalId' | 'rootExternalId' | 'deletedAt'>>)
 }
 
 /** One person's thread, changed in place, or nothing when it is not a row here yet. */
@@ -399,6 +422,7 @@ export async function landPosts(app: App, page: PostPage): Promise<string[]> {
       postExternalId: post.externalId,
       externalId: { notIn: (page.reactions ?? []).filter(r => r.postExternalId === post.externalId).map(r => r.externalId) },
     })
+  await endThreads(app, posts)
   return posts.map(p => p.profileExternalId)
 }
 
@@ -470,6 +494,7 @@ export async function backfill(app: App, memberId: string): Promise<void> {
       console.warn(`[chat] ${c.externalId}: more changed since the last backfill than the server answers in one read; older edits in the gap may be missing`)
     for (const author of await landPosts(app, page)) people.add(author)
   }
+  await endOrphanedThreads(app, profile)
 
   const profiles = await listProfiles(mm, [...people])
   if (!profiles.rows) throw fail('profiles could not be read', profiles.error?.kind ?? 'no answer')
@@ -508,6 +533,7 @@ export async function applyFrame(app: App, memberId: string, profile: string, ev
       return raiseChatNotice(app, sysOf(app), memberId, profile, ev.payload.post)
     case 'post_edited': case 'post_deleted':
       await land(app, 'Post', [ev.payload.post])
+      await endThreads(app, [ev.payload.post])
       return land(app, 'FileInfo', ev.payload.files ?? [])
     // A read is one person's, and only this socket's person's is theirs to land.
     case 'channel_viewed':

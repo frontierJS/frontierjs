@@ -38,6 +38,8 @@ export type SectionKind = 'favorites' | 'channels' | 'direct' | 'custom'
 
 export type ScheduledPostStatus = 'scheduled' | 'sent' | 'failed' | 'cancelled'
 
+export type FollowUpStatus = 'pending' | 'raised' | 'cleared' | 'cancelled'
+
 // ── Models ───────────────────────────────────────────────────────────────────
 
 // ─── Member ──────────────────────────────────────────────────────
@@ -1326,6 +1328,57 @@ export type ScheduledPostOrderBy =
 export interface ScheduledPostRelations {
 }
 
+// ─── FollowUp ────────────────────────────────────────────────────
+
+export interface FollowUp {
+  id: number
+  memberId: number
+  profileExternalId: string
+  postExternalId: string
+  remindAt: string
+  status: FollowUpStatus
+  createdAt: string
+}
+
+export interface FollowUpCreate {
+  id?: number
+  postExternalId: string
+  remindAt: string | Date
+  status?: FollowUpStatus
+}
+
+export interface FollowUpUpdate {
+  id?: number
+  postExternalId?: string
+  remindAt?: string | Date
+  status?: FollowUpStatus
+}
+
+export interface FollowUpSystem {
+  memberId?: number
+  profileExternalId?: string
+}
+
+export interface FollowUpWhere extends WhereBase {
+  id?: number | WhereOp<number> | null
+  memberId?: number | WhereOp<number> | null
+  profileExternalId?: string | WhereOp<string> | null
+  postExternalId?: string | WhereOp<string> | null
+  remindAt?: string | Date | WhereOp<string | Date> | null
+  status?: FollowUpStatus | WhereOp<FollowUpStatus> | null
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: FollowUpWhere[]
+  OR?:  FollowUpWhere[]
+  NOT?: FollowUpWhere
+}
+
+export type FollowUpOrderBy =
+  | { [K in keyof Omit<FollowUp, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<FollowUp, never>]?: OrderDir }>
+
+export interface FollowUpRelations {
+}
+
 // ─── ChatGroup ───────────────────────────────────────────────────
 
 export interface ChatGroup {
@@ -1454,6 +1507,7 @@ export interface ServiceTypes {
   savedPosts: SavedPost
   chatSections: ChatSection
   scheduledPosts: ScheduledPost
+  followUps: FollowUp
   chatGroups: ChatGroup
   quietSchedules: QuietSchedule
 }
@@ -1591,7 +1645,7 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'team' | 'profile' | 'channel' | 'channelMember' | 'post' | 'thread' | 'reaction' | 'fileInfo' | 'draft' | 'savedPost' | 'chatSection' | 'scheduledPost' | 'chatGroup' | 'quietSchedule' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'team' | 'profile' | 'channel' | 'channelMember' | 'post' | 'thread' | 'reaction' | 'fileInfo' | 'draft' | 'savedPost' | 'chatSection' | 'scheduledPost' | 'followUp' | 'chatGroup' | 'quietSchedule' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'chatToken' | 'profileExternalId' | 'chatSyncedAt' | '@@gate', MemberSystem>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem>
   readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
@@ -1611,6 +1665,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly savedPost: TableClient<SavedPost, SavedPostCreate, SavedPostUpdate, SavedPostWhere, SavedPostRelations, never, 'externalId' | 'profileExternalId' | 'postExternalId' | 'missingSince' | '@@gate', SavedPostSystem>
   readonly chatSection: TableClient<ChatSection, ChatSectionCreate, ChatSectionUpdate, ChatSectionWhere, ChatSectionRelations, never, 'externalId' | 'profileExternalId' | 'teamExternalId' | 'name' | 'kind' | 'sortOrder' | 'channelExternalIds' | 'missingSince' | '@@gate', ChatSectionSystem>
   readonly scheduledPost: TableClient<ScheduledPost, ScheduledPostCreate, ScheduledPostUpdate, ScheduledPostWhere, ScheduledPostRelations, never, 'memberId' | 'profileExternalId' | 'error' | 'sentPostExternalId' | 'sentAt' | '@@gate', ScheduledPostSystem>
+  readonly followUp: TableClient<FollowUp, FollowUpCreate, FollowUpUpdate, FollowUpWhere, FollowUpRelations, never, 'memberId' | 'profileExternalId' | '@@gate', FollowUpSystem>
   readonly chatGroup: TableClient<ChatGroup, ChatGroupCreate, ChatGroupUpdate, ChatGroupWhere, ChatGroupRelations, never, 'createdByProfileExternalId' | '@@gate', ChatGroupSystem>
   readonly quietSchedule: TableClient<QuietSchedule, QuietScheduleCreate, QuietScheduleUpdate, QuietScheduleWhere, QuietScheduleRelations, never, 'profileExternalId' | '@@gate', QuietScheduleSystem>
 

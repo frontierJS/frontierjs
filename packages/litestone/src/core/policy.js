@@ -715,12 +715,51 @@ export function compileDerived(model, fieldName, node, fromOf = () => null) {
 // sake (`FJS-2614`) and would count it. The SQL is static, built once: the
 // schema's literals are inlined and a clock node becomes the `strftime` that
 // `clockedDb` stamps, so `now()` reads the client's clock as a read does.
-export function compileFromWhere(target, label, node, schema) {
+//
+// `this.col` is a column of `owner`, the row the @from is declared on
+// (`FJS-D2239`), emitted as `%SELF%."col"` and listed in `self` so a recount
+// that has no outer table in scope can look it up by the key.
+export function compileFromWhere(target, label, node, schema, owner = null) {
   const refuse = (why) => { throw new Error(`${label} ${why}`) }
   const clocks = []
+  const self   = []
+  const parentColumn = (name) => {
+    const f = owner?.fields.find(x => x.name === name)
+    if (!f) refuse(`names 'this.${name}', and '${name}' is not a field on ${owner?.name}. ` +
+                   `Fields: ${(owner?.fields ?? []).map(x => x.name).sort().join(', ')}`)
+    if (f.type?.kind === 'relation' || f.type?.kind === 'implicitM2M')
+      refuse(f.type.array || f.type.kind === 'implicitM2M'
+        ? `names 'this.${name}', and 'this.${name}' is a to-many relation on ${owner.name}, so there is no column to compare`
+        : `names 'this.${name}', a relation on ${owner.name} — name its foreign key column`)
+    if (f.attributes?.some(a => a.kind === 'from'))
+      refuse(`names 'this.${name}', and 'this.${name}' is @from on ${owner.name}; a @from's where: compares a stored column`)
+    const none = noColumn(f)
+    if (none) refuse(`names 'this.${name}', and 'this.${name}' is ${none} on ${owner.name}, so there is no column to compare`)
+    for (const kind of ['encrypted', 'hashed', 'secret'])
+      if (f.attributes?.some(a => a.kind === kind))
+        refuse(`names 'this.${name}', and 'this.${name}' is @${kind} on ${owner.name}, so the column holds an ` +
+               `encoding rather than the value — a comparison against it would match nothing`)
+    if (!self.some(s => s.name === name)) self.push({ name, column: policyColumn(schema, owner.name, name) })
+    return { type: 'literal', value: `\0self${self.findIndex(s => s.name === name)}\0` }
+  }
+  const isThis = (n) => n?.type === 'path' && n.rel === 'this'
   const swap = (n) => {
     if (!n || typeof n !== 'object') return n
     if (n.type === 'auth')  refuse(`names auth(), and a @from is one value for the row, not one per reader`)
+    if (isThis(n)) {
+      if (!owner) refuse(`names 'this.${n.name}', and this predicate has no declaring row`)
+      return parentColumn(n.name)
+    }
+    if (n.type === 'compare' && (isThis(n.left) || isThis(n.right))) {
+      const other = isThis(n.left) ? n.right : n.left
+      const f = other?.type === 'field' && target.fields.find(x => x.name === other.name)
+      for (const kind of ['encrypted', 'hashed', 'secret'])
+        if (f?.attributes?.some(a => a.kind === kind))
+          refuse(`compares '${other.name}', which is @${kind} on ${target.name}, against a column of ${owner?.name} — ` +
+                 `the column holds an encoding rather than the value`)
+      if (n.op === 'in' && isThis(n.right))
+        refuse(`asks whether a value is in 'this.${n.right.name}', and 'in' takes a literal list on the right`)
+    }
     if (n.type === 'check' || n.type === 'path' || n.type === 'some')
       refuse(`reads past ${target.name}, and a @from's where: reads the ${target.name} row it is counting and nothing else`)
     if (n.type === 'field' && !target.fields.some(f => f.name === n.name))
@@ -736,6 +775,8 @@ export function compileFromWhere(target, label, node, schema) {
   const literal = (v) => {
     const clock = typeof v === 'string' && /^\0clock(\d+)\0$/.exec(v)
     if (clock)                  return clocks[+clock[1]]
+    const parent = typeof v === 'string' && /^\0self(\d+)\0$/.exec(v)
+    if (parent)                 return `%SELF%.${quoteIdent(self[+parent[1]].column)}`
     if (v === null)             return 'NULL'
     if (typeof v === 'boolean') return v ? '1' : '0'
     if (typeof v === 'number')  return String(v)
@@ -748,7 +789,7 @@ export function compileFromWhere(target, label, node, schema) {
     if (ch === "'" || ch === '"') { quote = ch; out += ch; continue }
     out += ch === '?' ? literal(params[i++]) : ch
   }
-  return out
+  return { sql: out, self }
 }
 
 // ─── an unquoted @generated ───────────────────────────────────────────────────
@@ -1426,7 +1467,7 @@ function walkReads(modelName, ctx, op) {
     const agg = node.type === 'field' && aggregateEntry(ctx, model, node.name)
     if (agg) {
       reach.add(agg.target)
-      read(model, agg.keys)
+      read(model, [...agg.keys, ...(agg.self ?? []).map(s => s.name)])
       read(agg.target, agg.reads ?? ctx.schema.models.find(m => m.name === agg.target).fields.map(f => f.name))
       const join = agg.aggRef.through && ctx.schema.models.find(m =>
         [false, true].some(p => modelToTableName(m, p) === agg.aggRef.through.joinTable))
@@ -2360,9 +2401,10 @@ function withAggregates(node, ctx, data, modelName) {
   const out = { ...data }
   for (const [name, entry] of entries) {
     if (!db?.query) { out[name] = null; continue }
-    const row = `(SELECT ${entry.keys.map(k => `? AS ${quoteIdent(k)}`).join(', ')}) AS "_row"`
+    const self = (entry.self ?? []).filter(s => !entry.keys.includes(s.column))
+    const row = `(SELECT ${[...entry.keys, ...self.map(s => s.column)].map(k => `? AS ${quoteIdent(k)}`).join(', ')}) AS "_row"`
     const v   = db.query(`SELECT ${entry.subquerySqlFor('"_row"')} AS v FROM ${row}`)
-      .get(...entry.keys.map(k => data?.[k] ?? null))?.v ?? null
+      .get(...entry.keys.map(k => data?.[k] ?? null), ...self.map(s => data?.[s.name] ?? null))?.v ?? null
     out[name] = entry.isBool && v != null ? !!v : v
   }
   return out

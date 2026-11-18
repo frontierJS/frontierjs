@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-21 model(s) · 6 enum(s) · 2 database(s)
+22 model(s) · 7 enum(s) · 2 database(s)
 chat → sqlite · main → sqlite
 ```
 
@@ -22,6 +22,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | --- | --- |
 | `ChannelType` | `direct` · `group` · `open` · `private` |
 | `ComputeProvider` | `digitalocean` · `hetzner` |
+| `FollowUpStatus` | `cancelled` · `cleared` · `pending` · `raised` |
 | `Presence` | `away` · `dnd` · `offline` · `online` |
 | `ScheduledPostStatus` | `cancelled` · `failed` · `scheduled` · `sent` |
 | `SectionKind` | `channels` · `custom` · `direct` · `favorites` |
@@ -266,6 +267,30 @@ table `file_info` · db `chat` · gate `3.8.8.8`
 @@index(postExternalId)
 @@index(profileExternalId)
 @@allow(read, profileExternalId == auth().profileExternalId || postExternalId != null && check(post))
+```
+
+### `FollowUp`
+
+table `follow_up` · db `chat` · gate `3.3.3.3`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `memberId` | `Int` | no | — | @system · **required on write** |
+| `postExternalId` | `String` | no | — | **required on write** |
+| `profileExternalId` | `String` | no | — | @system · **required on write** |
+| `remindAt` | `DateTime` | no | — | **required on write** |
+| `status` | `FollowUpStatus` | no | `'pending'` | — |
+
+```
+@@index(memberId)
+@@index(status, remindAt)
+@@allow(create, memberId == auth().id)
+@@allow(delete, memberId == auth().id)
+@@allow(postUpdate, memberId == auth().id)
+@@allow(read, memberId == auth().id)
+@@allow(update, memberId == auth().id)
 ```
 
 ### `Member`

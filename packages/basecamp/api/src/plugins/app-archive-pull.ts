@@ -84,24 +84,27 @@ export function appArchivePull(app: App) {
     const dir = pullDir(app)
     mkdirSync(dir, { recursive: true, mode: 0o700 })
     const path = join(dir, `${id}.tar.gz`), partial = `${path}.partial`
-    // A stream route bounds nothing a chunked sender writes, so the count is kept here.
     const sink = Bun.file(partial).writer()
     const reader = body.getReader()
-    let bytes = 0, over = false
+    let bytes = 0, over = false, failed: unknown = null
     try {
       for (let r = await reader.read(); !r.done; r = await reader.read()) {
         bytes += r.value.byteLength
-        if (bytes > BODY_CEILING_BYTES) { over = true; break }
         sink.write(r.value)
       }
+    } catch (err) {
+      // The route's maxBodySize is BODY_CEILING_BYTES, so junction errors the read there.
+      if ((err as Error)?.name === 'BodyTooLargeError') over = true
+      else failed = err
     } finally { await sink.end(); reader.releaseLock() }
+    if (failed) { rmSync(partial, { force: true }); throw failed }
     if (over || !bytes) {
       rmSync(partial, { force: true })
       return ctx.json({ message: over ? `The archive is over ${BODY_CEILING_BYTES} bytes` : 'The archive is empty' }, over ? 413 : 400)
     }
     renameSync(partial, path)
     return ctx.json({ bytes }, 201)
-  }, { body: 'stream' })
+  }, { body: 'stream', maxBodySize: BODY_CEILING_BYTES })
 
   app.get('/app-archive-pull/{id}', async (ctx) => {
     const id = ctx.route.id, name = String(ctx.query.name ?? '')

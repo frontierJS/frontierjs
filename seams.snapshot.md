@@ -30,12 +30,12 @@ that claimed the strong check while holding the weak one would be worse than no 
 | Seam | Owner | Other declaring files |
 | --- | --- | --- |
 | `manifest()` | `packages/junction/src/plugins/manifest/index.ts` | 34 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 20 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 21 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 17 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 14 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
+| `svc.describe()` | `packages/junction/src/core/service.ts` | 11 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
-| `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 9 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 7 |
@@ -130,7 +130,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `collectCustomMethods(def, name, methods?)` | `packages/junction/src/core/service.ts` | yes | — |
 | `CALL_OPTIONS_AT` | `packages/junction/src/core/app.ts` | mentioned | — |
 | `svc.pipelines(appHooks)` | `packages/junction/src/core/service.ts` | yes | — |
-| `svc.describe()` | `packages/junction/src/core/service.ts` | yes | 10 |
+| `svc.describe()` | `packages/junction/src/core/service.ts` | yes | 11 |
 | `isBuiltService(v)` / `Symbol.for('junction.service')` | `packages/junction/src/core/service.ts` | yes | — |
 | `normalizePrefix()` | `packages/junction/src/core/app.ts` | yes | 1 |
 | `ctx.enqueue(job, payload)` / `deliverOutbox(app)` | `packages/junction/src/plugins/outbox/engine.ts` | yes | 4 |
@@ -155,7 +155,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `connectApp()` / `createResource(name, { app })` | `packages/sierra/src/resource/index.js` | yes | 1 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | yes | 17 |
-| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 20 |
+| `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | yes | 21 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
 | `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |

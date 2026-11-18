@@ -10,7 +10,10 @@ export function buildClaimSet(schema?: any, declared?: any): {
 export function authClaimSites(schema?: any): any[];
 export function authClaimsUsed(schema?: any): Set<any>;
 export function compileDerived(model?: any, fieldName?: any, node?: any, fromOf?: () => any): any;
-export function compileFromWhere(target?: any, label?: any, node?: any, schema?: any): string;
+export function compileFromWhere(target?: any, label?: any, node?: any, schema?: any, owner?: any): {
+    sql: string;
+    self: any[];
+};
 export function compileGenerated(node?: any): any;
 export function generatedProblems(model?: any, field?: any, node?: any): string[];
 export function evalDerived(model?: any, node?: any, record?: any, now?: any): any;

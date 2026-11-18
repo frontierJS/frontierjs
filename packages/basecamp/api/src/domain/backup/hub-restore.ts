@@ -145,9 +145,12 @@ export async function receiveUpload(body: ReadableStream<Uint8Array> | null, to:
   try {
     for (let r = await reader.read(); !r.done; r = await reader.read()) {
       bytes += r.value.byteLength
-      if (bytes > MAX_UPLOAD_BYTES) return { error: `The upload is over ${MAX_UPLOAD_BYTES} bytes; restore it from the bucket` }
       sink.write(r.value)
     }
+  } catch (err) {
+    // The route states MAX_UPLOAD_BYTES as its maxBodySize, so junction errors the read there.
+    if ((err as Error)?.name === 'BodyTooLargeError') return { error: `The upload is over ${MAX_UPLOAD_BYTES} bytes; restore it from the bucket` }
+    throw err
   } finally { await sink.end(); reader.releaseLock() }
   return bytes ? null : { error: 'The upload is empty' }
 }

@@ -92,6 +92,17 @@
   margin-block: 0;
 }
 
+/*
+ * A fenced block is a bare <pre>: the markdown renderer gives it no class,
+ * so the scroll `.code` carries never reached it and a long line ran out of
+ * the column it sits in, over whatever was beside it. It scrolls, as `.code`
+ * does, rather than wrapping.
+ */
+:where(.prose) :where(pre) {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 :where(.prose) :where(ul, ol) {
   padding-inline-start: var(--space-2xl);
 }

@@ -17,7 +17,8 @@ import { standing }                           from './principal.ts'
 import { resolvePush }                        from './push.ts'
 import { notificationChannelName, CHAT_CHANNELS } from './core/channels.ts'
 import { chatProvider }                   from './providers/chat/index.ts'
-import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH } from './domain/chat/files.ts'
+import { bc3Provider }                    from './providers/bc3/index.ts'
+import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH, MAX_UPLOAD_BYTES } from './domain/chat/files.ts'
 import { connectedRoute, CONNECTED_PATH } from './domain/capture/connect.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
@@ -41,6 +42,8 @@ export interface WorkbenchAppOptions {
   serversSend?: SendFor
   /** The team chat server's address. Default `CHAT_URL`; absent, chat is off. A drive hands the sink's. */
   chatUrl?: string | null
+  /** Basecamp, the 37signals product, for a post's to-do. Default `BASECAMP_ACCOUNT_ID`, `BASECAMP_TOKEN`, `BASECAMP_API_ORIGIN`; absent, to-dos are off. A drive hands the sink's. */
+  todos?: { accountId?: string | null, token?: string | null, origin?: string | null }
 }
 
 // A machine that never ran `fli basecamp:create` still has the dev Basecamp;
@@ -119,12 +122,17 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
 
   // The team chat (`IDEAS/workbench-messages.md`): after caravan, whose queue
   // the backfill rides and whose workers open each linked member's socket.
-  chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL })
+  const todos = bc3Provider(app, {
+    accountId: opts.todos?.accountId !== undefined ? opts.todos.accountId : env.BC3_ACCOUNT_ID,
+    token:     opts.todos?.token     !== undefined ? opts.todos.token     : env.BC3_TOKEN,
+    origin:    opts.todos?.origin    !== undefined ? opts.todos.origin    : env.BC3_API_ORIGIN,
+  })
+  chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL, alongside: todos })
   app.configure(a => {
     a.get(FILE_PATH, fileRoute(app))
     // The share app's browser lands here with no Workbench cookie; the pending state is its proof.
     a.get(CONNECTED_PATH, connectedRoute())
-    a.post(FILES_PATH, uploadRoute(app), { body: 'stream' } as any)
+    a.post(FILES_PATH, uploadRoute(app), { body: 'stream', maxBodySize: MAX_UPLOAD_BYTES } as any)
   })
 
   // A shell in a pinned checkout or the home folder, behind the door's one member (plugins/workbench-terminal.ts).

@@ -19,7 +19,7 @@
   import { goto } from '@frontierjs/sierra/router'
   import { posts } from '../../resources/Post.mesa'
   import { ago } from '../../lib/datetime.js'
-  import { getLists, linkMentions, markUnread, me, mentionsMe, personName, remindAt, REMINDERS, rootOf, setFollowing, setPinned, setSaved, statusOf, threadHref } from '../../lib/chat.js'
+  import { getLists, linkMentions, markUnread, me, mentionsMe, personName, nudgeIfNoReply, remindAt, REMINDERS, todosConfigured, rootOf, setFollowing, setPinned, setSaved, statusOf, threadHref } from '../../lib/chat.js'
   import PostEditor from './PostEditor.mesa'
   import Presence from './Presence.mesa'
   import Reactions from './Reactions.mesa'
@@ -27,6 +27,8 @@
   import PostLinks from './PostLinks.mesa'
   import EditedMark from './EditedMark.mesa'
   import ReactionPicker from './ReactionPicker.mesa'
+  import WhenDialog from './WhenDialog.mesa'
+  import TodoDialog from './TodoDialog.mesa'
 
   export let post = null
   export let people = []
@@ -34,6 +36,7 @@
   export let inThread = false      // drawn in the thread pane: no count, no Reply
   export let selected = false      // its thread is the one open beside the room
   export let marked = false        // the post a pin or a link jumped to
+  export let onnudge = undefined   // () => void, after a reminder is set, for a screen that lists them
 
   const lists = getLists()
   $: author = personName(post.profileExternalId, people)
@@ -62,6 +65,19 @@
     await remindAt(post, at)
     reminded = `Reminder set for ${at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.`
   })
+
+  // Mounted only while open: a post is drawn many times and the dialog is one per screen's worth of use.
+  let nudging = false
+  const nudge = async (at) => {
+    await nudgeIfNoReply(post, at)
+    reminded = `You will be reminded ${at.toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })} if nobody replies.`
+    onnudge?.()
+  }
+
+  // The entry is offered only where Basecamp is configured; the dialog is mounted only while open.
+  let todoOn = false
+  let todoing = false
+  todosConfigured().then(v => todoOn = v)
 
   const pin    = () => act(() => setPinned(post, !post.isPinned))
   const unread = () => act(() => markUnread(post))
@@ -139,6 +155,8 @@
             {/each}
           </DropdownSubmenu>
         {/if}
+        {#if mine}<DropdownItem onclick={() => nudging = true}><span data-nudge>Remind me if nobody replies</span></DropdownItem>{/if}
+        {#if todoOn}<DropdownItem onclick={() => todoing = true}><span data-todo>Make a Basecamp to-do</span></DropdownItem>{/if}
         {#if mine}
           <DropdownSeparator />
           <DropdownItem tone="danger" data-confirm="Delete this post? There is no undo." data-confirm-label="Delete" onclick={drop}>Delete</DropdownItem>
@@ -146,6 +164,8 @@
       </DropdownMenu>
     </div>
   {/if}
+  {#if todoing}<TodoDialog bind:open={todoing} {post} />{/if}
+  {#if nudging}<WhenDialog bind:open={nudging} title="Remind me if nobody replies" action="Remind me" onpick={nudge} />{/if}
 </article>
 
 <style>
@@ -163,7 +183,8 @@
   .post-head strong { font-weight: var(--label-font-weight); }
   .post-head time { font-size: var(--text-xs); }
   .post-body { min-inline-size: 0; }
-  .post-text { line-height: var(--leading-body); }
+  /* The room's gutters already set the reading width; prose's own 64ch stopped a code block well short of the post. */
+  .post-text { line-height: var(--leading-body); --measure: none; }
   .post-text :global(p) { margin: 0; }
   .post-text :global(p:last-of-type) { display: inline; }
   .post-note { margin: 0; }

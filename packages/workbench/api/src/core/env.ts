@@ -60,6 +60,15 @@ export const spec = {
   CHAT_URL:   {},
   CHAT_TOKEN: {},
 
+  // BC3_ is Basecamp the 37signals product; `BASECAMP` above is the FrontierJS
+  // Basecamp, so the connector's own BASECAMP_TOKEN would read as the wrong one
+  // here and is renamed through its `ref`. Both the account and the token must
+  // be set or turning a post into a to-do is off. BC3_API_ORIGIN moves the API
+  // to a sink and is never set for the real one.
+  BC3_ACCOUNT_ID: {},
+  BC3_TOKEN:      {},
+  BC3_API_ORIGIN: {},
+
   // The job queue's own file. Absent, db/workbench-jobs.db beside the main one,
   // so a drive over a temp database does not queue into the owner's.
   JOBS_DATABASE_URL: {},

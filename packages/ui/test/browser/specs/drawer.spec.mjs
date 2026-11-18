@@ -149,9 +149,29 @@ export async function run(t) {
   await t.evaluate(`document.querySelector('.drawer-handle').focus(); return true;`)
   await t.press('ArrowRight')
   t.is(Math.round((await t.evaluate(box)).w), Math.round(wider.w) - 32, 'ArrowRight on the handle narrows a right drawer 32px')
+  await t.press('ArrowLeft', 8)
+  t.is(Math.round((await t.evaluate(box)).w), Math.round(wider.w) - 32 + 128, 'Shift+ArrowLeft widens it four steps')
+  await t.press('Home')
+  t.is(Math.round((await t.evaluate(box)).w), 240, 'Home takes it to minWidth')
+  const valuemax = Number(await t.evaluate(`return document.querySelector('.drawer-handle').getAttribute('aria-valuemax');`))
+  await t.press('End')
+  t.is(Math.round((await t.evaluate(box)).w), valuemax, 'End takes it to aria-valuemax, the 90vw cap')
+
+  const valuenow = `return document.querySelector('.drawer-handle').getAttribute('aria-valuenow');`
+  await t.evaluate(`document.querySelector('.drawer-handle').dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true;`)
+  await t.evaluate(`await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return true;`)
+  t.is(await t.evaluate(`return document.querySelector('#width').textContent;`), 'none', 'a double-click puts back the css width')
+  t.is(Math.round((await t.evaluate(box)).w), Math.round(right.w), 'and the drawer is its first width again')
+  t.is(await t.evaluate(valuenow), String(Math.round(right.w)), 'and aria-valuenow measures it')
 
   await t.drag(await t.evaluate(handleAt), { x: 2000, y: h.y }, { steps: 4 })
   t.is(Math.round((await t.evaluate(box)).w), 240, 'minWidth is the floor')
+
+  // A drawer mounted closed has no box to measure, so the handle reports its size when it is reached.
+  await t.mount('drawer', { open: false, resizable: true })
+  await t.evaluate(`document.querySelector('#open-drawer').click(); return true;`)
+  await t.evaluate(`await new Promise(r => setTimeout(r, 400)); document.querySelector('.drawer-handle').focus(); return true;`)
+  t.is(await t.evaluate(valuenow), String(Math.round(right.w)), 'a drawer opened later reports its width on focus')
 
   await t.mount('drawer', { open: true, resizable: true, side: 'left' })
   await t.evaluate(`await new Promise(r => setTimeout(r, 400)); return true;`)

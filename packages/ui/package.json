@@ -16,6 +16,10 @@
       "types": "./drag.d.ts",
       "default": "./drag.js"
     },
+    "./resize": {
+      "types": "./resize.d.ts",
+      "default": "./resize.js"
+    },
     "./nav": {
       "types": "./nav.d.ts",
       "default": "./nav.js"
@@ -79,6 +83,8 @@
     "drag.d.ts",
     "nav.js",
     "nav.d.ts",
+    "resize.js",
+    "resize.d.ts",
     "rowlist.js",
     "rowlist.d.ts",
     "selection.js",

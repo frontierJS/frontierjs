@@ -60,8 +60,9 @@ const tokenOfMember = async (db: Db, id: string | number): Promise<string | null
 const SOCKET_REF = 'CHAT_SOCKET:'
 const socketTarget = (memberId: string) => `broker:chat:${memberId}`
 
-function credentials (db: Db): CredentialResolver {
+function credentials (db: Db, extra: Record<string, CredentialResolver> = {}): CredentialResolver {
   const table = byRef({
+    ...extra,
     CHAT_TOKEN:      createEnvResolver(),
     // The member in the call's own token. Null fails the send closed.
     CHAT_USER_TOKEN: { get: async () => null, getFor: async (_ref: string, who: CredentialCaller) => who.principal ? tokenOfMember(db, who.principal) : null },
@@ -104,12 +105,14 @@ export async function unlisten (app: App, memberId: string): Promise<void> {
  * (`FJS-D1125`); then opens each linked member's socket. With no server the
  * claim is unbound and a write to a mirrored model is refused as @system.
  */
-export function chatProvider (app: App, opts: { db: Db, url?: string | null }): void {
+export function chatProvider (app: App, opts: { db: Db, url?: string | null, alongside?: { targets: unknown[], credentials: Record<string, CredentialResolver> } }): void {
   const url = opts.url || null
   const targets = url ? mattermostTargets({ address: url, ref: 'CHAT_TOKEN', userRef: 'CHAT_USER_TOKEN' }) : null
   app.own('chat', { url, sys: () => opts.db.asSystem(), targets } satisfies Chat)
+  // An app has one conduit plugin, so another provider's targets ride this one's.
+  const all = [...(targets ? Object.values(targets) : []), ...(opts.alongside?.targets ?? [])]
+  if (all.length) app.configure(conduit({ targets: all, credentials: credentials(opts.db, opts.alongside?.credentials) } as any))
   if (!targets) return
-  app.configure(conduit({ targets: Object.values(targets), credentials: credentials(opts.db) } as any))
   app.conduit!.mirror(mirror)
   // A socket acts unasked, so it opens with the workers and not in a one-shot boot.
   app.configure({
@@ -120,6 +123,22 @@ export function chatProvider (app: App, opts: { db: Db, url?: string | null }): 
       for (const m of linked) await listen(a, String(m.id))
     },
   } as any)
+}
+
+/**
+ * A post's address on the chat server: `<server>/<team name>/pl/<post id>`. A
+ * direct channel has no team, so the first team the mirror holds names it, as
+ * the server's own links do for a direct message.
+ */
+export async function permalinkOf (app: App, post: { externalId: string, channelExternalId: string }): Promise<string | null> {
+  const { url } = chatOf(app)
+  if (!url) return null
+  const sys = sysOf(app)
+  const channel = await sys.channel.findUnique({ where: { externalId: post.channelExternalId }, select: { teamExternalId: true } })
+  const team = channel?.teamExternalId
+    ? await sys.team.findUnique({ where: { externalId: channel.teamExternalId }, select: { name: true } })
+    : await sys.team.findFirst({ orderBy: { id: 'asc' }, select: { name: true } })
+  return team?.name ? `${url.replace(/\/+$/, '')}/${team.name}/pl/${post.externalId}` : null
 }
 
 /** The Profile a token belongs to, asked as the caller -- what `chat.connect` checks before keeping one. */
@@ -379,7 +398,7 @@ export async function activityAs (app: App, profile: string) {
   const mentions = await searchAs(app, profile, `@${self.username}`)
   if (!mentions.rows) return { error: mentions.error }
   const threads = await sysOf(app).thread.findMany({
-    where: { profileExternalId: profile, isFollowing: true, unreadReplies: { gt: 0 } }, orderBy: { lastReplyAt: 'desc' }, select: { rootExternalId: true },
+    where: { profileExternalId: profile, isFollowing: true, missingSince: null, unreadReplies: { gt: 0 } }, orderBy: { lastReplyAt: 'desc' }, select: { rootExternalId: true },
   })
   return { mentions: mentions.rows, threads: threads.map((t: { rootExternalId: string }) => t.rootExternalId) }
 }

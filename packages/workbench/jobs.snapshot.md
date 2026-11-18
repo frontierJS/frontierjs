@@ -27,10 +27,11 @@ it re-resolved when it runs. Survives a restart.
 | `autopilot-report` | `default` | `0 8 * * *` | — | 3 | default | 60000ms |
 | `autopilot-tick` | `default` | `*/5 * * * *` | — | 3 | default | 60000ms |
 | `chat-backfill` | `default` | on dispatch | — | 3 | default | **none** |
+| `chat-followup` | `default` | `* * * * *` | — | 3 | default | 300000ms |
 | `chat-scheduled` | `default` | `* * * * *` | — | 3 | default | 300000ms |
 | `claude-index` | `default` | `*/5 * * * *` | — | 3 | default | 1800000ms |
 
-5 handler(s), 4 of them on a clock.
+6 handler(s), 5 of them on a clock.
 
 **1 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

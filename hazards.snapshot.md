@@ -182,7 +182,7 @@ Graded: **13 of 195**.
 | The client's address is declared, never discovered. | **none** |
 | An API on a sibling subdomain needs no cookie `Domain`; the cross-origin list is `cors.origins` + `credentials` + `csrf.origins` | **none** |
 | Above 128 MB, a declared length over `http.maxBodySize` is refused by Bun, not by junction | **none** |
-| A `{ body: 'stream' }` route bounds nothing a chunked sender writes, and its credential verifier sees an empty body | **none** |
+| A `{ body: 'stream' }` route that states no `maxBodySize` is held to the app's 256 KB, and its credential verifier sees an empty body | **none** |
 | A local File URL serves only as a read printed it, for one to two hours, from the process that printed it | **none** |
 
 ### Sockets

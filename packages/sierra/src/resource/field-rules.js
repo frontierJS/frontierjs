@@ -2344,9 +2344,12 @@ export function fromFor(rule, record, childRules = {}) {
   const rows = from?.rel ? record?.[from.rel] : undefined
   if (!Array.isArray(rows) || !FROM_AGGREGATES.has(from.op)) return undefined
   const now = new Date().toISOString()
+  // `this.col` is the record holding the children (`FJS-D2239`), which the
+  // server reads off the parent row; the evaluator would read it as null.
+  const resolvePath = (n) => n.rel === 'this' ? record?.[n.name] ?? null : null
   try {
     const kept = rows.map(row => ({ ...row, ...previewOf(childRules, row) }))
-      .filter(row => !from.where || evaluatePredicate(from.where, { record: row, now }) === true)
+      .filter(row => !from.where || evaluatePredicate(from.where, { record: row, now, resolvePath }) === true)
     if (from.op === 'count')  return kept.length
     if (from.op === 'exists') return kept.length > 0
     const vals = kept.map(row => row[from.field]).filter(v => v != null)

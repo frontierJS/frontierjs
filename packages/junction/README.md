@@ -1894,17 +1894,17 @@ app.patch('/users/{id}/avatar', async ctx => {
 })
 ```
 
-**Streaming an upload larger than memory** — every route's body is parsed and buffered before its handler runs, under `http.maxBodySize`. A route that states `{ body: 'stream' }` skips the parse: `ctx.body` is the unread `ReadableStream` (or `null`), `ctx.files` is empty, and `ctx.$raw.$req` is the original Request (`FJS-D1159`):
+**Streaming an upload larger than memory** — every route's body is parsed and buffered before its handler runs, under `http.maxBodySize`. A route that states `{ body: 'stream' }` skips the parse: `ctx.body` is the unread `ReadableStream` (or `null`), `ctx.files` is empty, and `ctx.$raw.$req` reads that same stream (`FJS-D1159`):
 
 ```typescript
 app.put('/uploads', async ctx => {
   const id = crypto.randomUUID()
   await Bun.write(`/data/uploads/${id}`, new Response(ctx.body as ReadableStream))
   return ctx.json({ id }, 201)
-}, { body: 'stream' })
+}, { body: 'stream', maxBodySize: 2 * 1024 ** 3 })
 ```
 
-The `maxBodySize` parse bound does not apply to such a route; Bun's `maxRequestBodySize`, the larger of `maxBodySize` and 128 MB, still does. A credential verifier that reads the body sees none there. The third argument also takes `middleware: MiddlewareFn[]`.
+Every route, parsed or streamed, is bounded by `maxBodySize` — its own when the third argument states one, otherwise `http.maxBodySize` (`FJS-D2258`). On a stream route a declared length past it is a 413 before the handler runs, and a chunked body is counted as the handler reads: the read that passes it cancels the sender and errors with a 413 `BodyTooLargeError`, and the app logs `request body cut at its bound` naming the route, which matters when the handler has already answered. Bun's `maxRequestBodySize` is sized to the largest bound any route states, so it never cuts first. A credential verifier that reads the body sees none on a stream route. The third argument also takes `middleware: MiddlewareFn[]`.
 
 **Expanding file refs in responses** — Litestone stores file references as JSON. Use an after hook to expand them to URLs before the response goes out:
 

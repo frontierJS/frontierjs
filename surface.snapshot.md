@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4665 source file(s) read
-364 entry point(s), 34 imported by nothing outside their package, 14 emitted
-1802 value export(s), 658 reached by nothing outside, 185 emitted
+27 package(s) · 4680 source file(s) read
+366 entry point(s), 34 imported by nothing outside their package, 14 emitted
+1803 value export(s), 658 reached by nothing outside, 185 emitted
 471 type export(s), 342 reached by nothing outside
 ```
 
@@ -40,7 +40,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `sierra` | 49 | 6 | 205 | 85 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `toolbelt` | 90 | 0 | 325 | 42 | 12 | 0 | 0 |
-| `ui` | 16 | 0 | 56 | 36 | 3 | 0 | 0 |
+| `ui` | 18 | 0 | 57 | 36 | 3 | 0 | 0 |
 | `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 26 | 2 | 70 | 21 | 4 | 0 | 0 |
 | `site-kit` | 10 | 5 | 36 | 9 | 1 | 0 | 0 |
@@ -316,11 +316,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 16 entry point(s) · 56 value, 0 type export(s)
+`packages/ui` · 18 entry point(s) · 57 value, 0 type export(s)
 
 **Entries emitted (4):** `./dnd` `./drag` `./selection` `./rowlist`
 
-**Entries not source (7, not graded):** `./utils` `./dnd` `./drag` `./nav` `./selection` `./rowlist` `./controls`
+**Entries not source (8, not graded):** `./utils` `./dnd` `./drag` `./resize` `./nav` `./selection` `./rowlist` `./controls`
 
 **Unreached values (36):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `fitDropdown` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 

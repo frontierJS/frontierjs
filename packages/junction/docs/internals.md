@@ -216,8 +216,8 @@ and not here. Read the section for a path before changing code under it.
 - **A body that declares no length is bounded by this package and by nothing
   else.** `Content-Length` is optional, so the pre-read check has nothing to
   look at on a chunked request; `req.arrayBuffer()` then buffers whatever
-  arrives, and Bun's `maxRequestBodySize` does not help — measured, it compares
-  the DECLARED length and a chunked body passes it untouched. `readBounded`
+  arrives, and Bun's `maxRequestBodySize` is the server's ceiling, sized to the
+  largest route bound, so it does not cut at a smaller route's. `readBounded`
   walks the stream and cancels at the limit. **Cancelling spends the
   connection**: on Bun 1.3.11 the abandoned bytes stay on a kept-alive socket
   and are read as the start of the next request, so the sender's own next

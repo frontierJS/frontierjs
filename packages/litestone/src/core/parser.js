@@ -8317,7 +8317,7 @@ function validate(schema) {
       if (!targetModel)
         errors.push(`Model '${model.name}', field '${field.name}': @from(${target}, ...) — unknown model '${target}'`)
       if (fromAttr.where && targetModel) {
-        try { compileFromWhere(targetModel, `Model '${model.name}', field '${field.name}': @from(${target}, where: …)`, fromAttr.where, schema) }
+        try { compileFromWhere(targetModel, `Model '${model.name}', field '${field.name}': @from(${target}, where: …)`, fromAttr.where, schema, model) }
         catch (e) { errors.push(e.message) }
       }
       // Type compatibility checks

@@ -56,7 +56,7 @@ describe('a route that takes its body as a stream', () => {
         total += value.byteLength
       }
       return ctx.json({ total })
-    }, { body: 'stream' })
+    }, { body: 'stream', maxBodySize: 16 * CHUNK })
     await a.start()
 
     const { req, counter } = chunked('/upload', 16)
@@ -68,28 +68,27 @@ describe('a route that takes its body as a stream', () => {
     await a.stop()
   })
 
-  it('hands $raw.$req the unread original', async () => {
+  it('hands $raw.$req the unread body', async () => {
     const a = app()
-    let same = false
+    let n = 0
     a.put('/upload', async (ctx) => {
-      same = ctx.$raw.$req.body === ctx.body
-      await ctx.$raw.$req.arrayBuffer()
+      n = (await ctx.$raw.$req.arrayBuffer()).byteLength
       return ctx.empty(204)
     }, { body: 'stream' })
     await a.start()
 
     const { req } = chunked('/upload', 2)
     expect((await a.http.fetch(req)).status).toBe(204)
-    expect(same).toBe(true)
+    expect(n).toBe(2 * CHUNK)
     await a.stop()
   })
 
-  it('is not refused by the parse bound, which belongs to a parsed body', async () => {
+  it('is bounded by its own maxBodySize, above the app bound', async () => {
     const a = app(256 * 1024)
     a.put('/upload', async (ctx) => {
       const n = (await new Response(ctx.body as ReadableStream).arrayBuffer()).byteLength
       return ctx.json({ n })
-    }, { body: 'stream' })
+    }, { body: 'stream', maxBodySize: 1024 * 1024 })
     a.put('/parsed', ctx => ctx.json({ ok: true }))
     await a.start()
 
@@ -97,11 +96,103 @@ describe('a route that takes its body as a stream', () => {
     expect(streamed.status).toBe(200)
     expect(await streamed.json()).toEqual({ n: 8 * CHUNK })
 
-    // Paired: the same body to a route that declares nothing is still refused.
+    // Paired: the same body to a route that states nothing is held to the app's.
     const parsed = await a.http.fetch(chunked('/parsed', 8).req)
     expect(parsed.status).toBe(413)
     await a.stop()
   })
+
+  // FJS-D2258 (B2): a stream route that states no bound takes the app's.
+  it('stating no bound, is cut at the app bound with a 413 that logs the route', async () => {
+    const a = app(256 * 1024)
+    const warned: string[] = []
+    a.logger.warn = (m: string, meta?: unknown) => { warned.push(`${m} ${JSON.stringify(meta ?? {})}`) }
+    let read = 0
+    a.put('/upload', async (ctx) => {
+      const reader = (ctx.body as ReadableStream<Uint8Array>).getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        read += value.byteLength
+      }
+      return ctx.json({ read })
+    }, { body: 'stream' })
+    await a.start()
+
+    const { req, counter } = chunked('/upload', 16)   // 1 MB
+    const res = await a.http.fetch(req)
+    expect(res.status).toBe(413)
+    expect(read).toBeLessThanOrEqual(256 * 1024)
+    expect(counter.pulled).toBeLessThan(16)
+    expect(warned.join('\n')).toContain('PUT /upload')
+    await a.stop()
+  })
+
+  it('refuses a declared length over its bound before the handler runs', async () => {
+    const a = app()
+    let ran = false
+    a.put('/upload', (ctx) => { ran = true; return ctx.empty(204) }, { body: 'stream', maxBodySize: 1024 })
+    await a.start()
+    const res = await a.http.fetch(new Request('http://localhost/upload', {
+      method: 'PUT', headers: { 'content-type': 'application/octet-stream', 'content-length': '4096' }, body: new Uint8Array(4096),
+    }))
+    expect(res.status).toBe(413)
+    expect(await res.text()).toContain('PUT /upload')
+    expect(ran).toBe(false)
+    await a.stop()
+  })
+
+  it('bounds a body read through $raw.$req as it bounds ctx.body', async () => {
+    const a = app()
+    a.put('/upload', async (ctx) => {
+      await ctx.$raw.$req.arrayBuffer()
+      return ctx.empty(204)
+    }, { body: 'stream', maxBodySize: 128 * 1024 })
+    await a.start()
+    expect((await a.http.fetch(chunked('/upload', 4).req)).status).toBe(413)
+    await a.stop()
+  })
+
+  it('bounds a parsed route by its own maxBodySize too', async () => {
+    const a = app(256 * 1024)
+    a.put('/parsed', ctx => ctx.json({ ok: true }), { maxBodySize: 1024 * 1024 })
+    await a.start()
+    expect((await a.http.fetch(chunked('/parsed', 8).req)).status).toBe(200)
+    await a.stop()
+  })
+
+  it('refuses a bound that is not a positive whole number of bytes, by name', () => {
+    const a = app()
+    expect(() => a.put('/upload', ctx => ctx.empty(204), { body: 'stream', maxBodySize: 0 }))
+      .toThrow(/maxBodySize/)
+  })
+
+  // FJS-4342: Bun's maxRequestBodySize cuts a CHUNKED body too, so the server's
+  // ceiling must cover the largest route bound. Only a real socket meets it.
+  it('takes a chunked body past 128 MB over a socket when its bound allows', async () => {
+    const a = app()
+    a.put('/upload', async (ctx) => {
+      const reader = (ctx.body as ReadableStream<Uint8Array>).getReader()
+      let n = 0
+      for (let r = await reader.read(); !r.done; r = await reader.read()) n += r.value.byteLength
+      return ctx.json({ n })
+    }, { body: 'stream', maxBodySize: 1024 ** 3 })
+    await a.start()
+
+    const MB = 1024 * 1024, N = 140
+    let sent = 0
+    const body = new ReadableStream<Uint8Array>({
+      pull(c) { if (sent >= N) { c.close(); return } sent++; c.enqueue(new Uint8Array(MB)) },
+    })
+    const res = await fetch(`http://localhost:${a.http.port}/upload`, {
+      method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body,
+      // @ts-expect-error — Bun requires this for a stream body
+      duplex: 'half',
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ n: N * MB })
+    await a.stop()
+  }, 60_000)
 
   it('leaves a route that declares nothing parsed as before', async () => {
     const a = app()

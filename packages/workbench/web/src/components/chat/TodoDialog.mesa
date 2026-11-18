@@ -1,0 +1,93 @@
+<script>
+  // components/chat/TodoDialog.mesa -- a post as a Basecamp to-do: a project, a
+  // list, a title that starts as the post's first line, and the notes. What is
+  // sent is what is shown: the project, the list, the title and the permalink the
+  // server computes -- the post's text, its author and its channel never go,
+  // because a to-do in a client-visible project cannot be taken back. Mounted
+  // only while open, so it loads when it appears.
+  import { makeTodo, todoLists, todoNotes, todoProjects, todoTitleOf } from '../../lib/chat.js'
+  import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let open = false
+  export let post = null
+
+  let projects = []
+  let lists    = []
+  let project  = ''
+  let list     = ''
+  let title    = todoTitleOf(post)
+  let notes    = ''
+  let error    = null
+  let loading  = true
+  let saving   = false
+  let created  = null
+
+  const fail = (e) => { error = e.message; loading = false }
+
+  async function loadLists() {
+    lists = []; list = ''
+    if (!project) return
+    try {
+      lists = await todoLists(Number(project))
+      list = lists[0] ? String(lists[0].id) : ''
+      error = lists.length ? null : 'That project has no to-do list.'
+    } catch (e) { error = e.message }
+  }
+
+  Promise.all([todoProjects(), todoNotes(post)]).then(([found, link]) => {
+    projects = found; notes = link; loading = false
+    project = found[0] ? String(found[0].id) : ''
+    return loadLists()
+  }).catch(fail)
+
+  async function save() {
+    if (!project || !list) { error = 'Pick a project and a list.'; return }
+    if (!title.trim()) { error = 'A to-do needs a title.'; return }
+    saving = true; error = null
+    try { created = await makeTodo(post, { projectId: Number(project), listId: Number(list), title: title.trim() }) }
+    catch (e) { error = e.message } finally { saving = false }
+  }
+</script>
+
+<Modal bind:open title="Make a Basecamp to-do" size="sm">
+  {#if created}
+    <div class="stack gap-md" data-todo-done>
+      <p class="todo-line">Made it: <a href={created.appUrl} target="_blank" rel="noopener" data-todo-link>{created.appUrl}</a></p>
+      <div class="cluster gap-sm"><Button onclick={() => open = false}>Close</Button></div>
+    </div>
+  {:else}
+    <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-todo-dialog>
+      <label class="stack gap-2xs">
+        <span class="text-sm">Project</span>
+        <select class="field" aria-label="Project" bind:value={project} onchange={loadLists} disabled={loading} data-todo-project>
+          {#each projects as p (p.id)}<option value={String(p.id)}>{p.name}</option>{/each}
+        </select>
+      </label>
+      <label class="stack gap-2xs">
+        <span class="text-sm">To-do list</span>
+        <select class="field" aria-label="To-do list" bind:value={list} disabled={loading || !lists.length} data-todo-list>
+          {#each lists as l (l.id)}<option value={String(l.id)}>{l.name}</option>{/each}
+        </select>
+      </label>
+      <label class="stack gap-2xs">
+        <span class="text-sm">Title</span>
+        <input class="field" aria-label="Title" maxlength="255" bind:value={title} data-todo-title />
+      </label>
+      <label class="stack gap-2xs">
+        <span class="text-sm">Notes</span>
+        <input class="field" aria-label="Notes" readonly value={notes} data-todo-notes />
+      </label>
+      <p class="text-sm text-muted todo-line">Only these go to Basecamp: the post's text, its author and its channel do not.</p>
+      {#if error}<p class="text-sm text-danger todo-line" role="alert" data-todo-error>{error}</p>{/if}
+      <div class="cluster gap-sm">
+        <Button type="submit" loading={saving} disabled={loading || !notes} data-todo-save>Make to-do</Button>
+        <Button treatment="ghost" onclick={() => open = false}>Cancel</Button>
+      </div>
+    </form>
+  {/if}
+</Modal>
+
+<style>
+  .todo-line { margin: 0; overflow-wrap: anywhere; }
+</style>

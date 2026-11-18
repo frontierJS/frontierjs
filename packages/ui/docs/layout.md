@@ -35,6 +35,7 @@ stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
 dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 drag.js       drag — one pointer drag, press to release or cancel, an {@attach}
+resize.js     resizeHandle — the edge a person drags to size a pane, over drag, an {@attach}
 nav.js        the `src/lib/nav.js` contract (typedefs) and sectionFor · visible ·
               paletteItems; never decides CURRENT, which is Sierra's isActive
 rowlist.js    rowlist — the keys of a list of rows (cursor, one tab stop, open,

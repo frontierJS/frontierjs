@@ -16,9 +16,9 @@ const KEY = randomBytes(32)
 
 export const LINK_TTL_MS = 5 * 60_000
 
-/** Bun refuses a request body over 128 MB before any route reads it
- *  (`FJS-3090`). A link that would carry more is refused by the method that
- *  mints it, with a sentence, instead of by Bun with a bare 413. */
+/** The pull route's `maxBodySize`. A link that would carry more is refused by
+ *  the method that mints it, with a sentence, instead of by a 413 partway
+ *  through the upload. */
 export const BODY_CEILING_BYTES = 128 * 1024 * 1024
 
 const sign = (purpose: string, fields: readonly string[], expires: number) =>

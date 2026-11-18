@@ -10,6 +10,8 @@
   import { page } from '@frontierjs/sierra/router'
   import { session } from '../../lib/session.js'
   import { openLists } from '../../lib/chat.js'
+  import { keptWidth, keepWidth } from '../../lib/resize.js'
+  import { resizeHandle } from '@frontierjs/ui/resize'
   import ChatSidebar from '../../components/chat/ChatSidebar.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -22,63 +24,22 @@
   $.onDestroy(() => lists?.destroy())
 
   // The sidebar's width is the reader's, dragged from its edge and kept per browser.
-  // Clamped on read too: a width saved on a wide monitor would swallow a laptop's channel column.
-  const WIDTH_KEY = 'workbench.messages.sidebarWidth'
-  const DEFAULT_WIDTH = 260
-  const MIN_WIDTH = 180
-  const MAX_WIDTH = 520
-  const clampWidth = (w) => Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, w)))
-  function savedWidth() {
-    try { const w = Number(localStorage.getItem(WIDTH_KEY)); return w ? clampWidth(w) : DEFAULT_WIDTH } catch { return DEFAULT_WIDTH }
-  }
-  function keepWidth() { try { localStorage.setItem(WIDTH_KEY, String(sideWidth)) } catch {} }
-
-  let sideWidth = savedWidth()
+  const SIDE = { key: 'workbench.messages.sidebarWidth', initial: 260, min: 180, max: 520 }
   let resizing = false
-  let frame = null
-
-  // The drag follows the window from the press: the pointer leaves a 6px strip at once,
-  // and handlers on the strip with setPointerCapture never saw a move in the drive.
-  function grab(e) {
-    if (e.button !== 0) return
-    e.preventDefault()
-    resizing = true
-    window.addEventListener('pointermove', drag)
-    window.addEventListener('pointerup', drop)
-    window.addEventListener('pointercancel', drop)
-  }
-  function drag(e) {
-    if (!resizing || !frame) return
-    sideWidth = clampWidth(e.clientX - frame.getBoundingClientRect().left)
-  }
-  function drop() {
-    window.removeEventListener('pointermove', drag)
-    window.removeEventListener('pointerup', drop)
-    window.removeEventListener('pointercancel', drop)
-    if (!resizing) return
-    resizing = false
-    keepWidth()
-  }
-  $.onDestroy(drop)
-  function nudge(e) {
-    const step = e.shiftKey ? 40 : 10
-    if (e.key === 'ArrowLeft') sideWidth = clampWidth(sideWidth - step)
-    else if (e.key === 'ArrowRight') sideWidth = clampWidth(sideWidth + step)
-    else if (e.key === 'Home') sideWidth = MIN_WIDTH
-    else if (e.key === 'End') sideWidth = MAX_WIDTH
-    else return
-    e.preventDefault()
-    keepWidth()
-  }
-  function resetWidth() { sideWidth = DEFAULT_WIDTH; keepWidth() }
+  let sideWidth = keptWidth(SIDE.key, SIDE)
+  const sideEdge = () => ({
+    size: sideWidth, set: (w) => { sideWidth = w }, min: SIDE.min, max: SIDE.max, step: 10,
+    start: () => { resizing = true },
+    end: (w) => { resizing = false; keepWidth(SIDE.key, w) },
+    reset: () => { sideWidth = SIDE.initial; keepWidth(SIDE.key, null) },
+  })
 </script>
 
 {#if lists}
-  <div class="chat" bind:this={frame} class:resizing={resizing} style:--chat-side={sideWidth + 'px'} class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse') || page.pathname.startsWith('/messages/drafts') || page.pathname.startsWith('/messages/saved') || page.pathname.startsWith('/messages/search') || page.pathname.startsWith('/messages/activity') || page.pathname.startsWith('/messages/scheduled') || page.pathname.startsWith('/messages/groups')} data-messages>
-    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} onDrafts={page.pathname.startsWith('/messages/drafts')} onSaved={page.pathname.startsWith('/messages/saved')} onActivity={page.pathname.startsWith('/messages/activity')} onScheduled={page.pathname.startsWith('/messages/scheduled')} onGroups={page.pathname.startsWith('/messages/groups')} />
-    <div class="chat-resize" role="separator" aria-orientation="vertical" aria-label="Resize the channel list"
-         aria-valuenow={sideWidth} aria-valuemin={MIN_WIDTH} aria-valuemax={MAX_WIDTH} tabindex="0" title="Drag to resize, double-click to reset"
-         onpointerdown={grab} onkeydown={nudge} ondblclick={resetWidth} data-chat-resize></div>
+  <div class="chat" class:resizing={resizing} style:--chat-side={sideWidth + 'px'} class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse') || page.pathname.startsWith('/messages/drafts') || page.pathname.startsWith('/messages/saved') || page.pathname.startsWith('/messages/search') || page.pathname.startsWith('/messages/activity') || page.pathname.startsWith('/messages/waiting') || page.pathname.startsWith('/messages/scheduled') || page.pathname.startsWith('/messages/groups')} data-messages>
+    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} onDrafts={page.pathname.startsWith('/messages/drafts')} onSaved={page.pathname.startsWith('/messages/saved')} onActivity={page.pathname.startsWith('/messages/activity')} onWaiting={page.pathname.startsWith('/messages/waiting')} onCatchUp={page.pathname.startsWith('/messages/catch-up')} onScheduled={page.pathname.startsWith('/messages/scheduled')} onGroups={page.pathname.startsWith('/messages/groups')} />
+    <div class="chat-resize" aria-label="Resize the channel list" title="Drag to resize, double-click to reset"
+         data-chat-resize {@attach resizeHandle(sideEdge)}></div>
     <div class="chat-main">
       <slot />
     </div>

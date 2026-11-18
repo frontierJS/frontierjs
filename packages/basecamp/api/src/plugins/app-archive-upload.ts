@@ -15,6 +15,7 @@
 
 import { importAppArchive } from '../domain/backup/app-archive-import.ts'
 import { mint, check }      from './signed-link.ts'
+import { MAX_UPLOAD_BYTES } from '../jobs/backup-run.job.ts'
 import type { App }         from '@frontierjs/junction'
 
 /** The link one upload is sent to, good for five minutes. */
@@ -37,5 +38,5 @@ export function appArchiveUpload(app: App) {
     if ('refused' in done) return ctx.json({ message: done.refused }, done.status)
     app.logger.info('app archive uploaded', { backupId: done.row.id, appId, by })
     return ctx.json(done.row, 201)
-  }, { body: 'stream' })
+  }, { body: 'stream', maxBodySize: MAX_UPLOAD_BYTES })
 }

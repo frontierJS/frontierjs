@@ -1,0 +1,114 @@
+---
+title: Waiting
+---
+<script>
+  // /messages/waiting/ -- who owes whom a reply. On the reader: direct messages and mentions with
+  // nothing of theirs after them, oldest first. On others: the reader's own last post in a DM or
+  // thread that nobody has answered, with the reminder pending on it. `chat.waiting` answers both
+  // from the mirror, so a post arriving asks again, debounced, and a reminder set or cancelled here asks at once: the answer is the
+  // API's, never worked out here, and it is the same test the bell and the reminder job use.
+  import { posts } from '../../../resources/Post.mesa'
+  import { followUps } from '../../../resources/FollowUp.mesa'
+  import { getLists, channelLabel, loadWaiting, cancelNudge, me, postsById } from '../../../lib/chat.js'
+  import { minute } from '../../../lib/datetime.js'
+  import PostItem from '../../../components/chat/PostItem.mesa'
+  import Icon from '../../../components/Icon.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+
+  let onMe = []
+  let onOthers = []
+  let list = null
+  let ready = false
+  let error = null
+  let asked = 0
+
+  async function load() {
+    const mine = ++asked
+    try {
+      const w = await loadWaiting()
+      if (mine !== asked) return
+      onMe = w.onMe
+      onOthers = w.onOthers
+      list?.destroy()
+      list = postsById([...new Set([...w.onMe, ...w.onOthers.map(o => o.postExternalId)])])
+      error = null
+    } catch (e) { if (mine === asked) error = e.message } finally { ready = true }
+  }
+
+  // A burst of writes reads once, 400ms after the last of them.
+  let pokes = 0
+  const soon = () => { pokes++ }
+  $.after(400, load, { key: pokes, when: pokes > 0 })
+  let offs = []
+  $.onMount(() => {
+    offs = [
+      posts.service.on('created', soon), posts.service.on('patched', soon),
+      followUps.service.on('created', soon), followUps.service.on('patched', soon),
+    ]
+    load()
+  })
+  $.onDestroy(() => { offs.forEach(off => off?.()); list?.destroy() })
+
+  $: byId = new Map((list ? list.rows : []).filter(p => !p.deletedAt).map(p => [p.externalId, p]))
+  $: owed = onMe.filter(id => byId.has(id)).map(id => byId.get(id))
+  $: waitingOn = onOthers.filter(o => byId.has(o.postExternalId)).map(o => ({ ...o, post: byId.get(o.postExternalId) }))
+
+  const where = (p) => channelLabel(lists.channels.rows.find(c => c.externalId === p.channelExternalId), people, me()) || '…'
+  const href = (p) => p.rootExternalId ? `/messages/${p.channelExternalId}/?thread=${p.rootExternalId}` : `/messages/${p.channelExternalId}/`
+  async function cancel(o) { try { await cancelNudge(o.followUpId); error = null; await load() } catch (e) { error = e.message } }
+</script>
+
+<header class="waiting-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="clock" /> Waiting</h1>
+  <p class="text-sm text-muted">Who owes whom a reply, oldest first.</p>
+</header>
+
+<div class="waiting stack gap-lg" data-waiting>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+
+  <section class="stack gap-sm" data-waiting-group="me">
+    <h2 class="h5">Waiting on you</h2>
+    {#each owed as p (p.externalId)}
+      <div class="waiting-item stack gap-2xs" data-waiting-row={p.externalId}>
+        <a class="text-sm waiting-jump" href={href(p)} data-waiting-jump>{where(p)} <Icon name="external" /></a>
+        <PostItem post={p} {people} />
+      </div>
+    {:else}
+      {#if ready}<p class="text-sm text-muted" data-waiting-empty="me">Nobody is waiting on a reply from you.</p>{/if}
+    {/each}
+  </section>
+
+  <section class="stack gap-sm" data-waiting-group="others">
+    <h2 class="h5">Waiting on others</h2>
+    {#each waitingOn as o (o.postExternalId)}
+      <div class="waiting-item stack gap-2xs" data-waiting-row={o.postExternalId}>
+        <a class="text-sm waiting-jump" href={href(o.post)} data-waiting-jump>{where(o.post)} <Icon name="external" /></a>
+        <PostItem post={o.post} {people} onnudge={load} />
+        {#if o.followUpId}
+          <p class="cluster gap-xs text-sm text-muted waiting-reminder" data-waiting-reminder={o.followUpId}>
+            <Icon name="clock" /> Reminder {minute(o.remindAt)}
+            <button type="button" class="btn ghost sm" data-waiting-cancel onclick={() => cancel(o)}>Cancel</button>
+          </p>
+        {/if}
+      </div>
+    {:else}
+      {#if ready}<p class="text-sm text-muted" data-waiting-empty="others">Everything you sent has an answer.</p>{/if}
+    {/each}
+  </section>
+
+  {#if !ready}<p class="text-muted center">…</p>{/if}
+</div>
+
+<style>
+  .waiting-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .waiting-head h1, .waiting-head p { margin: 0; }
+  .waiting-head h1 { align-items: center; }
+  .waiting { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); }
+  .waiting h2 { margin: 0; }
+  .waiting-jump { display: inline-flex; align-items: center; gap: var(--space-2xs); padding-inline: var(--space-lg); inline-size: fit-content; }
+  .waiting-reminder { margin: 0; padding-inline: var(--space-lg); align-items: center; }
+</style>

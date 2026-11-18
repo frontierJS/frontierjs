@@ -92,7 +92,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       continue
     }
     /** @type {{ model: string, pk: string, fkCols: string[], refCols: string[], orderField: string, dir: string, extra?: string[] }} */
-    const { model: target, pk, fkCols, refCols, orderField, dir, extra } = def.rowRef
+    const { model: target, pk, fkCols, refCols, orderField, dir, extra, parent } = def.rowRef
     const tModel = ctx.schema?.models.find(m => m.name === target)
     const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target
     const tShape = ctx.shapes[target]
@@ -122,16 +122,17 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
     if (repick) {
       /** @type {unknown[]} */
       const keyBinds = []
+      const keyCols  = fkCols.map(c => `${T}.${quoteIdent(c)}`)
       const parts = [
-        keyIn(fkCols.map(c => `${T}."${c}"`), refs, keyBinds),
-        ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
+        keyIn(keyCols, refs, keyBinds),
+        ...(extra ?? []).map(part => parentColumns(part.replaceAll('%T%', T), parent, keyCols)),
         ...(policy ? [`(${policy.sql})`] : []),
       ]
       // The window runs INSIDE the policy, not over it: partitioning first and
       // filtering after would rank the rows this caller cannot see and then
       // delete the winner, which is the null this fixes wearing a second hat.
       sql = `SELECT * FROM (SELECT ${T}.*${fromCols ? `, ${fromCols}` : ''}, ` +
-            `ROW_NUMBER() OVER (PARTITION BY ${fkCols.map(c => `${T}."${c}"`).join(', ')} ORDER BY ${T}."${orderField}" ${dir}) AS "__fromrn" ` +
+            `ROW_NUMBER() OVER (PARTITION BY ${keyCols.join(', ')} ORDER BY ${T}."${orderField}" ${dir}) AS "__fromrn" ` +
             `FROM ${T} WHERE ${parts.join(' AND ')}) WHERE "__fromrn" = 1`
       binds = [...keyBinds, ...(policy?.params ?? [])]
     } else {
@@ -207,12 +208,12 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
  * @param {DbHandle} readDb
  * @param {Row[]} rows
  * @param {string} name
- * @param {{ model: string, fkCols: string[], refCols: string[], op: string, opValue: string, extra?: string[], valueSql: string, reads?: string | null, isBool?: boolean, through?: { joinTable: string, targetCol: string, targetKey: string } }} aggRef  one `@from` entry's aggregate half
+ * @param {{ model: string, fkCols: string[], refCols: string[], op: string, opValue: string, extra?: string[], valueSql: string, reads?: string | null, isBool?: boolean, through?: { joinTable: string, targetCol: string, targetKey: string }, parent?: { table: string, refCols: string[] } | null }} aggRef  one `@from` entry's aggregate half
  * @param {Ctx} ctx
  */
 function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
   if (!ctx.hasPolicies) return
-  const { model: target, fkCols, refCols, op, opValue, extra, valueSql, reads, isBool, through } = aggRef
+  const { model: target, fkCols, refCols, op, opValue, extra, valueSql, reads, isBool, through, parent } = aggRef
   const policy = buildPolicyFilter(target, 'read', ctx)
   if (!policy || !fkCols?.length) return
   // A to-one column that is the parent's own aggregate counts rows of `reads`,
@@ -243,7 +244,7 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
     const keyCols = fkCols.map(c => `${K}.${quoteIdent(c)}`)
     const parts = [
       keyIn(keyCols, refs, keyBinds),
-      ...(extra ?? []).map(part => part.replaceAll('%T%', T)),
+      ...(extra ?? []).map(part => parentColumns(part.replaceAll('%T%', T), parent, keyCols)),
       `(${policy.sql})`,
     ]
     const keys = keyCols.map((c, i) => `${c} AS "__fk${i}"`).join(', ')
@@ -259,6 +260,22 @@ function recountFromAggregate(readDb, rows, name, aggRef, ctx) {
         op === 'exists' ? true : readsPolicied ? null : isBool ? g.__agg == null ? null : !!g.__agg : g.__agg)
   }
   for (const r of inHand) r[name] = byRef.has(keyOf(r, refCols)) ? byRef.get(keyOf(r, refCols)) : empty
+}
+
+// A `this.col` in an @from where: (`FJS-D2239`) is `%SELF%."col"`, and a re-run
+// selects from the target alone. A JOIN to the parent would make every column
+// name the two tables share ambiguous in the where: and the policy, so the
+// column is read off the parent by the key the child row carries.
+/**
+ * @param {string} part
+ * @param {{ table: string, refCols: string[] } | null | undefined} parent
+ * @param {string[]} keyCols  the child's key columns, qualified
+ */
+function parentColumns(part, parent, keyCols) {
+  if (!parent) return part
+  const on = parent.refCols.map((r, i) => `"__self".${quoteIdent(r)} = ${keyCols[i]}`).join(' AND ')
+  return part.replace(/%SELF%\.("(?:[^"]|"")*")/g, (_, col) =>
+    `(SELECT "__self".${col} FROM ${quoteIdent(parent.table)} AS "__self" WHERE ${on})`)
 }
 
 // `hidden` is gatedFromFields' answer for these rows: each is read as null.

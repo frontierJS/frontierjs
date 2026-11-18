@@ -1,0 +1,76 @@
+---
+title: Catch-up
+---
+<script>
+  // /messages/catch-up/ -- everything unread across the reader's rooms and followed threads, a
+  // group each, oldest first. `chat.catchUp` answers the groups from the mirror; passing one marks
+  // it read through the room screen's own doors (`chat.view`, `chat.readThread`). A group stays on
+  // the screen, marked Read, until Refresh asks again, so reading never moves the page under the
+  // reader. A burst of new posts only offers the refresh.
+  import { posts } from '../../../resources/Post.mesa'
+  import { getLists, channelLabel, loadCatchUp, markRead, readThread, me } from '../../../lib/chat.js'
+  import CatchUpGroup from '../../../components/chat/CatchUpGroup.mesa'
+  import Icon from '../../../components/Icon.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  const lists = getLists()
+  $: people = lists.people.rows
+
+  let groups = []
+  let ready = false
+  let error = null
+  let fresh = false
+  let round = 0
+
+  async function load() {
+    try {
+      const g = await loadCatchUp()
+      groups = g
+      round++
+      fresh = false
+      error = null
+    } catch (e) { error = e.message } finally { ready = true }
+  }
+  let offs = []
+  $.onMount(() => {
+    offs = [posts.service.on('created', () => { if (ready) fresh = true })]
+    load()
+  })
+  $.onDestroy(() => offs.forEach(off => off?.()))
+
+  async function passed(g) {
+    try { g.rootExternalId ? await readThread(g.rootExternalId) : await markRead(g.channelExternalId) } catch (e) { error = e.message }
+  }
+  const labelOf = (g) => channelLabel(lists.channels.rows.find(c => c.externalId === g.channelExternalId), people, me()) || '…'
+</script>
+
+<header class="catchup-head">
+  <h1 class="h4 cluster gap-xs"><Icon name="check" /> Catch-up</h1>
+  <p class="text-sm text-muted">Everything unread, a room at a time, oldest first.</p>
+</header>
+
+<div class="catchup stack gap-lg" data-catchup>
+  {#if error}<Alert tone="danger">{error}</Alert>{/if}
+  <div class="cluster gap-sm catchup-bar">
+    <button type="button" class="btn ghost sm" data-catchup-refresh onclick={load}>Refresh</button>
+    {#if fresh}<span class="text-sm text-muted" data-catchup-fresh>New posts have arrived.</span>{/if}
+  </div>
+
+  {#key round}
+    {#each groups as g (g.key)}
+      <CatchUpGroup group={g} label={labelOf(g)} {people} onpassed={passed} />
+    {:else}
+      {#if ready}<p class="text-sm text-muted" data-catchup-empty>You are all caught up.</p>{/if}
+    {/each}
+  {/key}
+
+  {#if !ready}<p class="text-muted center">…</p>{/if}
+</div>
+
+<style>
+  .catchup-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .catchup-head h1, .catchup-head p { margin: 0; }
+  .catchup-head h1 { align-items: center; }
+  .catchup { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); }
+  .catchup-bar { padding-inline: var(--space-lg); align-items: center; }
+</style>

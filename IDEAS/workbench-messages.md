@@ -104,6 +104,20 @@ the chat prototype proved (`IDEAS/mirror-apps.md`), and Workbench hosts both.
   - **A** — gone.
   - **B** — a Workbench version: a post becomes an `ISSUES.md` row or opens a Claude Code chat on a pin, quoting the post.
   - **Recommend A** — B is a second feature with its own design, and nothing in Phases 0–4 depends on it.
+- ~~**Q8 — task-from-post, reopened for Basecamp.**~~ **Answered 2026-11-18 (`FJS-D2262`): A — a post becomes a Basecamp to-do in a project and list picked at the time, the post's permalink in its notes.** The owner picked Phase 6's
+  three features on 2026-11-17, and one is a post turned into a to-do.
+  - **A** — a post becomes a Basecamp to-do in a project and list picked at the time, the post's permalink in its notes.
+  - **B** — stays gone, as `FJS-D2215` ruled.
+  - **Recommend A** — the team's work lives in Basecamp, a target neither of Q7's options named.
+- ~~**Q9 — when a catch-up recap runs.**~~ **Answered 2026-11-18 (`FJS-D2263`): A — on demand: a button per channel or thread on the catch-up feed, and nothing is sent until it is pressed.** A recap sends teammates' posts, DMs
+  included, to Claude.
+  - **A** — on demand: a button per channel or thread on the catch-up feed, and nothing is sent until it is pressed.
+  - **B** — also a scheduled morning digest of overnight unreads, pushed through ntfy.
+  - **Recommend A** — the member chooses each time what leaves the machine, and a digest can follow once recaps prove worth reading.
+- ~~**Q10 — how Workbench reaches Basecamp.**~~ **Answered 2026-11-18 (`FJS-D2264`): A — `conduit-37signals`, through `app.conduit.send()`.**
+  - **A** — `conduit-37signals`, through `app.conduit.send()`.
+  - **B** — a shell-out to the `basecamp` CLI the owner is already signed into.
+  - **Recommend A** — a drive runs it on the connector's sink, as every Messages verb was proved; its live grant is the 37signals plan's 5.2, which Intake waits on too.
 
 ---
 
@@ -215,3 +229,50 @@ generic, is in front of the owner; moves follow the ruling.
   already has. First candidates: `ReactionPicker`, `MentionList`,
   `CommandList`, `FileCard`, `WhenDialog`, `PostEditor`.
 - [ ] 5.2 Move what is ruled in, with serpgrid's copy as the second caller.
+
+### Phase 6 — What Mattermost cannot do
+
+Goal: three views neither Slack's base plan nor Team Edition has, built on the
+mirror Workbench already holds.
+Done when: `verify:messages`, extended one row per step, is green on the sink,
+and `conduit-37signals`'s sink receives a to-do made from a post.
+
+None of this needs the server's help: 6.1 and 6.3 are queries over `Post`,
+`Thread` and `ChannelMember`, and 6.2 is a local model like scheduled posts.
+
+- [x] 6.1 Waiting on me — `/messages/waiting/`. *Built 2026-11-18 as `chat.waiting`
+  (`api/src/domain/chat/waiting.ts`), "for me" by the bell's own `noticeKind`; a
+  30-day window, a muted room is not waiting, and a later post by anyone in a
+  DM counts as the answer.* Every DM post and mention of
+  the member with no later post by the member in that channel (in that
+  thread, for a reply), oldest first. Beside it, waiting on others: the
+  member's last post in a DM or thread that nobody has answered since.
+- [x] 6.2 Nudge if no reply — *Built 2026-11-18: `FollowUp` + `chat-followup` job,
+  bell row keyed `followup:<id>`; `followUps` joined `CHAT_CHANNELS` so a second
+  window sees it live.* On the member's own post, *Remind me if nobody
+  replies* with `WhenDialog`'s times. A local `FollowUp` in `chat.db`; a job
+  raises a bell row at the time (pushed under the 4.1 rules) unless a reply
+  landed first, which clears it. Laptop-only, like scheduled posts.
+- [x] 6.3 Catch-up — `/messages/catch-up/`. *Built 2026-11-18 as `chat.catchUp`
+  (`api/src/domain/chat/catchup.ts`); a passed group is read through `chat.view`
+  or `readThread` and stays on screen marked Read until Refresh.* Every unread post across channels
+  and followed threads in one feed, grouped by channel, oldest first; passing
+  a group marks it read through the existing mark-read.
+- [x] 6.4 Recap on demand (Q9) — *Built 2026-11-18 as `chat.recap`: posts on stdin,
+  `--tools ''`, newest 60 posts / 12,000 characters, $0.25 cap; flags run once
+  against the real CLI on made-up text.* a *Summarize* button per group: one `claude
+  -p` with no tools over the group's posts since `lastViewedAt`, shown inline
+  and not stored. The drive runs it against a stub.
+- [x] 6.5 Post → Basecamp to-do (Q8, Q10) — *Built 2026-11-18 on the sink:
+  `chat.makeTodo` through `api/src/providers/bc3/` (off unless
+  `BC3_ACCOUNT_ID` + `BC3_TOKEN`, `FJS-D2265`), notes = `permalinkOf` alone.* a post menu entry: project and
+  list picked, a title prefilled from the post's first line and editable, the
+  permalink as the notes, sent through `conduit-37signals`. What crosses is
+  exactly what the dialog shows, because a DM's text in a client-visible
+  project cannot be taken back; the drive makes a to-do from a DM post and
+  asserts the notes hold the permalink alone. No local record of the link in
+  v1, so a post can be turned into a to-do twice.
+- [ ] 6.6 Live — the owner seeds the 37signals grant (`IDEAS/conduit-37signals.md`
+  5.2) and makes the first real to-do from a post. The owner's. Open: whether
+  Workbench takes its own refresh token through the OAuth app Intake uses, or
+  waits on Intake's grant.

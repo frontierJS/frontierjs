@@ -51,6 +51,11 @@ export class Router {
   // handler reads.
   private _claimed = new Map<string, string>()
 
+  // The server's runtime ceiling is sized from this when it starts, since Bun
+  // cuts any body past its own limit, chunked or declared. A route added after
+  // start is refused by `add`, so the ceiling cannot fall behind it.
+  largestBodyBound = 0
+
   // ─── Registration ───────────────────────────────────────────────────────
 
   add(
@@ -89,6 +94,12 @@ export class Router {
         `depends on whether the path has a parameter. Register it once, or mount the second under its own path.`
       )
     }
+    const bound = opts.maxBodySize
+    if (bound !== undefined && !(Number.isSafeInteger(bound) && bound > 0)) {
+      throw new Error(`Route ${method} ${path} states maxBodySize ${String(bound)}; it is a positive whole number of bytes`)
+    }
+    if (bound !== undefined && bound > this.largestBodyBound) this.largestBodyBound = bound
+
     this._claimed.set(shape, path)
 
     this._routes.push({
@@ -100,6 +111,7 @@ export class Router {
       paramKeys,
       middleware: opts.middleware ?? [],
       body:       opts.body,
+      maxBodySize: bound,
     })
 
     return this

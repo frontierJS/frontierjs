@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-21 models · 21 gated · 0 unrestricted
-16 with row policies · 18 with protected fields · 0 declared moves · 0 @system · 0 @seals
+22 models · 22 gated · 0 unrestricted
+17 with row policies · 19 with protected fields · 0 declared moves · 0 @system · 0 @seals
 ```
 
 ## Gates
@@ -30,6 +30,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ClaudeWrite` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Draft` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `FileInfo` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `FollowUp` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
 | `Member` | 3 CREATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Notification` | 0 STRANGER | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `Post` | 3 CREATOR | 3 CREATOR | 3 CREATOR | 3 CREATOR |
@@ -80,6 +81,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `FileInfo`
 
 - allow **read** — `profileExternalId == auth().profileExternalId || postExternalId != null && check(post)`
+
+### `FollowUp`
+
+- allow **read** — `memberId == auth().id`
+- allow **create** — `memberId == auth().id`
+- allow **update** — `memberId == auth().id`
+- allow **postUpdate** — `memberId == auth().id`
+- allow **delete** — `memberId == auth().id`
 
 ### `Member`
 
@@ -207,6 +216,8 @@ rather than refusing the row.
 | `FileInfo` | `updatedAt` | `@system` |
 | `FileInfo` | `deletedAt` | `@system` |
 | `FileInfo` | `missingSince` | `@system` |
+| `FollowUp` | `memberId` | `@system` |
+| `FollowUp` | `profileExternalId` | `@system` |
 | `Member` | `chatToken` | `@secret` |
 | `Member` | `profileExternalId` | `@system` |
 | `Member` | `chatSyncedAt` | `@system` |

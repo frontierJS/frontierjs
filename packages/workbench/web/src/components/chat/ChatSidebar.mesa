@@ -33,6 +33,8 @@
   export let onDrafts = false    // the Drafts route is open
   export let onSaved = false     // the Saved route is open
   export let onActivity = false  // the Activity route is open
+  export let onWaiting = false   // the Waiting route is open
+  export let onCatchUp = false   // the Catch-up route is open
   export let onScheduled = false // the Scheduled route is open
   export let onGroups = false    // the Groups route is open
 
@@ -87,7 +89,8 @@
   function sectioned(rows) {
     const byId = new Map(all.map(c => [c.externalId, c]))
     const placed = new Set()
-    const take = (ids) => ids.map(id => byId.get(id)).filter(c => c && listed(c) && !placed.has(c.externalId)).map(c => (placed.add(c.externalId), c))
+    // One pass, claim as it goes: favorites hands in the section's order and then every favorite, so one list repeats ids.
+    const take = (ids) => ids.map(id => byId.get(id)).filter(c => c && listed(c) && !placed.has(c.externalId) && placed.add(c.externalId))
     const mark = (r) => r.channelExternalIds ?? []
     const out = new Map()
     const fav = rows.find(r => r.kind === 'favorites')
@@ -175,6 +178,16 @@
     <li>
       <a class="navlink chat-room" href="/messages/activity/" aria-current={onActivity ? 'page' : null} data-activity-link>
         <Icon name="notify" /> <span class="chat-room-name">Activity</span>
+      </a>
+    </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/waiting/" aria-current={onWaiting ? 'page' : null} data-waiting-link>
+        <Icon name="clock" /> <span class="chat-room-name">Waiting</span>
+      </a>
+    </li>
+    <li>
+      <a class="navlink chat-room" href="/messages/catch-up/" aria-current={onCatchUp ? 'page' : null} data-catchup-link>
+        <Icon name="check" /> <span class="chat-room-name">Catch-up</span>
       </a>
     </li>
     <li>

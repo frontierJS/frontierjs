@@ -814,9 +814,9 @@ export function buildFromMap(schema, pluralize = false) {
         : fkCols.map((c, i) => `_from."${c}" = %SELF%."${refCols[i]}"`)
       if (targetSoftDelete && !withDeleted)   whereParts.push(`_from."deletedAt" IS NULL`)
       if (targetHtField    && !withTemplates) whereParts.push(`_from."${targetHtField}" = 0`)
-      const whereSql = where
-        ? compileFromWhere(targetModel, `${model.name}.${field.name}: @from(${target}, where: …)`, where, schema)
-        : null
+      const { sql: whereSql = null, self = [] } = where
+        ? compileFromWhere(targetModel, `${model.name}.${field.name}: @from(${target}, where: …)`, where, schema, model)
+        : {}
       if (whereSql) whereParts.push(`(${whereSql})`)
       const whereClause = whereParts.join(' AND ')
 
@@ -830,6 +830,9 @@ export function buildFromMap(schema, pluralize = false) {
         ...(targetHtField    && !withTemplates ? [`%T%."${targetHtField}" = 0`] : []),
         ...(whereSql ? [`(${whereSql})`] : []),
       ]
+      // A `this.col` in the where: is `%SELF%."col"`, and a re-run has no outer
+      // table to name — it reads the column off the parent by the key it binds.
+      const parent = self.length ? { table: selfTable, refCols } : null
 
       switch (op) {
         case 'last':
@@ -852,7 +855,7 @@ export function buildFromMap(schema, pluralize = false) {
           subquerySql = `(SELECT _from."${targetPk}" FROM "${targetTable}" AS _from WHERE ${whereClause} ORDER BY _from."${orderField}" ${dir} LIMIT 1)`
           // Everything the pick needs, so it can be REDONE under the caller's
           // row policy — see resolveFromRowRefs.
-          rowRef = { model: targetModel.name, pk: targetPk, fkCols, refCols, orderField, dir, extra }
+          rowRef = { model: targetModel.name, pk: targetPk, fkCols, refCols, orderField, dir, extra, parent }
           break
         }
         case 'count':
@@ -876,7 +879,7 @@ export function buildFromMap(schema, pluralize = false) {
       // `where` or an `orderBy` — which run this string — is refused while the
       // target has a policy for the caller (guardArgs).
       if (op !== 'first' && op !== 'last')
-        aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra, through }
+        aggRef = { model: targetModel.name, fkCols, refCols, op, opValue, extra, through, parent }
       // The target columns the value reads, so a write moving none of them
       // leaves it as it was (`fromColumns`). A picked row is read whole and a
       // join table's pair is written on another model: neither narrows.
@@ -909,6 +912,9 @@ export function buildFromMap(schema, pluralize = false) {
         aggRef,
         reads,
         keys: refCols,
+        // The declaring row's columns a `this.col` reads, which a policy's JS
+        // half binds beside the key.
+        self,
       }
     }
   }

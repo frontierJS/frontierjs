@@ -4486,6 +4486,12 @@ details[open]:has(> summary.navlist-label)::details-content {
   margin-block: 0;
 }
 
+
+:where(.prose) :where(pre) {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 :where(.prose) :where(ul, ol) {
   padding-inline-start: var(--space-2xl);
 }

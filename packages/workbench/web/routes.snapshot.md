@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-29 routes · 2 layouts · target spa · trailing slash always
+31 routes · 2 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -39,12 +39,14 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/messages/:id/` | `src/routes/messages/[id]/index.mesa` | `src/routes/messages/_module.mesa` | `id` |
 | `/messages/activity/` | `src/routes/messages/activity/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/browse/` | `src/routes/messages/browse/index.mesa` | `src/routes/messages/_module.mesa` | — |
+| `/messages/catch-up/` | `src/routes/messages/catch-up/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/drafts/` | `src/routes/messages/drafts/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/groups/` | `src/routes/messages/groups/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/saved/` | `src/routes/messages/saved/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/scheduled/` | `src/routes/messages/scheduled/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/search/` | `src/routes/messages/search/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/threads/` | `src/routes/messages/threads/index.mesa` | `src/routes/messages/_module.mesa` | — |
+| `/messages/waiting/` | `src/routes/messages/waiting/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
 | `/recommended-services/` | `src/routes/recommended-services/index.mesa` | `src/routes/_module.mesa` | — |
 | `/servers/` | `src/routes/servers/index.mesa` | `src/routes/_module.mesa` | — |
@@ -76,12 +78,14 @@ this section exists to show.
 - `/messages/:id/` — siteName: `Workbench` · title: `Messages`
 - `/messages/activity/` — siteName: `Workbench` · title: `Activity`
 - `/messages/browse/` — siteName: `Workbench` · title: `Browse channels`
+- `/messages/catch-up/` — siteName: `Workbench` · title: `Catch-up`
 - `/messages/drafts/` — siteName: `Workbench` · title: `Drafts`
 - `/messages/groups/` — siteName: `Workbench` · title: `Groups`
 - `/messages/saved/` — siteName: `Workbench` · title: `Saved`
 - `/messages/scheduled/` — siteName: `Workbench` · title: `Scheduled`
 - `/messages/search/` — siteName: `Workbench` · title: `Search`
 - `/messages/threads/` — siteName: `Workbench` · title: `Threads`
+- `/messages/waiting/` — siteName: `Workbench` · title: `Waiting`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
 - `/recommended-services/` — siteName: `Workbench` · title: `Recommended services`
 - `/servers/` — siteName: `Workbench` · title: `Servers`
@@ -95,4 +99,4 @@ Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
 - `src/routes/_module.mesa` — 19 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/capture/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
-- `src/routes/messages/_module.mesa` — 10 routes: `/messages/`, `/messages/:id/`, `/messages/activity/`, `/messages/browse/`, `/messages/drafts/`, `/messages/groups/`, `/messages/saved/`, `/messages/scheduled/`, `/messages/search/`, `/messages/threads/`
+- `src/routes/messages/_module.mesa` — 12 routes: `/messages/`, `/messages/:id/`, `/messages/activity/`, `/messages/browse/`, `/messages/catch-up/`, `/messages/drafts/`, `/messages/groups/`, `/messages/saved/`, `/messages/scheduled/`, `/messages/search/`, `/messages/threads/`, `/messages/waiting/`

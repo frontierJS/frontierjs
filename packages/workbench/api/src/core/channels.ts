@@ -14,4 +14,4 @@ export const notificationChannelName = (memberId: string): string => `notificati
  * the Data boundary, so a joined channel delivers only the rows the member's
  * own read admits -- a private room's post reaches none but its members.
  */
-export const CHAT_CHANNELS = ['teams', 'profiles', 'channels', 'channelMembers', 'posts', 'threads', 'reactions', 'fileInfos', 'drafts', 'savedPosts', 'chatSections', 'scheduledPosts', 'chatGroups', 'quietSchedules'] as const
+export const CHAT_CHANNELS = ['teams', 'profiles', 'channels', 'channelMembers', 'posts', 'threads', 'reactions', 'fileInfos', 'drafts', 'savedPosts', 'chatSections', 'scheduledPosts', 'followUps', 'chatGroups', 'quietSchedules'] as const

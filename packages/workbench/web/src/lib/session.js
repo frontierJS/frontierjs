@@ -10,11 +10,21 @@
 // on arrival; this only decides what the UI offers.
 
 import { watchProxy } from '@frontierjs/mesa/runtime'
-import { getClient } from '@frontierjs/sierra/resource'
+import { getClient, session as sierraSession } from '@frontierjs/sierra/resource'
 
 export const session = { user: null, checked: false, error: null }
 
 const _w = watchProxy(session)
+
+// Sierra's tethered lists skip the read when its `session.level` cannot pass the
+// model's gate, and that level is filled only by `account.me`, which this door
+// replaces: left at 0 every gated list rendered empty with no request made.
+// Unknown (null) is permissive there; the server still grades every call.
+const _sierra = watchProxy(sierraSession)
+function adopt(member) {
+  _w.user = member
+  _sierra.level = member ? null : 0
+}
 
 // Explicit Accept: application/json is load-bearing: the dev proxy routes on it,
 // and a request without it is answered with the SPA shell, because a service
@@ -32,7 +42,7 @@ export const ready = restore()
 
 async function restore() {
   try {
-    if (getClient()?.token) _w.user = await rawJson('/door/me')
+    if (getClient()?.token) adopt(await rawJson('/door/me'))
   } catch (err) {
     // 401 is a token that expired or came from a database since reset: not an
     // error to show anybody. Anything else is the API not answering.
@@ -46,17 +56,17 @@ export async function signIn(key) {
   _w.error = null
   const answer = await rawJson('/door/login', { method: 'POST', body: { key } })
   getClient().setToken(answer.token)
-  _w.user = answer.member
+  adopt(answer.member)
 }
 
 export async function signOut() {
   try { await rawJson('/door/logout', { method: 'POST', body: {} }) } finally {
     getClient().setToken(null)
-    _w.user = null
+    adopt(null)
   }
 }
 
 /** Re-read who the bearer is: linking the team chat changes `profileExternalId` after sign-in. */
 export async function refreshSession() {
-  _w.user = await rawJson('/door/me')
+  adopt(await rawJson('/door/me'))
 }

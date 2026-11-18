@@ -48,6 +48,8 @@ model Quote {
   kept     Int         @from(QuoteLine, count: true, where: status != 'lost')
   anyLost  Boolean     @from(QuoteLine, exists: true, where: status == 'lost')
   biggest  Int?        @from(QuoteLine, max: amount)
+  cadence  String?
+  onCadence Int        @from(QuoteLine, count: true, where: per == this.cadence)
   @@gate(0.0.0.0)
 }
 
@@ -123,9 +125,9 @@ describe('through the resource', () => {
       { status: 'won',  per: 'week', unitPrice: 500, quantity: 200, amount: 1 },
       { status: 'lost', per: 'week', taxable: true, unitPrice: 9900, quantity: 100 },
       { status: 'won',  per: 'once', unitPrice: 300, quantity: 100 },
-    ] }
+    ], cadence: 'week' }
     expect(quotes.preview(draft))
-      .toEqual({ weekly: 2000, taxed: 10900, kept: 3, anyLost: true, biggest: 9900 })
+      .toEqual({ weekly: 2000, taxed: 10900, kept: 3, anyLost: true, biggest: 9900, onCadence: 3 })
   })
 })
 
@@ -139,6 +141,14 @@ describe('fromFor', () => {
     expect(fromFor(quote.weekly,  { lines: [] })).toBe(0)
     expect(fromFor(quote.biggest, { lines: [] })).toBe(null)
     expect(fromFor(quote.anyLost, { lines: [] })).toBe(false)
+  })
+
+  // `FJS-D2239`: the quote's own column, read off the record holding the lines.
+  test('this.col in the filter reads the record, not the child', () => {
+    const lines = [{ per: 'week' }, { per: 'once' }, { per: 'week' }]
+    expect(fromFor(quote.onCadence, { cadence: 'once', lines })).toBe(1)
+    expect(fromFor(quote.onCadence, { cadence: 'week', lines })).toBe(2)
+    expect(fromFor(quote.onCadence, { lines })).toBe(0)
   })
 
   test('a filter answering UNKNOWN does not count the row', () => {

@@ -1,0 +1,84 @@
+<script>
+  // components/chat/CatchUpGroup.mesa -- one room's (or one followed thread's) unread posts on the
+  // Catch-up screen. Scrolling to its end calls `onpassed(group)` once; the screen marks it
+  // read through the room screen's own door. Summarize is the only thing here that sends a post's
+  // text anywhere: it asks the API for one recap and shows it under the posts, and nothing keeps it.
+  import { postsById, recapGroup } from '../../lib/chat.js'
+  import PostItem from './PostItem.mesa'
+  import Icon from '../Icon.mesa'
+  import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  export let group = null
+  export let label = ''
+  export let people = []
+  export let onpassed = undefined   // (group) => void
+
+  let list = postsById(group.postExternalIds)
+  $.onDestroy(() => list?.destroy())
+  $: rows = (list ? list.rows : []).filter(p => !p.deletedAt).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+
+  // The group is read when its end has come into the screen's scroll area, scrolled to or past.
+  // Measured on scroll rather than observed: the end moves as the posts load, and a headless
+  // browser delivers no observer callbacks after load.
+  let end
+  let passed = false
+  function seen() {
+    if (passed || !end || !rows.length || document.visibilityState !== 'visible') return
+    // The scroll area's bottom edge, or the window's when the page itself is what scrolls.
+    const area = end.closest('[data-catchup]')?.getBoundingClientRect()
+    if (!area || end.getBoundingClientRect().top > Math.min(area.bottom, window.innerHeight)) return
+    passed = true
+    onpassed?.(group)
+  }
+  $: rows, () => $.tick().then(seen)
+  const onScroll = () => seen()
+  $.onMount(() => document.addEventListener('scroll', onScroll, { capture: true, passive: true }))
+  $.onDestroy(() => document.removeEventListener('scroll', onScroll, { capture: true }))
+
+  let summary = null
+  let summarizing = false
+  let error = null
+  async function summarize() {
+    summarizing = true
+    error = null
+    try {
+      const r = await recapGroup(group)
+      summary = r.posts ? r : { text: 'Nothing unread to summarize.', posts: 0, omitted: 0 }
+    } catch (e) { error = e.message } finally { summarizing = false }
+  }
+
+  const href = group.rootExternalId ? `/messages/${group.channelExternalId}/?thread=${group.rootExternalId}` : `/messages/${group.channelExternalId}/`
+</script>
+
+<section class="catchup-group stack gap-sm" data-catchup-group={group.key} data-passed={passed ? '' : null}>
+  <header class="cluster gap-sm catchup-group-head">
+    <a class="h5" {href} data-catchup-jump>{label}{group.rootExternalId ? ' · thread' : ''} <Icon name="external" /></a>
+    <span class="badge" data-catchup-count>{rows.length}{group.more ? '+' : ''}</span>
+    {#if passed}<span class="text-sm text-muted" data-catchup-read><Icon name="check" /> Read</span>{/if}
+    <button type="button" class="btn ghost sm catchup-summarize" disabled={summarizing} data-catchup-summarize onclick={summarize}>
+      {summarizing ? 'Summarizing…' : 'Summarize'}
+    </button>
+  </header>
+
+  {#if error}<Alert tone="danger" data-catchup-error>{error}</Alert>{/if}
+  {#if summary}
+    <div class="catchup-summary stack gap-2xs" data-catchup-summary>
+      <p class="text-sm" data-catchup-summary-text>{summary.text}</p>
+      <p class="text-sm text-muted">Summary of {summary.posts} {summary.posts === 1 ? 'post' : 'posts'}{summary.omitted ? `, ${summary.omitted} older left out` : ''}. Not saved.</p>
+    </div>
+  {/if}
+
+  {#each rows as p (p.externalId)}
+    <PostItem post={p} {people} />
+  {/each}
+  <div class="catchup-end" bind:this={end} data-catchup-end></div>
+</section>
+
+<style>
+  .catchup-group-head { align-items: center; padding-inline: var(--space-lg); }
+  .catchup-group-head .h5 { margin: 0; }
+  .catchup-summarize { margin-inline-start: auto; }
+  .catchup-summary { margin-inline: var(--space-lg); padding: var(--space-sm); border: var(--border-width) solid var(--rule); border-radius: var(--card-radius); }
+  .catchup-summary p { margin: 0; white-space: pre-wrap; }
+  .catchup-end { block-size: 1px; }
+</style>

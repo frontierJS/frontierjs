@@ -69,7 +69,13 @@ async function readAtMost(stream: ReadableStream<Uint8Array> | null, max: number
   const chunks: Uint8Array[] = []
   let total = 0
   for (;;) {
-    const { done, value } = await reader.read()
+    let r: Awaited<ReturnType<typeof reader.read>>
+    try { r = await reader.read() } catch (err) {
+      // The route states `max` as its maxBodySize, so junction errors the read there.
+      if ((err as Error)?.name === 'BodyTooLargeError') return null
+      throw err
+    }
+    const { done, value } = r
     if (done || !value) break
     total += value.byteLength
     if (total > max) { try { await reader.cancel() } catch {} return null }

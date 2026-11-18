@@ -16,12 +16,13 @@
   //   </Drawer>
   //
   // `resizable` puts a handle on a side drawer's inner edge; a drag or the
-  // arrow keys write `width` (px). The kit stores nothing (FJS-D1654), so
-  // remembering it is the app's line over `bind:width`. `action` is the
-  // header's trailing content, before the close button.
+  // arrow keys write `width` (px), and a double-click puts back the css width.
+  // The kit stores nothing (FJS-D1654), so remembering it is the app's line
+  // over `bind:width`. `action` is the header's trailing content, before the
+  // close button.
 
   import { tone as toTone, cx, uid } from '../../utils.js'
-  import { drag } from '../../drag.js'
+  import { resizeHandle } from '../../resize.js'
 
   export let open        = false
   export let title       = ''
@@ -45,44 +46,25 @@
 
   // A top or bottom drawer is full width, so there is no edge to drag.
   const sideways = edge === EDGES.right || edge === EDGES.left
-  const STEP = 32
-
   let dialogEl
-  let measured = null
-  let ceiling  = null
 
   // drawers.css caps a drawer at 90vw; past that the box stops and the number would not.
-  const maxWidth = () => Math.max(minWidth, Math.floor(innerWidth * 0.9))
-  const clamp = (w) => Math.round(Math.min(Math.max(w, minWidth), maxWidth()))
-  const current = () => width ?? dialogEl.getBoundingClientRect().width
-
   // The handle's edge is the inner one, so a right drawer grows as it moves left.
-  const grows = edge === EDGES.left ? 1 : -1
-
-  const resize = () => ({
-    start: () => ({ width, from: current() }),
-    move: (_e, s, d) => { width = clamp(s.from + grows * d.x) },
-    end: (_e, s, { cancelled }) => { if (cancelled) width = s.width },
+  const edgeSize = () => ({
+    size:  width ?? dialogEl.getBoundingClientRect().width,
+    set:   (w) => { width = w },
+    min:   minWidth,
+    max:   Math.max(minWidth, Math.floor(innerWidth * 0.9)),
+    grows: edge === EDGES.left ? 1 : -1,
+    step:  32,
+    reset: () => { width = null },
   })
-
-  function nudge(e) {
-    const dir = { ArrowLeft: -1, ArrowRight: 1 }[e.key]
-    if (!dir) return
-    e.preventDefault()
-    width = clamp(current() + grows * dir * STEP)
-  }
 
   // A `$:` watch fires on change only, so a Drawer mounted with open={true}
   // stays closed without the onMount call.
   function sync() {
     if (!dialogEl) return
-    if (open && !dialogEl.open) {
-      dialogEl.showModal()
-      if (resizable) {
-        measured = Math.round(dialogEl.getBoundingClientRect().width)
-        ceiling  = maxWidth()
-      }
-    }
+    if (open && !dialogEl.open) dialogEl.showModal()
     else if (!open && dialogEl.open) dialogEl.close()
   }
   $: open, () => sync()
@@ -140,18 +122,7 @@
   onclick={handleClick}
 >
   {#if resizable && sideways}
-    <div
-      class="drawer-handle"
-      role="separator"
-      tabindex="0"
-      aria-label="Resize"
-      aria-orientation="vertical"
-      aria-valuenow={width ?? measured}
-      aria-valuemin={minWidth}
-      aria-valuemax={ceiling}
-      onkeydown={nudge}
-      {@attach drag(resize)}
-    ></div>
+    <div class="drawer-handle" aria-label="Resize" {@attach resizeHandle(edgeSize)}></div>
   {/if}
 
   <div class="surface-header">

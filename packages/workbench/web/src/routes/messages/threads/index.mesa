@@ -13,6 +13,7 @@ title: Threads
   import Icon from '../../../components/Icon.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Switch from '@frontierjs/ui/components/forms/Switch.mesa'
 
   const lists = getLists()
   const roots = posts.tethered({
@@ -24,15 +25,21 @@ title: Threads
 
   $: people = lists.people.rows
   $: byRoot = new Map(roots.rows.filter(p => !p.deletedAt).map(p => [p.externalId, p]))
-  $: shown = lists.threads.rows
-    .filter(t => t.isFollowing && byRoot.has(t.rootExternalId))
-    .map(t => ({ t, post: byRoot.get(t.rootExternalId) }))
-    .sort((a, b) => String(b.t.lastReplyAt ?? '').localeCompare(String(a.t.lastReplyAt ?? '')))
-  $: loading = roots.loading || lists.threads.loading
-
   const where  = (c) => channelLabel(lists.channels.rows.find(x => x.externalId === c), people, me())
   const flat   = (s, n = 160) => String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, n)
   const isNew  = (t) => t.unreadReplies > 0 || t.unreadMentions > 0
+
+  // Unread only is the reader's, kept per browser.
+  const UNREAD_ONLY = 'workbench.messages.threadsUnreadOnly'
+  let unreadOnly = (() => { try { return localStorage.getItem(UNREAD_ONLY) === '1' } catch { return false } })()
+  $: { try { localStorage.setItem(UNREAD_ONLY, unreadOnly ? '1' : '0') } catch {} }
+
+  $: followed = lists.threads.rows
+    .filter(t => t.isFollowing && byRoot.has(t.rootExternalId))
+    .map(t => ({ t, post: byRoot.get(t.rootExternalId) }))
+    .sort((a, b) => String(b.t.lastReplyAt ?? '').localeCompare(String(a.t.lastReplyAt ?? '')))
+  $: shown = unreadOnly ? followed.filter(({ t }) => isNew(t)) : followed
+  $: loading = roots.loading || lists.threads.loading
 
   let error = null
   async function unfollow(t) {
@@ -41,9 +48,12 @@ title: Threads
   }
 </script>
 
-<header class="threads-head">
-  <h1 class="h4 cluster gap-xs"><Icon name="thread" /> Threads</h1>
-  <p class="text-sm text-muted">Threads you follow: the ones you started, replied in or were mentioned in, unless you unfollowed them, and any you followed.</p>
+<header class="threads-head cluster gap-md">
+  <div class="threads-title stack gap-2xs">
+    <h1 class="h4 cluster gap-xs"><Icon name="thread" /> Threads</h1>
+    <p class="text-sm text-muted">Threads you follow: the ones you started, replied in or were mentioned in, unless you unfollowed them, and any you followed.</p>
+  </div>
+  <Switch id="threads-unread-only" label="Unread only" bind:checked={unreadOnly} data-threads-unread-only />
 </header>
 
 <div class="threads" data-threads>
@@ -66,7 +76,9 @@ title: Threads
       <button type="button" class="btn ghost xs thread-unfollow" title="Stop following: it leaves this page; a mention still reaches you" data-thread-unfollow onclick={() => unfollow(t)}><Icon name="notify" /> Unfollow</button>
     </div>
   {:else}
-    {#if !loading}
+    {#if !loading && unreadOnly && followed.length}
+      <EmptyState title="Nothing unread">Every thread you follow is read. Turn off Unread only to see them all.</EmptyState>
+    {:else if !loading}
       <EmptyState title="No threads yet">
         Reply in a thread, start one that gets an answer, or follow one, and it collects here.
       </EmptyState>
@@ -78,6 +90,8 @@ title: Threads
 
 <style>
   .threads-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
+  .threads-head { justify-content: space-between; align-items: center; }
+  .threads-title { flex: 1 1 20rem; min-inline-size: 0; }
   .threads-head h1, .threads-head p { margin: 0; }
   .threads-head h1 { align-items: center; }
   .threads { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }

@@ -520,3 +520,21 @@ test('a test mounts the scaffolded app over createTestEnv without opening its da
   expect(r.stdout).toContain('served a@example.test')
   expect(r.stdout).toContain('opened-at-all false')
 }, 60_000)
+
+// FJS-4401: the account page called auth().changePassword(current, next)
+// against the one-argument client method, so the new password was the current
+// one and nothing checked the current password. It must reauthenticate with
+// the current password first and hand changePassword only the new one.
+test('the scaffolded account page proves the current password and sets the new one', async () => {
+  const { makeRouteAccount } = await import('../core/scaffold/web.js')
+  const client = readFileSync(join(import.meta.dir, '../../junction/src/client/index.ts'), 'utf8')
+  expect(client).toMatch(/async changePassword\(newPassword: string\)/)
+  for (const withName of [true, false]) {
+    const page = makeRouteAccount(withName)
+    const calls = [...page.matchAll(/auth\(\)\.changePassword\(([^)]*)\)/g)].map(m => m[1])
+    expect(calls).toEqual(['next'])
+    const reauth = page.indexOf('auth().reauthenticate(current)')
+    expect(reauth).toBeGreaterThan(-1)
+    expect(reauth).toBeLessThan(page.indexOf('auth().changePassword(next)'))
+  }
+})

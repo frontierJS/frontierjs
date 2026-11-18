@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 21 models · 2 databases
+-- 22 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -218,6 +218,19 @@ CREATE TABLE IF NOT EXISTS "scheduled_post" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_scheduled_post_status_sendAt" ON "scheduled_post" ("status", "sendAt");
 CREATE INDEX IF NOT EXISTS "idx_scheduled_post_memberId" ON "scheduled_post" ("memberId");
+
+CREATE TABLE IF NOT EXISTS "follow_up" (
+  "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+  "memberId" INTEGER NOT NULL,
+  "profileExternalId" TEXT NOT NULL,
+  "postExternalId" TEXT NOT NULL,
+  "remindAt" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('pending', 'raised', 'cleared', 'cancelled'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_follow_up_status_remindAt" ON "follow_up" ("status", "remindAt");
+CREATE INDEX IF NOT EXISTS "idx_follow_up_memberId" ON "follow_up" ("memberId");
 
 CREATE TABLE IF NOT EXISTS "chat_group" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,

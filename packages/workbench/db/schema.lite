@@ -611,6 +611,30 @@ model ScheduledPost {
   @@allow(all, memberId == auth().id)
 }
 
+enum FollowUpStatus { pending raised cleared cancelled }
+
+// A nudge on one of the member's own posts: if nobody has answered by remindAt,
+// the chat-followup job raises a bell row. Answered first, it is cleared and
+// says nothing. Laptop-only, like ScheduledPost; the post is named by the
+// server's id and read back from the mirror, so the row holds no copy of it.
+// The bell row's deliveryKey is followup:<id>, so a pass that runs twice, or
+// one cut off before it settled the row, raises one notice.
+model FollowUp {
+  id                Int            @id
+  memberId          Int            @system
+  profileExternalId String         @system
+  postExternalId    String
+  remindAt          DateTime
+  status            FollowUpStatus @default(pending)
+  createdAt         DateTime       @default(now())
+
+  @@db(chat)
+  @@index([status, remindAt])
+  @@index([memberId])
+  @@gate(3.3.3.3)
+  @@allow(all, memberId == auth().id)
+}
+
 // An @handle the composer expands into the people it names. Every member
 // reads every group; only its creator changes it.
 model ChatGroup {

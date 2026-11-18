@@ -15,20 +15,36 @@
 // as a pushed /ws frame. The databases (main, chat, jobs) and the
 // config folder are a temp directory; the sink and the app take OS ports.
 
-import { mkdtempSync, rmSync } from 'node:fs'
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 export const holds = []
 
-for (const k of Object.keys(process.env)) if (k.startsWith('CHAT_')) delete process.env[k]
+for (const k of Object.keys(process.env)) if (k.startsWith('CHAT_') || k.startsWith('BASECAMP_')) delete process.env[k]
 const WORK = mkdtempSync(join(tmpdir(), 'workbench-chat-'))
 process.env.JOBS_DATABASE_URL = join(WORK, 'jobs.db')
 process.env.XDG_CONFIG_HOME   = WORK
 process.env.WORKBENCH_DIR     = join(WORK, 'workbench')
 process.env.WORKBENCH_PUSH_FILE = join(WORK, 'push.json')
 
+// A recap spawns CLAUDE_BIN; this stands in for it, so the real `claude` is never run. It keeps what it was handed.
+const FAKE_CLAUDE = join(WORK, 'fake-claude')
+const FAKE_STDIN  = join(WORK, 'fake-claude.stdin')
+const FAKE_ARGV   = join(WORK, 'fake-claude.argv')
+const FAKE_CALLS  = join(WORK, 'fake-claude.calls')
+writeFileSync(FAKE_CLAUDE, `#!/usr/bin/env node
+const fs = require('fs')
+fs.writeFileSync(${JSON.stringify(FAKE_STDIN)}, fs.readFileSync(0, 'utf8'))
+fs.writeFileSync(${JSON.stringify(FAKE_ARGV)}, JSON.stringify(process.argv.slice(2)))
+fs.appendFileSync(${JSON.stringify(FAKE_CALLS)}, 'x\\n')
+process.stdout.write('STUB RECAP: they decided nothing.\\n')
+`)
+chmodSync(FAKE_CLAUDE, 0o755)
+process.env.CLAUDE_BIN = FAKE_CLAUDE
+
 const { startMattermostSink } = await import('@frontierjs/conduit-mattermost/sink')
+const { startBasecampSink } = await import('@frontierjs/conduit-37signals/sink')
 const { createTestEnv, session } = await import('@frontierjs/testing')
 const { createJunctionClient } = await import('@frontierjs/junction/client')
 const { buildWorkbenchApp } = await import('../src/app.ts')
@@ -38,7 +54,7 @@ const DB = join(import.meta.dir, '..', '..', 'db')
 let failed = 0
 const check = (ok: unknown, label: string, evidence: unknown = '') => {
   console.log(`${ok ? '✓' : '✗'} ${label}`)
-  if (!ok) { failed++; if (evidence !== '') console.log(`    ${JSON.stringify(evidence).slice(0, 1200)}`) }
+  if (!ok) { failed++; if (evidence !== '') console.log(`    ${JSON.stringify(evidence).slice(0, 2400)}`) }
   return !!ok
 }
 async function until<T> (pred: () => Promise<T> | T, ms = 8000): Promise<T | null> {
@@ -51,6 +67,8 @@ async function until<T> (pred: () => Promise<T> | T, ms = 8000): Promise<T | nul
 }
 
 const sink = startMattermostSink({ port: 0 })
+// Basecamp, the 37signals product: the connector's sink, never 3.basecampapi.com.
+const todoSink = startBasecampSink({ port: 0 })
 const ids = sink.ids
 const sinkCall = async (path: string, token: string, init: { method?: string, body?: unknown } = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -67,7 +85,7 @@ let env: any
 try {
   env = await createTestEnv({
     schema: join(DB, 'schema.lite'), migrations: join(DB, 'migrations'), encryptionKey: '0'.repeat(64),
-    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
+    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { accountId: todoSink.account, token: todoSink.token, origin: todoSink.url }, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
     listen: true,
   } as any)
   const sys = env.system
@@ -218,6 +236,16 @@ try {
   check(await until(async () => (await sys.thread.findUnique({ where: { externalId: threadKeyOf } }))?.isFollowing === true), 'a follow from another client lands as a thread_follow_changed frame')
   await sinkCall(`/users/${ids.alice}/teams/${ids.team}/threads/${root.id}/following`, sink.tokens.alice, { method: 'DELETE' })
   check(await until(async () => (await sys.thread.findUnique({ where: { externalId: threadKeyOf } }))?.isFollowing === false), 'and its unfollow too')
+
+  // A deleted root's thread leaves every list: the server stops naming it, so its counts here would stand for good.
+  const doomed = await say(sink.tokens.bob, ids.open, 'a thread whose root goes')
+  await say(sink.tokens.bob, ids.open, 'a reply to it', doomed.id)
+  await call(ada, 'follow', { rootExternalId: doomed.id, following: true })
+  const doomedKey = `${ids.alice}:${doomed.id}`
+  await until(() => sys.thread.findUnique({ where: { externalId: doomedKey } }))
+  const { id: _id, missingSince: _gone, ...doomedRow } = await sys.post.findUnique({ where: { externalId: doomed.id } }) as any
+  await applyFrame(env.app, String(ada.id), ids.alice, { id: `deleted-${doomed.id}`, type: 'post_deleted', payload: { post: { ...doomedRow, deletedAt: new Date() }, files: [] } } as any)
+  check((await sys.thread.findUnique({ where: { externalId: doomedKey } }))?.missingSince != null, 'a root\'s post_deleted stamps its Thread rows missing')
 
   // The answer's own landing, with the member's socket closed: nothing else can
   // have told the mirror, so what it holds is what the call put there.
@@ -601,6 +629,200 @@ try {
   await noteSettle()
   check(noteBoRows?.length === 1 && noteBoRows[0].type === 'ChatMention' && notePushesOf(`b${noteStamp}`).length === 0, 'a mention of bo, who is not the owner, writes his bell row and sends no push', { noteBoRows, pushes: notePushesOf(`b${noteStamp}`) })
 
+  // ── waiting on me, waiting on others, and the nudge (6.1, 6.2) ─────────
+  const { raiseDue } = await import('../src/domain/chat/followup.ts')
+  const waitOf = async (m: { id: number }) => await call(m, 'waiting', {}) as { onMe: string[], onOthers: { postExternalId: string, followUpId: number | null, remindAt: string | null }[] }
+  const waitLanded = (id: string) => until(() => sys.post.findUnique({ where: { externalId: id } }))
+  const waitPause = () => new Promise(r => setTimeout(r, 30))
+  const followUps = (m: { id: number }) => as(m).service('followUps')
+  const waitDue = (id: number) => sys.followUp.update({ where: { id }, data: { remindAt: new Date(Date.now() - 1000).toISOString() } })
+  const waitBell = (id: number) => sys.notification.findMany({ where: { userId: ada.id, deliveryKey: `followup:${id}` } })
+
+  const wait0 = await waitOf(ada)
+  check(wait0.onMe.includes(noteDirect.id) && !wait0.onMe.includes(noteNamed.id) && !wait0.onMe.includes(notePointed.id), 'waiting: a DM alice never answered is on her; mentions she posted after are not', wait0)
+  await waitPause()
+  const waitMention = await say(sink.tokens.bob, ids.open, `@alice any word on this? m${noteStamp}`)
+  await waitLanded(waitMention.id)
+  const wait1 = await waitOf(ada)
+  check(wait1.onMe.includes(waitMention.id) && wait1.onMe.indexOf(noteDirect.id) < wait1.onMe.indexOf(waitMention.id), 'a new @mention joins it, after the older DM (oldest first)', wait1)
+  await waitPause()
+  const waitReply = await say(sink.tokens.alice, ids.open, 'on it')
+  await waitLanded(waitReply.id)
+  const wait2 = await waitOf(ada)
+  check(!wait2.onMe.includes(waitMention.id) && !wait2.onOthers.some(o => o.postExternalId === waitReply.id), 'her own later post in the room clears it, and a plain room post is not "waiting on others"', wait2)
+
+  const waitRoot = await say(sink.tokens.bob, ids.open, `a thread to answer t${noteStamp}`)
+  await waitLanded(waitRoot.id); await waitPause()
+  const waitInThread = await say(sink.tokens.alice, ids.open, 'my reply in the thread', waitRoot.id)
+  await waitLanded(waitInThread.id)
+  check((await waitOf(ada)).onOthers.some(o => o.postExternalId === waitInThread.id), 'her last reply in a thread nobody has answered is waiting on others')
+  await waitPause()
+  const waitAnswer = await say(sink.tokens.bob, ids.open, 'got it', waitRoot.id)
+  await waitLanded(waitAnswer.id)
+  check(!(await waitOf(ada)).onOthers.some(o => o.postExternalId === waitInThread.id), 'and a reply by someone else removes it')
+
+  await waitPause()
+  const ask1 = await say(sink.tokens.alice, noteDm?.id, `ask one a${noteStamp}`)
+  await waitLanded(ask1.id)
+  const wait3 = await waitOf(ada)
+  check(!wait3.onMe.includes(noteDirect.id) && wait3.onOthers.some(o => o.postExternalId === ask1.id && o.followUpId === null), 'her own post in the DM answers bob\'s and waits on him, with no reminder yet', wait3)
+  const waitBo = await waitOf(bo)
+  check(!waitBo.onMe.includes(noteDirect.id) && !waitBo.onOthers.some(o => o.postExternalId === ask1.id), 'bo, who is not in the DM, sees none of it', waitBo)
+
+  // the nudge
+  const f1 = await followUps(ada).create({ postExternalId: ask1.id, remindAt: later() }).catch((e: any) => e)
+  check(f1?.status === 'pending' && f1.memberId === ada.id && f1.profileExternalId === ids.alice, 'followUps.create keeps a pending row stamped with its member', shown_(f1))
+  check((await waitOf(ada)).onOthers.some(o => o.postExternalId === ask1.id && o.followUpId === f1?.id && !!o.remindAt), 'the waiting-on-others row carries the pending reminder')
+  const foreign = await errOf(followUps(ada).create({ postExternalId: noteDirect.id, remindAt: later() }))
+  check(codeOf(foreign) === 403, 'a reminder on someone else\'s post is a 403', shown_(foreign))
+  const twice = await errOf(followUps(ada).create({ postExternalId: ask1.id, remindAt: later() }))
+  check(codeOf(twice) === 409, 'a second pending reminder on one post is a 409', shown_(twice))
+  const pastNudge = await errOf(followUps(ada).create({ postExternalId: ask1.id, remindAt: new Date(Date.now() - 60_000).toISOString() }))
+  check(codeOf(pastNudge) === 400, 'a reminder time in the past is a 400', shown_(pastNudge))
+  check(((await followUps(bo).find({}) as any).data as any[]).length === 0 && codeOf(await errOf(followUps(bo).patch(f1?.id, { status: 'cancelled' }))) != null, 'bo reads none of her reminders and cannot cancel one')
+
+  const nudgePushes = pushes.filter(p => p.title === 'Nobody has replied').length
+  await waitDue(f1.id)
+  const due1 = await raiseDue(env.app)
+  const f1Bell = await waitBell(f1.id)
+  check(due1.raised === 1 && due1.cleared === 0 && (await sys.followUp.findUnique({ where: { id: f1.id } }))?.status === 'raised', 'a due reminder on an unanswered post is raised and settled', due1)
+  check(f1Bell.length === 1 && f1Bell[0].type === 'ChatFollowUp' && f1Bell[0].data?.title === 'Nobody has replied' && f1Bell[0].data?.action?.url === `/messages/${noteDm?.id}/` && !JSON.stringify(f1Bell[0]).includes(`a${noteStamp}`), 'it writes one ChatFollowUp bell row linked to the room, holding none of the post\'s text', f1Bell)
+  check(pushes.filter(p => p.title === 'Nobody has replied').length === nudgePushes + 1, 'and one push to the owner\'s phone, caught here')
+  check((await raiseDue(env.app)).raised === 0 && (await waitBell(f1.id)).length === 1, 'a second pass raises nothing more')
+  check((await waitOf(ada)).onOthers.find(o => o.postExternalId === ask1.id)?.followUpId === null, 'a raised reminder no longer shows on the row')
+
+  await waitPause()
+  const ask2 = await say(sink.tokens.alice, noteDm?.id, `ask two b${noteStamp}`)
+  await waitLanded(ask2.id)
+  const f2 = await followUps(ada).create({ postExternalId: ask2.id, remindAt: later() }).catch((e: any) => e)
+  await waitPause()
+  const bobAnswers = await say(sink.tokens.bob, noteDm?.id, 'here you go')
+  await waitLanded(bobAnswers.id)
+  await waitDue(f2.id)
+  const due2 = await raiseDue(env.app)
+  check(due2.raised === 0 && due2.cleared === 1 && (await sys.followUp.findUnique({ where: { id: f2.id } }))?.status === 'cleared' && (await waitBell(f2.id)).length === 0, 'a reply by someone else before the time clears the reminder and notifies nobody', { due2, f2 })
+  const wait4 = await waitOf(ada)
+  check(!wait4.onOthers.some(o => o.postExternalId === ask2.id) && wait4.onMe.includes(bobAnswers.id), 'and the answer is now on her', wait4)
+
+  await waitPause()
+  const ask3 = await say(sink.tokens.alice, noteDm?.id, `ask three c${noteStamp}`)
+  await waitLanded(ask3.id)
+  const f3 = await followUps(ada).create({ postExternalId: ask3.id, remindAt: later() }).catch((e: any) => e)
+  const nudgeCancelled = await followUps(ada).patch(f3?.id, { status: 'cancelled' }).catch((e: any) => e)
+  await waitDue(f3.id)
+  const due3 = await raiseDue(env.app)
+  check(nudgeCancelled?.status === 'cancelled' && due3.raised === 0 && due3.cleared === 0 && (await waitBell(f3.id)).length === 0, 'a cancelled reminder is never raised', { cancelled: shown_(nudgeCancelled), due3 })
+
+  // ── catch-up and recap (6.3, 6.4) ──────────────────────────────────────
+  const { recapPrompt, RECAP_CHARS_MAX, RECAP_POST_CHARS } = await import('../src/domain/chat/catchup.ts')
+  type Group = { key: string, channelExternalId: string, rootExternalId: string | null, since: string, postExternalIds: string[], more: boolean }
+  const catchOf = async (m: { id: number }) => (await call(m, 'catchUp', {}) as { groups: Group[] }).groups
+  const recapCalls = () => existsSync(FAKE_CALLS) ? readFileSync(FAKE_CALLS, 'utf8').split('\n').filter(Boolean).length : 0
+
+  await call(ada, 'view', { channelExternalId: ids.open })
+  await waitPause()
+  const cuTag = `cu${Date.now()}`
+  const cuOne = await say(sink.tokens.bob, ids.open, `catch-up one ${cuTag}`)
+  const cuMine = await say(sink.tokens.alice, ids.open, `catch-up my own ${cuTag}`)
+  const cuTwo = await say(sink.tokens.bob, ids.open, `catch-up two ${cuTag}`)
+  for (const p of [cuOne, cuMine, cuTwo]) await waitLanded(p.id)
+  const cuRoot = await say(sink.tokens.bob, ids.open, `catch-up thread root ${cuTag}`)
+  await waitLanded(cuRoot.id)
+  await call(ada, 'follow', { rootExternalId: cuRoot.id, following: true })
+  await waitPause()
+  const cuReply = await say(sink.tokens.bob, ids.open, `catch-up thread reply ${cuTag}`, cuRoot.id)
+  await waitLanded(cuReply.id)
+  await until(async () => (await sys.thread.findUnique({ where: { externalId: `${ids.alice}:${cuRoot.id}` } }))?.unreadReplies > 0)
+
+  const cu0 = await catchOf(ada)
+  const cuOpen = cu0.find(g => g.key === `c:${ids.open}`)
+  check(!!cuOpen && [cuOne.id, cuTwo.id, cuRoot.id].every(id => cuOpen.postExternalIds.includes(id)), 'catch-up: a room\'s unread root posts by others are one group', cu0)
+  check(!!cuOpen && !cuOpen.postExternalIds.includes(cuMine.id) && !cuOpen.postExternalIds.includes(cuReply.id) && cuOpen.postExternalIds.indexOf(cuOne.id) < cuOpen.postExternalIds.indexOf(cuTwo.id), 'her own post and a thread reply are not in the room\'s group, and the group runs oldest first', cuOpen)
+  const cuThread = cu0.find(g => g.key === `t:${cuRoot.id}`)
+  check(!!cuThread && cuThread.rootExternalId === cuRoot.id && cuThread.postExternalIds.join() === cuReply.id && cuThread.channelExternalId === ids.open, 'a followed thread with an unread reply is its own group, holding the reply alone', { cu0: cu0.map(g => g.key), row: JSON.stringify(await sys.thread.findUnique({ where: { externalId: `${ids.alice}:${cuRoot.id}` } })) })
+  const boGroups = await catchOf(bo)
+  check(!boGroups.some(g => g.key === `t:${cuRoot.id}`), 'bo, who does not follow her thread, has no group for it', boGroups.map(g => g.key))
+  check(recapCalls() === 0 && !existsSync(FAKE_STDIN), 'nothing went to Claude for any of that')
+
+  const recap1 = await call(ada, 'recap', { channelExternalId: ids.open, since: cuOpen!.since }) as { text: string, posts: number, omitted: number }
+  const sentStdin = existsSync(FAKE_STDIN) ? readFileSync(FAKE_STDIN, 'utf8') : ''
+  const sentArgv: string[] = existsSync(FAKE_ARGV) ? JSON.parse(readFileSync(FAKE_ARGV, 'utf8')) : []
+  check(recap1.text === 'STUB RECAP: they decided nothing.' && recap1.posts >= 3 && recapCalls() === 1, 'recap: one press is one run, and the answer is the stub\'s text', recap1)
+  check(sentStdin.includes(`catch-up one ${cuTag}`) && sentStdin.includes(`catch-up two ${cuTag}`) && !sentStdin.includes(`catch-up my own ${cuTag}`) && !sentStdin.includes(`catch-up thread reply ${cuTag}`) && /\] \S.*: catch-up one/.test(sentStdin), 'the group\'s posts go in as author: text lines on stdin, and no other post does', sentStdin.slice(0, 400))
+  check(!sentArgv.some(a => a.includes(cuTag)) && sentArgv[sentArgv.indexOf('--tools') + 1] === '' && sentArgv.includes('-p') && sentArgv.includes('--strict-mcp-config'), 'the prompt is not in argv, and the run is offered no tool', sentArgv)
+  const recapThread = await call(ada, 'recap', { channelExternalId: ids.open, rootExternalId: cuRoot.id, since: cuThread!.since }) as { posts: number }
+  check(recapThread.posts === 1 && (readFileSync(FAKE_STDIN, 'utf8')).includes(`catch-up thread reply ${cuTag}`) && !readFileSync(FAKE_STDIN, 'utf8').includes(`catch-up one ${cuTag}`), 'a thread\'s recap is its replies alone', recapThread)
+  const bobsOwn = (await sinkCall('/channels', sink.tokens.bob, { method: 'POST', body: { team_id: ids.team, name: `bobs-own-${cuTag}`, display_name: 'Bob only', type: 'P' } })).json
+  const bobsOnly = bobsOwn?.id ? await say(sink.tokens.bob, bobsOwn.id, `nobody else reads this ${cuTag}`) : null
+  const recapSecret = await call(ada, 'recap', { channelExternalId: bobsOwn?.id ?? ids.secret, since: new Date(Date.now() - 86_400_000).toISOString() }) as { text: string, posts: number }
+  check(!!bobsOnly?.id && recapSecret.text === '' && recapSecret.posts === 0 && recapCalls() === 2, 'a room the caller is not in recaps as nothing and runs nothing', { recapSecret, bobsOwn, calls: recapCalls() })
+  check(codeOf(await call(ada, 'recap', { channelExternalId: ids.open, since: 'yesterday-ish' })) === 400 && recapCalls() === 2, 'a since that is not a time is a 400')
+  check(!(await sys.post.findFirst({ where: { message: { contains: 'STUB RECAP' } } })), 'the summary is stored nowhere')
+
+  const longLines = Array.from({ length: 100 }, (_, i) => ({ at: '2026-01-01 00:00', author: `A${i}`, text: 'x'.repeat(RECAP_POST_CHARS * 5) }))
+  const bounded = recapPrompt('#room', longLines)
+  check(bounded.prompt.length < RECAP_CHARS_MAX + 200 && bounded.kept < 100 && bounded.prompt.includes('A99:') && !bounded.prompt.includes('A0:'), 'the prompt is bounded: each post is cut, the oldest give way past the character cap', { length: bounded.prompt.length, kept: bounded.kept })
+
+  const readNow = await call(ada, 'view', { channelExternalId: ids.open })
+  const cu1 = await until(async () => { const g = await catchOf(ada); return g.some(x => x.key === `c:${ids.open}`) ? null : g })
+  check(!!readNow && cu1 !== null, 'passing a room\'s group is chat.view, and the group is then gone', cu1)
+  const readThreadNow = await call(ada, 'readThread', { rootExternalId: cuRoot.id })
+  const cu2 = await until(async () => { const g = await catchOf(ada); return g.some(x => x.key === `t:${cuRoot.id}`) ? null : g })
+  check(!!readThreadNow && cu2 !== null, 'passing a thread\'s group is chat.readThread, and the group is then gone', cu2)
+  const recapAfter = await call(ada, 'recap', { channelExternalId: ids.open, since: cuOpen!.since }) as { posts: number }
+  check(recapAfter.posts >= 3, 'a recap asked after the group was read still has its posts, since the screen sends the group\'s own since', recapAfter)
+
+  // ── a post as a Basecamp to-do ────────────────────────────────────────
+  const todoSeen = async () => ((await (await fetch(`${todoSink.url}/_sink/seen`)).json()) as any).requests as { method: string, path: string, body: any }[]
+  const todoPosts = async () => (await todoSeen()).filter(r => r.method === 'POST')
+  const todoArm = (a: unknown) => fetch(`${todoSink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify(a) })
+  check((await call(ada, 'status', {}) as any).todos === true, 'chat.status says to-dos are on when an account and a token are configured')
+  const todoProjects = await call(ada, 'todoProjects', {}) as { projects: { id: number, name: string }[] }
+  check(todoProjects.projects?.length > 1 && todoProjects.projects.every(p => typeof p.id === 'number' && typeof p.name === 'string' && Object.keys(p).length === 2), 'todoProjects walks the connector\'s projects, an id and a name each', todoProjects)
+  const todoLists = await call(ada, 'todoLists', { projectId: todoProjects.projects[0].id }) as { lists: { id: number, name: string }[] }
+  check(todoLists.lists?.length > 0, 'todoLists reads a project\'s to-do lists', todoLists)
+  check(codeOf(await call(ada, 'todoLists', { projectId: 'x' })) === 400, 'a project id that is not a number is a 400')
+
+  const todoSecret = `a direct message, not for Basecamp ${Date.now()}`
+  const todoPost = await say(sink.tokens.bob, ids.open, todoSecret)
+  check(await until(() => sys.post.findUnique({ where: { externalId: todoPost.id } })), 'the post to be turned into a to-do lands in the mirror')
+  const permalink = `${sink.url}/town/pl/${todoPost.id}`
+  check((await call(ada, 'todoNotes', { postExternalId: todoPost.id }) as any).notes === permalink, 'todoNotes is the Mattermost permalink: server, team name, pl, post id')
+  const todoBefore = (await todoPosts()).length
+  const madeTodo = await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'Ring the client' }) as { id: number, appUrl: string }
+  check(typeof madeTodo.id === 'number' && /^https?:\/\//.test(madeTodo.appUrl ?? ''), 'makeTodo answers the to-do\'s id and its app_url', madeTodo)
+  const sentTodos = (await todoPosts()).slice(todoBefore)
+  const sentTodo = sentTodos[0]
+  check(sentTodos.length === 1 && sentTodo.path.endsWith(`/buckets/${todoProjects.projects[0].id}/todolists/${todoLists.lists[0].id}/todos.json`), 'exactly one create reached the sink, on the project and list picked', sentTodos.map(r => r.path))
+  check(sentTodo.body.content === 'Ring the client' && String(sentTodo.body.description).replace(/<[^>]+>/g, '') === permalink, 'its title is the one sent and its notes are the permalink alone', sentTodo.body)
+  check(!JSON.stringify(sentTodo).includes(todoSecret) && !JSON.stringify(sentTodo).includes(ids.bob) && !JSON.stringify(sentTodo).includes(ids.open), 'the post\'s text, author and channel appear nowhere in the request', sentTodo)
+  const tryText = await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'Again', notes: todoSecret, description: todoSecret, message: todoSecret }) as any
+  const lastTodo = (await todoPosts()).slice(-1)[0]
+  check(typeof tryText.id === 'number' && !JSON.stringify(lastTodo).includes(todoSecret), 'a notes, description or message key in the call is ignored: the notes are only ever the permalink', lastTodo)
+
+  const unreadable = await call(ada, 'makeTodo', { postExternalId: bobsOnly?.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'Peek' })
+  check(codeOf(unreadable) === 404 && codeOf(await call(ada, 'todoNotes', { postExternalId: bobsOnly?.id })) === 404, 'a post the caller cannot read is a 404, for the notes and for the to-do', unreadable?.message)
+  check((await todoPosts()).length === todoBefore + 2, 'and nothing was sent for it')
+  check(codeOf(await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: '   ' })) === 400, 'a blank title is a 400')
+  check(codeOf(await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, title: 'x' })) === 400, 'a missing list is a 400')
+  await todoArm({ forbidden: true })
+  const todoDenied = await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'Refused' })
+  check(codeOf(todoDenied) === 403 && /forbidden/.test(todoDenied?.message ?? ''), 'Basecamp\'s refusal comes back as its kind, forbidden', todoDenied?.message)
+
+  // Off unless configured: a second app with no account or token.
+  const bare: any = await createTestEnv({
+    schema: join(DB, 'schema.lite'), migrations: join(DB, 'migrations'), encryptionKey: '0'.repeat(64),
+    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { accountId: null, token: null, origin: null } }),
+    listen: true,
+  } as any)
+  try {
+    const bareMember = await bare.system.member.create({ data: { nick: 'bare' } })
+    const bareCall = (method: string, data: unknown) => bare.as(session({ id: String(bareMember.id), isAdmin: true })).service('chat').call(method, null, data).then((r: any) => r, (e: any) => e)
+    check((await bareCall('status', {}) as any).todos === false, 'with no account or token chat.status says to-dos are off')
+    const off = await bareCall('makeTodo', { postExternalId: todoPost.id, projectId: 1, listId: 2, title: 'Nope' })
+    check(codeOf(off) === 503 && /not configured/.test(off?.message ?? '') && codeOf(await bareCall('todoProjects', {})) === 503, 'and every to-do method answers a plain 503 not configured', off?.message)
+  } finally { await bare.close().catch(() => {}) }
+
   // ── unlink ────────────────────────────────────────────────────────────
   await as(ada).service('chat').call('disconnect', null, {})
   const gone = await sys.member.findUnique({ where: { id: ada.id }, select: { profileExternalId: true, chatSyncedAt: true } })
@@ -611,6 +833,7 @@ try {
 } finally {
   await env?.close().catch(() => {})
   sink.stop()
+  todoSink.stop()
   rmSync(WORK, { recursive: true, force: true })
 }
 console.log(failed ? `\n${failed} failed` : '\nall green')

@@ -6,8 +6,8 @@ dated: 2026-11-14
 
 # Idea — Hydration, and what a server-only region is
 
-**Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`); nothing
-built; Phase 0 done 2026-11-17; Phase 1 is not yet written.** This is the guiding paper for hydration and server components
+**Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`), Q7 2026-11-17 (`FJS-D2260`); nothing
+built; Phase 0 done 2026-11-17; Phases 1–4 written, 1.1 next.** This is the guiding paper for hydration and server components
 in Mesa and Sierra. Hydration is the direction (`FJS-D2172`); VISION RULE 20
 now names it as the planned replacement for islands-replace, and still says
 nothing hydrates today.
@@ -186,9 +186,9 @@ looked up by key, and nothing for an inert region. A cursor (Svelte) needs a
 clean sibling count through every static region, which is the opposite of
 shipping nothing for one. What Mesa would take from each:
 
-- **From Marko:** a comment after each live node, keyed by the compiler's own
-  per-binding name, which Mesa already has because it emits `child()` and
-  `sibling()` per binding. Also `<!>` between adjacent text nodes, and a
+- **From Marko:** a comment after each live node, keyed per binding. The key
+  is the binding's source offset, not a variable name from the client's
+  traversal, for the reason the Plan's preamble gives. Also `<!>` between adjacent text nodes, and a
   fresh `Text` where a text binding rendered empty. Nothing is written for a
   binding the client never re-evaluates.
 - **From Svelte:** the state transport. `hydratable` writes one script with
@@ -199,10 +199,7 @@ shipping nothing for one. What Mesa would take from each:
   walk by region and adds no marker.
 
 A keyed lookup makes a missing marker detectable per binding, which a cursor
-cannot. That raises a question `FJS-D2177` settled at root level: whether a
-mismatch replaces the whole page, which is the one root under Q2 A, or only
-the block holding the missing binding, as Svelte does for an `if` or `await`.
-This is flagged for the owner, not decided here.
+cannot. That makes the replaced range a choice Q6 did not face: § 6 Q7.
 
 ## 5. The cheaper fix, priced first
 
@@ -267,6 +264,20 @@ reads.
   - **B** — Adopt what matches and bind the rest by best guess.
   - **Recommend A** — binding to the wrong node is silent and costly, so the
     code must never guess.
+- ~~**Q7 — Under one page root, how much does a mismatch replace?**~~ **Answered 2026-11-18 (`FJS-D2260`): A — The smallest enclosing block. Clear and re-render the nearest `if`, `each`, `await` or component range around the bad binding, inside the page's one owner tree. Fall back to the whole page when there is no such range, and name the binding in the dev overlay.** Q6 says
+  "that root", and under Q2 A the root is the page. A server render answers
+  every browser global as a wide desktop (`ui-hazards`), so a viewport branch
+  mismatches on every phone visit. Keyed markers (§ 4, *Marker protocols*) make
+  the bad binding findable.
+  - **A** — The smallest enclosing block. Clear and re-render the nearest
+    `if`, `each`, `await` or component range around the bad binding, inside
+    the page's one owner tree. Fall back to the whole page when there is no
+    such range, and name the binding in the dev overlay.
+  - **B** — The whole page, as Q6 reads today.
+  - **C** — A, plus rewriting a lone text or attribute binding in place.
+  - **Recommend A.** It guesses no more than Q6 allows, because it replaces a
+    range known to be wrong. It keeps a phone's viewport mismatch to one block.
+    C is an optimization to price once A exists.
 
 ## 7. What must stay true, and what proves it
 
@@ -284,7 +295,17 @@ Until these exist, the answer to "what fails if this breaks" is **none**.
 
 ## Plan
 
-Phases past 0 are written once Q1–Q4 are ruled.
+Phases 1–4 build Q2 A, which is whole-page adoption behind the Q5 flag.
+Narrowing to per-edge (Q2 C) and making the flag the default are written once
+Phase 2's drive is green. Neither is ruled yet.
+
+**The two walks the key must agree across.** The server's string mode is
+written from the IR (`src/host/emit.js` over `src/ir.js`). The client's DOM
+builder in `src/compiler.js` walks the AST itself and emits `child()` and
+`sibling()` traversals, and `IDEAS/mesa-ir.md` does not move it onto the IR.
+So a binding's key cannot be a counter local to either walk. It must be
+something both already hold: the binding's source offset in the `.mesa` file.
+Step 1.1 proves the two agree before anything is built on them.
 
 ### Phase 0 — Groundwork
 
@@ -306,3 +327,108 @@ Done when: `FJS-4313` is driven in a browser, the costs in § 2 are measured on
 - [x] 0.5 Amend RULE 20 in mesa's `docs/VISION.md` to name hydration as the
   planned replacement for islands-replace (`FJS-D2172`) — 2026-11-14, one
   commit after the rulings
+
+**Done 2026-11-17.** Both halves of `FJS-4313` reproduce in Chrome. Only one
+tree fixes the `$context` half, and a store snapshot fixes the store half.
+`example/site/` makes no redundant refetch, so the case there is correctness.
+Marko 6's keyed-per-binding markers are the shape to borrow. Q7 followed from
+the read (`FJS-D2260`).
+
+### Phase 1 — Markers on the server
+
+Goal: under the Q5 flag, the string mode writes a keyed marker for every live
+binding and a boundary for every block, and default output does not change.
+Done when: mesa's `bun run test` is green with a corpus test asserting the
+server's key set equals the client's for every corpus file, the flagged output
+parses (Invariant 15), and the unflagged output is byte-identical to before.
+
+- [ ] 1.1 The binding key: one exported function names a live binding by its
+  source offset, and both `src/host/emit.js` and `src/compiler.js` call it.
+  That makes it one owner (Invariant 4), not two walks reconciled. The IR
+  carries only the formatted `loc` today, so it must expose the raw offset. A
+  corpus test compiles every file both ways and asserts the two key sets are
+  equal, including a snippet rendered twice in one instance. It lands before
+  any marker is written.
+- [ ] 1.2 The flag: a render option on `renderComponent` and `renderToHTML`,
+  and its Sierra config key. Name it through `decision-rules`, because it is a
+  new option. A corpus test pins the unflagged output byte-identical.
+- [ ] 1.3 Binding markers: a comment after each live node, carrying the
+  instance id and the binding key. Write `<!>` between adjacent text nodes, and
+  an empty marker where a text binding rendered nothing, as Marko's `%` op
+  does. A binding that reads no signal writes nothing.
+- [ ] 1.4 Instance ids, derived from structure: the parent's id, the call
+  site's source offset, and the `{#each}` row key where there is one. A render
+  order counter is the rejected form. One block that renders a different number
+  of components would shift every later id, and `FJS-D2260`'s one-block
+  replacement would cascade to the page. That happens on every phone visit
+  with a viewport branch. The instance marker also carries the component's
+  content-addressed scope id (Invariant 12). A page prerendered against an
+  older bundle then fails closed under `FJS-D2177`, instead of matching an
+  offset to a different binding.
+- [ ] 1.5 Block boundaries: `{#if}` writes its branch index, as Svelte's
+  `<!--[N-->` does. `{#each}` writes a boundary per row with the row's key, and
+  `{#await}` writes which state it settled in. These are the ranges `FJS-D2260`
+  re-renders.
+
+### Phase 2 — Adopt on the client
+
+Goal: one client root adopts a flagged page, so `$context` and stores work
+across what used to be island boundaries.
+Done when: the 0.1 page, committed as a Sierra fixture with its assertions
+inverted, passes in Chrome. That means `theme: dark` after adoption, both
+carts showing the server's value, and a write reaching both. This is § 7's
+first bullet.
+
+- [ ] 2.1 `hydrate(target, Component)` in `runtime.js`: one TreeWalker pass
+  collects markers into an instance-to-key-to-node map, then the component
+  runs once over it. `pop()`'s reservation is either used here or cut.
+- [ ] 2.2 The DOM builder, under the flag: a binding's node comes from the map
+  by key instead of from a traversal, and `template()` clones nothing for an
+  adopted region. The unflagged client output stays byte-identical.
+- [ ] 2.3 Blocks adopt their server branch by boundary: the `{#if}` index, the
+  `{#each}` rows by key, and the `{#await}` state.
+- [ ] 2.4 Mismatch per `FJS-D2260`: a missing marker or a wrong branch
+  re-renders the smallest enclosing block, falls back to the page, and names
+  the binding in the dev overlay. A test forces each kind.
+- [ ] 2.5 Sierra: a flagged static page hydrates from the route root instead
+  of running the islands loader. Unflagged pages keep islands-replace.
+- [ ] 2.6 The drive: the 0.1 page committed under `packages/sierra/test/fixtures/`
+  with its assertions inverted, run by Sierra's `verify` path.
+
+### Phase 3 — Server state into the page
+
+Goal: what the server already settled reaches the client without a second
+fetch (`FJS-D2175`).
+Done when: a flagged page with an `{#await}` region makes no request for that
+value on load, and a store read by two components starts at the server's value
+before either is written.
+
+- [ ] 3.1 Settled `{#await}` and `$async` values go into one trailing script,
+  keyed by instance and binding, with a CSP nonce or hash as Svelte's
+  `hydratable` writes it. A value that does not serialize is refused by name.
+- [ ] 3.2 Store snapshots: a module object a component watches with `$:` is
+  written under its path resolved from the app root and its export name, and
+  restored before the first component runs. A specifier is spelled differently
+  on the server and in the bundle, so it is not the key. The owner rules two
+  things before this is built:
+  - **Per-request isolation.** A module store is process-global on the
+    server, so a snapshot can carry another request's write into this page.
+    `ui-hazards` records the same for `<script module>` state.
+  - **Which stores qualify.** A snapshot puts data in public HTML, which
+    Invariants 6 and 7 constrain.
+- [ ] 3.3 The drive gains the `{#await}` case, counting requests the way 0.2
+  did.
+
+### Phase 4 — `client:*` as timing
+
+Goal: inside the one tree, a `client:*` subtree attaches its bindings on its
+trigger (`FJS-D2174`).
+Done when: island-site's directive assertions (idle, visible, media, a
+never-matching query fetches nothing) pass on a flagged build.
+
+- [ ] 4.1 A `client:*` subtree is adopted for structure on page load, and its
+  bindings and handlers attach when its trigger fires.
+- [ ] 4.2 A chunk is still fetched only on its trigger, so island-site's
+  resource-timing assertions still hold.
+- [ ] 4.3 The islands guide and `STATIC_RENDERING.md` § Status describe the
+  flagged path, and RULE 20 says what it covers.

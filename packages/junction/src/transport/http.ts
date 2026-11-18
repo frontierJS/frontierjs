@@ -9,7 +9,7 @@ import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
 import { WS_PROTOCOL, bearerFromProtocols, withoutBearer, CREDENTIAL_HEADER, CREDENTIAL_CHANGED } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
-import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
+import { parseBody, boundedBody, parseQuery, parseCookies, extractIP, BodyTooLargeError, UnsafeIntegerError } from './body.ts'
 import type { ParsedBody } from './body.ts'
 import { serveStatic }                    from './static.ts'
 import { originRefusal, type CsrfOptions } from './middleware.ts'
@@ -196,6 +196,9 @@ export interface HttpTransportOptions {
   authCookieSecure?: boolean
   powered?:     string     // X-Powered-By header value
   onError?:     (err: unknown, ctx?: TransportContext) => void
+  /** A refusal the caller may never see, such as a stream route's body cut at
+   *  its bound after the handler answered. The app routes it to its logger. */
+  onWarn?:      (message: string, meta: Record<string, unknown>) => void
   /** The app's declared error mappers, read live: a failure before a service
    *  context exists has the transport and no app to ask. */
   errorMappers?: readonly ErrorMapper[]
@@ -493,11 +496,12 @@ export class HttpTransport {
       hostname: hostname ?? this._opts.hostname,
       ...(this._opts.idleTimeout !== undefined ? { idleTimeout: this._opts.idleTimeout } : {}),
       ...(this._opts.tls ? { tls: { cert: Bun.file(this._opts.tls.cert), key: Bun.file(this._opts.tls.key) } } : {}),
-      // Bun refuses a declared length over this before `fetch` runs, with an
-      // empty 413 and no log line, so a `maxBodySize` above its 128 MB default
-      // meant 128 MB (`FJS-3090`). Never lowered below that default: under it
-      // `parseBody` refuses first, and its 413 names the setting.
-      maxRequestBodySize: Math.max(this._opts.maxBodySize ?? 0, BUN_MAX_REQUEST_BODY),
+      // Bun cuts any body past this, a declared one before `fetch` runs with a
+      // bare 413 and a chunked one mid-read, logging neither (`FJS-3090`,
+      // `FJS-4342`). So it sits at or above every bound a route can have, and
+      // the route's own bound refuses first and by name. Never below Bun's
+      // default.
+      maxRequestBodySize: Math.max(this._opts.maxBodySize ?? 0, this.router.largestBodyBound, BUN_MAX_REQUEST_BODY),
 
       fetch:(req, server) => this._handle(req, server),
 
@@ -953,12 +957,19 @@ export class HttpTransport {
     // ── Parse body ─────────────────────────────────────────────────
     // A `{ body: 'stream' }` route is handed `req.body` unread: a parse buffers
     // the whole body before the handler runs, so an upload larger than memory
-    // could not be a route at all (`FJS-D1159`).
+    // could not be a route at all (`FJS-D1159`). Either kind is held to the
+    // route's own bound, or the app's when it states none (`FJS-D2258`).
+    const route   = match.route
+    const label   = `${route.method} ${route.path}`
+    const bound   = route.maxBodySize ?? this._opts.maxBodySize
+    const setting = route.maxBodySize !== undefined ? `the maxBodySize ${label} states` : undefined
     let parsed: ParsedBody
     try {
-      parsed = match.route.body === 'stream'
-        ? { type: 'stream', data: req.body, files: [], size: 0 }
-        : await parseBody(req, this._opts.maxBodySize)
+      parsed = route.body === 'stream'
+        ? { type: 'stream', data: boundedBody(req, bound ?? Infinity, setting ?? 'http.maxBodySize', err => this._warn(
+            'request body cut at its bound', { route: label, limit: err.limit, read: err.size },
+          )), files: [], size: 0 }
+        : await parseBody(req, bound, setting)
     } catch (err) {
       // Only the size bound answers 413. Everything else this can throw is a
       // body the parser could not make sense of, and calling that too large
@@ -1447,8 +1458,15 @@ export class HttpTransport {
 
       $raw: {
         // The parse above spent `req`, so a handler handed it reads nothing.
-        // Rebuilt once, on first ask, from the bytes the parse kept.
+        // Rebuilt once, on first ask, from the bytes the parse kept. A stream
+        // route's original would read past the route's bound.
         get $req() {
+          if (parsed.type === 'stream') {
+            return replayed ??= new Request(req.url, {
+              method: req.method, headers: req.headers, body: parsed.data as ReadableStream | null,
+              signal: req.signal, duplex: 'half',
+            } as RequestInit)
+          }
           if (!parsed.bytes) return req
           return replayed ??= new Request(req.url, {
             method: req.method, headers: req.headers, body: parsed.bytes, signal: req.signal,
@@ -1953,6 +1971,11 @@ export class HttpTransport {
 
   private _errorResponse(err: unknown): Response {
     return errorResponse(err, undefined, { errorMappers: this._opts.errorMappers })
+  }
+
+  private _warn(message: string, meta: Record<string, unknown>): void {
+    if (this._opts.onWarn) { try { this._opts.onWarn(message, meta) } catch {} }
+    else console.warn(`[junction] ${message}`, meta)
   }
 
   private _trackMethod(method: string): void {

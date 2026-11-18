@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-26 services · 22 routes · 8 plugins · prefix (none)
+27 services · 22 routes · 10 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -166,8 +166,8 @@ name when it declares none.
 
 ### `chat`
 
-- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `editHistory`, `remind`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
-- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `editHistory`, `remind`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
+- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
+- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
 - **who may call** —
   - `status` — standing 3 or above — declared `gate: 3`
   - `connect` — standing 3 or above — declared `gate: 3`
@@ -190,8 +190,15 @@ name when it declares none.
   - `statuses` — standing 3 or above — declared `gate: 3`
   - `search` — standing 3 or above — declared `gate: 3`
   - `activity` — standing 3 or above — declared `gate: 3`
+  - `waiting` — standing 3 or above — declared `gate: 3`
+  - `catchUp` — standing 3 or above — declared `gate: 3`
+  - `recap` — standing 3 or above — declared `gate: 3`
   - `editHistory` — standing 3 or above — declared `gate: 3`
   - `remind` — standing 3 or above — declared `gate: 3`
+  - `todoProjects` — standing 3 or above — declared `gate: 3`
+  - `todoLists` — standing 3 or above — declared `gate: 3`
+  - `todoNotes` — standing 3 or above — declared `gate: 3`
+  - `makeTodo` — standing 3 or above — declared `gate: 3`
   - `createSection` — standing 3 or above — declared `gate: 3`
   - `renameSection` — standing 3 or above — declared `gate: 3`
   - `deleteSection` — standing 3 or above — declared `gate: 3`
@@ -301,6 +308,21 @@ name when it declares none.
 | before | `create` | `autoValidate` |
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
+
+### `followUps` · model `FollowUp`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
+- **broadcasts on** — `followUps`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `create` | `followUp` → `autoValidate` |
+| before | `patch` | `onlyCancel` → `autoValidate` |
+| before | `update` | `onlyCancel` → `autoValidate` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
 
 ### `git` · model `git`
 
@@ -648,6 +670,8 @@ In configure order, which is what `requires:` is checked against.
 3. `notifications`
 4. `channels`
 5. `caravan`
-6. `anonymous`
-7. `terminalRoute`
-8. `corsPlugin`
+6. `conduit`
+7. `chat-sync`
+8. `anonymous`
+9. `terminalRoute`
+10. `corsPlugin`

@@ -987,3 +987,87 @@ model Review {
       .rejects.toThrow(/'latest' is @from\(…, first\/last\)/)
   })
 })
+
+// `FJS-D2239`: `this.col` in an @from where: names the row the @from is
+// declared on. Pull 1's head is 'a', Pull 2's 'b' and Pull 3 has none, so a
+// review on another commit, and every review of Pull 3, is not counted.
+describe('an @from where: naming the declaring row as this.col', () => {
+  const SCHEMA = (rules = '', review = '') => `
+model Pull {
+  id          Int      @id
+  title       String?
+  headSha     String?  @map("head_sha")
+  reviews     Review[]
+  approvals   Int      @from(Review, count: true, where: commitSha == this.headSha && approved == true)
+  firstOnHead Review?  @from(Review, first: true, where: commitSha == this.headSha)
+  ${rules}
+}
+model Review {
+  id        Int     @id
+  pullId    Int
+  pull      Pull    @relation(fields: [pullId], references: [id])
+  commitSha String? @map("commit_sha")
+  approved  Boolean @default(false)
+  authorId  Int?
+  ${review}
+}`
+
+  const build = async (rules = '', review = '') => {
+    const db  = await createClient({ schema: SCHEMA(rules, review), db: ':memory:' })
+    const sys = db.asSystem()
+    for (const [id, headSha] of [[1, 'a'], [2, 'b'], [3, null]] as const) await sys.pull.create({ data: { id, headSha } })
+    for (const [id, pullId, commitSha, approved, authorId] of [
+      [1, 1, 'a', true, 7], [2, 1, 'old', true, 8], [3, 1, 'a', true, 8],
+      [4, 2, 'b', true, 7], [5, 2, 'a', true, 7], [6, 3, 'a', true, 7],
+    ] as const) await sys.review.create({ data: { id, pullId, commitSha, approved, authorId } })
+    return { db, sys }
+  }
+  const counts = (rows: any[]) => rows.map(p => [p.id, p.approvals])
+
+  it('a read counts the children on the parent row\'s own column', async () => {
+    const { db, sys } = await build()
+    expect(counts(await sys.pull.findMany({ orderBy: { id: 'asc' } }))).toEqual([[1, 2], [2, 1], [3, 0]])
+    expect((await sys.pull.findMany({ where: { approvals: { gte: 2 } } })).map((p: any) => p.id)).toEqual([1])
+    expect((await sys.pull.findUnique({ where: { id: 2 } })).firstOnHead.id).toBe(4)
+    db.$close()
+  })
+
+  it('a recount under the child\'s read policy still reads the parent\'s column', async () => {
+    const { db } = await build(`@@allow(read, true)`, `@@allow(read, authorId == auth().id)`)
+    const as = (id: number) => db.$setAuth({ id }).pull.findMany({ orderBy: { id: 'asc' } })
+    expect(counts(await as(7))).toEqual([[1, 1], [2, 1], [3, 0]])
+    expect(counts(await as(8))).toEqual([[1, 1], [2, 0], [3, 0]])
+    expect((await as(8)).map((p: any) => p.firstOnHead?.id ?? null)).toEqual([3, null, null])
+    db.$close()
+  })
+
+  it('both halves of a policy read the parent\'s column, and postUpdate the written one', async () => {
+    for (const op of ['update', 'postUpdate']) {
+      const { db, sys } = await build(`@@require(${op}, approvals >= 2)`)
+      const ids = []
+      for (const id of [1, 2, 3]) {
+        try { await sys.pull.update({ where: { id }, data: { title: 'probe' } }); ids.push(id) }
+        catch (e: any) { if (e.constructor.name !== 'AccessDeniedError') throw e }
+      }
+      expect([op, ids]).toEqual([op, [1]])
+      db.$close()
+    }
+    const { db, sys } = await build(`@@require(postUpdate, approvals >= 2)`)
+    // Two approvals on 'a' before the write and none on 'new' after it.
+    await expect(sys.pull.update({ where: { id: 1 }, data: { headSha: 'new' } })).rejects.toThrow(/post-update policy/)
+    expect((await sys.pull.findUnique({ where: { id: 1 } })).headSha).toBe('a')
+    db.$close()
+  })
+
+  it('refused by name: a missing column, a relation, an @from, an encoded column', async () => {
+    const errorsOf = async (where: string, extra = '') => {
+      try { await createClient({ db: ':memory:', schema: SCHEMA(extra).replace(
+        'where: commitSha == this.headSha && approved == true', where) }); return '' }
+      catch (e: any) { return e.message }
+    }
+    expect(await errorsOf('where: commitSha == this.nope')).toContain(`'nope' is not a field on Pull`)
+    expect(await errorsOf('where: commitSha == this.reviews')).toContain(`'this.reviews' is a to-many relation on Pull`)
+    expect(await errorsOf('where: approved == this.approvals')).toContain(`'this.approvals' is @from on Pull`)
+    expect(await errorsOf('where: commitSha == this.token', 'token String? @encrypted')).toContain(`'this.token' is @encrypted on Pull`)
+  })
+})

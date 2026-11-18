@@ -9300,6 +9300,18 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2261"></a>2026-11-18 · `FJS-D2261` — What re-asks a list resource's `load()` that failed, when the socket stays up and nothing reconnects — The list resource retries a failed load itself, on the reconnect's backoff (`reconnectDelay` to `reconnectMax`, jittered as `FJS-701`'s reload is). It retries a network failure or a 5xx/503 and stops on a 4xx, which asking again will not change. A newer load or `dispose()` ends the retry. Every caller gets it without code of its own. Precedent: TanStack Query and SWR retry with backoff by default, and SWR skips a 404.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no timer: a list whose last load failed refetches on the next signal it hears (a push, `connected`, `online`, `visibilitychange`). Cheaper, but a quiet room stays empty), **C** (junction does not retry. The list exposes `error()` and `refresh()` as a single-row view does, and Sierra's `tethered()` or the screen offers a retry. Precedent: Apollo and RTK Query retry only when the caller opts in).
+
+The paper's recommendation, taken as written: the list already owns the re-ask for a reconnect, and this is the same gap reached a different way. A transient refusal during boot is the case where retrying is correct.
+
+### <a id="fjs-d2258"></a>2026-11-18 · `FJS-D2258` — What bounds the body of a `{ body: 'stream' }` route, and what does a stream route that states no bound get — B with B2.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked as the recommendation qualifies it (*B with B2*) over **A** (the runtime ceiling goes unbounded. `parseBody` already bounds declared and chunked bodies on every buffered route, and a stream route is bounded only by its handler, which is what the docs say now. This rewrites `FJS-D1159`'s derived and failure clauses, and an overrun becomes silent by design), **C** (keep the code and correct the docs: an app raises `http.maxBodySize` app-wide. That is `FJS-3132`'s complaint, since login, every service and every socket frame inherit the bound).
+
+B with B2: every route is bounded by maxBodySize, its own if it states one, otherwise the app's; an overrun on a stream route is a 413 that logs naming the route, and existing stream routes (basecamp archive upload/pull, workbench chat files and app, Anvil's git route) state their own bound.
+
 ### <a id="fjs-d2256"></a>2026-11-17 · `FJS-D2256` — Does a list that judges rows (a `match` function) take in pushed rows before it has asked its first question — No: a judged list holds no pushed row until a query is issued; a list with no `match` is unchanged, and the first load returns the rows anyway.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep the rule and make Sierra send and retry a list's load sooner; the gap still admits any row).
@@ -14507,6 +14519,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2260"></a>2026-11-18 · `FJS-D2260` — Q7 — Under one page root, how much does a mismatch replace — The smallest enclosing block. Clear and re-render the nearest `if`, `each`, `await` or component range around the bad binding, inside the page's one owner tree. Fall back to the whole page when there is no such range, and name the binding in the dev overlay.
+
+Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) § Open questions. **A** was picked over **B** (The whole page, as Q6 reads today), **C** (A, plus rewriting a lone text or attribute binding in place).
+
+The paper's recommendation, taken as written: It guesses no more than Q6 allows, because it replaces a range known to be wrong. It keeps a phone's viewport mismatch to one block. C is an optimization to price once A exists.
+
+### <a id="fjs-d2259"></a>2026-11-18 · `FJS-D2259` — Where does a draggable pane edge live, and does it remember its width — `@frontierjs/ui` exports one resizable-edge helper over `drag()`: clamp, Arrow, Shift+Arrow, Home, End, a double-click reset, and `role="separator"` with `aria-value*`. It stores nothing; an app remembers the width in its own line over `onchange`, so `FJS-D1654` and `FJS-D1661` stand. Drawer adopts first, then Window, workbench, remnant and lathe.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A plus a `storageKey` option or a `persisted(key, initial)` helper, reopening `FJS-D1661`'s C now that two apps remember the width. Cost: the kit's first storage write, carried for lathe and dragonfly, which remember nothing), **C** (leave each copy where it is. Cost: five drifting sets of keys, listeners and resets).
+
+The paper's recommendation, taken as written: `drag()` is already the gesture's owner and names splitters, and the copies differ only by drift. B's case is one line an app already writes, which is the reason `FJS-D1661` gave. Workbench adopts only after a drive of the helper on its strip, because `resize.js:32-33` says pointer capture on a 6px strip saw no move; if that holds, the fix is in `drag()`.
+
 ### <a id="fjs-d2225"></a>2026-11-16 · `FJS-D2225` — How does `{#virtual each}` take a huge source without copying — A declared lazy source `{ length, at(i) }` read only for the visible window, never copied; a real array still works.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (pin the Proxy-over-array form as supported, with a test).
@@ -17826,6 +17850,28 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2265"></a>2026-11-18 · `FJS-D2265` — In Workbench, 37signals Basecamp is `bc3`: `providers/bc3/`, `app.bc3`, and `BC3_ACCOUNT_ID`, `BC3_TOKEN`, `BC3_API_ORIGIN`.
+
+Ruled by the owner while 6.5 of [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) was built. Workbench's `BASECAMP` env var and `basecamps.json` already mean the FrontierJS Basecamp, so the connector's own `BASECAMP_TOKEN` would read as the wrong product there; the token is renamed through `basecampTargets({ ref: 'BC3_TOKEN' })`. Picked over keeping the connector's names with a comment, and over `signals`, which reads as reactive signals in a UI framework. The connector's README and Intake keep `BASECAMP_TOKEN`.
+
+### <a id="fjs-d2264"></a>2026-11-18 · `FJS-D2264` — Q10 — how Workbench reaches Basecamp — `conduit-37signals`, through `app.conduit.send()`.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (a shell-out to the `basecamp` CLI the owner is already signed into).
+
+The paper's recommendation, taken as written: a drive runs it on the connector's sink, as every Messages verb was proved; its live grant is the 37signals plan's 5.2, which Intake waits on too.
+
+### <a id="fjs-d2263"></a>2026-11-18 · `FJS-D2263` — Q9 — when a catch-up recap runs — On demand: a button per channel or thread on the catch-up feed, and nothing is sent until it is pressed.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (also a scheduled morning digest of overnight unreads, pushed through ntfy).
+
+The paper's recommendation, taken as written: the member chooses each time what leaves the machine, and a digest can follow once recaps prove worth reading.
+
+### <a id="fjs-d2262"></a>2026-11-18 · `FJS-D2262` — Q8 — task-from-post, reopened for Basecamp — A post becomes a Basecamp to-do in a project and list picked at the time, the post's permalink in its notes.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (stays gone, as `FJS-D2215` ruled).
+
+The paper's recommendation, taken as written: the team's work lives in Basecamp, a target neither of Q7's options named.
 
 ### <a id="fjs-d2255"></a>2026-11-17 · `FJS-D2255` — Q2 — Does it ship before the extension's first marketplace publish — Yes, in 0.1.x.
 

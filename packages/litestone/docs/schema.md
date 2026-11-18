@@ -211,6 +211,16 @@ rows are out. That matches `include: { _count: true }` over the same relation.
 The two flags opt back in independently, and an explicit `where:` composes on
 top of whichever filters remain.
 
+A bare name in `where:` is a column of the target row being counted. **`this.col`
+is a column of the row the `@from` is declared on** (`FJS-D2239`), so *approvals
+on the current head* is
+`approvals Int @from(Review, count: true, where: commitSha == this.headCommitSha && approved)`.
+A null parent column counts nothing, as every comparison with null does. The
+policy recount, a `@@require` reading the field, and a screen previewing a draft
+all read the same parent column. Refused by name: a field the declaring model
+lacks, a relation (name its foreign key), a `@from`, an `@encrypted`, `@hashed`
+or `@secret` column on either side, and `x in this.col`.
+
 The target may join through an implicit many-to-many: `Task { messages Message[] }`
 with `@from(Message, count: true)` counts the messages on the task, through the
 join table. Only the aggregate forms read across one — `first`/`last` is refused,

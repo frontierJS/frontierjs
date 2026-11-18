@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-27 definitions · 21 models · 6 enums · 0 other
+29 definitions · 22 models · 7 enums · 0 other
 ```
 
 ## Definitions
@@ -44,6 +44,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `SavedPost` | model |
 | `ChatSection` | model |
 | `ScheduledPost` | model |
+| `FollowUp` | model |
 | `ChatGroup` | model |
 | `QuietSchedule` | model |
 | `ComputeProvider` | enum |
@@ -52,6 +53,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Presence` | enum |
 | `SectionKind` | enum |
 | `ScheduledPostStatus` | enum |
+| `FollowUpStatus` | enum |
 
 ## Enums
 
@@ -64,6 +66,7 @@ validates, and a select that silently drops an option.
 - `Presence` — `online`, `away`, `offline`, `dnd`
 - `SectionKind` — `favorites`, `channels`, `direct`, `custom`
 - `ScheduledPostStatus` — `scheduled`, `sent`, `failed`, `cancelled`
+- `FollowUpStatus` — `pending`, `raised`, `cleared`, `cancelled`
 
 ## Models
 
@@ -461,6 +464,21 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `sentAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — `channelExternalId`, `sendAt` · not accepted — `id`
+
+### `FollowUp`
+
+- gate `read:3 create:3 update:3 delete:3` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `memberId` | `integer` | — | — | `x-litestone-kind` | — |
+| `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `postExternalId` | `string` | yes | — | — | — |
+| `remindAt` | `string` | yes | — | `format: "date-time"` | — |
+| `status` | `FollowUpStatus` = `"pending"` | — | — | — | — |
+
+**On create**: required — `postExternalId`, `remindAt` · not accepted — `id`
 
 ### `ChatGroup`
 

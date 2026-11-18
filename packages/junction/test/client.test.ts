@@ -620,7 +620,7 @@ describe('client.resource()', () => {
   })
 
   it('a load that failed still filters by the query it asked (FJS-4425)', async () => {
-    const { service, tether, load } = makeClient().resource('items', { match: matchStatus })
+    const { service, tether, load, dispose } = makeClient().resource('items', { match: matchStatus })
     const original = stubbable.fetch
     stubbable.fetch = (async () => { throw new TypeError('connection refused') }) as unknown as typeof fetch
     try { await load({ status: 'active' }).catch(() => {}) }
@@ -629,6 +629,49 @@ describe('client.resource()', () => {
     service._receive('created', { id: '1', status: 'active' })
     service._receive('created', { id: '2', status: 'draft' })
     expect(tether.get()).toEqual([{ id: '1', status: 'active' }])
+    dispose()
+  })
+
+  // A list whose load went unanswered held only what was pushed after it until
+  // a reconnect or reload, and the socket's first connect is not a reconnect
+  // (FJS-4437).
+  it('a load the server did not answer is asked again (FJS-4437)', async () => {
+    const client = createJunctionClient({ url: 'http://localhost:3000', timeout: 5_000, reconnectDelay: 1 })
+    const { tether, load, dispose } = client.resource('items', { match: matchStatus })
+    const original = stubbable.fetch
+    stubbable.fetch = (async () => { throw new TypeError('connection refused') }) as unknown as typeof fetch
+    try { await load({ status: 'active' }).catch(() => {}) }
+    finally { stubbable.fetch = original }
+
+    const { restore } = mockFetch({ kind: 'list', object: 'items', data: [{ id: '1', status: 'active' }], total: 1 })
+    await new Promise((r) => setTimeout(r, 20))
+    restore()
+    dispose()
+    expect(tether.get()).toEqual([{ id: '1', status: 'active' }])
+  })
+
+  it('a failed load a later one answered is not asked again (FJS-4437)', async () => {
+    const client = createJunctionClient({ url: 'http://localhost:3000', timeout: 5_000, reconnectDelay: 5 })
+    const { load } = client.resource('items', { match: matchStatus })
+    const failing = mockFetch({ name: 'Unavailable', message: 'booting' }, 503)
+    await load({ status: 'active' }).catch(() => {})
+    failing.restore()
+
+    const { restore, mock: m } = mockFetch({ kind: 'list', object: 'items', data: [], total: 0 })
+    await load({ status: 'active' })
+    await new Promise((r) => setTimeout(r, 30))
+    restore()
+    expect(m.mock.calls).toHaveLength(1)
+  })
+
+  it('a load the server refused is not asked again (FJS-4437)', async () => {
+    const client = createJunctionClient({ url: 'http://localhost:3000', timeout: 5_000, reconnectDelay: 1 })
+    const { load } = client.resource('items', { match: matchStatus })
+    const { restore, mock: m } = mockFetch({ name: 'Forbidden', message: 'no' }, 403)
+    await load({ status: 'active' }).catch(() => {})
+    await new Promise((r) => setTimeout(r, 20))
+    restore()
+    expect(m.mock.calls).toHaveLength(1)
   })
 
   it('an undecidable record reloads instead of being guessed at', async () => {

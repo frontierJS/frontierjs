@@ -29,9 +29,18 @@
 //   statuses    presence of the people on screen, read now { profileExternalIds }
 //   search      posts matching { terms }, landed -> { postExternalIds, matches }
 //   activity    -> { mentions: postExternalIds, threads: rootExternalIds }
+//   waiting     -> { onMe: postExternalIds, onOthers: [{ postExternalId, followUpId, remindAt }] },
+//               read from the mirror alone (`domain/chat/waiting.ts`)
+//   catchUp     -> { groups: [{ key, channelExternalId, rootExternalId, since, postExternalIds, more }] },
+//               the unread posts per room and followed thread (`domain/chat/catchup.ts`)
+//   recap       one group's unread posts since `since` summarized by a tool-less `claude -p`
+//               { channelExternalId, rootExternalId?, since } -> { text, posts, omitted }; held nowhere
 //   editHistory the caller's own post's earlier versions { postExternalId }
 //               -> { versions: [{ message, editedAt }] }, newest first
 //   remind      the server messages the caller about a post { postExternalId, at }
+//   todoProjects / todoLists { projectId }  Basecamp's projects and a project's to-do lists -> { projects | lists: [{ id, name }] }
+//   todoNotes   { postExternalId } -> { notes }: the permalink, which is all a to-do carries
+//   makeTodo    { postExternalId, projectId, listId, title } -> { id, appUrl }; 503 when Basecamp is not configured
 //   createSection   { teamExternalId, name, channelExternalIds? } -> the ChatSection row
 //   renameSection   { sectionExternalId, name } -> the row
 //   deleteSection   { sectionExternalId }; a system section is the server's 400
@@ -47,13 +56,17 @@
 // channel of the profile named. The server answering the token IS the check
 // that this member holds that profile, so nothing here takes a profile id.
 
-import { createService } from '@frontierjs/junction'
+import { createService, $ } from '@frontierjs/junction'
+import { waiting } from '../../domain/chat/waiting.ts'
+import { catchUp, recap } from '../../domain/chat/catchup.ts'
+import { env } from '../../core/env.ts'
 import type { App, ServiceContext } from '@frontierjs/junction'
 import { LEVELS } from '@frontierjs/litestone'
 import {
   activityAs, browseAs, chatOn, createSectionAs, deleteDraftAs, deleteSectionAs, editHistoryAs, isSectionId, moveToSectionAs, remindAs, renameSectionAs, reorderSectionsAs, favoriteAs, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs,
-  saveAs, saveDraftAs, savedAs, searchAs, setCustomStatusAs, setStatusAs, statusesAs, sysOf, unlisten, viewAs,
+  saveAs, saveDraftAs, savedAs, searchAs, setCustomStatusAs, setStatusAs, statusesAs, sysOf, unlisten, viewAs, permalinkOf,
 } from '../../providers/chat/index.ts'
+import { kindOf, listsOf, makeTodo, projectsOf, todosOn } from '../../providers/bc3/index.ts'
 
 type Ctx = ServiceContext & { app: App }
 
@@ -122,6 +135,26 @@ const idsOf = (ctx: Ctx, key: string, max: number): string[] => {
 const refused = (what: string, kind: string) =>
   fail(kind === 'forbidden' ? 403 : kind === 'not_found' || kind === 'gone' ? 404 : kind === 'refused' ? 400 : 502, `chat.${what}: the chat server refused (${kind})`)
 
+/** Basecamp's refusal as this app's status; the kind is all the caller is told. */
+const todoRefused = (what: string, e: Parameters<typeof kindOf>[0]) => {
+  const kind = kindOf(e)
+  return fail(kind === 'forbidden' ? 403 : kind === 'gone' ? 404 : kind === 'refused' ? 400 : kind === 'rate_limited' ? 429 : 502, `chat.${what}: Basecamp refused (${kind})`)
+}
+const todosReady = (ctx: Ctx) => {
+  if (!todosOn(ctx.app)) throw fail(503, 'chat: Basecamp is not configured on this machine (BC3_ACCOUNT_ID, BC3_TOKEN)')
+}
+const wholeOf = (ctx: Ctx, key: string): number => {
+  const v = dataOf(ctx)[key]
+  if (!Number.isSafeInteger(v) || (v as number) < 1) throw fail(400, `chat: ${key} is a Basecamp id`)
+  return v as number
+}
+/** A post the caller can read, by the row policy; one they cannot is the same 404 as one that is not there. */
+async function readablePost (ctx: Ctx) {
+  const post = await $.db.post.findFirst({ where: { externalId: idOf(ctx, 'postExternalId')! }, select: { externalId: true, channelExternalId: true } })
+  if (!post) throw fail(404, 'chat: that post is not here')
+  return post as { externalId: string, channelExternalId: string }
+}
+
 const sectionNameOf = (ctx: Ctx): string => {
   const name = textOf(ctx, 'name', 22).trim()
   if (!name) throw fail(400, 'chat: name is the section\'s name')
@@ -158,8 +191,15 @@ export default createService({
     { method: 'statuses',   gate: LEVELS.CREATOR, read: true },
     { method: 'search',     gate: LEVELS.CREATOR, read: true },
     { method: 'activity',   gate: LEVELS.CREATOR, read: true },
+    { method: 'waiting',    gate: LEVELS.CREATOR, read: true },
+    { method: 'catchUp',    gate: LEVELS.CREATOR, read: true },
+    { method: 'recap',      gate: LEVELS.CREATOR, read: true },
     { method: 'editHistory', gate: LEVELS.CREATOR, read: true },
     { method: 'remind',     gate: LEVELS.CREATOR },
+    { method: 'todoProjects', gate: LEVELS.CREATOR, read: true },
+    { method: 'todoLists',    gate: LEVELS.CREATOR, read: true },
+    { method: 'todoNotes',    gate: LEVELS.CREATOR, read: true },
+    { method: 'makeTodo',     gate: LEVELS.CREATOR },
     { method: 'createSection',   gate: LEVELS.CREATOR },
     { method: 'renameSection',   gate: LEVELS.CREATOR },
     { method: 'deleteSection',   gate: LEVELS.CREATOR },
@@ -172,7 +212,7 @@ export default createService({
     const profile = m?.profileExternalId
       ? await sysOf(ctx.app).profile.findUnique({ where: { externalId: m.profileExternalId }, select: { username: true } })
       : null
-    return { server: chatOn(ctx.app), profileExternalId: m?.profileExternalId ?? null, username: profile?.username ?? null, syncedAt: m?.chatSyncedAt ?? null }
+    return { server: chatOn(ctx.app), todos: todosOn(ctx.app), profileExternalId: m?.profileExternalId ?? null, username: profile?.username ?? null, syncedAt: m?.chatSyncedAt ?? null }
   },
 
   async connect (ctx: Ctx) {
@@ -373,6 +413,28 @@ export default createService({
     return r
   },
 
+  // The mirror holds every post this member can see, so nothing here asks the server; the
+  // caller's own client reads, and Post's and Channel's policies grade it.
+  async waiting (ctx: Ctx) {
+    return waiting($.db, await callerProfile(ctx))
+  },
+
+  async catchUp (ctx: Ctx) {
+    return catchUp($.db, await callerProfile(ctx))
+  },
+
+  // The one place a post's text leaves for Claude, and only on a press: nothing is kept.
+  async recap (ctx: Ctx) {
+    const profile = await callerProfile(ctx)
+    const channel = idOf(ctx, 'channelExternalId')!
+    const root = idOf(ctx, 'rootExternalId', true)
+    const since = textOf(ctx, 'since', 40)
+    if (!Number.isFinite(Date.parse(since))) throw fail(400, 'chat.recap takes { since }, a time')
+    const r = await recap($.db, profile, { channelExternalId: channel, rootExternalId: root, since }, env.CLAUDE_BIN)
+    if ('empty' in r) return { text: '', posts: 0, omitted: 0 }
+    return r
+  },
+
   async editHistory (ctx: Ctx) {
     serverOn(ctx)
     await callerProfile(ctx)
@@ -389,6 +451,41 @@ export default createService({
     const r = await remindAs(ctx.app, profile, post, at)
     if (r.error) throw refused('remind', r.error.kind)
     return { postExternalId: post, at }
+  },
+
+  async todoProjects (ctx: Ctx) {
+    todosReady(ctx)
+    const r = await projectsOf(ctx.app)
+    if (!('rows' in r)) throw todoRefused('todoProjects', r.error)
+    return { projects: r.rows }
+  },
+
+  async todoLists (ctx: Ctx) {
+    todosReady(ctx)
+    const r = await listsOf(ctx.app, wholeOf(ctx, 'projectId'))
+    if (!('rows' in r)) throw todoRefused('todoLists', r.error)
+    return { lists: r.rows }
+  },
+
+  // The notes a to-do made from this post will carry: the permalink and nothing else.
+  async todoNotes (ctx: Ctx) {
+    todosReady(ctx); serverOn(ctx)
+    const link = await permalinkOf(ctx.app, await readablePost(ctx))
+    if (!link) throw fail(409, 'chat: no team is mirrored yet, so the post has no address')
+    return { notes: link }
+  },
+
+  // Built only from what the dialog sent and the address computed here; the post's own text is never read.
+  async makeTodo (ctx: Ctx) {
+    todosReady(ctx); serverOn(ctx)
+    const title = textOf(ctx, 'title', 255).trim()
+    if (!title) throw fail(400, 'chat.makeTodo takes a title')
+    const projectId = wholeOf(ctx, 'projectId'), listId = wholeOf(ctx, 'listId')
+    const link = await permalinkOf(ctx.app, await readablePost(ctx))
+    if (!link) throw fail(409, 'chat: no team is mirrored yet, so the post has no address')
+    const r = await makeTodo(ctx.app, { projectId, listId, title, notes: link })
+    if (!r.row) throw todoRefused('makeTodo', r.error)
+    return r.row
   },
 
   async createSection (ctx: Ctx) {

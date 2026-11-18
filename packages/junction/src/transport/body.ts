@@ -87,16 +87,60 @@ export interface ParsedBody {
  * `catch` that answered 413, which is a lie about every malformed request.
  */
 export class BodyTooLargeError extends Error {
+  readonly status = 413
   readonly limit: number
   readonly size:  number
-  constructor(limit: number, size: number) {
+  constructor(limit: number, size: number, setting = 'http.maxBodySize') {
     // Names the setting, because the reader of a 413 is the one who has to
     // raise it: a file sent inline over JSON meets this bound (FJS-D666).
-    super(`Request body exceeds ${limit} bytes; an app that takes larger bodies raises http.maxBodySize`)
+    super(`Request body exceeds ${limit} bytes; an app that takes larger bodies raises ${setting}`)
     this.name  = 'BodyTooLargeError'
     this.limit = limit
     this.size  = size
   }
+}
+
+/**
+ * A stream route's body, held to its bound (`FJS-D2258`).
+ *
+ * A declared length past the bound throws here, before the handler runs. An
+ * undeclared one is counted as the handler pulls it: the read that passes the
+ * bound cancels the sender and errors the stream with a `BodyTooLargeError`,
+ * which a handler that lets it propagate answers as a 413. `onOverrun` is told
+ * either way, because a handler that answered before reading to the end — a
+ * streamed response — has no status left to say it with.
+ */
+export function boundedBody(
+  req:       Request,
+  maxSize:   number,
+  setting:   string,
+  onOverrun: (err: BodyTooLargeError) => void,
+): ReadableStream<Uint8Array> | null {
+  const declaredLength = parseInt(req.headers.get('content-length') ?? '', 10)
+  if (Number.isFinite(declaredLength) && declaredLength > maxSize) {
+    throw new BodyTooLargeError(maxSize, declaredLength, setting)
+  }
+  const source = req.body
+  if (!source) return null
+
+  const reader = source.getReader()
+  let total = 0
+  return new ReadableStream<Uint8Array>({
+    async pull(c) {
+      const { done, value } = await reader.read()
+      if (done) { c.close(); return }
+      total += value.byteLength
+      if (total > maxSize) {
+        try { await reader.cancel() } catch {}
+        const err = new BodyTooLargeError(maxSize, total, setting)
+        onOverrun(err)
+        c.error(err)
+        return
+      }
+      c.enqueue(value)
+    },
+    cancel(reason) { return reader.cancel(reason) },
+  }, { highWaterMark: 0 })
 }
 
 /**
@@ -170,13 +214,13 @@ export function firstUnsafeInteger(text: string): string | null {
  * can measure it: 8 MB read whole, then a 413 about memory already spent, with
  * the runtime's own default as the real ceiling.
  *
- * Bun's `maxRequestBodySize` does not close it — measured, that option compares
- * the DECLARED length and a chunked body passes it untouched, which is the same
- * blind spot one layer down. So the read is bounded here, where the limit is
- * known, and the stream is cancelled the moment it goes past: the sender is
- * told to stop rather than allowed to finish into a buffer that is discarded.
+ * Bun's `maxRequestBodySize` is the server's ceiling, sized to the largest
+ * route bound, so it does not close it for a route bounded below that. The read
+ * is bounded here, where the route's limit is known, and the stream is cancelled
+ * the moment it goes past: the sender is told to stop rather than allowed to
+ * finish into a buffer that is discarded.
  */
-async function readBounded(req: Request, maxSize: number): Promise<ArrayBuffer> {
+async function readBounded(req: Request, maxSize: number, setting?: string): Promise<ArrayBuffer> {
   const stream = req.body
   if (!stream) return await req.arrayBuffer()
 
@@ -193,7 +237,7 @@ async function readBounded(req: Request, maxSize: number): Promise<ArrayBuffer> 
         // Cancelling can reject on a stream the peer has already torn down,
         // and that must not replace the refusal the caller is owed.
         try { await reader.cancel() } catch {}
-        throw new BodyTooLargeError(maxSize, total)
+        throw new BodyTooLargeError(maxSize, total, setting)
       }
       chunks.push(value)
     }
@@ -220,8 +264,9 @@ function toArrayBuffer(v: Uint8Array): ArrayBuffer {
 // ─── Main entry point ─────────────────────────────────────────────────────
 
 export async function parseBody(
-  req:     Request,
-  maxSize: number = MAX_BODY_SIZE
+  req:      Request,
+  maxSize:  number = MAX_BODY_SIZE,
+  setting?: string,
 ): Promise<ParsedBody> {
 
   const method = req.method.toUpperCase()
@@ -258,14 +303,14 @@ export async function parseBody(
   const declaredLength = parseInt(req.headers.get('content-length') ?? '', 10)
   const declared       = Number.isFinite(declaredLength)
   if (declared && declaredLength > maxSize) {
-    throw new BodyTooLargeError(maxSize, declaredLength)
+    throw new BodyTooLargeError(maxSize, declaredLength, setting)
   }
 
   let buffer: ArrayBuffer
   try {
     // Declared and within the limit: one allocation, no chunk walk. Undeclared
     // — a chunked body — is read incrementally and abandoned at the bound.
-    buffer = declared ? await req.arrayBuffer() : await readBounded(req, maxSize)
+    buffer = declared ? await req.arrayBuffer() : await readBounded(req, maxSize, setting)
   } catch (err) {
     if (err instanceof BodyTooLargeError) throw err
     return { type: 'empty', data: null, files: [], size: 0 }
@@ -273,7 +318,7 @@ export async function parseBody(
 
   const size = buffer.byteLength
   if (size > maxSize) {
-    throw new BodyTooLargeError(maxSize, size)
+    throw new BodyTooLargeError(maxSize, size, setting)
   }
 
   // ── JSON ────────────────────────────────────────────────────────────

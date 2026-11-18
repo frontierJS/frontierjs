@@ -20,6 +20,8 @@ title: Messages
   import TypingLine from '../../../components/chat/TypingLine.mesa'
   import ThreadPane from '../../../components/chat/ThreadPane.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import { keptWidth, keepWidth } from '../../../lib/resize.js'
+  import { resizeHandle } from '@frontierjs/ui/resize'
 
   const lists = getLists()
   // Read once: the router remounts this page when the id changes, and on the way to
@@ -67,6 +69,18 @@ title: Messages
     } catch (e) { error = e.message }
   }
   const closeThread = () => goto(`/messages/${id}/`)
+
+  // The thread pane's width, dragged from its left edge and kept per browser.
+  // Its handle is on the pane's left edge, so a drag left widens it.
+  const PANE = { key: 'workbench.messages.threadWidth', initial: 400, min: 280, max: 760 }
+  let resizing = false
+  let threadWidth = keptWidth(PANE.key, PANE)
+  const paneEdge = () => ({
+    size: threadWidth, set: (w) => { threadWidth = w }, min: PANE.min, max: PANE.max, step: 10, grows: -1,
+    start: () => { resizing = true },
+    end: (w) => { resizing = false; keepWidth(PANE.key, w) },
+    reset: () => { threadWidth = PANE.initial; keepWidth(PANE.key, null) },
+  })
   const sent = () => { if (id in chat.held) { release(id); markRead(id).catch(e => { error = e.message }) } }
 
   // A post landing while the reader is looking at the channel is read; one that
@@ -85,7 +99,7 @@ title: Messages
 {#if missing}
   <div class="room-missing"><Alert tone="danger">No such channel, or not one you can read.</Alert></div>
 {:else if channel}
-  <div class="room" class:has-thread={!!threadId} data-channel-page={id}>
+  <div class="room" class:has-thread={!!threadId} class:resizing={resizing} style:--thread-side={threadWidth + 'px'} data-channel-page={id}>
     <div class="room-col">
       <RoomHeader {channel} {members} {people} {self} muted={!!counts[id]?.muted} {favorite} inRoom={id in counts} onjump={jump} onleave={leave} />
       {#if error}<Alert tone="danger">{error}</Alert>{/if}
@@ -94,6 +108,8 @@ title: Messages
       <Composer channelId={id} placeholder={`Message ${channelLabel(channel, people, self).slice(2)}`} onsent={sent} />
     </div>
     {#if threadId}
+      <div class="thread-resize" aria-label="Resize the thread" title="Drag to resize, double-click to reset"
+           data-thread-resize {@attach resizeHandle(paneEdge)}></div>
       <ThreadPane {channel} rootId={threadId} {people} label={channelLabel(channel, people, self)} onclose={closeThread} />
     {/if}
   </div>
@@ -104,12 +120,17 @@ title: Messages
 <style>
   .room-missing { padding: var(--space-2xl); }
   /* One reading column, however wide the window: the header, the posts and the composer each pad their sides out to it. */
-  .room { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
-  .room.has-thread { grid-template-columns: minmax(0, 1fr) minmax(0, calc(var(--space-2xl) * 9)); }
+  .room { position: relative; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-block-size: 0; }
+  .room.has-thread { grid-template-columns: minmax(0, 1fr) var(--thread-side, 400px); }
+  .room.resizing { cursor: col-resize; user-select: none; }
+  /* Out of the grid flow so it adds no column: a strip straddling the pane's left edge. */
+  .thread-resize { position: absolute; inset-block: 0; inset-inline-end: calc(var(--thread-side, 400px) - 3px); inline-size: 6px; cursor: col-resize; z-index: 2; touch-action: none; }
+  .thread-resize:hover, .thread-resize:focus-visible, .room.resizing .thread-resize { background: var(--ring-color); opacity: 0.6; outline: none; }
   .room-col { --chat-gutter: max(var(--space-2xl), calc((100% - var(--container-narrow)) / 2)); display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; }
   .room.has-thread .room-col { --chat-gutter: var(--space-lg); }
   @media (max-width: 960px) {
     .room.has-thread { grid-template-columns: minmax(0, 1fr); }
     .room.has-thread > .room-col { display: none; }
+    .thread-resize { display: none; }
   }
 </style>

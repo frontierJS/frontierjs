@@ -1,0 +1,7 @@
+<script module>
+  // src/resources/FollowUp.mesa -- the person's own "remind me if nobody replies" nudges (local to this laptop; a job on the API raises the bell row at the time, unless someone answered first).
+  // Written through the `followUps` service itself; no chat server is involved.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const followUps = createResource('followUps', { model: 'FollowUp' })
+</script>

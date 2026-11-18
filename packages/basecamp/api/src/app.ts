@@ -66,6 +66,7 @@ import { sweepStuckReleases }        from './domain/release/release-record.ts'
 import restoreReconcile              from './jobs/restore-reconcile.job.ts'
 import { pushAppsOn }                from './jobs/domain-dns.job.ts'
 import { syncReplicasOn }            from './jobs/replicate-sync.job.ts'
+import { MAX_UPLOAD_BYTES }          from './jobs/backup-run.job.ts'
 import { workspaceChannelName, workspaceIdFromChannel, notificationChannelName } from './core/channels.ts'
 
 import type { App }         from '@frontierjs/junction'
@@ -829,7 +830,7 @@ export async function buildBasecampApp(
         rmSync(tarball, { force: true })
         staging = false
       }
-    }, { body: 'stream' })
+    }, { body: 'stream', maxBodySize: MAX_UPLOAD_BYTES })
 
     // POST /setup — first-run bootstrap: account + user + workspace + membership.
     a.post('/setup', async (ctx) => {

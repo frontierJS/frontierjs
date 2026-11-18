@@ -1250,7 +1250,8 @@ export function createApp(opts: AppOptions = {}): App {
       // errors were the lines a log query could not reach.
       logger.error('http error', err)
       events.emit('error', err)
-    }
+    },
+    onWarn:      (message, meta) => logger.warn(message, meta),
   })
 
   // ── Plugin registry ──────────────────────────────────────────────────
