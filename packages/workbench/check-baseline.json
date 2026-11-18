@@ -2,8 +2,6 @@
   "//": "One number per fli check rule id — the count that may never rise. Absent = 0 = clean. `fli check --update` locks in an improvement and cannot raise; `fli check --adopt` records what is there, which is the verb for taking debt on. The findings still print either way.",
   "//css-class-collision": "Three. .field in atlas/decide and .cluster in workbench/index were inherited from basecamp with the move. .screen in routes/_module.mesa is the kit's own Screen element: on a phone it drops the Screen's side pad, which stacked with the container's to 40px a side.",
   "css-class-collision": 3,
-  "//gate-unreachable": "One: the three Claude models keep @@gate(5.8) and the one Member's session grades ADMINISTRATOR by `isAdmin` in api/src/auth.ts. The rule reads an isAdmin column or a getLevel resolver and cannot see a session field, so the finding is the rule's blind spot, not a wall.",
-  "gate-unreachable": 1,
   "//package-model-drift": "One: db/schema.lite's Notification.userId is Int with a relation to Member, where @frontierjs/notifications' fragment says String for auth's uuid ids. Workbench has no auth package and Member.id is Int; the drift is the one column, on purpose (IDEAS/workbench-package.md 3.2).",
   "package-model-drift": 1,
   "//polymorphic-subject": "One: Notification.subjectType is the fragment's bare String; the one kind Workbench sends (AutopilotReport) has no subject row to point at.",
@@ -11,6 +9,11 @@
   "//service-as-system": "One: api/src/domain/job/job-context.ts runs a job as the app through asSystem(). Workbench has one Member and no tenancy, so there is no other user's row to cross; the job runs as the machine's owner.",
   "service-as-system": 1,
   "allow": {
+    "boolean-prefix:db/schema.lite:ChannelMember.muted": "A @@mirror column the chat sync fills from conduit-mattermost's mirror, whose muted reads Mattermost's notify_props.mark_unread. A mirror keeps its source's names, so a rename belongs in the connector, not here.",
+    "boolean-prefix:db/schema.lite:Profile.statusManual": "A @@mirror column the chat sync fills from conduit-mattermost's StatusRow.manual (Mattermost's manual status flag). A mirror keeps its source's names, so a rename belongs in the connector, not here.",
+    "boolean-prefix:db/schema.lite:Team.allowOpenInvite": "A @@mirror column the chat sync fills from conduit-mattermost's mirror, which keeps Mattermost's allow_open_invite as allowOpenInvite. A mirror keeps its source's names, so a rename belongs in the connector, not here.",
+    "service-as-system:api/src/domain/chat/followup.ts": "Correct: raiseDue runs only from the chat-followup job, a cron with no caller. Each FollowUp row names the member it belongs to, and the notice goes to that member alone.",
+    "service-as-system:api/src/domain/chat/scheduled.ts": "Correct: sendDue runs only from the chat-scheduled job, a cron with no caller. It claims each due ScheduledPost and sends it through posts.create as the row's own member, on that member's chat token.",
     "test-port-literal:api/test/workbench.test.ts": "8020 and 8120 are fixture values asserting that createWorkbench passes an env PORT through; the test binds nothing. Inherited from basecamp's baseline with the move (IDEAS/workbench-package.md 2.1)."
   }
 }

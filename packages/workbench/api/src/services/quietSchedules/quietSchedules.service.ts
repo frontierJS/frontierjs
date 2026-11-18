@@ -1,8 +1,8 @@
 // QuietSchedule -- local to this laptop: the caller's own row, one per member.
 // Read with find; the first write is create, every later one a patch.
 //
-//   create { enabled?, days?, fromMinute, toMinute, timezone } -> the row
-//   patch  { enabled?, days?, fromMinute?, toMinute?, timezone? }
+//   create { isEnabled?, days?, fromMinute, toMinute, timezone } -> the row
+//   patch  { isEnabled?, days?, fromMinute?, toMinute?, timezone? }
 //   days are 0 (Sunday) to 6; minutes are past midnight, 0 to 1439, in timezone
 import { createService, BadRequest } from '@frontierjs/junction'
 import { linkedCaller, oneRow } from '../../domain/chat/local.ts'

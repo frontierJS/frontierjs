@@ -30,7 +30,7 @@
     error = null; loading = true
     quietSchedules.service.find({}).then((r) => {
       row = r.data?.[0] ?? null
-      enabled = row ? !!row.enabled : true
+      enabled = row ? !!row.isEnabled : true
       days = row ? [...(Array.isArray(row.days) ? row.days : JSON.parse(row.days ?? '[]'))] : [0, 1, 2, 3, 4, 5, 6]
       from = row ? toTime(row.fromMinute) : '22:00'
       to = row ? toTime(row.toMinute) : '07:00'
@@ -42,7 +42,7 @@
   async function save() {
     if (saving) return
     saving = true; error = null
-    const body = { enabled, days, fromMinute: toMinute(from), toMinute: toMinute(to), timezone: timezone.trim() }
+    const body = { isEnabled: enabled, days, fromMinute: toMinute(from), toMinute: toMinute(to), timezone: timezone.trim() }
     try {
       row = row ? await quietSchedules.service.patch(row.id, body) : await quietSchedules.service.create(body)
       open = false

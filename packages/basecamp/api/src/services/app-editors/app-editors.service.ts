@@ -6,7 +6,7 @@
 // Who may read or write a row is the model's policy. This service adds which
 // App may have an editor at all.
 
-import { createService, BadRequest, NotFound, parseWhere, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Forbidden, NotFound, parseWhere, $ } from '@frontierjs/junction'
 import { sessionScope, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, narrowPatch, changesNothing } from '../../core/resource.ts'
 import { isGit } from '../../domain/release/app-source.ts'
@@ -45,7 +45,20 @@ export default createService({
 
   get: () => getScoped('appEditor', 'App editor'),
 
-  create: () => db().appEditor.create({ data: $.data }),
+  // The editor is usually somebody else, and a caller reads only their own User
+  // row, so the caller's client refuses the foreign key as naming no User
+  // (FJS-4441). The gate and the create rule are graded for the caller first;
+  // the system client lifts only that read.
+  async create() {
+    const { appId, userId, role } = ($.data ?? {}) as Record<string, unknown>
+    if (typeof userId !== 'string' || !userId) throw new BadRequest('An editor is a person — name one with userId')
+    const data = role === undefined ? { appId, userId } : { appId, userId, role }
+    const verdict = await db().$checkWrite('appEditor', 'create', data)
+    if (!verdict.ok) throw new Forbidden(verdict.message ?? 'You may not add an editor to this app')
+    const sys = db().asSystem()
+    if (!await sys.user.findFirst({ where: { id: userId }, select: { id: true } })) throw new NotFound(`User '${userId}' not found`)
+    return sys.appEditor.create({ data })
+  },
 
   async patch() {
     await getScoped('appEditor', 'App editor')

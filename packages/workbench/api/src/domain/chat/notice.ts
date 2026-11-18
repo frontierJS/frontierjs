@@ -15,7 +15,7 @@ import chatMention from '../../notifications/ChatMention.notification.ts'
 import chatFollowUp from '../../notifications/ChatFollowUp.notification.ts'
 
 export interface QuietWindow {
-  enabled:    boolean
+  isEnabled:  boolean
   /** 0 (Sunday) to 6, the day the window STARTS on. */
   days:       number[]
   fromMinute: number
@@ -39,7 +39,7 @@ function wallClock (now: Date, timezone: string): { day: number, minute: number 
  * zone holds nothing, so a bad row never silences the phone.
  */
 export function inQuietHours (w: QuietWindow | null | undefined, now: Date): boolean {
-  if (!w?.enabled || !Array.isArray(w.days) || w.days.length === 0) return false
+  if (!w?.isEnabled || !Array.isArray(w.days) || w.days.length === 0) return false
   let clock: { day: number, minute: number }
   try { clock = wallClock(now, w.timezone) } catch { return false }
   if (clock.day < 0) return false

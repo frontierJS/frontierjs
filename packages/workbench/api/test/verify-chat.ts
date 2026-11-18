@@ -15,7 +15,7 @@
 // as a pushed /ws frame. The databases (main, chat, jobs) and the
 // config folder are a temp directory; the sink and the app take OS ports.
 
-import { appendFileSync, chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -564,10 +564,10 @@ try {
   // ── quiet hours (local) ───────────────────────────────────────────────
   const quiet = (m: { id: number }) => as(m).service('quietSchedules')
   const qh = await quiet(ada).create({ days: [5, 1, 2, 3, 4], fromMinute: 1320, toMinute: 420, timezone: 'America/Chicago' }).catch((e: any) => e)
-  check(qh?.profileExternalId === ids.alice && qh.days?.join() === '1,2,3,4,5' && qh.enabled === true, 'quietSchedules.create keeps the caller\'s own row', shown_(qh))
-  const qh2 = await quiet(ada).patch(qh?.id, { enabled: false, toMinute: 480 }).catch((e: any) => e)
+  check(qh?.profileExternalId === ids.alice && qh.days?.join() === '1,2,3,4,5' && qh.isEnabled === true, 'quietSchedules.create keeps the caller\'s own row', shown_(qh))
+  const qh2 = await quiet(ada).patch(qh?.id, { isEnabled: false, toMinute: 480 }).catch((e: any) => e)
   const qhMine = (await quiet(ada).find({}) as any).data
-  check(qh2?.enabled === false && qh2.toMinute === 480 && qhMine.length === 1 && qhMine[0].enabled === false, 'a patch round-trips', { qh2: shown_(qh2), qhMine })
+  check(qh2?.isEnabled === false && qh2.toMinute === 480 && qhMine.length === 1 && qhMine[0].isEnabled === false, 'a patch round-trips', { qh2: shown_(qh2), qhMine })
   check(((await quiet(bo).find({}) as any).data as any[]).length === 0, 'another member reads none of it')
   const qhSecond = await errOf(quiet(ada).create({ fromMinute: 0, toMinute: 60, timezone: 'UTC' }))
   check(codeOf(qhSecond) >= 400 && codeOf(qhSecond) < 500, 'a second row for the same member is refused', shown_(qhSecond))
@@ -617,12 +617,12 @@ try {
   await noteSettle()
   check((await noteBellOf(noteNamed.id)).length === 1 && notePushesOf(`n${noteStamp}`).length === 1, 'the same frame twice raises one', { rows: (await noteBellOf(noteNamed.id)).length, pushes: notePushesOf(`n${noteStamp}`).length })
 
-  await quiet(ada).patch(qh?.id, { enabled: true, days: [0, 1, 2, 3, 4, 5, 6], fromMinute: 0, toMinute: 0, timezone: 'UTC' })
+  await quiet(ada).patch(qh?.id, { isEnabled: true, days: [0, 1, 2, 3, 4, 5, 6], fromMinute: 0, toMinute: 0, timezone: 'UTC' })
   const noteHushed = await say(sink.tokens.bob, ids.open, `@alice at night q${noteStamp}`)
   const noteHushedRows = await until(async () => { const r = await noteBellOf(noteHushed.id); return r.length ? r : null })
   await noteSettle()
   check(noteHushedRows?.length === 1 && noteHushedRows[0].data?.held === true && notePushesOf(`q${noteStamp}`).length === 0, 'inside quiet hours the bell row is written and no push is sent', { noteHushedRows, pushes: notePushesOf(`q${noteStamp}`) })
-  await quiet(ada).patch(qh?.id, { enabled: false })
+  await quiet(ada).patch(qh?.id, { isEnabled: false })
 
   const noteBoPost = await say(sink.tokens.alice, ids.open, `@bob not the owner b${noteStamp}`)
   const noteBoRows = await until(async () => { const r = await sys.notification.findMany({ where: { userId: bo.id, deliveryKey: `chat:${noteBoPost.id}` } }); return r.length ? r : null })

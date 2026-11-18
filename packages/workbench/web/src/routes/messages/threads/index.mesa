@@ -91,7 +91,7 @@ title: Threads
 <style>
   .threads-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
   .threads-head { justify-content: space-between; align-items: center; }
-  .threads-title { flex: 1 1 20rem; min-inline-size: 0; }
+  .threads-title { --threads-title-basis: 20rem; flex: 1 1 var(--threads-title-basis); min-inline-size: 0; }
   .threads-head h1, .threads-head p { margin: 0; }
   .threads-head h1 { align-items: center; }
   .threads { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }

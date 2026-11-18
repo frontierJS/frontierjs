@@ -116,7 +116,7 @@ export const CHECKS = {
     return { findings: declaredFields(schema)
       .filter(f => f.type === 'Boolean' && !/^(is|has)[A-Z]/.test(f.name) && !CHANNEL_NAMES.has(f.name))
       .map(f => ({
-        file: schema.path, line: f.line,
+        file: schema.path, line: f.line, subject: `${f.block}.${f.name}`,
         message: `${f.block}.${f.name} — a Boolean field is a predicate with its verb: is${upperFirst(f.name)} ` +
                  `or has${upperFirst(f.name)}, never a bare adjective. A field named for a notification ` +
                  `channel (${[...CHANNEL_NAMES].join(', ')}) is the one exemption.`,

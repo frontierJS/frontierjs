@@ -1104,14 +1104,14 @@ try {
   await click('[data-quiet-save]')
   await until(`!document.querySelector('[data-quiet-dialog]')?.closest('dialog')?.open`, v => v, 'Save never closed the dialog', 15_000)
   const quiet = (await apiRows('/quietSchedules'))[0]
-  check('Save creates the one row: the window in minutes, the zone, the days', quiet?.fromMinute === 1260 && quiet?.toMinute === 390 && quiet?.timezone === 'America/Chicago' && JSON.stringify(quiet?.days) === '[1,2,3,4,5,6]' && quiet?.enabled === true, quiet)
+  check('Save creates the one row: the window in minutes, the zone, the days', quiet?.fromMinute === 1260 && quiet?.toMinute === 390 && quiet?.timezone === 'America/Chicago' && JSON.stringify(quiet?.days) === '[1,2,3,4,5,6]' && quiet?.isEnabled === true, quiet)
   await menuPick('[data-chat-sidebar]', '[data-me]', 'Quiet hours')
   await until(`document.querySelector('[data-quiet-from]')?.value === '21:00'`, v => v, 'the dialog never showed the saved window', 15_000)
   await until(`document.querySelector('[data-quiet-save]').disabled === false`, v => v, 'the reopened dialog never finished loading', 15_000)
   await click('[data-quiet-enabled]')
   await click('[data-quiet-save]')
   await until(`!document.querySelector('[data-quiet-dialog]')?.closest('dialog')?.open`, v => v, 'the second Save never closed the dialog', 15_000)
-  const quiet2 = await poll(async () => { const rows = await apiRows('/quietSchedules'); return rows[0]?.enabled === false ? rows : null })
+  const quiet2 = await poll(async () => { const rows = await apiRows('/quietSchedules'); return rows[0]?.isEnabled === false ? rows : null })
   check('a second Save patches the same row (off, the window kept)', quiet2?.length === 1 && quiet2[0].id === quiet.id && quiet2[0].fromMinute === 1260, quiet2)
 
   console.log('\n  Waiting on me, waiting on others, and the nudge')
@@ -1134,7 +1134,7 @@ try {
   const order = await evaluate(`[...document.querySelectorAll('[data-waiting-group="me"] [data-waiting-row]')].map(e => e.dataset.waitingRow)`)
   check('it joins without a reload, after the older one (oldest first)', order.indexOf(askedOf.id) >= 0 && order.indexOf(askedOf.id) < order.indexOf(askedAgain.id), order)
   await sleep(1100)
-  const waitAnswer = (await sinkPost(tokens.alice, ids.open, `waiting answered ${waitTag}`)).json
+  await sinkPost(tokens.alice, ids.open, `waiting answered ${waitTag}`)
   await until(`!document.querySelector('[data-waiting-group="me"] [data-waiting-row="${askedOf.id}"]') && !document.querySelector('[data-waiting-row="${askedAgain.id}"]')`, v => v, 'the reader\'s own post never cleared Waiting on you', 25_000)
   ok('a post of the reader\'s in the room clears both, live')
 

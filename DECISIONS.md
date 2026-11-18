@@ -17909,6 +17909,14 @@ Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open ques
 
 The paper's recommendation, taken as written: Kapture already does the job. One codebase serves both display servers, and Workbench's build does not grow a tiny-skia renderer or depend on a sibling checkout's path. C rewrites in JS what is already written in Rust.
 
+### <a id="fjs-d2253"></a>2026-11-17 · `FJS-D2253` — Messages draws no image from a link preview's host — An opengraph card is site, title and description; an image embed is a link to the image.
+
+Ruled by the owner on the Phase 0–4 report's call #9. **Cut** was picked over **click to load** and **keep as built**. An `img` whose src is the linked host shows that host this machine's IP for every post scrolled past, and serpgrid draws none. The mirror still stores the unfurled `image`; `embedsOf` in `packages/workbench/web/src/lib/chat.js` drops it, and `verify:messages` § Link previews checks that the page sends no request to the linked host.
+
+### <a id="fjs-d2252"></a>2026-11-17 · `FJS-D2252` — A chat notification holds post text from an open room only — A private room's or a DM's bell row and push say who wrote and where, never what.
+
+Ruled by the owner on the Phase 0–4 report's call #8. **Open rooms only** was picked over **no excerpt anywhere** and **keep as built** (a 140-character excerpt everywhere). The row sits in Workbench's main database and the push on a lock screen, where a private room's text should not end up. `noticeExcerpt` in `packages/workbench/api/src/domain/chat/notice.ts` decides; the body falls back to *Sent you a message* or *Mentioned you*.
+
 ### <a id="fjs-d2246"></a>2026-11-16 · `FJS-D2246` — Q6 — How does Workbench find `kapture` — On `PATH`, installed with `cargo install`; Workbench checks for it and never builds it.
 
 Asked in [`IDEAS/workbench-capture.md`](IDEAS/workbench-capture.md) § Open questions. **A** was picked over **B** (Workbench builds Kapture from a checkout path it is given).
@@ -17926,14 +17934,6 @@ The paper's recommendation, taken as written: it already works, and the strict e
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (leave it to the app (anvil rewrites the output)).
 
 The paper's recommendation, taken as written: additive, and the default output and the no-raw-HTML rule do not move.
-
-### <a id="fjs-d2253"></a>2026-11-17 · `FJS-D2253` — Messages draws no image from a link preview's host — An opengraph card is site, title and description; an image embed is a link to the image.
-
-Ruled by the owner on the Phase 0–4 report's call #9. **Cut** was picked over **click to load** and **keep as built**. An `img` whose src is the linked host shows that host this machine's IP for every post scrolled past, and serpgrid draws none. The mirror still stores the unfurled `image`; `embedsOf` in `packages/workbench/web/src/lib/chat.js` drops it, and `verify:messages` § Link previews checks that the page sends no request to the linked host.
-
-### <a id="fjs-d2252"></a>2026-11-17 · `FJS-D2252` — A chat notification holds post text from an open room only — A private room's or a DM's bell row and push say who wrote and where, never what.
-
-Ruled by the owner on the Phase 0–4 report's call #8. **Open rooms only** was picked over **no excerpt anywhere** and **keep as built** (a 140-character excerpt everywhere). The row sits in Workbench's main database and the push on a lock screen, where a private room's text should not end up. `noticeExcerpt` in `packages/workbench/api/src/domain/chat/notice.ts` decides; the body falls back to *Sent you a message* or *Mentioned you*.
 
 ### <a id="fjs-d2215"></a>2026-11-16 · `FJS-D2215` — Q7 — task-from-post — Gone.
 

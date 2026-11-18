@@ -659,7 +659,7 @@ model ChatGroup {
 model QuietSchedule {
   id                Int      @id
   profileExternalId String   @unique @system
-  enabled           Boolean  @default(true)
+  isEnabled         Boolean  @default(true)
   days              Json     @default("[0,1,2,3,4,5,6]")
   fromMinute        Int      @gte(0) @lte(1439)
   toMinute          Int      @gte(0) @lte(1439)

@@ -827,6 +827,27 @@ describe('the merge a publish ships', () => {
 // FJS-D2108: a site's git calls carry the workspace's GitHub token in their
 // environment, and only toward https://github.com. A recording `git` on PATH
 // stands in for the network: it logs what it was started with and refuses.
+describe('appEditors.create', () => {
+  // The editor is somebody else, whose User row the admin's client cannot read
+  // (FJS-4441); the gate and the create rule still grade the admin.
+  test('an admin adds another person; a developer and an unknown user are refused', async () => {
+    const editors = (who: any) => env.as(who).service('appEditors')
+    const made = await editors(admin).create({ appId: site.id, userId: stranger.user?.id ?? stranger.id, role: 'edit' })
+    expect(made.userId).toBe(stranger.user?.id ?? stranger.id)
+    await (env.system as any).appEditor.delete({ where: { id: made.id } })
+    const sys = env.system as any
+    const { accountId } = await sys.user.findFirst({ where: { id: stranger.user?.id ?? stranger.id } })
+    const dev = await sys.user.create({ data: { email: `dev-${uniq()}@x.co`, name: 'Dev', accountId, status: 'active' } })
+    await sys.workspaceMember.create({ data: {
+      workspaceId: site.workspaceId, userId: dev.id, role: 'developer', capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString() } })
+    const developer = session({ id: dev.id, workspaceId: site.workspaceId })
+    const refused = await refusal(editors(developer).create({ appId: site.id, userId: dev.id }))
+    expect(refused.code).toBe(403)
+    expect(await sys.appEditor.findFirst({ where: { appId: site.id, userId: dev.id } })).toBeNull()
+    expect((await refusal(editors(admin).create({ appId: site.id, userId: 'no-such-user' }))).code).toBe(404)
+  })
+})
+
 describe('the git credential', () => {
   const TOKEN = 'ghp_recordedtoken0123456789'
   const CREDENTIAL = {

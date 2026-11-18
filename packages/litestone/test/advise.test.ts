@@ -1372,6 +1372,13 @@ describe('create-allow-blind-to-a-read-ruled-parent', () => {
       .replace('repository   Repository ', 'repository   Repository? '), RULE)).toEqual([])
   })
 
+  test('silent when the parent\'s read rule is true, which filters nothing', () => {
+    // Workbench's Profile: @@gate(3.8.8.8) @@allow(read, true), named by every Post.
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`, { read: '@@gate(1.1.1.1)  @@allow(read, true)' }), RULE)).toEqual([])
+    expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`,
+      { read: '@@gate(1.1.1.1)  @@allow(read, true)  @@deny(read, ownerId == 0)' }), RULE).map(x => x.field)).toEqual(['repositoryId'])
+  })
+
   test('fires when the parent declares no gate and no rule, so only the system reads it', () => {
     expect(findings(SCHEMA(`@@allow(create, job.runnerId == auth().runnerId)`, { read: '' }), RULE)
       .map(x => x.field)).toEqual(['repositoryId'])

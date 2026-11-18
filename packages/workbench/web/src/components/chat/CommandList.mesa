@@ -8,7 +8,7 @@
 </script>
 
 {#if picker}
-  <ul class="popover command-list items menu" role="listbox" aria-label="Commands" data-command-list>
+  <ul class="surface command-list items menu" role="listbox" aria-label="Commands" data-command-list>
     {#each picker.items as c, i (c.name)}
       <li><button type="button" class="item" role="option" aria-selected={i === picker.index} data-command={c.name} onmousedown|preventDefault={() => onpick?.(c)}>
         <span class="item-text"><span class="item-title">/{c.name}{#if c.takes} <span class="text-muted">{c.takes}</span>{/if}</span><span class="item-sub">{c.help}</span></span>
@@ -18,7 +18,8 @@
 {/if}
 
 <style>
-  .command-list { position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); max-block-size: calc(var(--space-2xl) * 8); overflow-y: auto; list-style: none; padding: var(--space-2xs); z-index: 2; }
+  /* A picker over the box, not a Popover: focus stays in the box, so it owes no dialog role. */
+  .command-list { --picker-max: 280px; max-inline-size: var(--picker-max); box-shadow: var(--shadow-md); font-size: var(--text-sm); animation: popover-in var(--motion-fast) var(--motion-ease-out); position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); max-block-size: calc(var(--space-2xl) * 8); overflow-y: auto; list-style: none; padding: var(--space-2xs); z-index: 2; }
   .command-list li { display: contents; }
   .command-list :global(.item) { inline-size: 100%; text-align: start; }
   .command-list :global(.item)[aria-selected="true"] { background: var(--surface-sunken); }

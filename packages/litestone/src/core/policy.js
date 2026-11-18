@@ -1993,7 +1993,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       params.push(node.value)
       return '?'
 
-    case 'field':
+    case 'field': {
       // A policy names FIELDS and compiles to SQL, so a mapped model needs the
       // column. Silent without it, and in the worst direction: SQLite reads an
       // unknown `"ident"` as a STRING LITERAL, so `@@allow(read, …)` compiled
@@ -2007,6 +2007,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       const agg = aggregateEntry(ctx, modelName, node.name)
       if (agg) return aggregateSql(agg, ctx, modelName)
       return `"${policyColumn(schema, modelName, fieldColumnName(ctx, modelName, node.name))}"`
+    }
 
     case 'path':
       return pathSql(node, ctx, modelName)

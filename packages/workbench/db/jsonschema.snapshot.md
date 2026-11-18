@@ -502,7 +502,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
-| `enabled` | `boolean` = `true` | — | — | — | — |
+| `isEnabled` | `boolean` = `true` | — | — | — | — |
 | `days` | `json` = `[0,1,2,3,4,5,6]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `fromMinute` | `integer` | yes | — | `minimum: 0` `maximum: 1439` | — |
 | `toMinute` | `integer` | yes | — | `minimum: 0` `maximum: 1439` | — |

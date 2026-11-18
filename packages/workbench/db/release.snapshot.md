@@ -433,9 +433,9 @@ table `quiet_schedule` · db `chat` · gate `3.3.3.3`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `days` | `Json` | no | `'[0,1,2,3,4,5,6]'` | — |
-| `enabled` | `Boolean` | no | `1` | — |
 | `fromMinute` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
+| `isEnabled` | `Boolean` | no | `1` | — |
 | `profileExternalId` | `String` | no | — | unique · @system · **required on write** |
 | `timezone` | `String` | no | — | **required on write** |
 | `toMinute` | `Int` | no | — | **required on write** |

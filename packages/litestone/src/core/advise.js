@@ -1341,12 +1341,17 @@ export const RULES = [
       const byName = new Map((schema.models ?? []).map(m => [m.name, m]))
       // A parent its every reader may not see: a read rule filters it, a read
       // gate of 8 is system-only, and a model declaring no gate and no rule is
-      // system-only by default.
+      // system-only by default. Allows OR together, so one `@@allow(read, true)`
+      // with no read @@deny filters nothing.
       const readRuled = p => {
         const rules = (p?.attributes ?? []).filter(a => (a.kind === 'allow' || a.kind === 'deny') && !a.generated)
         const gate  = gateOf(p)
-        if (!gate) return !rules.length || rules.some(a => a.operations?.includes('read'))
-        return gate.read >= 8 || rules.some(a => a.operations?.includes('read'))
+        const onRead = a => a.operations?.includes('read')
+        const open   = rules.some(a => a.kind === 'allow' && onRead(a) && a.expr?.type === 'literal' && a.expr.value === true) &&
+          !rules.some(a => a.kind === 'deny' && onRead(a))
+        const ruled  = rules.some(onRead) && !open
+        if (!gate) return !rules.length || ruled
+        return gate.read >= 8 || ruled
       }
       // A disjunct that never touches the relation admits a caller who has not
       // been asked about the parent at all. The key compared to a claim

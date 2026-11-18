@@ -91,7 +91,7 @@ export function resolveFromRowRefs(readDb, rows, fromFields, ctx, depth = 0) {
       for (const r of rows) if (name in r) r[name] = null
       continue
     }
-    /** @type {{ model: string, pk: string, fkCols: string[], refCols: string[], orderField: string, dir: string, extra?: string[] }} */
+    /** @type {{ model: string, pk: string, fkCols: string[], refCols: string[], orderField: string, dir: string, extra?: string[], parent: { table: string, refCols: string[] } | null }} */
     const { model: target, pk, fkCols, refCols, orderField, dir, extra, parent } = def.rowRef
     const tModel = ctx.schema?.models.find(m => m.name === target)
     const tTable = tModel ? modelToTableName(tModel, ctx.pluralize ?? false) : target

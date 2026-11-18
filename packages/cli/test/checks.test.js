@@ -1106,6 +1106,15 @@ describe('naming rulings (FJS-D1748 to FJS-D1751)', () => {
       expect(only(root, 'boolean-prefix').findings).toEqual([])
     })
 
+    test('an allow names one field, and the schema-wide key excuses none', () => {
+      const root = tree('bp-allow', schema('\nmodel Flag {\n  id Int @id\n  muted Boolean\n  active Boolean\n}\n'))
+      const KEY = 'boolean-prefix:db/schema.lite'
+      expect(only(root, 'boolean-prefix', { allow: { [KEY]: 'file-wide' } }).findings).toHaveLength(2)
+      const one = only(root, 'boolean-prefix', { allow: { [`${KEY}:Flag.muted`]: 'a mirror keeps the source name' } })
+      expect(one.allowed.map(f => f.subject)).toEqual(['Flag.muted'])
+      expect(one.findings.map(f => f.subject)).toEqual(['Flag.active'])
+    })
+
     test('the channel exemption mirrors the notifications package', () => {
       const types = readFileSync(join(import.meta.dir, '../../notifications/types.ts'), 'utf8')
       const shipped = types.match(/BUILT_IN_TRANSPORTS\s*=\s*\[([^\]]*)\]/)[1].match(/'(\w+)'/g).map(s => s.slice(1, -1))
@@ -4298,6 +4307,17 @@ describe('required-system-unfilled', () => {
     expect(only(tree('rsu-readonly', app({ service: svc("'readOnly'") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-no-create', app({ service: svc("['find', 'get']") })), 'required-system-unfilled').findings).toHaveLength(0)
     expect(only(tree('rsu-create', app({ service: svc("['find', 'create']") })), 'required-system-unfilled').findings).toHaveLength(1)
+  })
+
+  test('a @@mirror model is the sync\'s to fill, even under a service serving create', () => {
+    // Workbench's chat mirror: 58 findings on columns no caller ever creates.
+    const schema = (text) => text + '\nmodel Room {\n  id         Int @id\n  externalId String\n  name       String\n\n' +
+      '  @@mirror(key: externalId)\n  @@allow(read, true)\n}\n'
+    const extra = { 'api/src/services/rooms.service.ts':
+      "import { createService } from '@frontierjs/junction'\nexport default createService({ model: 'Room' })\n" }
+    const { findings, skipped } = only(tree('rsu-mirror', app({ service: SERVICE, schema, extra })), 'required-system-unfilled')
+    expect(skipped).toHaveLength(0)
+    expect(findings).toHaveLength(0)
   })
 
   // FJS-3978: Grant's tokenHash arrives through @@trait, so a line scan of the

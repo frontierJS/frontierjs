@@ -1432,7 +1432,7 @@ export interface ChatGroupRelations {
 export interface QuietSchedule {
   id: number
   profileExternalId: string
-  enabled: boolean
+  isEnabled: boolean
   days: unknown
   fromMinute: number
   toMinute: number
@@ -1441,7 +1441,7 @@ export interface QuietSchedule {
 
 export interface QuietScheduleCreate {
   id?: number
-  enabled?: boolean
+  isEnabled?: boolean
   days?: unknown
   fromMinute: number
   toMinute: number
@@ -1450,7 +1450,7 @@ export interface QuietScheduleCreate {
 
 export interface QuietScheduleUpdate {
   id?: number
-  enabled?: boolean
+  isEnabled?: boolean
   days?: unknown
   fromMinute?: number
   toMinute?: number
@@ -1464,7 +1464,7 @@ export interface QuietScheduleSystem {
 export interface QuietScheduleWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   profileExternalId?: string | WhereOp<string> | null
-  enabled?: boolean | WhereOp<boolean> | null
+  isEnabled?: boolean | WhereOp<boolean> | null
   days?: unknown | WhereOp<unknown> | null
   fromMinute?: number | WhereOp<number> | null
   toMinute?: number | WhereOp<number> | null

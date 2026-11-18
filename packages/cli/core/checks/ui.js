@@ -1984,6 +1984,8 @@ function requiredSystemColumns({ path, text }) {
     for (const f of m.fields ?? []) {
       if (!has(f, 'system') || f.type?.optional || f.type?.array) continue
       if (has(f, 'default', 'generated', 'sequence', 'updatedAt', 'computed', 'derived', 'from')) continue
+      // A mirror's columns are the sync's to fill, and no form creates one.
+      if (f.attributes.some(a => a.kind === 'system' && a.generated === 'mirror')) continue
       const own = lines.findIndex((l, i) => i > start && i < end && new RegExp(`^\\s*${f.name}\\s+\\w`).test(l))
       out.push({ model: m.name, field: f.name, line: (own < 0 ? start : own) + 1 })
     }

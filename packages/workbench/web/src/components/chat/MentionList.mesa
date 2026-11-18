@@ -13,7 +13,7 @@
 </script>
 
 {#if picker}
-  <ul class="popover mention-list items menu" class:below role="listbox" aria-label="People" data-mention-list>
+  <ul class="surface mention-list items menu" class:below role="listbox" aria-label="People" data-mention-list>
     {#each picker.items as p, i (p.id)}
       <li><button type="button" class="item" class:mention-call={p.call} data-mention-group={p.group ? 'true' : null} role="option" aria-selected={i === picker.index} data-mention={p.handle} onmousedown|preventDefault={() => onpick?.(p)}>
         {#if p.call}<span class="mention-dot"><Icon name="group" label="Everyone" /></span>{/if}
@@ -25,7 +25,8 @@
 {/if}
 
 <style>
-  .mention-list { position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); list-style: none; padding: var(--space-2xs); z-index: 2; }
+  /* A picker over the box, not a Popover: focus stays in the box, so it owes no dialog role. */
+  .mention-list { --picker-max: 280px; max-inline-size: var(--picker-max); box-shadow: var(--shadow-md); font-size: var(--text-sm); animation: popover-in var(--motion-fast) var(--motion-ease-out); position: absolute; inset-block-end: 100%; inset-inline-start: 0; margin-block-end: var(--space-xs); min-inline-size: calc(var(--space-2xl) * 8); list-style: none; padding: var(--space-2xs); z-index: 2; }
   /* Under the edit box, in the flow: it pushes Save and Cancel down rather than covering them. */
   .mention-list.below { position: static; inline-size: fit-content; margin-block: var(--space-xs) 0; }
   .mention-list li { display: contents; }
