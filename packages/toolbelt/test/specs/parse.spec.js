@@ -113,6 +113,21 @@ test('parse: inside rel.some(…) a dot is a second hop, and so is check()', fun
   ]))), /second hop/)
 })
 
+// `FJS-D2239`: the declaring row's column crosses nothing, so it is the one
+// dot the condition takes — and outside a some(…) `this.x` stays a path, which
+// the schema refuses by name.
+test('parse: inside rel.some(…) this.col is the declaring row, one level deep', function () {
+  const ast = parseExpression(cursor(SOME([
+    tok(T.IDENT, 'userId'), tok(T.NEQ, '!='), tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'authorId'),
+  ])))
+  assert.equal(JSON.stringify(ast.where.right), JSON.stringify({ type: 'this', name: 'authorId' }))
+  assert.throws(() => parseExpression(cursor(SOME([
+    tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'owner'), tok(T.DOT, '.'), tok(T.IDENT, 'id'),
+  ]))), /one hop is the bound/)
+  const top = parseExpression(cursor([tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'authorId'), tok(T.EQ, '=='), tok(T.NUMBER, 1)]))
+  assert.equal(top.left.type, 'path')
+})
+
 test('parse: a to-many test two relations away names the test, not the hops', function () {
   assert.throws(() => parseExpression(cursor([
     tok(T.IDENT, 'interview'), tok(T.DOT, '.'), ...SOME([tok(T.IDENT, 'done'), tok(T.EQ, '=='), tok(T.BOOL, true)]),

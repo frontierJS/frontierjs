@@ -1211,9 +1211,14 @@ function opaqueRules(model, properties) {
       // The host's ICU zone table is the list, and it differs between hosts.
       if (a.kind === 'zone')
         out.push({ field: field.name, rule: '@zone', message: a.message ?? null })
+      // The rule is code in computed.js; its message lives there too.
+      if (a.kind === 'validate')
+        out.push({ field: field.name, rule: '@validate', message: null })
     }
   }
   for (const a of model.attributes ?? []) {
+    if (a.kind === 'validate')
+      out.push({ rule: '@@validate', message: null })
     if (a.kind === 'check')
       out.push({ rule: `@@check(${JSON.stringify(a.expr)})`, message: a.message ?? null })
     if (a.kind === 'arc' && Array.isArray(a.fields))

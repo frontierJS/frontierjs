@@ -698,14 +698,35 @@ SQLite indexes no foreign key on its own. Unindexed, every parent row read build
 a throwaway index. `litestone advise` names the column (`foreign-key-without-index`).
 
 **Inside the parentheses a name is a column of the CHILD**, and the relation has
-spent the one hop. Refused, each naming the rule:
+spent the one hop. **`this.col` is a column of the row the rule is declared
+on** (`FJS-D2239`) — *no reviewer is the author* compares a child with its own
+parent, so it crosses nothing. The `EXISTS` reads it off the outer row; the JS
+half reads the stored parent by the key it already binds.
+
+```lite
+model User { id Int @id  @@auth }
+
+model PullRequest {
+  id       Int      @id
+  authorId Int
+  reviews  Review[]
+  @@allow(update, reviews.some(approved == true && reviewerId != this.authorId))
+}
+model Review { id Int @id  pullRequestId Int  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id])  reviewerId Int  approved Boolean  @@index([pullRequestId]) }
+```
+
+`this.col` is refused outside a `.some(…)`, where the bare name already says it,
+and so are `this.rel.col`, a column with no storage, an `@encrypted`, `@hashed`
+or `@secret` column on either side, and `this.col in <child array>`.
+
+Refused, each naming the rule:
 
 | Written | Why |
 | --- | --- |
 | `members.some(team.private == false)` | a dot inside is a second hop |
 | `members.some(check(team))` | a delegation from the child is a second hop |
 | `team.members.some(…)` | rows two relations away. Put the rule on the model `team` points at |
-| `members.some(private == false)` where `private` is the parent's | not a field on the child. The message lists the child's fields |
+| `members.some(private == false)` where `private` is the parent's | not a field on the child. The message lists the child's fields; the parent's is `this.private` |
 | `team.some(…)` on a to-one | one row, so there is no *some*. Read it as `team.<column>` |
 | `tags.some(…)` over an implicit many-to-many | the join table is a second hop. Declare the join model and test it |
 | `members.some()` | a test needs a condition |

@@ -102,6 +102,7 @@ export function durationOffset(p, base) {
 //              | '[' literal (',' literal)* ']'
 //              | ident | ident '.' ident   (one relation hop — FJS-D221)
 //              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
+//              | 'this' '.' ident   (inside some(…) only: the declaring row's column — FJS-D2239)
 //              | template | '{' [key ':' expr (',' key ':' expr)*] '}'   (a flow only — FJS-D513)
 //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in'
 
@@ -497,10 +498,21 @@ function value(p, ctx) {
   //
   // Inside `rel.some(…)` a name is a column of the rows being tested, and the
   // relation has already spent the one hop — so a dot there is refused the way
-  // `a.b.c` is, and for the same reason.
+  // `a.b.c` is, and for the same reason. `this.col` is the one dot it takes: a
+  // column of the row the rule is declared on, which the EXISTS correlates on
+  // and so crosses nothing (`FJS-D2239`).
   if (t.type === TK.IDENT) {
     p.eat(TK.IDENT)
     if (!p.check(TK.DOT)) return { type: 'field', name: t.value }
+    if (ctx.within && t.value === 'this') {
+      p.eat(TK.DOT)
+      const name = p.eat(TK.IDENT).value
+      if (p.check(TK.DOT))
+        throw p.fail(
+          `'this.${name}.…' crosses a relation from the row '${ctx.within}' belongs to. Inside ` +
+          `'${ctx.within}.some(…)' that is a second hop, and one hop is the bound.`, p.peek())
+      return { type: 'this', name }
+    }
     if (ctx.within)
       throw p.fail(
         `'${t.value}.…' inside '${ctx.within}.some(…)' crosses a second relation. A name there is ` +

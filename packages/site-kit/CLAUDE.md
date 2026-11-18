@@ -209,7 +209,7 @@ what they mean in any app.
   visitor's search results, every file to edit and the bar's actions. While the
   owner is signed in `<html data-fjs-editing>` is up and the visitor's
   `Search.mesa` hands its key and button to it (`FJS-D2191`).
-  A template's stamp offers the editable files. `live.js` shows what is typed
+  A template's stamp shows a passing note; a click on it lists the editable files. `live.js` shows what is typed
   on the page before the save, words only (`FJS-D1399`): a leaf showing the old
   words of a changed block or value takes the new ones, and new words with
   markup wait for the rebuild; a raw-HTML line whose tags held is compared on

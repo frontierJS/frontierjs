@@ -9300,6 +9300,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2256"></a>2026-11-17 · `FJS-D2256` — Does a list that judges rows (a `match` function) take in pushed rows before it has asked its first question — No: a judged list holds no pushed row until a query is issued; a list with no `match` is unchanged, and the first load returns the rows anyway.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (keep the rule and make Sierra send and retry a list's load sooner; the gap still admits any row).
+
+The paper's recommendation, taken as written: a filtered list cannot judge a row without its question, and dropping a push it never asked for loses nothing.
+
 ### <a id="fjs-d2238"></a>2026-11-16 · `FJS-D2238` — How does a channel gated by a credential that is not a session carry it to the WebSocket upgrade — `channels.on('connection')` is handed the subprotocol bearer `extractToken` already pulls, with or without an auth plugin.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a connect ticket minted over HTTP), **C** (allow `?token=` on loopback).

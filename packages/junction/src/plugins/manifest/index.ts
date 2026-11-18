@@ -17,6 +17,7 @@
 
 import type { App, DevService, Plugin } from '../../core/app.ts'
 import { isDevelopmentEnv } from '../../core/errors.ts'
+import { isMethodAllowed } from '../../core/service.ts'
 import { buildRoutes, serializeHookMap } from '../../core/app-model.ts'
 import type { RouteManifest, HookManifest } from '../../core/app-model.ts'
 
@@ -172,8 +173,9 @@ function buildServices(app: App): ServiceManifest[] {
       name:       d.name,
       model:      d.model,
       // Policy-filtered: advertising a verb the service answers 405 to is worse
-      // than not advertising it, because a generated client would call it.
-      methods:    d.methods,
+      // than not advertising it, because a generated client would call it. The
+      // client reaches it over HTTP or the socket, never in-process.
+      methods:    d.methods.filter(m => isMethodAllowed(svc, m, 'http') || isMethodAllowed(svc, m, 'websocket')),
       hooks:      serializeHookMap(d.hooks),
       softDelete: !!d.softDelete,
       cache:      d.cache,

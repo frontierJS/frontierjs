@@ -52,6 +52,7 @@ export async function loadComputedFields(computedInput) {
  * @returns {Record<string, unknown>}
  */
 export function normalizeComputed(computedFns, schema) {
+  checkValidateBindings(computedFns ?? {}, schema)
   if (!computedFns) return {}
 
   /** @type {Record<string, Set<string>>} */
@@ -108,6 +109,55 @@ export function normalizeComputed(computedFns, schema) {
     }
   }
   return out
+}
+
+// A `$validate` rule is code the schema cannot show, and a `@validate` marker
+// with no rule behind it grades nothing, so each half is refused without the
+// other (`FJS-D2241`): a rule's `path[0]` names a `@validate` field, a
+// path-less rule needs the model's `@@validate`, and every marker has a rule.
+/**
+ * @param {Record<string, any>} computedFns
+ * @param {LitestoneSchema} schema
+ */
+function checkValidateBindings(computedFns, schema) {
+  for (const model of /** @type {any[]} */ (schema.models ?? [])) {
+    const rules = computedFns[model.name]?.$validate ?? []
+    if (!Array.isArray(rules))
+      throw new Error(`${model.name}.$validate must be an array of { check, message, path? } — got ${typeof rules}`)
+
+    const marked = new Set(model.fields
+      .filter((/** @type {any} */ f) => f.attributes.some((/** @type {any} */ a) => a.kind === 'validate'))
+      .map((/** @type {any} */ f) => f.name))
+    const named = new Set()
+    let pathless = false
+
+    for (const rule of rules) {
+      const field = rule?.path?.[0]
+      if (field == null) { pathless = true; continue }
+      if (!model.fields.some((/** @type {any} */ f) => f.name === field))
+        throw new Error(`A $validate rule's path names '${field}', and ${model.name} has no field '${field}'`)
+      if (!marked.has(field))
+        throw new Error(
+          `A $validate rule names ${model.name}.${field}, a field without @validate — ` +
+          `add @validate to ${model.name}.${field} so the schema shows it is graded in code`)
+      named.add(field)
+    }
+
+    for (const field of marked) {
+      if (!named.has(field))
+        throw new Error(
+          `${model.name}.${field} carries @validate, and no $validate rule in computed.js names it ` +
+          `in its path — the marker would grade nothing`)
+    }
+
+    const rowMarked = (model.attributes ?? []).some((/** @type {any} */ a) => a.kind === 'validate')
+    if (pathless && !rowMarked)
+      throw new Error(
+        `${model.name} has a $validate rule with no path, which needs @@validate on the model — ` +
+        `or a path naming the @validate field it grades`)
+    if (rowMarked && !pathless)
+      throw new Error(`${model.name} declares @@validate, and has no path-less $validate rule in computed.js`)
+  }
 }
 
 // The row a `needs` fn receives carries exactly what it declared. Reading

@@ -295,6 +295,10 @@ export interface WsData {
   // Resolved during _wsOpen after async auth — null until then.
   // Always set before any user-facing handler is called.
   user:     SessionContext | null
+  // The subprotocol bearer, kept with or without an auth plugin: a channel
+  // admitted by a credential that is not a session has nowhere else to read it
+  // once the header is stripped (`FJS-D2238`).
+  bearer?:  string | null
   // The credential read at upgrade. Kept past _wsOpen only when the bearer
   // half answered, so verifySession can be asked again (`FJS-D1201`).
   credential?: string | null

@@ -449,6 +449,48 @@ edges: the child column must be required, because a NULL in any column of a
 composite key skips the check; and the parent's column is then frozen while a
 child points at it, the default `onUpdate` being a refusal.
 
+### A check written in code (`@validate`, `@@validate`)
+
+**A rule SQL cannot state is a `$validate` entry in `computed.js`, and the
+schema marks what it grades** (`FJS-D2241`). A stored template must compile, a
+document must parse: no `@check` says either. The rule runs in the Data
+boundary's validation pass beside `@email` and `@length`, so a principal's
+client, `asSystem()`, a job and a seed are all graded, where a service hook
+guards only the callers that pass through that service.
+
+```js
+import { createClient } from '@frontierjs/litestone'
+
+const schema = `model Template {
+  id     String @id
+  name   String
+  source String @validate
+
+  @@validate
+}`
+
+const db = await createClient({ schema, db: ':memory:', computed: {
+  Template: {
+    $validate: [
+      // path names the field, which carries @validate
+      { check: d => !String(d.source ?? '').includes('{{'), message: 'must not hold {{', path: ['source'] },
+      // no path: a rule about the row, which needs @@validate
+      { check: d => d.name !== 'reserved', message: 'that name is reserved' },
+    ],
+  },
+} })
+
+await db.template.create({ data: { id: 'a', name: 'ok', source: 'plain' } })
+const refused = await db.asSystem().template.create({ data: { id: 'b', name: 'ok', source: '{{' } }).catch(e => e)
+if (refused.name !== 'ValidationError') throw new Error('expected a refusal')
+```
+
+**Boot refuses each half without the other**: a `@validate` field no rule's
+`path` names, a rule naming a field without `@validate`, a path-less rule on a
+model without `@@validate`, and `@@validate` with no path-less rule. `check`
+receives the write's data, so an update is graded on the fields it sends — a
+rule that compares two fields reads the one it was not sent as `undefined`.
+
 ### Exclusive foreign keys (`@@arc`)
 
 ```

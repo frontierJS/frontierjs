@@ -200,3 +200,44 @@ describe('the visibility frame', () => {
     client.disconnect()
   })
 })
+
+// A channel admitted by a credential that is not a session — Lathe's per-launch
+// token — has only the subprotocol to carry it, and the connection hook is
+// handed it there with or without an auth plugin (`FJS-D2238`, `FJS-4226`).
+describe('the socket bearer', () => {
+  const seen: Array<{ bearer: unknown, protocols: unknown }> = []
+  let bare: any
+  let BARE_URL: string
+
+  beforeAll(async () => {
+    bare = createApp({ logLevel: 'silent', config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } } })
+    bare.configure(channels((a: any) => {
+      a.channels.on('connection', (_s: unknown, conn: any) => {
+        seen.push({ bearer: conn.data.bearer, protocols: conn.data.headers['sec-websocket-protocol'] })
+      })
+    }))
+    await bare.start()
+    BARE_URL = `http://localhost:${bare.http.port}`
+  })
+
+  afterAll(async () => { await bare?.stop() })
+
+  test('reaches the connection hook on an app with no auth plugin, and stays off the headers', async () => {
+    const client = createJunctionClient({ url: BARE_URL, token: 'launch-1' })
+    const up = nextConnect(client)
+    client.connect()
+    await up
+    expect(seen.at(-1)?.bearer).toBe('launch-1')
+    expect(String(seen.at(-1)?.protocols ?? '')).not.toContain('launch-1')
+    client.disconnect()
+  })
+
+  test('a socket that offered none is handed null', async () => {
+    const client = createJunctionClient({ url: BARE_URL })
+    const up = nextConnect(client)
+    client.connect()
+    await up
+    expect(seen.at(-1)?.bearer).toBeNull()
+    client.disconnect()
+  })
+})

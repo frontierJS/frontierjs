@@ -1089,6 +1089,16 @@ slug String @slug
 
 **Refuse a bad value**
 
+#### `@validate`
+
+tier: **situational** · legal in: on a model's field, on a trait's field · see also: `check`, `validate`
+
+Graded by a rule written in code: a `$validate` entry in the app's computed.js whose `path` names this field, `{ check: data => boolean, message, path: ['source'] }`. The answer when the check is not SQL (a template must compile, a document must parse), and it runs in the Data boundary's validation pass, so a principal's client, `asSystem()`, a job and a seed are all graded, which a service hook is not. Boot refuses this marker with no rule naming the field, and a rule naming a field without it. `check` receives the write's data, so an update is graded on the fields it sends. A rule over several fields that names none is `@@validate`.
+
+```lite
+source String @validate
+```
+
 #### `@values` (<ValueSetName>[, strength: required|open|suggested][, dependsOn: <column>[, matching: <sourceColumn>]])
 
 tier: **common** · legal in: on a model's field, on a trait's field · also called: dropdown, options, picklist · see also: `valueset`, `relation`
@@ -1510,6 +1520,16 @@ A row invariant that spans more than one column, emitted as a table CHECK. The t
 
 ```lite
 @@check("startsAt < endsAt", "an end must come after its start")
+```
+
+#### `@@validate`
+
+tier: **situational** · legal in: in a model, in a trait · see also: `check`, `validate`
+
+The row is graded by a path-less `$validate` rule in the app's computed.js, one that reads several fields and names none. The code half of `@@check`: it runs in the Data boundary's validation pass, so every writer is graded, and boot refuses this marker with no path-less rule and a path-less rule on a model without it. A rule about one field is that field's `@validate`.
+
+```lite
+@@validate
 ```
 
 #### `@@arc` ([field, …][, optional: true])

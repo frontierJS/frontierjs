@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 193**.
+Graded: **13 of 195**.
 
-## data — 3 of 64
+## data — 3 of 65
 
 ### Schema and parse
 
@@ -57,6 +57,7 @@ Graded: **13 of 193**.
 | A column your `getLevel` reads must not be writable by the caller being graded. | **none** |
 | A foreign key is a read: a parent the caller cannot read once the row exists answers as missing | **none** |
 | A `9`-gated table cannot be tidied up, by anything | **none** |
+| A policy reading a `@from` aggregate counts every child row that exists, and the read shows the caller's count | **none** |
 
 ### `@@transitions`
 
@@ -128,7 +129,7 @@ Graded: **13 of 193**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 72
+## api — 6 of 73
 
 ### `ctx` and the call
 
@@ -202,6 +203,7 @@ Graded: **13 of 193**.
 | `defineEnv` will not quote a value it must not, and infers that from the NAME. | **none** |
 | An adapter cache is keyed on `$schema`, never on the client | **none** |
 | `$.log` inside a call, `app.logger` outside one | **none** |
+| A model-backed method's answer loses every key named like a protected column of its model, so a minted secret is returned under another name | **none** |
 
 ### Plugins, config and autoload
 

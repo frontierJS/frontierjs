@@ -4,8 +4,8 @@
 // The registry builds it — buildService() composes hooks + base + custom
 // methods, over buildBase()'s CRUD. Called by the transport.
 
-import type { ServiceContext, ServiceMethod } from './context.ts'
-import { CRUD_METHODS, requestMeta, reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect, callSlots, callDb, setCallDb } from './context.ts'
+import type { ServiceContext, ServiceMethod, Transport } from './context.ts'
+import { CRUD_METHODS, TRANSPORTS, requestMeta,reenterAs, enterCall, currentCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope, runAfterCommitEffect, callSlots, callDb, setCallDb } from './context.ts'
 import type { CommitScope, CallCoverage, OutboxRelay } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { pageBounds, type PageBounds } from './directives.ts'
@@ -246,6 +246,12 @@ export interface ServiceDescription {
   readMethods: string[]
   /** The model each method declared it answers, where not the service's own (`FJS-D914`). */
   answers: Record<string, string>
+  /**
+   * The callers each method declared may reach it (`FJS-D2237`); a method
+   * absent takes every transport. `methods` above is the in-process list, so a
+   * reader on a wire filters it by this.
+   */
+  transports: Record<string, Transport[]>
   /** The scope each method requires of a key issued with scopes; a method absent refuses one (`FJS-D916`). */
   scopes: Record<string, string | false>
   /** The merged hook declaration — what ran, not how it was resolved. */
@@ -361,6 +367,8 @@ export interface Service {
   _readMethods?: string[]
   /** The custom methods DECLARED `log: false` in `methods:`. Read through `isUnloggedMethod`. */
   _unloggedMethods?: string[]
+  /** The `transports:` each `methods:` entry DECLARED, keyed by name. Read through `isMethodAllowed`. */
+  _methodTransports?: Record<string, Transport[]>
   /** The model each custom method DECLARED it answers, keyed by name. Read through `answerAccessor`. */
   _answers?: Record<string, string>
   /** The `scope:` declarations, as written. Read through `requiredScope`. */
@@ -637,10 +645,13 @@ function admitCall(service: Service, ctx: ServiceContext, method: string, isCust
   // counter incremented, a row touched, for a verb the service does not have.
   // It matches the method-existence NotFound directly below, which has always
   // answered ahead of the pipeline for the same reason.
-  if (!isMethodAllowed(service, method as string)) {
-    throw new MethodNotAllowed(
-      `Service '${service.name}' does not offer '${method}' ` +
-      `(allowed: ${allowedMethodNames(service).join(', ') || 'none'})`
+  const transport = (ctx.transport ?? 'internal') as Transport
+  if (!isMethodAllowed(service, method as string, transport)) {
+    const over = service._methodTransports?.[method as string]
+    throw new MethodNotAllowed(over && isMethodAllowed(service, method as string)
+      ? `Service '${service.name}' offers '${method}' over ${over.join(', ')} only, and this call came over ${transport}`
+      : `Service '${service.name}' does not offer '${method}' ` +
+        `(allowed: ${allowedMethodNames(service, transport).join(', ') || 'none'})`
     )
   }
 
@@ -1749,6 +1760,15 @@ export interface MethodDeclaration {
    */
   log?: boolean
   /**
+   * Which callers may reach the method, from `ctx.transport`'s values
+   * (`FJS-D2237`). `['internal']` is a method an internal route or a job calls
+   * through `app.service()`, which `methods:` must list to admit at all; absent,
+   * listing it answers HTTP, the socket and an agent's tool call too. Any other
+   * transport is a 405, and an advertiser asking `isMethodAllowed` for its own
+   * wire leaves it out.
+   */
+  transports?: Transport[]
+  /**
    * The model whose row this method answers, when it is not the service's own
    * (`FJS-D914`). `messages.promote()` answers the Task a message became; the
    * announcement's completeness check, its re-read and its per-recipient grade
@@ -1860,6 +1880,35 @@ export function collectUnloggedMethods(
         `[Junction] service '${serviceName}': ${name} declares log, but ${name} is a CRUD verb. ` +
         `log: is for a custom method.`)
     if (!entry.log) out.push(name)
+  }
+  return out
+}
+
+/** The `transports:` each `methods:` entry declares, keyed by method name. */
+export function collectMethodTransports(
+  declared:    MethodSelection | undefined,
+  serviceName: string,
+): Record<string, Transport[]> {
+  // No prototype: callService indexes this by the caller's method name, and
+  // 'constructor' on a plain object answers a function (`FJS-690`).
+  const out: Record<string, Transport[]> = Object.create(null)
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.transports === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    const list = entry.transports as unknown
+    // An empty list is a method nothing may call, which is leaving it out of methods:.
+    if (!Array.isArray(list) || list.length === 0)
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares transports ${JSON.stringify(list)}, ` +
+        `which is not a non-empty list of ${TRANSPORTS.join(', ')}.`)
+    const unknown = list.filter(t => !(TRANSPORTS as readonly unknown[]).includes(t))
+    if (unknown.length)
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares transports ${JSON.stringify(unknown)}, ` +
+        `which ${unknown.length === 1 ? 'is not one' : 'are not'}. Transports: ${TRANSPORTS.join(', ')}.`)
+    out[name] = [...new Set(list as Transport[])]
   }
   return out
 }
@@ -2170,10 +2219,14 @@ export function serviceMethodNames(svc: object): string[] {
  *
  * The single predicate. `callService` enforces it and the three advertisers
  * (manifest, OpenAPI, /metrics) filter by it, so what a service answers and
- * what it says it answers cannot drift.
+ * what it says it answers cannot drift. With a `transport`, the method's
+ * declared `transports:` must also name it (`FJS-D2237`): an advertiser asks for
+ * its own wire, and without one the answer is the in-process caller's.
  */
-export function isMethodAllowed(svc: object, method: string): boolean {
+export function isMethodAllowed(svc: object, method: string, transport?: Transport): boolean {
   if ((svc as { _unserved?: ReadonlySet<string> })._unserved?.has(method)) return false
+  const over = transport && (svc as { _methodTransports?: Record<string, Transport[]> })._methodTransports?.[method]
+  if (over && !over.includes(transport)) return false
   const allowed = (svc as { _methods?: Set<string> | null })._methods
   // Offered wherever a list can be read: a `readOnly` service is exactly the
   // one whose screen needs the columns it can filter on.
@@ -2181,8 +2234,8 @@ export function isMethodAllowed(svc: object, method: string): boolean {
 }
 
 /** The callable method names, policy applied. Ordered as CRUD then custom. */
-export function allowedMethodNames(svc: object): string[] {
-  return serviceMethodNames(svc).filter(m => isMethodAllowed(svc, m))
+export function allowedMethodNames(svc: object, transport?: Transport): string[] {
+  return serviceMethodNames(svc).filter(m => isMethodAllowed(svc, m, transport))
 }
 
 /**
@@ -2786,6 +2839,7 @@ export function buildService(def: ServiceDefinition): Service {
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredUnlogged = collectUnloggedMethods(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredTransports = collectMethodTransports(def.methods, (def.name as string) ?? '(unnamed)')
   const methodInputs   = collectMethodInputs(def.methods, (def.name as string) ?? '(unnamed)', def)
   const base = buildBase({
     inputMethods: Object.keys(methodInputs),
@@ -3026,7 +3080,8 @@ export function buildService(def: ServiceDefinition): Service {
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
         answers:       { ...(service._answers ?? {}) },
-        scopes:       Object.fromEntries(allowedMethodNames(service)
+        transports:    Object.fromEntries(Object.entries(service._methodTransports ?? {}).map(([k, v]) => [k, [...v]])),
+        scopes:      Object.fromEntries(allowedMethodNames(service)
           .map(m => [m, requiredScope(service, m)] as const)
           .filter((e): e is readonly [string, string | false] => e[1] !== undefined)),
         channel:    describeChannel(service.channel as ChannelDeclaration | undefined),
@@ -3158,6 +3213,7 @@ export function buildService(def: ServiceDefinition): Service {
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
   ;(service as Service)._unloggedMethods = declaredUnlogged
+  ;(service as Service)._methodTransports = declaredTransports
   ;(service as Service)._answers = collectMethodAnswers(def.methods, defName ?? '(unnamed)')
   ;(service as Service)._scope = collectMethodScopes(def.methods, def.scope, defName ?? '(unnamed)')
   resolveTable({})

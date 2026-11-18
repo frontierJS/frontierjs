@@ -76,6 +76,7 @@ Detail: `references/secrets-and-the-log-line.md`
 - **`defineEnv` will not quote a value it must not, and infers that from the NAME.**
 - **An adapter cache is keyed on `$schema`, never on the client** (`FJS-777`)
 - **`$.log` inside a call, `app.logger` outside one** (`FJS-D772`)
+- **A model-backed method's answer loses every key named like a protected column of its model, so a minted secret is returned under another name** (`FJS-D473`, `FJS-4343`)
 
 ## Plugins, config and autoload
 Detail: `references/plugins-config-and-autoload.md`

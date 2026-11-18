@@ -399,6 +399,85 @@ model TeamMember {
     }
   }, 30000)
 
+  // `FJS-D2239` — inside `rel.some(…)` a bare name is the child's, and
+  // `this.col` is the row the rule is declared on: four-eyes, *no approver is
+  // the author*. The table and the column are both mapped, so a correlation
+  // that named the model or the field rather than what SQLite stores is a
+  // string constant and matches nothing.
+  it('agrees across a to-many test that names the parent row with this.col', async () => {
+    const schema = `
+model Repository {
+  id       String   @id
+  authorId String?  @map("author_id")
+  accesses Access[]
+  @@map("repos")
+  @@allow(read, EXPR)
+}
+model Access {
+  id           String     @id
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  userId       String
+}
+`
+    const cases: [string, Record<string, string[]>][] = [
+      [`accesses.some(userId == this.authorId)`,                         { u1: ['A', 'C'], u2: ['A', 'C'], none: ['A', 'C'] }],
+      [`!accesses.some(userId == this.authorId)`,                        { u1: ['B', 'D', 'E'], u2: ['B', 'D', 'E'], none: ['B', 'D', 'E'] }],
+      [`accesses.some(userId == auth().id && userId != this.authorId)`,  { u1: ['B', 'C'], u2: [], none: [] }],
+      [`accesses.some(this.authorId == userId && userId == auth().id)`,  { u1: ['A'], u2: ['C'], none: [] }],
+      [`accesses.some(this.authorId == null)`,                           { u1: ['E'], u2: ['E'], none: ['E'] }],
+    ]
+    for (const [expr, want] of cases) {
+      const db: any = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:' })
+      // A write to the parent's column changes who may read it, so it is in the reach.
+      if (expr === cases[0][0])
+        expect(db.$readColumns('repository')).toEqual({ Access: ['repositoryId', 'userId'], Repository: ['authorId', 'id'] })
+      const sys = db.asSystem()
+      for (const r of [
+        { id: 'A', authorId: 'u1' }, { id: 'B', authorId: 'u2' }, { id: 'C', authorId: 'u2' },
+        { id: 'D', authorId: 'u3' }, { id: 'E', authorId: null },
+      ]) await sys.repository.create({ data: r })
+      for (const [id, repositoryId, userId] of [
+        ['a1', 'A', 'u1'], ['b1', 'B', 'u1'], ['c1', 'C', 'u1'], ['c2', 'C', 'u2'], ['e1', 'E', 'u1'],
+      ]) await sys.access.create({ data: { id, repositoryId, userId } })
+
+      const all = await sys.repository.findMany()
+      for (const who of ['u1', 'u2', 'none']) {
+        const p   = who === 'none' ? null : { id: who }
+        const sql = (await db.$setAuth(p).repository.findMany()).map((x: any) => x.id).sort()
+        const js  = []
+        for (const row of all) if ((await db.$readAs('repository', row, p)) != null) js.push(row.id)
+        expect({ expr, who, sql, js: js.sort() }).toEqual({ expr, who, sql: want[who], js: want[who] })
+      }
+      db.$close()
+    }
+  }, 30000)
+
+  it('refuses this.col where it cannot mean the declaring row', async () => {
+    const at = (expr: string, cols = '') => createClient({ db: ':memory:', schema: `
+model Repository {
+  id       String   @id
+  authorId String?
+  secret   String?  @encrypted
+  ${cols}
+  accesses Access[]
+  @@allow(read, ${expr})
+}
+model Access {
+  id           String     @id
+  repositoryId String
+  repository   Repository @relation(fields: [repositoryId], references: [id])
+  userId       String
+}
+`, encryptionKey: 'k'.repeat(64) })
+    // Outside a some(…) the row is the one being tested, and the bare name says it.
+    await expect(at(`this.authorId == auth().id`)).rejects.toThrow(/write 'authorId'/)
+    await expect(at(`accesses.some(userId == this.nope)`)).rejects.toThrow(/'nope' is not a field on Repository/)
+    await expect(at(`accesses.some(userId == this.accesses)`)).rejects.toThrow(/no column/)
+    await expect(at(`accesses.some(userId == this.secret)`)).rejects.toThrow(/@encrypted/)
+    await expect(at(`accesses.some(userId == this.authorId.id)`)).rejects.toThrow(/one hop/)
+  })
+
   it('agrees with a @@deny standing beside the @@allow', async () => {
     const schema = `
 model Doc {
@@ -819,5 +898,92 @@ model Doc {
     expect(await sys.doc.deleteMany({ where: {} })).toEqual({ count: 1 })
     expect(await sys.doc.count()).toBe(1)
     db.$close()
+  })
+})
+
+// FJS-D2240: a numeric @from aggregate is read through the subquery it already
+// compiles to, in both halves; the count is every child row that exists,
+// whoever asks.
+describe('a policy reading a @from aggregate', () => {
+  const SCHEMA = (rules: string, review = '') => `
+model Pull {
+  id        Int      @id
+  title     String?
+  reviews   Review[]
+  approvals Int      @from(Review, count: true, where: approved == true)
+  score     Int      @from(Review, sum: weight)
+  anyReview Boolean  @from(Review, exists: true)
+  ${rules}
+}
+model Review {
+  id       Int     @id
+  pullId   Int
+  pull     Pull    @relation(fields: [pullId], references: [id])
+  approved Boolean @default(false)
+  weight   Int     @default(1)
+  authorId Int?
+  ${review}
+}`
+
+  const build = async (rules: string, review = '') => {
+    const db  = await createClient({ schema: SCHEMA(rules, review), db: ':memory:' })
+    const sys = db.asSystem()
+    for (const id of [1, 2, 3]) await sys.pull.create({ data: { id } })
+    // Pull 1: two approvals. Pull 2: one approval, one not. Pull 3: none.
+    for (const [id, pullId, approved, authorId] of [[1, 1, true, 7], [2, 1, true, 8], [3, 2, true, 7], [4, 2, false, 8]] as const)
+      await sys.review.create({ data: { id, pullId, approved, authorId } })
+    return { db, sys }
+  }
+
+  it('@@require(postUpdate) grades the count after the write (the JS half)', async () => {
+    const { db, sys } = await build(`@@require(postUpdate, approvals >= 2, 'Two approvals merge.')`)
+    await sys.pull.update({ where: { id: 1 }, data: { title: 'merged' } })
+    await expect(sys.pull.update({ where: { id: 2 }, data: { title: 'merged' } })).rejects.toThrow(/Two approvals merge/)
+    expect((await sys.pull.findUnique({ where: { id: 2 } })).title).toBeNull()
+    db.$close()
+  })
+
+  it('@@require(update) grades the stored row (the SQL half), one and many', async () => {
+    const { db, sys } = await build(`@@require(update, approvals >= 2)`)
+    await sys.pull.update({ where: { id: 1 }, data: { title: 'merged' } })
+    await expect(sys.pull.update({ where: { id: 2 }, data: { title: 'merged' } })).rejects.toThrow(/refused by @@require\(update\)/)
+    expect(await sys.pull.updateMany({ where: {}, data: { title: 'x' } })).toEqual({ count: 1 })
+    db.$close()
+  })
+
+  // Pull 1: approvals 2, score 2, a review. Pull 2: 1, 2, a review. Pull 3: 0, 0, none.
+  it.each([
+    ['score > 1',                   [1, 2]],
+    ['anyReview',                   [1, 2]],
+    ['!anyReview',                  [3]],
+    ['approvals * 2 > score',       [1]],
+    ['approvals == 1 || score == 0', [2, 3]],
+    ['approvals in [0, 2]',         [1, 3]],
+    ['score == null',               []],
+  ])('both halves admit the same rows: %s', async (expr, expected) => {
+    const admitted = async (op: string) => {
+      const { db, sys } = await build(`@@require(${op}, ${expr})`)
+      const ids = []
+      for (const id of [1, 2, 3]) {
+        try { await sys.pull.update({ where: { id }, data: { title: 'probe' } }); ids.push(id) }
+        catch (e: any) { if (e.constructor.name !== 'AccessDeniedError') throw e }
+      }
+      db.$close()
+      return ids
+    }
+    expect(await admitted('update')).toEqual(expected)
+    expect(await admitted('postUpdate')).toEqual(expected)
+  })
+
+  it('a read policy counts every child row, not the ones the caller may read', async () => {
+    const { db } = await build(`@@allow(read, approvals >= 2)`, `@@allow(read, authorId == auth().id)`)
+    const ids = (await db.$setAuth({ id: 7 }).pull.findMany()).map((p: any) => p.id)
+    expect(ids).toEqual([1])
+    db.$close()
+  })
+
+  it('still refuses an @from that picks a row', async () => {
+    await expect(build(`latest Review? @from(Review, last: true)\n  @@require(update, latest != null)`))
+      .rejects.toThrow(/'latest' is @from\(…, first\/last\)/)
   })
 })

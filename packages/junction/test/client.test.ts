@@ -607,8 +607,14 @@ describe('client.resource()', () => {
     expect(tether.get()).toEqual([])
   })
 
-  it('nothing is filtered before a load — the tether has no query to mean', () => {
+  it('a judged list holds no pushed row before it has asked a question (FJS-4425)', () => {
     const { service, tether } = makeClient().resource('items', { match: matchStatus })
+    service._receive('created', { id: '2', status: 'draft' })
+    expect(tether.get()).toEqual([])
+  })
+
+  it('a list that judges nothing still takes a push before a load', () => {
+    const { service, tether } = makeClient().resource('items')
     service._receive('created', { id: '2', status: 'draft' })
     expect(tether.get()).toHaveLength(1)
   })

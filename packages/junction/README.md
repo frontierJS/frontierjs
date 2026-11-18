@@ -544,6 +544,28 @@ app.services.register(createService({
 }))
 ```
 
+**A model-backed method's answer loses every key named like a protected column
+of its model** (`@secret`, `@guarded`, `@encrypted`), at any depth, on every wire
+(`FJS-D473`). A method that returns an `asSystem()` row can't leak that column
+to the caller. A value meant to be shown once, such as a minted API key, goes
+under a name that isn't a column. The server warns once per method when it
+drops a key:
+
+```typescript
+import { createService, $ } from '@frontierjs/junction'
+
+app.services.register(createService({
+  name:  'accessTokens',
+  model: 'AccessToken',     // its `token` column is @secret
+
+  async mint(ctx) {
+    const secret = crypto.randomUUID()
+    const row    = await $.db.asSystem().accessToken.create({ data: { name: ctx.data.name, token: secret } })
+    return { secret, accessToken: row }   // as `token`, the value would not arrive
+  },
+}))
+```
+
 ### 4. WebSocket routing — `app.ws()`
 
 Same `{param}` path syntax as HTTP routes. Handlers receive `WsContext` — params, query, headers, user all pre-resolved, no raw Bun types:
@@ -626,6 +648,12 @@ A service call cannot reach the socket it arrived on, so a room is chosen at the
 upgrade. The client says which with `socketQuery`, kept across a reconnect;
 `client.setSocketQuery({ page: '8' })` cycles the socket into another room, the
 way `setToken` cycles it for another principal.
+
+A room admitted by a credential that is not a session reads it from
+`conn.data.bearer`: the token the client was given with `setToken` rides the
+subprotocol list, never the URL, and reaches the hook with or without an auth
+plugin (`FJS-D2238`). With one configured, that token is also verified as a
+session, and a token it refuses closes the socket `4001`.
 
 The join reads the row as the system and asks the joiner's read verdict on it.
 After every committed write to a model the row's read policy reaches
@@ -1496,6 +1524,12 @@ createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
 - An unlisted method answers **405**, on every transport *and* to an in-process
   `app.service('audit').create()` — the check is in `callService`, which every
   caller goes through, so a job or a hook cannot do what a request cannot.
+- **A method for in-process callers only declares `transports: ['internal']`** —
+  `methods: ['find', { method: 'pushed', transports: ['internal'] }]`
+  (`FJS-D2237`). Listing it admits `app.service('repositories').call('pushed')`
+  from an internal route or a job; HTTP, the socket and an agent's tool call
+  (`'mcp'`) answer 405, and `/manifest`, OpenAPI and MCP leave it out. The
+  values are `ctx.transport`'s: `http`, `websocket`, `internal`, `mcp`.
 - A name the service does not have **throws at construction**, so `['find','gett']`
   fails immediately instead of silently blocking `get`.
 - `/manifest`, `/metrics` and the OpenAPI spec all filter by the policy, so what

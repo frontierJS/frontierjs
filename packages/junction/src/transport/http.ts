@@ -1525,6 +1525,7 @@ export class HttpTransport {
       headers,
       ip,
       user:     null,
+      bearer:   bearerFromProtocols(offered),
       credential,
       handlers: matchedHandlers,
       locals:   {},

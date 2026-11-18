@@ -7,7 +7,7 @@ dated: 2026-11-14
 # Idea — Hydration, and what a server-only region is
 
 **Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`); nothing
-built; 0.1 next.** This is the guiding paper for hydration and server components
+built; Phase 0 done 2026-11-17; Phase 1 is not yet written.** This is the guiding paper for hydration and server components
 in Mesa and Sierra. Hydration is the direction (`FJS-D2172`); VISION RULE 20
 now names it as the planned replacement for islands-replace, and still says
 nothing hydrates today.
@@ -43,7 +43,10 @@ Verified in code 2026-11-14.
 rates it off-balance for this repo. That holds for performance. The reason to
 reopen it is **`FJS-4313`**: an island reads `$context` as `undefined`, and a
 store shared by two islands starts from its client default while a neighbor
-not yet mounted still shows the server's value. Neither is reported. It was
+not yet mounted still shows the server's value. Since `FJS-4313` closed, the
+`$context` half warns once per island and key; the store half is still
+unreported, because nothing on the client can tell a module default from a
+server value. It was
 found against `ryansolid/solid-server-component-benchmarks`, whose `store-sc`
 case shares a cart through context from one client root, a shape islands
 cannot express.
@@ -51,6 +54,71 @@ cannot express.
 The second cost is visible: a prerendered island re-renders on mount, and an
 island over `{#await}` data fetches what the server already awaited
 (`FJS-D1647`).
+
+### Driven 2026-11-17 (0.1)
+
+A static Sierra build (`target: 'static'`) of one route. The route provides
+`$context.theme = 'dark'` and sets `cart.count = 3` on a module store. Under it
+are `Reader` (`client:load`, reads the context), `CartA` (`client:load`) and
+`CartB` (`client:visible`, inside a scroller); both carts write `$: cart`.
+Vite split `cart.js` into one shared chunk. Observed in Chrome:
+
+| Moment | `Reader` | `CartA` | `CartB` |
+| --- | --- | --- | --- |
+| Server HTML | `theme: dark` | `A: 3` | `B: 3` |
+| After load | `theme: undefined`, one warning naming `<Reader>` and `$context.theme` | `A: 0` | `B: 3` (not mounted) |
+| Click A | | `A: 1` | `B: 3` |
+| B scrolled in and mounted | | `A: 1` | `B: 1` |
+| Click B, then click A | | `A: 2`, then `A: 3` | `B: 2`, then `B: 3` |
+
+- **Both halves reproduce.** The context reads `undefined`. The store starts
+  from its client default, so `A: 1` and `B: 3` sit on one screen, and no
+  message reports it.
+- **Once both islands mount, the store is shared.** One module instance lives
+  in one shared chunk, and a write in either island reaches the other. So the
+  store defect is about the starting value, not about the islands being
+  isolated from each other. Q4's store snapshot is the whole fix for it.
+- **The `$context` half cannot be fixed by a payload.** The route that
+  provides the value is not a component on the client at all. Only one tree
+  (Q2) gives `Reader` an ancestor.
+
+### Measured on `example/site/` 2026-11-17 (0.2)
+
+A static build of `example/site/` into a scratch directory, served without
+the API on 8110. Each island page was driven in Chrome, with the window
+scrolled to the bottom so `client:visible` islands fire. A recorder injected
+ahead of the page counted fetches, and the nodes each mount removed and
+added, whole subtrees included.
+
+| Page | Islands | Island JS, gzip | Nodes replaced | Calls on mount |
+| --- | --- | --- | --- | --- |
+| `/catalog/` | `CatalogList` load, `LiveStock` visible | 34.6 KB | 49 → 51 | 1 |
+| `/pricing/` | `LivePlans` load | 33.0 KB | 6 → 7 | 1 |
+| `/products/explorer-tee/` | `LivePrices` load, `BuyBox` load | 37.5 KB | 24 → 26 | 2, identical |
+| `/account/` | `Account` load | 37.0 KB | 6 → 15 | 0 |
+| `/cart/` | `Basket` load | 38.8 KB | 7 → 10 | 1 |
+
+- **No call re-asks for what the server already awaited.** `LivePrices`,
+  `LivePlans` and `LiveStock` exist to fetch numbers fresher than the build,
+  and `Basket` reads a browser-held cart. No island on this site renders
+  `{#await}` data. Q4's serialized values would save **zero** requests here.
+  The refetch cost in § 2 is real for an `{#await}` island and absent from
+  this app.
+- **The product page's two identical POSTs are deliberate.** `BuyBox.mesa`
+  says why: coupling the two islands would let a failed buy box stop a price
+  correction. One tree would make deduping them possible, not required.
+- **The re-render is small.** The largest is 49 nodes on `/catalog/`. The
+  time to the last mutation was 60–375 ms and varied run to run. It includes
+  each island's "could not reach the shop" update after the refused fetch, so
+  it is not the re-render's cost and is not a baseline.
+- **Most island bytes are shared, not per island.** The loader plus runtime
+  chunk is 16.7 KB gzip and the Junction client 13.0 KB, on every island page.
+  Each island's own chunk is 1.2–5.7 KB. Hydration adopts DOM rather than
+  shrinking these. Only the per-edge form (Q2 C) cuts bytes, and only from the
+  part that is per island.
+
+On this app the case for hydration is the `FJS-4313` correctness half, not
+cost. That matches § 2's framing.
 
 ## 3. "Server component" names two things
 
@@ -88,6 +156,53 @@ keyword for it.
   ([docs](https://qwik.dev/docs/concepts/resumable/)).
 - **Marko 6** compiles to fine-grained reactive edges and ships code only for
   them, which is closest to the per-edge form in `one-mental-model.md` § 5.
+
+### Marker protocols, read 2026-11-17 (0.3)
+
+Read from source at svelte@5.57.3, solid-js@1.9.19 with dom-expressions@0.40.14,
+and @marko/runtime-tags@6.4.16. Every sample below is real server output from
+one test component per framework: a static heading, two text bindings, an
+`if` and a list.
+
+| | Svelte 5 | Solid 1.9 | Marko 6 |
+| --- | --- | --- | --- |
+| Server writes | `<!--[-->` … `<!--]-->` per block, `<!--[N-->` for an `if` branch | `data-hk="00"` on each template root, `<!--$-->` … `<!--/-->` per insert slot | `<!--M_$1 #text/0-->` after each live node, keyed by scope and accessor |
+| Client finds a node by | a cursor walking real siblings in compiled order | key for template roots, cursor inside a template | key: one TreeWalker pass, then `scope[accessor] = marker.previousSibling` |
+| Adjacent text | merged, set as one string | kept apart by the slot comments | kept apart by a bare `<!>` |
+| Static subtree | no marker, but the cursor still steps through it | no marker inside a template, a `data-hk` on its own root | nothing at all |
+| State | none by default; experimental `hydratable(key, fn)` writes one devalue script | seroval script per resource, keyed by hydration id | one script of per-scope fields the client reads, handlers by module id |
+| Mismatch | warn, then replace the whole root (`render.js`), or just the block for an `if`/`await` | dev throws; prod silently makes a fresh node | no check found |
+
+Samples, trimmed:
+
+```html
+<!-- Svelte -->  <p>Hello 1 and 2</p> <!--[0--><b>yes</b><!--]-->
+<!-- Solid -->   <p>Hello <!--$-->1<!--/--> and <!--$-->X<!--/--></p>
+<!-- Marko -->   <p>Hello <!>1<!--M_$1 #text/0--> and <!>2<!--M_$1 #text/1--></p>
+```
+
+**Marko 6 is the shape `FJS-D2173` names:** one marker per live binding,
+looked up by key, and nothing for an inert region. A cursor (Svelte) needs a
+clean sibling count through every static region, which is the opposite of
+shipping nothing for one. What Mesa would take from each:
+
+- **From Marko:** a comment after each live node, keyed by the compiler's own
+  per-binding name, which Mesa already has because it emits `child()` and
+  `sibling()` per binding. Also `<!>` between adjacent text nodes, and a
+  fresh `Text` where a text binding rendered empty. Nothing is written for a
+  binding the client never re-evaluates.
+- **From Svelte:** the state transport. `hydratable` writes one script with
+  promise placeholders and a CSP nonce or hash, which is `FJS-D2175`'s
+  settled values.
+- **Whole page first fits the same markers.** One root walks every marker
+  once and builds one owner tree. Narrowing to per-edge later filters that
+  walk by region and adds no marker.
+
+A keyed lookup makes a missing marker detectable per binding, which a cursor
+cannot. That raises a question `FJS-D2177` settled at root level: whether a
+mismatch replaces the whole page, which is the one root under Q2 A, or only
+the block holding the missing binding, as Svelte does for an `if` or `await`.
+This is flagged for the owner, not decided here.
 
 ## 5. The cheaper fix, priced first
 
@@ -177,12 +292,16 @@ Goal: the facts the questions turn on, measured rather than read.
 Done when: `FJS-4313` is driven in a browser, the costs in § 2 are measured on
 `example/site/`, and Q1–Q4 are ruled.
 
-- [ ] 0.1 Drive `FJS-4313`: a provider above an island and a store shared by
-  two islands, both halves observed in Chrome
-- [ ] 0.2 Measure today's cost on `example/site/`: re-render on mount, refetch
-  count, island bytes
-- [ ] 0.3 Read the marker protocols of Svelte 5, Solid and Marko 6 for one
-  keyed by reactive edge
+- [x] 0.1 Drive `FJS-4313`: a provider above an island and a store shared by
+  two islands, both halves observed in Chrome — 2026-11-17, § 2 *Driven*. The
+  fixture was a throwaway in a gitignored `.cache/` directory. Phase 2's drive
+  (§ 7, first bullet) is this page with the assertions inverted.
+- [x] 0.2 Measure today's cost on `example/site/`: re-render on mount, refetch
+  count, island bytes — 2026-11-17, § 2 *Measured*: zero redundant refetches,
+  re-render ≤ 49 nodes, and island bytes mostly shared runtime
+- [x] 0.3 Read the marker protocols of Svelte 5, Solid and Marko 6 for one
+  keyed by reactive edge — 2026-11-17, § 4 *Marker protocols*: Marko 6's
+  keyed-per-binding shape fits
 - [x] 0.4 Owner rules Q1–Q6 — ruled 2026-11-15, `FJS-D2172`–`FJS-D2177`
 - [x] 0.5 Amend RULE 20 in mesa's `docs/VISION.md` to name hydration as the
   planned replacement for islands-replace (`FJS-D2172`) — 2026-11-14, one

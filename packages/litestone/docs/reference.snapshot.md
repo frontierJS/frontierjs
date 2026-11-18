@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**129 words** — 13 declarations · 75 field attributes · 37 model attributes · 4 transition words.
+**131 words** — 13 declarations · 76 field attributes · 38 model attributes · 4 transition words.
 
 ## Index
 
@@ -33,7 +33,7 @@ and shows you the diff first.
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@local`](#local-field) · [`@immutable`](#immutable-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@opaque`](#opaque-field) · [`@personal`](#personal-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
-- *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@digest`](#digest-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
+- *Refuse a bad value* — [`@validate`](#validate-field) · [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@digest`](#digest-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
 - *Shape the table* — [`@big`](#big-field) · [`@collate`](#collate-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
 - *Decide who may* — [`@allow`](#allow-field)
 - *Wire it to the app* — [`@override`](#override-field)
@@ -41,7 +41,7 @@ and shows you the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@validate`](#validate-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@require`](#require-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -917,6 +917,21 @@ model Example {
 
 ### Refuse a bad value
 
+#### `@validate` <a id="validate-field"></a>
+
+Graded by a rule written in code: a `$validate` entry in the app's computed.js whose `path` names this field, `{ check: data => boolean, message, path: ['source'] }`. The answer when the check is not SQL (a template must compile, a document must parse), and it runs in the Data boundary's validation pass, so a principal's client, `asSystem()`, a job and a seed are all graded, which a service hook is not. Boot refuses this marker with no rule naming the field, and a rule naming a field without it. `check` receives the write's data, so an update is graded on the fields it sends. A rule over several fields that names none is `@@validate`.
+
+```lite
+model Example {
+  id Int @id
+  source String @validate
+}
+```
+
+- **Legal** — on a model's field · on a trait's field
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@check`](#check-field) · [`@@validate`](#validate-model)
+
 #### `@values` `(<ValueSetName>[, strength: required|open|suggested][, dependsOn: <column>[, matching: <sourceColumn>]])` <a id="values-field"></a>
 
 Where this column's legal values come from. `required` (unstated) refuses anything outside the set; `open` accepts a value the caller typed AND joins it to the set, so the source needs a @@label naming which column receives the text; `suggested` offers the list and enforces nothing. It sits BESIDE @relation rather than instead of it — a foreign key is storage and a value set is resolution, and those are two facts about one column. An enum field is refused: an enum is already a complete set and required by construction. `dependsOn` makes the set DEPENDENT — the list is narrowed by a sibling column of this row, so a state belongs to the chosen country and a variant to the chosen product. It goes here rather than on the valueset because the set is reusable and the controlling column is model-local; which column of the SOURCE it is matched against is derived from the relation both models have to a third, and `matching: <sourceColumn>` states it where that walk cannot decide. The pair is graded in both directions: moving the controller is refused when it makes the stored value illegal.
@@ -1540,6 +1555,20 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@check`](#check-field)
+
+#### `@@validate` <a id="validate-model"></a>
+
+The row is graded by a path-less `$validate` rule in the app's computed.js, one that reads several fields and names none. The code half of `@@check`: it runs in the Data boundary's validation pass, so every writer is graded, and boot refuses this marker with no path-less rule and a path-less rule on a model without it. A rule about one field is that field's `@validate`.
+
+```lite
+model Example {
+  id Int @id
+  @@validate
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@check`](#check-model) · [`@validate`](#validate-field)
 
 #### `@@arc` `([field, …][, optional: true])` <a id="arc-model"></a>
 
@@ -2199,7 +2228,7 @@ entry above says so only when its answer is not the ordinary one.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money`, `@big`, `@override` |
+| on a type's field | `@id`, `@unique`, `@map`, `@relation`, `@generated`, `@from`, `@encrypted`, `@guarded`, `@secret`, `@updatedAt`, `@version`, `@allow`, `@values`, `@scale`, `@money`, `@big`, `@override`, `@validate` |
 | on a trait's field | `@id`, `@override` |
 | in a trait | `@id`, `@map`, `@db`, `@fts` |
 | on an enum member | everything except `@label` |

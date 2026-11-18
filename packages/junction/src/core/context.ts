@@ -411,7 +411,8 @@ export type { QueryDirectives, Pagination } from './directives.ts'
 /** What carried the call. `'mcp'` is an agent's tool call: in-process like
  *  `'internal'`, and from outside like `'http'`, so an *is this call from
  *  inside* check refuses it (`FJS-D609`). */
-export type Transport = 'http' | 'websocket' | 'internal' | 'mcp'
+export const TRANSPORTS = ['http', 'websocket', 'internal', 'mcp'] as const
+export type Transport = (typeof TRANSPORTS)[number]
 
 // ─── Hook type ────────────────────────────────────────────────────────────
 // `method` is the phase where the service method itself runs. It is not a hook

@@ -46,7 +46,7 @@ import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from '../core/context.ts'
 import type { App, Plugin }    from '../core/app.ts'
 import { SESSION_SOCKET }       from './types.ts'
-import type { WsContext }      from './types.ts'
+import type { WsContext, WsData } from './types.ts'
 
 // A committed write as the litestone tap hands it over: what a bound room needs
 // to tell a write that moved a grade from one that did not.
@@ -1802,7 +1802,10 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           const conn = await manager.handleConnection(
             ctx.$ws as BunWS,
             session,
-            { query: ctx.query, headers: ctx.headers }
+            // `bearer`: the subprotocol credential, for a channel whose
+            // membership is not a session's (`FJS-D2238`); the headers no
+            // longer carry it.
+            { query: ctx.query, headers: ctx.headers, bearer: (ctx.$ws as Bun.ServerWebSocket<WsData>).data.bearer ?? null }
           )
 
           socketToConnId.set(ctx.$ws as object, { connId: conn.id, connectedAt: Date.now() })

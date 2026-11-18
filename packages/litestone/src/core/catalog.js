@@ -64,7 +64,7 @@ export const POSITIONS = {
 export const POSITION_RULES = {
   typeField:  { excludes: ['id', 'unique', 'map', 'relation', 'generated', 'from',
                            'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow',
-                           'values', 'scale', 'money', 'big', 'override'] },
+                           'values', 'scale', 'money', 'big', 'override', 'validate'] },
   traitField: { excludes: ['id', 'override'] },
   traitBlock: { excludes: ['id', 'map', 'db', 'fts'] },
   enumMember: { only: ['label'] },
@@ -638,6 +638,15 @@ const FIELD = [
     'age Int @check("age >= 0", "must not be negative")'
   ),
   t(
+    'validate',
+    'field',
+    'validate',
+    '',
+    "Graded by a rule written in code: a `$validate` entry in the app's computed.js whose `path` names this field, `{ check: data => boolean, message, path: ['source'] }`. The answer when the check is not SQL (a template must compile, a document must parse), and it runs in the Data boundary's validation pass, so a principal's client, `asSystem()`, a job and a seed are all graded, which a service hook is not. Boot refuses this marker with no rule naming the field, and a rule naming a field without it. `check` receives the write's data, so an update is graded on the fields it sends. A rule over several fields that names none is `@@validate`.",
+    'source String @validate',
+    { seeAlso: ['field:check', 'model:validate'] }
+  ),
+  t(
     'allow',
     'field',
     'access',
@@ -1051,6 +1060,15 @@ const MODEL = [
     'A row invariant that spans more than one column, emitted as a table CHECK. The table-level half of field `@check`: a field validator sees one field, `@@unique` is about rows in a table rather than values in a row, and `@@allow` is who rather than what is valid — so a two-column rule had nowhere to live but a service hook, which a job, a migration, `asSystem()` and a seed all bypass. Repeatable. The message is the last argument and is what a form shows; without one the expression is on the error for a developer and the person sees a generic sentence, because SQL under a control reaches somebody who did not write it. A violation is a `ValidationError` — 400, with the message on the record rather than on a box, since a rule over several columns names none of them.',
     '@@check("startsAt < endsAt", "an end must come after its start")',
     { extraFields: 'startsAt DateTime\n  endsAt DateTime', seeAlso: ['check'] }
+  ),
+  t(
+    'validate',
+    'model',
+    'shape',
+    '',
+    "The row is graded by a path-less `$validate` rule in the app's computed.js, one that reads several fields and names none. The code half of `@@check`: it runs in the Data boundary's validation pass, so every writer is graded, and boot refuses this marker with no path-less rule and a path-less rule on a model without it. A rule about one field is that field's `@validate`.",
+    '@@validate',
+    { seeAlso: ['model:check', 'field:validate'] }
   ),
   t(
     'arc',
@@ -1716,6 +1734,8 @@ export const DOCS = {
   'model:arc': 'schema.md',
   'model:relator': 'relations.md',
   'model:check': 'schema.md',
+  'field:validate': 'schema.md',
+  'model:validate': 'schema.md',
   'model:exclude': 'concurrency.md',
   'schema:scope': 'concurrency.md',
   'field:startsWith': 'schema.md',
@@ -1945,6 +1965,8 @@ export const TIERS = {
     'model:sync',
     'model:fts',
     'model:check',
+    'model:validate',
+    'field:validate',
     'model:exclude',
     'model:extensible'
   ]
@@ -1990,6 +2012,7 @@ export const AXES = {
     'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
     'model:id', 'model:unique', 'model:exclude', 'model:check', 'model:arc', 'model:relator',
+    'field:validate', 'model:validate',
     'model:map', 'model:label', 'model:noStrict', 'model:fts', 'model:extensible',
     'model:hasTemplates', 'model:db', 'model:trait', 'field:override'
   ],

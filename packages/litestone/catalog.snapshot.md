@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**129 words** — 13 declarations · 75 field attributes · 37 model attributes · 4 transition words.
+**131 words** — 13 declarations · 76 field attributes · 38 model attributes · 4 transition words.
 
 ## Declarations
 
@@ -64,6 +64,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@personal` | Hide or lock a value | [(<category>)] |  | category: contact · device · location · government · financial · employment · communication · demographic · health · genetic · biometric · characteristic · criminal |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
 | `@check` | Hide or lock a value | ("sql expression"[, "message"]) |  |  |  |
+| `@validate` | Refuse a bad value |  | on a model's field · on a trait's field |  |  |
 | `@allow` | Decide who may | ('read'\|'write'\|'all', <expression>) | on a model's field · on a trait's field |  |  |
 | `@updatedAt` | Record who and when |  | on a model's field · on a trait's field |  |  |
 | `@updatedBy` | Record who and when | [(<authField>)] |  |  |  |
@@ -119,6 +120,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
 | `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>][, where: <expr>]) |  |  |  |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
+| `@@validate` | Shape the table |  |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
 | `@@relator` | Shape the table | ([field, …], once \| many \| many, by: <column>) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
@@ -168,7 +170,7 @@ A blank `legal` column above means the ordinary answer for that level.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big`, `override` |
+| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big`, `override`, `validate` |
 | on a trait's field | `id`, `override` |
 | in a trait | `id`, `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |

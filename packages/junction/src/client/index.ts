@@ -1833,11 +1833,12 @@ export class JunctionClient extends EventEmitter {
     let issuedQuery: Record<string, unknown> | null = null
     let issuedParams: QueryDirectives = {}
 
-    // A list whose load was asked and never answered still means its question:
-    // judged by nothing, a load refused while the API booted let every member's
-    // row into a list filtered to one member (FJS-4425).
+    // A list that judges rows is judged by the question it asked, answered or
+    // not, and holds no pushed row before it has asked one: judged by nothing,
+    // a list filtered to one member took in every member's row (FJS-4425).
+    const asked = (): Record<string, unknown> | null => lastQuery ?? issuedQuery
     const verdict = (record: T): boolean | null => {
-      const query  = lastQuery ?? issuedQuery
+      const query  = asked()
       const params = lastQuery ? lastParams : issuedParams
       if (!opts.match || query === null) return true
       try {
@@ -2006,6 +2007,7 @@ export class JunctionClient extends EventEmitter {
       // thing that will ever tell them. Doing this inside the membership
       // branches below would update exactly the views that already knew.
       registry.write(model, record, key)
+      if (opts.match && asked() === null) return
 
       const answer = verdict(record)
       if (answer === false) {

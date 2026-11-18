@@ -1239,6 +1239,12 @@ class Parser {
 
       case 'check':    return { kind: 'check',     ...this.parseCheckArgs() }
 
+      // @validate — the field's value is graded by a `$validate` rule in the
+      // app's computed.js whose `path` names it (`FJS-D2241`). The rule is code,
+      // so the schema carries only the marker; boot refuses a marker no rule
+      // names, and a rule naming a field without one.
+      case 'validate': return { kind: 'validate' }
+
       // ── @secret — composite encrypted+guarded+logged field ─────────────────
       // @secret                        — rotatable (default)
       // @secret(rotate: false)         — excluded from $rotateKey, and therefore
@@ -2891,6 +2897,10 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'mirror', key }
       }
+      // @@validate — the row is graded by a path-less `$validate` rule in the
+      // app's computed.js, one that reads several fields and names none
+      // (`FJS-D2241`).
+      case 'validate': return { kind: 'validate' }
       default: {
         // The block words disagree on number (`@@transitions` and
         // `@@capabilities` plural, `@@commitment` and `@@index` singular), so
@@ -3766,6 +3776,7 @@ const MODEL_ATTRIBUTE_WORDS = [
   'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
   'deny', 'require', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
   'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
+  'validate',
 ]
 
 // These are PARSE KINDS and not the words a reader types, which is the trap
@@ -4080,6 +4091,9 @@ export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   // where `enforceValueSets` lives, so a binding here would be a declaration
   // that silently enforces nothing.
   'values',
+  // Same: a `$validate` rule is bound by a model's field path, and no model
+  // names a type's field.
+  'validate',
 ])
 
 

@@ -539,7 +539,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, seed?: { $defs?:
     // a generated client calls it* — which is exactly what this file did: a
     // service narrowed by `methods:` was documented with all five CRUD verbs,
     // and three of six documented operations answered 405 (`FJS-902`).
-    const answers = new Set(service.describe().methods)
+    const answers = new Set(service.describe().methods.filter(m => isMethodAllowed(service, m, 'http')))
     const declaredInput: Record<string, { name: string; schema: OASchema }> = {}
 
     // A declared `input:` names a `type` in the seed and reached the spec
@@ -620,7 +620,7 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, seed?: { $defs?:
     // The header enum is the allow-list, the body is a `oneOf` over whatever
     // each method declared, and the description names them. A per-method
     // operation would read better and would be the same lie in a new place.
-    const customMethods = service.describe().customMethods.filter(m => isMethodAllowed(service, m))
+    const customMethods = service.describe().customMethods.filter(m => isMethodAllowed(service, m, 'http'))
     if (customMethods.length) {
       const bodies = customMethods
         .map(m => ({

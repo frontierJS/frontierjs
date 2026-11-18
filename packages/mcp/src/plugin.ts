@@ -37,7 +37,7 @@
 import type { McpServer } from '@modelcontextprotocol/server'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, isAbsolute, join } from 'node:path'
-import { BadRequest, CALL_OPTIONS_AT, LEVELS, NotFound, Unauthorized, errorBody, normalizePrefix, principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
+import { BadRequest, CALL_OPTIONS_AT, LEVELS, NotFound, Unauthorized, errorBody, isMethodAllowed, normalizePrefix,principalGateLevel, scopeRefusal, toDataPrincipal, withholdProtected, setCallDb } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
@@ -264,7 +264,8 @@ function describeAll(app: App): ServiceShape[] {
     out.push({
       name:        d.name,
       model:       d.model,
-      methods:     d.methods,
+      // An agent's call is refused a method declaring transports without mcp.
+      methods:     d.methods.filter(m => isMethodAllowed(svc, m, 'mcp')),
       inputs:      d.inputs,
       methodGates: d.methodGates,
     })

@@ -130,9 +130,15 @@ describe('a @derived naming an @from', () => {
 })
 
 describe('a policy naming a field with no column', () => {
-  test('refuses @@allow naming a @from on its own model', async () => {
-    await expect(build(schema(`@@allow(update, adults > 0)`)))
-      .rejects.toThrow(/Shift: 'adults' is @from, so there is no column to compare — in @@allow\/@@deny/)
+  // FJS-D2240: an aggregate is its own subquery, so updateMany is narrowed.
+  test('reads a @from aggregate on its own model through its subquery', async () => {
+    const db: any = await build(schema(`title String?\n  @@allow(update, adults > 0)\n  @@allow(read, true)`))
+    const sys = db.asSystem()
+    await sys.event.create({ data: { id: 1 } })
+    for (const id of [1, 2]) await sys.shift.create({ data: { id, eventId: 1 } })
+    await sys.assignment.create({ data: { id: 1, shiftId: 1 } })
+    expect(await db.$setAuth({ id: 'u1' }).shift.updateMany({ where: {}, data: { title: 'x' } })).toEqual({ count: 1 })
+    db.$close()
   })
   test('refuses @@allow naming a @from across a hop', async () => {
     await expect(build(schema(`@@allow(read, event.enrolled > 4)`)))

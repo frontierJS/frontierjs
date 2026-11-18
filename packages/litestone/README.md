@@ -1998,15 +1998,11 @@ export default {
   User: {
     fullName: row => [row.firstName, row.lastName].filter(Boolean).join(' '),
     isActive: row => !row.deletedAt,
-
-    $validate: [{
-      check:   data => !data.email?.includes('+'),
-      message: 'Email aliases not allowed',
-      path:    ['email'],
-    }]
   }
 }
 ```
+
+A content check written in code is a `$validate` entry in the same file, bound to the field it grades by `@validate` — [docs/schema.md § A check written in code](./docs/schema.md#a-check-written-in-code-validate-validate).
 
 ```lite
 model User {

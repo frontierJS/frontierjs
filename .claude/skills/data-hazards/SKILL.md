@@ -49,6 +49,7 @@ Detail: `references/gates-policies-and-claims.md`
 - **A column your `getLevel` reads must not be writable by the caller being graded.**
 - **A foreign key is a read: a parent the caller cannot read once the row exists answers as missing** (`FJS-D576`, `FJS-D1705`)
 - **A `9`-gated table cannot be tidied up, by anything**
+- **A policy reading a `@from` aggregate counts every child row that exists, and the read shows the caller's count** (`FJS-D2240`)
 
 ## `@@transitions`
 Detail: `references/transitions.md`

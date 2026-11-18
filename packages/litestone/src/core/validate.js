@@ -8,7 +8,10 @@
 // String transforms (applied BEFORE validation and write):
 //   @trim, @lower, @upper
 //
-// Model-level cross-field rules (defined in extensions as $validate):
+// Rules written in code (a `$validate` array in computed.js), each bound to
+// the schema: a rule with a `path` to that field's `@validate`, a path-less
+// rule to the model's `@@validate` (`FJS-D2241`; boot checks the pairing in
+// `normalizeComputed`):
 //   { check: data => boolean, message: string, path?: string[] }
 //
 // All validators skip null/undefined values — use NOT NULL in schema for required fields.
@@ -893,6 +896,10 @@ export const VALIDATOR_KINDS = new Set([
   // 200. The pass is the only place either can be refused.
   'vector',
   'rank',
+  // The field's rule is a `$validate` entry in computed.js, which this map
+  // never sees: without the marker here a model of plain String columns skips
+  // the pass and stores what the rule refuses (`FJS-4221`).
+  'validate',
 ])
 
 // An Int column whose value is a JS number on the way in and out: not an array,
@@ -927,7 +934,8 @@ export function buildValidationMap(schema) {
     const hasArrayField = model.fields.some(f => f.type.array)
     const hasPlainInt = model.fields.some(isPlainInt)
     const hasPlainFloat = model.fields.some(isPlainFloat)
-    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt || hasPlainFloat
+    const hasRowRule = (model.attributes ?? []).some(a => a.kind === 'validate')
+    map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt || hasPlainFloat || hasRowRule
   }
   return map
 }

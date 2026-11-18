@@ -93,6 +93,7 @@ export function policyExprToString(node) {
     case 'field':   return node.name
     case 'path':    return `${node.rel}.${node.name}`
     case 'some':    return `${node.rel}.some(${policyExprToString(node.where)})`
+    case 'this':    return `this.${node.name}`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
     case 'literal': {
       const v = node.value
@@ -269,6 +270,13 @@ function noColumn(f) {
   return kind ? '@' + kind : 'not a stored column'
 }
 
+// A numeric `@from` is a value SQLite computes from the child rows, so a policy
+// reads it through its own subquery (`FJS-D2240`). A picked row is a row of
+// another model, and a to-one column is a parent's, so neither is one.
+const FROM_AGGREGATES = new Set(['count', 'sum', 'avg', 'min', 'max', 'exists'])
+const fromOp = (f) => f?.attributes?.find(a => a.kind === 'from')?.op ?? null
+const isFromAggregate = (f) => FROM_AGGREGATES.has(fromOp(f))
+
 // The column a belongsTo relation's NAME stands for in a comparison
 // (`owner == auth()`). A composite key has no one column, and comparing its
 // first would grade the row by whichever row shares it (`FJS-2790`), so it is
@@ -281,7 +289,9 @@ function relationColumn(rel, name, modelName) {
     `name the column, or the related row's field as '${name}.<field>'`)
 }
 
-function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null, schema = null) {
+// `outer` is the model a `rel.some(…)` is declared on, while its condition is
+// checked against the child: the model `this.col` names.
+function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = null, schema = null, outer = null) {
   const known = (name) => {
     const rel = relationMap?.[model.name]?.[name]
     if (rel) { relationColumn(rel, name, model.name); return true }
@@ -326,10 +336,35 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     // `@@allow(update, adults > 0)` admitted every row to updateMany.
     if (n.type === 'field' && !relationMap?.[model.name]?.[n.name]) {
       const f = model.fields.find(x => x.name === n.name)
+      if (isFromAggregate(f)) return
+      if (fromOp(f) === 'first' || fromOp(f) === 'last') throw new Error(
+        `${model.name}: '${n.name}' is @from(…, first/last) — a row of another model, not a value; a policy ` +
+        `reads a count, sum, min, max or exists — in ${what} '${policyExprToString(expr)}'`)
       const none = f && noColumn(f)
       if (none) throw new Error(
         `${model.name}: '${n.name}' is ${none}, so there is no column to compare — ` +
         `in ${what} '${policyExprToString(expr)}'`)
+    }
+    // A column of the row a `rel.some(…)` is declared on (`FJS-D2239`), which the
+    // EXISTS reads off the outer table. Refused on the same grounds a path's
+    // column is: no column, or one holding an encoding the child's value is not.
+    if (n.type === 'this') {
+      const say = (msg) => { throw new Error(
+        `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
+      if (!outer) say(`'this.${n.name}' names the row a rule is declared on, and only inside a 'rel.some(…)'`)
+      const rel = relationMap?.[outer.name]?.[n.name]
+      const col = relationColumn(rel, n.name, outer.name)
+      const f   = outer.fields.find(x => x.name === col)
+      if (!f) say(`'${n.name}' is not a field on ${outer.name} — reached as 'this.${n.name}'. ` +
+                  `Fields: ${outer.fields.map(x => x.name).sort().join(', ')}`)
+      const none = (rel && rel.kind !== 'belongsTo') ? 'a to-many relation' : noColumn(f)
+      if (none) say(`'this.${n.name}' is ${none} on ${outer.name}, so there is no column to correlate on`)
+      if (isFromAggregate(f)) say(`'this.${n.name}' is @from on ${outer.name}; a 'rel.some(…)' compares a stored column`)
+      for (const kind of ['encrypted', 'hashed', 'secret'])
+        if (f.attributes?.some(a => a.kind === kind))
+          say(`'this.${n.name}' is @${kind} on ${outer.name}, so the column holds an encoding ` +
+              `rather than the value — a comparison against it would match nothing`)
+      return
     }
     // One hop across a relation (`FJS-D221`). Everything refused here is a case
     // whose alternative is a SILENT wrong answer rather than an error, which is
@@ -341,6 +376,9 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
       const say = (msg) => { throw new Error(
         `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
 
+      if (!rel && n.rel === 'this')
+        say(`'this.${n.name}' names the row a rule is declared on from inside a 'rel.some(…)'. ` +
+            `Here that row is the one being tested — write '${n.name}'`)
       if (!rel) {
         const rels = Object.keys(relationMap?.[model.name] ?? {}).sort()
         say(`'${n.rel}' is not a relation on this model` +
@@ -399,7 +437,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
             `Declare the join model and test it: '<joinRelation>.some(…)'`)
       const target = schema?.models?.find(m => m.name === rel.targetModel)
       if (target)
-        checkExpr(target, n.where, relationMap, `${model.name}.${n.rel}.some(…) in ${what}`, claims, schema)
+        checkExpr(target, n.where, relationMap, `${model.name}.${n.rel}.some(…) in ${what}`, claims, schema, model)
       return
     }
     // The same sentence about the OTHER side of the comparison. An absent claim
@@ -416,6 +454,22 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     }
     if (n.type !== 'compare') return
     walk(n.left); walk(n.right)
+    // `encodedCompare` encodes a value the policy holds; a parent's column is
+    // not one, and `scalarOperand` binds the left of an 'in' as one, so the
+    // parent's column there would bind null.
+    const parent = n.left.type === 'this' ? n.left : n.right.type === 'this' ? n.right : null
+    if (parent) {
+      const other = parent === n.left ? n.right : n.left
+      const f     = other.type === 'field' && model.fields.find(x => x.name === other.name)
+      for (const kind of ['encrypted', 'hashed', 'secret'])
+        if (f?.attributes?.some(a => a.kind === kind)) throw new Error(
+          `${model.name}: '${other.name}' is @${kind}, and 'this.${parent.name}' is a column rather than a ` +
+          `value the policy can encode — in ${what} '${policyExprToString(expr)}'`)
+      if (n.op === 'in' && parent === n.left && n.right.type === 'field') throw new Error(
+        `${model.name}: 'this.${parent.name} in ${n.right.name}' asks a column of one row about a list on ` +
+        `another, and 'in' against an array column takes a value the CALLER has on the left — in ${what} ` +
+        `'${policyExprToString(expr)}'`)
+    }
     if (n.op !== 'in') return
 
     const say = (msg) => { throw new Error(`${model.name}: ${msg} — in @@allow/@@deny '${policyExprToString(n)}'`) }
@@ -464,6 +518,11 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
       if (n.right.type === 'field')
         say(`both sides name a column on this model. 'in' compares a value the CALLER has ` +
             `against a list on the row — put auth().something on the left`)
+      // `scalarOperand` binds the left side as one value, and an aggregate has
+      // none until the row is read — it would bind null.
+      if (n.right.type === 'path' && isFromAggregate(f))
+        say(`'${n.left.name}' is @from, computed from the row, and the list is across a relation. ` +
+            `'in' against a related array takes a value the CALLER has on the left`)
     } else if (n.left.type === 'path') {
       const t = pathTarget(n.left)
       if (t?.field?.type?.array)
@@ -1355,11 +1414,24 @@ function walkReads(modelName, ctx, op) {
     const rules = shapeOf(ctx, model).policy[operation]
     if (rules) for (const { expr } of [...rules.allows, ...rules.denies]) walk(expr, model, operation)
   }
-  const walk = (node, model, operation) => {
+  // `outer` is the model a `.some()` was declared on, which `this.col` reads.
+  const walk = (node, model, operation, outer = null) => {
     if (!node || typeof node !== 'object') return
-    if (Array.isArray(node)) { for (const n of node) walk(n, model, operation); return }
+    if (Array.isArray(node)) { for (const n of node) walk(n, model, operation, outer); return }
     const rels = relationsOf(ctx, model)
     if (node.type === 'field') read(model, [node.name])
+    if (node.type === 'this' && outer) read(outer, [fieldColumnName(ctx, outer, node.name)])
+    // An aggregate is moved by a write to the rows it counts, which this row
+    // never sees.
+    const agg = node.type === 'field' && aggregateEntry(ctx, model, node.name)
+    if (agg) {
+      reach.add(agg.target)
+      read(model, agg.keys)
+      read(agg.target, agg.reads ?? ctx.schema.models.find(m => m.name === agg.target).fields.map(f => f.name))
+      const join = agg.aggRef.through && ctx.schema.models.find(m =>
+        [false, true].some(p => modelToTableName(m, p) === agg.aggRef.through.joinTable))
+      if (join) { reach.add(join.name); read(join.name, join.fields.map(f => f.name)) }
+    }
     if (node.type === 'path' && rels[node.rel]) {
       reach.add(rels[node.rel].targetModel)
       read(model, rels[node.rel].foreignKeys)
@@ -1369,7 +1441,7 @@ function walkReads(modelName, ctx, op) {
       reach.add(rels[node.rel].targetModel)
       read(model, rels[node.rel].referencedKeys)
       read(rels[node.rel].targetModel, rels[node.rel].foreignKeys)
-      walk(node.where, rels[node.rel].targetModel, operation)
+      walk(node.where, rels[node.rel].targetModel, operation, model)
       return
     }
     if (node.type === 'check' && rels[node.field]) {
@@ -1377,7 +1449,7 @@ function walkReads(modelName, ctx, op) {
       read(rels[node.field].targetModel, rels[node.field].referencedKeys)
       delegate(rels[node.field].targetModel, node.operation ?? operation)
     }
-    for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, model, operation)
+    for (const v of Object.values(node)) if (v && typeof v === 'object') walk(v, model, operation, outer)
   }
   delegate(modelName, op)
   return { reach, columns }
@@ -1768,6 +1840,24 @@ function policyColumn(schema, modelName, field) {
   return map?.[field] ?? field
 }
 
+// The `@from` entry a policy reads as a value, or null for a stored column. The
+// subquery counts every child row that exists: it is built once per schema, and
+// a reader's policy is bound per request (`FJS-D2240`).
+function aggregateEntry(ctx, modelName, name) {
+  const field = ctx.schema?.models?.find(m => m.name === modelName)?.fields.find(f => f.name === name)
+  if (!isFromAggregate(field)) return null
+  const entry = ctx.shapes ? shapeOf(ctx, modelName).fromFields?.[name] : null
+  // Emitted as a quoted name, SQLite would compare against the string constant.
+  if (!entry?.aggRef) throw new Error(`${modelName}.${name}: a policy reads this @from through the client's subquery, and none was built`)
+  return entry
+}
+
+// Correlated on the outer table by name, as `pathSql` and `check()` are.
+function aggregateSql(entry, ctx, modelName) {
+  const def = ctx.schema.models.find(m => m.name === modelName)
+  return entry.subquerySqlFor(quoteIdent(modelToTableName(def, false)))
+}
+
 // One hop across a relation, as a correlated scalar subquery (`FJS-D221`).
 //
 // Same correlation `check()` builds and for the same reason — the relation's
@@ -1815,9 +1905,10 @@ function pathSql(node, ctx, modelName) {
 // subquery is the innermost scope, so a bare column resolves to the alias, and
 // startup refused every name the child does not have.
 //
-// `bound` is `evalSome`'s case — one row in hand and no outer table, so the
-// parent's key is a parameter the caller has already pushed.
-function someSql(node, params, ctx, modelName, op, visited, bound = false) {
+// `bound` is `evalSome`'s case — one row in hand and no outer table, so it is
+// the parent's key, which the caller has already pushed. A `this.col` then
+// reads the parent's STORED column by that key, as the correlated half does.
+function someSql(node, params, ctx, modelName, op, visited, bound = null) {
   const schema = ctx.schema
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'hasMany')
@@ -1832,13 +1923,17 @@ function someSql(node, params, ctx, modelName, op, visited, bound = false) {
     (bound ? '?' : `"${selfTable}"."${policyColumn(schema, modelName, rel.referencedKeys[i])}"`)).join(' AND ')
   const live        = shapeOf(ctx, rel.targetModel).softDelete
     ? ` AND "__some"."${policyColumn(schema, rel.targetModel, 'deletedAt')}" IS NULL` : ''
-  const cond = compileSql(node.where, params, ctx, rel.targetModel, op, visited)
+  const outer = { model: modelName, table: selfTable, keys: rel.referencedKeys, key: bound }
+  const cond  = compileSql(node.where, params, Object.assign(Object.create(ctx), { _outer: outer }), rel.targetModel, op, visited)
 
   return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE ${corr}${live} AND (${cond}))`
 }
 
 function compileSql(node, params, ctx, modelName, op, visited) {
   const schema = ctx.schema
+  // The branches below that quote a field's column take only a stored one; an
+  // aggregate reaches them through its subquery instead.
+  const column = (n) => n.type === 'field' && !aggregateEntry(ctx, modelName, n.name)
   switch (node.type) {
 
     case 'or':
@@ -1868,6 +1963,8 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       // A `belongsTo` name is the RELATION and the value is on its foreign key,
       // as every other operand position already reads it; left alone it is the
       // same unknown identifier, and `owner == auth().id` admitted no row.
+      const agg = aggregateEntry(ctx, modelName, node.name)
+      if (agg) return aggregateSql(agg, ctx, modelName)
       return `"${policyColumn(schema, modelName, fieldColumnName(ctx, modelName, node.name))}"`
 
     case 'path':
@@ -1875,6 +1972,19 @@ function compileSql(node, params, ctx, modelName, op, visited) {
 
     case 'some':
       return someSql(node, params, ctx, modelName, op, visited)
+
+    // The parent row's column inside its `rel.some(…)` (`FJS-D2239`). The child
+    // is aliased, so the table name is the outer row even on a self-relation.
+    case 'this': {
+      const o = ctx._outer
+      if (!o) throw new Error(`${modelName}: 'this.${node.name}' is read only inside a 'rel.some(…)'`)
+      const t   = quoteIdent(o.table)
+      const col = `${t}.${quoteIdent(policyColumn(schema, o.model, fieldColumnName(ctx, o.model, node.name)))}`
+      if (!o.key) return col
+      params.push(...o.key)
+      return `(SELECT ${col} FROM ${t} WHERE ` +
+             `${o.keys.map(k => `${t}.${quoteIdent(policyColumn(schema, o.model, k))} = ?`).join(' AND ')})`
+    }
 
     case 'auth':
       params.push(claimValue(ctx, node.field, modelName))
@@ -1946,7 +2056,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
         // one row the JS half refuses.
         const list = Array.isArray(items) ? items : []
         if (!list.length) return '0'
-        const L = left.type === 'field'
+        const L = column(left)
           ? `"${relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)}"`
           : compileSql(left, params, ctx, modelName, op, visited)
         // `pathSql` is reached through the line above, which is what keeps the
@@ -1954,7 +2064,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
         // values stay the only params and they are pushed after it. A column
         // takes `inList`; a path is an expression whose affinity the cast would
         // not match, so it keeps the bound list.
-        if (left.type === 'field') return inList(L, list, params)
+        if (column(left)) return inList(L, list, params)
         params.push(...list)
         return `${L} IN (${list.map(() => '?').join(', ')})`
       }
@@ -1980,11 +2090,11 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       // screen with a 200, which is the failure mode `@@allow` has by design.
       // The JS evaluator below compares with `===` and always got this right,
       // so create ALLOWED a row that read then hid.
-      if (left.type === 'field' && right.type === 'literal' && right.value === null) {
+      if (column(left) && right.type === 'literal' && right.value === null) {
         const fk  = relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
-      if (right.type === 'field' && left.type === 'literal' && left.value === null) {
+      if (column(right) && left.type === 'literal' && left.value === null) {
         const fk  = relationColumn(relationsOf(ctx, modelName)[right.name], right.name, modelName)
         return `"${fk}" ${node.op === '==' ? 'IS NULL' : 'IS NOT NULL'}`
       }
@@ -2010,12 +2120,12 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       if (encoded) return encoded
 
       // field == auth()  →  resolve FK if it's a belongsTo relation
-      if (left.type === 'field' && right.type === 'auth' && right.field === null) {
+      if (column(left) && right.type === 'auth' && right.field === null) {
         const fk  = relationColumn(relationsOf(ctx, modelName)[left.name], left.name, modelName)
         params.push(ctx.auth?.id ?? null)
         return `"${fk}" ${sqlOp(node.op)} ?`
       }
-      if (right.type === 'field' && left.type === 'auth' && left.field === null) {
+      if (column(right) && left.type === 'auth' && left.field === null) {
         const fk  = relationColumn(relationsOf(ctx, modelName)[right.name], right.name, modelName)
         params.push(ctx.auth?.id ?? null)
         return `"${fk}" ${sqlOp(node.op)} ?`
@@ -2189,7 +2299,7 @@ function evalSome(node, ctx, data, modelName, op) {
   if (!schema || !db?.query) return null
 
   const params = [...key]
-  const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), true)} AS hit`
+  const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), key)} AS hit`
   const hit    = db.query(sql).get(...params)?.hit
   if (ctx.policyDebug === 'verbose')
     plog(ctx, op ?? 'read', modelName, `\x1b[2m${node.rel}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
@@ -2229,10 +2339,39 @@ export const REFUSED_BY = ['system', 'gate', 'policy', 'guard']
 export const allowHolds = (v) => truth(v) === true
 export const denyFires  = (v) => truth(v) !== false
 
+// An aggregate the predicate names, read by the subquery the WHERE inlines with
+// the row's key bound in place of the outer table, so both halves count the
+// same children. A hydrated row's value is recounted under the caller's policy
+// and is not the one the SQL half reads (`FJS-D2240`). A row with no key yet
+// has no children.
+function withAggregates(node, ctx, data, modelName) {
+  const entries = new Map()
+  ;(function walk(n) {
+    if (!n || typeof n !== 'object' || n.type === 'some' || n.type === 'check') return
+    if (Array.isArray(n)) { n.forEach(walk); return }
+    if (n.type === 'field' && !entries.has(n.name)) {
+      const entry = aggregateEntry(ctx, modelName, n.name)
+      if (entry) entries.set(n.name, entry)
+    }
+    for (const v of Object.values(n)) walk(v)
+  })(node)
+  if (!entries.size) return data
+  const db  = ctx.readDbFor?.(modelName) ?? ctx.readDb
+  const out = { ...data }
+  for (const [name, entry] of entries) {
+    if (!db?.query) { out[name] = null; continue }
+    const row = `(SELECT ${entry.keys.map(k => `? AS ${quoteIdent(k)}`).join(', ')}) AS "_row"`
+    const v   = db.query(`SELECT ${entry.subquerySqlFor('"_row"')} AS v FROM ${row}`)
+      .get(...entry.keys.map(k => data?.[k] ?? null))?.v ?? null
+    out[name] = entry.isBool && v != null ? !!v : v
+  }
+  return out
+}
+
 /** @param {string | null} [op] the verb asking — `null` for a field predicate */
 export function evalJs(node, ctx, data, modelName, op = null) {
   return evalPredicate(node, {
-    record: data,
+    record: withAggregates(node, ctx, data, modelName),
     auth:   ctx.auth,
     now:    ctx._now,
     // A `belongsTo` field names the RELATION and the value is on the foreign
