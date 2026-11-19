@@ -406,9 +406,11 @@ export async function checkSnapshots({ root, only = null, write = false, timeout
 // `spawnSync`'s answer — `{ status, stdout, stderr }`, or `{ error }` when the
 // generator did not run or did not exit — off the async call. A non-zero exit
 // is a status and not an error: that is the stale snapshot this reports.
+// --no-env-file: CI has no .env, so a generator reading this machine's would
+// commit a surface the gate never sees (FJS-419).
 function generate(file, argv, options) {
   return new Promise(resolve => {
-    execFile('bun', [file, ...argv], options, (err, stdout, stderr) => {
+    execFile('bun', ['--no-env-file', file, ...argv], options, (err, stdout, stderr) => {
       if (err && typeof err.code !== 'number') {
         const why = err.killed ? `no exit after ${options.timeout / 1000}s` : err.message
         return resolve({ error: { message: why }, stdout, stderr })

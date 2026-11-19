@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-27 services · 22 routes · 10 plugins · prefix (none)
+27 services · 22 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -670,8 +670,6 @@ In configure order, which is what `requires:` is checked against.
 3. `notifications`
 4. `channels`
 5. `caravan`
-6. `conduit`
-7. `chat-sync`
-8. `anonymous`
-9. `terminalRoute`
-10. `corsPlugin`
+6. `anonymous`
+7. `terminalRoute`
+8. `corsPlugin`

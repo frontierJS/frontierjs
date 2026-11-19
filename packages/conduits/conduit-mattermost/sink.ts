@@ -557,9 +557,12 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (!channels[channel_id] || !isMember(channel_id, caller)) return forbidden()
         if (root_id && !posts[root_id]) return record(refuse(400, 'api.draft.upsert_draft.invalid_root_id.app_error', 'Invalid RootId parameter'))
         const t = now(), had = drafts.find(d => d.user_id === caller && d.channel_id === channel_id && d.root_id === root_id)
-        const fresh: Draft = { create_at: had && !had.delete_at ? had.create_at : t, update_at: t, delete_at: 0, user_id: caller, channel_id, root_id, message: String(body.message ?? ''), props: (body.props as Record<string, unknown>) ?? {}, file_ids: Array.isArray(body.file_ids) ? (body.file_ids as unknown[]).map(String) : [] }
+        // Read before the assign below overwrites delete_at: a save within the
+        // same millisecond as the first has create_at === t and is still an update.
+        const live = !!had && !had.delete_at
+        const fresh: Draft = { create_at: live ? had!.create_at : t, update_at: t, delete_at: 0, user_id: caller, channel_id, root_id, message: String(body.message ?? ''), props: (body.props as Record<string, unknown>) ?? {}, file_ids: Array.isArray(body.file_ids) ? (body.file_ids as unknown[]).map(String) : [] }
         if (had) Object.assign(had, fresh); else drafts.push(fresh)
-        emit(had && !had.delete_at && had.create_at !== t ? 'draft_updated' : 'draft_created', { draft: JSON.stringify(fresh) }, { user_id: caller })
+        emit(live ? 'draft_updated' : 'draft_created', { draft: JSON.stringify(fresh) }, { user_id: caller })
         return record(json(fresh))
       }
       if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/channels\/([a-z0-9]{26})\/drafts(?:\/([a-z0-9]{26}))?$/)) && req.method === 'DELETE') {

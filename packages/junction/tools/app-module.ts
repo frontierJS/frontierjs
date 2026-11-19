@@ -130,17 +130,10 @@ async function loadAppUnguarded(modulePath: string, exportName: string | null): 
   return build(candidates[0][1], candidates[0][0])
 }
 
-// A committed artefact may not vary with a developer's local switches, and one
-// of them reaches this tool without anyone passing it: bun auto-loads `.env`
-// from the cwd, and every snapshot generator is rerun from its own file's
-// directory — which is the app root, where that file lives. `DEVTOOLS=1` there
-// put the console in `basecamp`'s committed plugin list, and CI (which has no
-// `.env`, it is gitignored) would then fail the file for not listing it
-// (`FJS-419`).
-//
-// Cleared rather than accommodated: the console is a per-machine, per-session
-// choice about looking at an app, and nothing about what the app SERVES depends
-// on it. Junction naming its own toggle here is not a general escape hatch —
+// A committed artefact may not vary with a developer's local switches
+// (FJS-419). The snapshot commands run with no .env; an exported DEVTOOLS=1
+// still arrives from the shell and would put the console in the plugin list.
+// The console is a choice about looking at an app, not what it serves --
 // anything that changes the surface belongs in the surface.
 function clearLocalToggles(): void {
   delete process.env.DEVTOOLS

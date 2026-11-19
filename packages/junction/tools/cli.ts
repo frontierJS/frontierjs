@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S bun --no-env-file
 // tools/cli.ts
 // Package bin entry — powers `bunx @frontierjs/junction <command>`.
 //
@@ -42,7 +42,13 @@ if (!target) {
   process.exit(cmd ? 1 : 0)
 }
 
-const proc = Bun.spawn(['bun', 'run', join(import.meta.dir, target), ...rest], {
+// A committed snapshot may not vary with this machine's .env (FJS-419): CI has
+// none, so a CHAT_URL here added two plugins the gate never saw. call and repl
+// boot or reach the real app and read it from the cwd as bun always does.
+const SNAPSHOTS = new Set(['app', 'errors', 'jobs', 'principal', 'notifications'])
+const envFile = SNAPSHOTS.has(cmd!) ? ['--no-env-file'] : []
+
+const proc = Bun.spawn(['bun', ...envFile, 'run', join(import.meta.dir, target), ...rest], {
   stdin:  'inherit',
   stdout: 'inherit',
   stderr: 'inherit',
