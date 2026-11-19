@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/sierra",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Vite-native meta-framework built on Mesa",
   "type": "module",
   "license": "MIT",

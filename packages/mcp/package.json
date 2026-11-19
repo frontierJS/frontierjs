@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/mcp",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "engines": {
     "bun": ">=1.4.0"
   },

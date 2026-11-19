@@ -127,27 +127,27 @@ indent_style = tab
 // MINOR — and `test/app-config.test.js` fails the day it does.
 
 export const FJS_PACKAGES = {
-  '@frontierjs/junction':       '0.1.16',
-  '@frontierjs/sierra':         '0.1.14',
-  '@frontierjs/mesa':           '0.1.13',
-  '@frontierjs/litestone':      '1.1.21',
-  '@frontierjs/css':            '0.16.12',
-  '@frontierjs/ui':             '0.1.12',
-  '@frontierjs/auth':           '1.0.14',
-  '@frontierjs/conduit':        '0.1.10',
-  '@frontierjs/caravan':        '0.1.10',
-  '@frontierjs/notifications':  '0.1.9',
-  '@frontierjs/jetty':          '0.0.11',
-  '@frontierjs/toolbelt':       '0.1.14',
+  '@frontierjs/junction':       '0.1.17',
+  '@frontierjs/sierra':         '0.1.15',
+  '@frontierjs/mesa':           '0.1.14',
+  '@frontierjs/litestone':      '1.1.22',
+  '@frontierjs/css':            '0.16.13',
+  '@frontierjs/ui':             '0.1.13',
+  '@frontierjs/auth':           '1.0.15',
+  '@frontierjs/conduit':        '0.1.11',
+  '@frontierjs/caravan':        '0.1.11',
+  '@frontierjs/notifications':  '0.1.10',
+  '@frontierjs/jetty':          '0.0.12',
+  '@frontierjs/toolbelt':       '0.1.15',
 }
 
 // The Vite every UI surface builds with; jetty's peer range is the narrower one.
 export const VITE_VERSION = '^8.0.0'
 
 export const APP_DEV_DEPS = {
-  '@frontierjs/cli':    '0.1.16',
-  '@frontierjs/config': '0.1.6',
-  '@frontierjs/testing': '0.1.10',
+  '@frontierjs/cli':    '0.1.17',
+  '@frontierjs/config': '0.1.7',
+  '@frontierjs/testing': '0.1.11',
   '@biomejs/biome':     '^2.5.0',
   'bun-types':          '1.4.2',
   'typescript':         '^5.0.0',
@@ -158,7 +158,7 @@ export const APP_DEV_DEPS = {
 // npm for a version only the host serves, and the install stops. Exact, so
 // `ws:pub` raises it with the rest.
 export const FJS_TRANSITIVE = {
-  '@frontierjs/outpost': '0.1.17',
+  '@frontierjs/outpost': '0.1.18',
 }
 
 // ─── tsconfig.json ────────────────────────────────────────────────────────────
