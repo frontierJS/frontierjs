@@ -213,7 +213,7 @@ const LIST_KEYS = new Set([
 // value used in the wrong place, a ReadableStream is a body someone built by
 // hand, and an async generator is the shape people reach for first when they
 // want to stream and have not read that a channel already does it.
-function describeStream(raw: unknown): string | null {
+export function describeStream(raw: unknown): string | null {
   if (raw === null || typeof raw !== 'object') return null
   if (typeof Response      !== 'undefined' && raw instanceof Response)      return 'a Response'
   if (typeof ReadableStream !== 'undefined' && raw instanceof ReadableStream) return 'a ReadableStream'
@@ -238,9 +238,9 @@ export function refuseStream(raw: unknown, object: string, method: string, arriv
     object, method || 'method', raw,
     `${arrived} ${streaming}. A stream is not a result: the envelope says what a ` +
     `call RETURNED — one record or a page of them, with total/limit/offset — and ` +
-    `a stream returns nothing and then repeatedly. Stream from a raw route with ` +
-    `ctx.sse(), or announce on a channel, where each frame is a result and goes ` +
-    `through the hooks that protect it. A file download is a raw route too: call ` +
+    `a stream returns nothing and then repeatedly. A custom method that answers in ` +
+    `frames declares stream: true in methods: (FJS-D1031); otherwise stream from a ` +
+    `raw route with ctx.sse(), or announce on a channel. A file download is a raw route too: call ` +
     `this service from it as the caller and encode what it returns (FJS-D573).`
   )
 }

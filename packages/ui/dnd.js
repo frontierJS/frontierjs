@@ -66,6 +66,28 @@
  * move of its placeholder, because the reflow shifts everything after it by
  * more than one span.
  *
+ * Three options serve an inbox (`FJS-D1024`), and every callback's `info.items`
+ * is the records that travelled:
+ *
+ *   • `dropOnto: true | (item) => bool` on a zone makes the middle half of each
+ *     item it allows a target. The item carries `data-dnd-onto` while the
+ *     pointer is there; a drop finalizes with trigger `droppedOntoItem` and
+ *     `info.target`, and moves nothing — every list comes back as it was before
+ *     the drag, the origin's (when another zone) with `droppedIntoAnother`.
+ *     The keyboard does not reach it.
+ *   • `accept: (dragged) => record | null` on a zone turns an item from ANOTHER
+ *     zone into the record it lands as. The placeholder is that record, so the
+ *     host renders the shape that will land; `null` for any dragged item and
+ *     the zone takes no drop. Called once per zone at drag start.
+ *   • `dragSet: () => items` on a zone is the selection. Grabbing one of them
+ *     drags all of the zone's items it names, as one placeholder and a ghost
+ *     carrying `data-dnd-count`; they land together in the origin's order, and
+ *     a cancel puts each back at its own index. Grabbing any other item drags
+ *     that item alone.
+ *
+ * Only the origin's list is searched for the dragged ids, so a foreign record
+ * sharing an id with a row of the target never hides that row.
+ *
  * Not built: nested zones of one type, and a
  * grid whose cells span tracks (a flow list or a wrap is detected per zone from
  * its children's rects).
@@ -87,12 +109,16 @@ export const TRIGGERS = {
   DROPPED_INTO_ZONE:     'droppedIntoZone',
   DROPPED_INTO_ANOTHER:  'droppedIntoAnother',
   DROPPED_OUTSIDE_OF_ANY: 'droppedOutsideOfAny',
+  DROPPED_ONTO_ITEM:     'droppedOntoItem',
 }
 
 const ITEM_ID_KEY            = 'id'
 const SHADOW_ATTR            = 'data-dnd-shadow'
 const TARGET_ATTR            = 'data-dnd-target'
 const GHOST_ATTR             = 'data-dnd-ghost'
+const COUNT_ATTR             = 'data-dnd-count'
+const ONTO_ATTR              = 'data-dnd-onto'
+const ONTO_BAND              = 0.5   // the middle share of an item that is a drop onto it; the edges insert
 const TAB_ATTR               = 'data-dnd-tab'
 const LIVE_ATTR              = 'data-dnd-live'
 const DEFAULT_TYPE           = '--any--'
@@ -114,6 +140,9 @@ const DEFAULTS = {
   delayTouchStart:         false,
   dragHandleSelector:      undefined,
   announcements:           undefined,
+  dropOnto:                undefined,
+  accept:                  undefined,
+  dragSet:                 undefined,
   onconsider:              undefined,
   onfinalize:              undefined,
 }
@@ -236,16 +265,22 @@ function measureZone(meta) {
     const neg = lo(rects[first.from + 1]) < lo(rects[first.from])
     const uMid = (r) => (neg ? -(lo(r) + hi(r)) / 2 : (lo(r) + hi(r)) / 2)
     const slots = []
+    const sizes = []
     const lines = []
     for (const l of wrap) {
       const at = slots.length
-      for (let i = l.from; i < l.to; i++) if (i !== phIdx) slots.push(uMid(rects[i]))
+      for (let i = l.from; i < l.to; i++) {
+        if (i === phIdx) continue
+        slots.push(uMid(rects[i]))
+        sizes.push(hi(rects[i]) - lo(rects[i]))
+      }
       lines.push({ from: at, to: slots.length, lo: l.lo, hi: l.hi })
     }
     meta.axis = wrapAxis
     meta.neg  = neg
     meta.span = 0
     meta.slots = slots
+    meta.sizes = sizes
     meta.lines = lines
     meta.placeholderIndex = phIdx >= 0 ? phIdx : null
     return
@@ -278,12 +313,15 @@ function measureZone(meta) {
   meta.span = (phIdx >= 0 ? size(rects[phIdx]) : dragSize) + gap
 
   const slots = []
+  const sizes = []
   for (let i = 0; i < rects.length; i++) {
     if (i === phIdx) continue
     const mid = (uStart(rects[i]) + uEnd(rects[i])) / 2
     slots.push(phIdx >= 0 && i > phIdx ? mid - meta.span : mid)
+    sizes.push(size(rects[i]))
   }
   meta.slots = slots
+  meta.sizes = sizes
   meta.placeholderIndex = phIdx >= 0 ? phIdx : null
 }
 
@@ -346,6 +384,49 @@ function indexForPointer(meta, m, c) {
   return slots.length
 }
 
+/** The collapsed index of the item whose middle band holds the pointer, or -1.
+ *  The band straddles the midpoint `indexForPointer` flips at, so the edges on
+ *  either side keep inserting before and after the item. */
+function ontoAt(meta, m, c) {
+  if (!meta.config.dropOnto) return -1
+  let from = 0
+  let to   = meta.slots.length
+  let P    = Infinity
+  if (meta.lines) {
+    const line = meta.lines.find((l) => c >= l.lo && c <= l.hi)
+    if (!line) return -1
+    from = line.from
+    to   = line.to
+  } else {
+    P = meta.placeholderIndex ?? Infinity
+  }
+  for (let i = from; i < to; i++) {
+    const mid = meta.slots[i] + (i >= P ? meta.span : 0)
+    if (Math.abs(m - mid) < (meta.sizes[i] * ONTO_BAND) / 2) return i
+  }
+  return -1
+}
+
+/** Mark the item at collapsed index `k` of `meta` as the drop, or clear the
+ *  mark. A refusal by `dropOnto` is kept too, with no item, so the predicate is
+ *  asked once per item the pointer reaches rather than once per frame. */
+function setOnto(meta, k = -1) {
+  const was = session.onto
+  if (was && was.meta === meta && was.k === k) return
+  was?.el?.removeAttribute(ONTO_ATTR)
+  session.onto = null
+  if (!meta || k < 0) return
+  const rule = meta.config.dropOnto
+  const item = itemsWithoutShadow(meta)[k]
+  if (!item || (rule !== true && !rule(item))) {
+    session.onto = { meta, k, el: null, item: null }
+    return
+  }
+  const el = Array.prototype.filter.call(meta.node.children, (kid) => !kid.hasAttribute(SHADOW_ATTR))[k] ?? null
+  el?.setAttribute(ONTO_ATTR, '')
+  session.onto = { meta, k, el, item }
+}
+
 // ─── notifying the host ───────────────────────────────────────────────────
 
 /** Order-sensitive identity of an items list. A list whose signature differs
@@ -357,14 +438,15 @@ function sig(items) {
   return s
 }
 
-function notify(node, which, items, trigger) {
+function notify(node, which, items, trigger, extra) {
   const meta = session.zones.find((z) => z.node === node)
   if (meta) {
     meta.expectedSig = sig(items)
     meta.handed = items
   }
-  const cfg = zoneRegistry.get(node)?.config ?? meta?.config
-  cfg?.[which]?.({ items, info: { trigger, id: session.itemId, source: session.keyboard ? 'keyboard' : 'pointer' } })
+  const cfg  = zoneRegistry.get(node)?.config ?? meta?.config
+  const info = { trigger, id: session.itemId, items: session.items, source: session.keyboard ? 'keyboard' : 'pointer', ...extra }
+  cfg?.[which]?.({ items, info })
 }
 
 /** The zone's list as the host will hold it once it has written back the
@@ -375,15 +457,25 @@ function listOf(meta) {
   return meta.handed ?? meta.config.items
 }
 
-/** The zone's items minus the placeholder AND minus the dragged item, which
- *  the origin list still holds at `dragStarted`. */
+/** The zone's items minus the placeholder AND, in the origin, minus the
+ *  dragged ones, which its list still holds at `dragStarted`. A target zone's
+ *  ids belong to another list: a foreign record can share one with a row. */
 function itemsWithoutShadow(meta) {
-  return listOf(meta).filter((it) => !it[SHADOW_ITEM_MARKER] && !(session && it[ITEM_ID_KEY] === session.itemId))
+  const origin = session && meta.node === session.originNode
+  return listOf(meta).filter((it) => !it[SHADOW_ITEM_MARKER] && !(origin && session.ids.has(it[ITEM_ID_KEY])))
+}
+
+/** The origin's list with every dragged record back at its own index, which a
+ *  stack's single placeholder cannot say. */
+function restored(origin) {
+  const items = itemsWithoutShadow(origin)
+  for (const { item, at } of session.travel) items.splice(Math.min(at, items.length), 0, item)
+  return items
 }
 
 function considerWithShadowAt(meta, idx, trigger) {
   const items = itemsWithoutShadow(meta)
-  items.splice(idx, 0, session.shadowItem)
+  items.splice(idx, 0, meta.shadow ?? session.shadowItem)
   meta.placeholderIndex = idx
   notify(meta.node, 'onconsider', items, trigger)
 }
@@ -393,7 +485,7 @@ function considerWithShadowAt(meta, idx, trigger) {
 const GHOST_STYLE_PREFIXES = ['background', 'padding', 'font', 'text', 'align', 'justify', 'display', 'flex', 'gap', 'border', 'grid', 'line', 'letter']
 const GHOST_STYLE_EXACT    = new Set(['opacity', 'color', 'list-style-type', 'box-shadow'])
 
-function createGhost(sourceEl, rect, pointer, centerOnCursor) {
+function createGhost(sourceEl, rect, pointer, centerOnCursor, count) {
   const ghost = sourceEl.cloneNode(true)
   // The clone is reparented to `overlayHost()`, where a rule keyed on an ancestor and
   // every inherited value stop applying — copied once from the computed style
@@ -428,6 +520,15 @@ function createGhost(sourceEl, rect, pointer, centerOnCursor) {
   s.pointerEvents = 'none'
   s.cursor        = 'grabbing'
   s.willChange    = 'transform'
+  if (count > 1) {
+    // Cards behind the card, in the item's own surface and edge colors.
+    ghost.setAttribute(COUNT_ATTR, String(count))
+    const bg   = cs.backgroundColor
+    const edge = cs.borderTopColor
+    const cards = [`4px 4px 0 -1px ${bg}`, `4px 4px 0 0 ${edge}`]
+    if (count > 2) cards.push(`8px 8px 0 -1px ${bg}`, `8px 8px 0 0 ${edge}`)
+    s.boxShadow = [cs.boxShadow === 'none' ? '' : cs.boxShadow, ...cards].filter(Boolean).join(', ')
+  }
   overlayHost().appendChild(ghost)
   return { ghost, baseLeft: left, baseTop: top }
 }
@@ -442,11 +543,75 @@ function collectZones(originNode, type) {
     const zc = zoneRegistry.get(node)?.config
     if (!zc) continue
     if (zc.dropFromOthersDisabled && node !== originNode) continue
-    const meta = { node, config: zc, depth: getDepth(node), placeholderIndex: null, expectedSig: sig(zc.items) }
+    let accepted = null
+    if (zc.accept && node !== originNode) {
+      accepted = session.items.map((it) => zc.accept(it))
+      if (accepted.some((r) => r == null)) continue
+    }
+    const shadow = accepted && { ...accepted[session.grabbedAt], [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true }
+    const meta = { node, config: zc, depth: getDepth(node), placeholderIndex: null, expectedSig: sig(zc.items), accepted, shadow }
     measureZone(meta)
     session.zones.push(meta)
   }
   session.zones.sort((a, b) => b.depth - a.depth)
+}
+
+/** What a press on the item at `itemIdx` lifts: every item of the zone its
+ *  `dragSet` names, in the zone's order, when that names the grabbed one, and
+ *  the grabbed item alone otherwise. Each with the index it leaves from. */
+function travelOf(cfg, itemIdx) {
+  const own     = cfg.items.filter((it) => !it[SHADOW_ITEM_MARKER])
+  const grabbed = own[itemIdx]
+  if (!grabbed) return null
+  const set    = new Set((cfg.dragSet?.() ?? []).map((it) => it?.[ITEM_ID_KEY]))
+  const travel = set.has(grabbed[ITEM_ID_KEY])
+    ? own.flatMap((item, at) => (set.has(item[ITEM_ID_KEY]) ? [{ item, at }] : []))
+    : [{ item: grabbed, at: itemIdx }]
+  return { grabbed, travel }
+}
+
+/** Open the session both lifts share and measure every zone it can reach.
+ *  False when the item is not in the zone's list. */
+function openSession(zoneNode, itemEl, itemIdx, fields) {
+  const cfg  = zoneRegistry.get(zoneNode).config
+  const lift = travelOf(cfg, itemIdx)
+  if (!lift) return false
+  const { grabbed, travel } = lift
+  const rect = docRect(itemEl)
+  session = {
+    originNode:  zoneNode,
+    // The placeholder's index in the origin once the whole stack has left it.
+    originIndex: itemIdx - travel.filter((t) => t.at < itemIdx).length,
+    itemData:    grabbed,
+    itemId:      grabbed[ITEM_ID_KEY],
+    items:       travel.map((t) => t.item),
+    ids:         new Set(travel.map((t) => t.item[ITEM_ID_KEY])),
+    travel,
+    grabbedAt:   travel.findIndex((t) => t.item === grabbed),
+    shadowItem:  { ...grabbed, [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true },
+    grabbedEl:   itemEl,
+    grabbedRect: rect,
+    dragW:       rect.width,
+    dragH:       rect.height,
+    zones:       [],
+    current:     null,
+    onto:        null,
+    outside:     false,
+    frozen:      false,   // between a cross-zone notify and the re-measure after it
+    finalizing:  false,
+    ...fields,
+  }
+  collectZones(zoneNode, cfg.type)
+  session.grabbedEl = null                          // the shadow attribute marks the slot from here
+  session.current   = session.zones.find((z) => z.node === zoneNode)
+  return true
+}
+
+/** Hand the origin its placeholder. The rest of a stack leaves the origin's
+ *  DOM in the render this causes, so every measure taken is stale after it. */
+function lift() {
+  considerWithShadowAt(session.current, session.originIndex, TRIGGERS.DRAG_STARTED)
+  if (session.items.length > 1) scheduleRemeasure()
 }
 
 function startDrag(arm, e) {
@@ -455,49 +620,23 @@ function startDrag(arm, e) {
   if (!entry || !itemEl.isConnected) return
   const cfg = entry.config
 
-  const itemData = cfg.items.filter((it) => !it[SHADOW_ITEM_MARKER])[itemIdx]
-  if (!itemData) return
+  const fields = { pointerId, pointer: { clientX: e.clientX, clientY: e.clientY }, moved: false, raf: 0 }
+  if (!openSession(zoneNode, itemEl, itemIdx, fields)) return
 
   // Captured on <body> rather than the item: the host swaps the item's element
   // for the placeholder's on the first `onconsider`, and a capture held by a
   // removed element ends the pointer stream — on touch, the drag with it.
   try { document.body.setPointerCapture(pointerId) } catch { /* window listeners still cover a mouse */ }
 
-  const itemRect = docRect(itemEl)
-
-  session = {
-    pointerId,
-    originNode:  zoneNode,
-    originIndex: itemIdx,
-    itemData,
-    itemId:      itemData[ITEM_ID_KEY],
-    shadowItem:  { ...itemData, [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true },
-    grabbedEl:   itemEl,
-    dragW:       itemRect.width,
-    dragH:       itemRect.height,
-    zones:       [],
-    current:     null,
-    outside:     false,
-    frozen:      false,   // between a cross-zone notify and the re-measure after it
-    pointer:     { clientX: e.clientX, clientY: e.clientY },
-    moved:       false,
-    raf:         0,
-    finalizing:  false,
-  }
-
-  collectZones(zoneNode, cfg.type)
-  session.grabbedEl = null                          // the shadow attribute marks the slot from here
-  session.current = session.zones.find((z) => z.node === zoneNode)
-
-  const { ghost, baseLeft, baseTop } = createGhost(itemEl, itemRect, e, cfg.centerOnCursor)
+  const { ghost, baseLeft, baseTop } = createGhost(itemEl, session.grabbedRect, e, cfg.centerOnCursor, session.items.length)
   session.ghost       = ghost
   session.ghostBase   = { left: baseLeft, top: baseTop }
   session.startClient = { x: e.clientX, y: e.clientY }
-  cfg.transformDraggedElement?.(ghost, itemData, itemIdx)
+  cfg.transformDraggedElement?.(ghost, session.itemData, itemIdx)
 
   for (const z of session.zones) z.node.setAttribute(TARGET_ATTR, '')
 
-  considerWithShadowAt(session.current, itemIdx, TRIGGERS.DRAG_STARTED)
+  lift()
 
   window.addEventListener('pointermove', onDragMove, { passive: true })
   window.addEventListener('pointerup', onDragEnd)
@@ -581,40 +720,20 @@ function labelOf(el) {
 function startKeyboardDrag(zoneNode, itemEl, liftEvent) {
   const entry = zoneRegistry.get(zoneNode)
   if (!entry || !itemEl.isConnected) return
-  const cfg      = entry.config
-  const itemIdx  = Array.prototype.indexOf.call(zoneNode.children, itemEl)
-  const itemData = cfg.items.filter((it) => !it[SHADOW_ITEM_MARKER])[itemIdx]
-  if (!itemData) return
-
-  const itemRect = docRect(itemEl)
-  session = {
-    keyboard:    true,
-    pointerId:   null,
-    originNode:  zoneNode,
-    originIndex: itemIdx,
-    itemData,
-    itemId:      itemData[ITEM_ID_KEY],
-    shadowItem:  { ...itemData, [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true },
-    grabbedEl:   itemEl,
-    label:       labelOf(itemEl),
-    dragW:       itemRect.width,
-    dragH:       itemRect.height,
-    zones:       [],
-    current:     null,
-    outside:     false,
-    frozen:      false,
-    ghost:       null,
-    keepFocus:   true,
+  const itemIdx = Array.prototype.indexOf.call(zoneNode.children, itemEl)
+  const fields  = {
+    keyboard:  true,
+    pointerId: null,
+    ghost:     null,
+    keepFocus: true,
     liftEvent,   // still bubbling to the window listener added below, which would drop it at once
-    finalizing:  false,
   }
-  collectZones(zoneNode, cfg.type)
-  const meta = session.zones.find((z) => z.node === zoneNode)
-  session.grabbedEl = null
-  session.current   = meta
+  if (!openSession(zoneNode, itemEl, itemIdx, fields)) return
+  const meta = session.current
+  session.label = session.items.length > 1 ? `${session.items.length} items` : labelOf(itemEl)
   for (const z of session.zones) z.node.setAttribute(TARGET_ATTR, '')
 
-  considerWithShadowAt(meta, itemIdx, TRIGGERS.DRAG_STARTED)
+  lift()
 
   window.addEventListener('keydown', onDragKey)
   // A press elsewhere ends it: a lifted item that outlived the focus would
@@ -797,6 +916,7 @@ function hitTest() {
   }
 
   if (!target) {
+    setOnto(null)
     if (!session.outside) {
       const origin = session.zones.find((z) => z.node === session.originNode)
       if (session.current && session.current !== origin) leave(session.current)
@@ -820,11 +940,16 @@ function hitTest() {
   if (target.neg) m = -m
 
   if (target !== session.current) {
+    setOnto(null)
     if (session.current) leave(session.current)
     considerWithShadowAt(target, indexForPointer(target, m, c), TRIGGERS.DRAGGED_ENTERED)
     session.current = target
     scheduleRemeasure()
   } else {
+    // Over an item's middle the placeholder stays where it is: moving it would
+    // move the item out from under the pointer.
+    setOnto(target, ontoAt(target, m, c))
+    if (session.onto?.item) return
     const idx = indexForPointer(target, m, c)
     if (idx !== target.placeholderIndex) {
       considerWithShadowAt(target, idx, TRIGGERS.DRAGGED_OVER_INDEX)
@@ -870,6 +995,7 @@ function autoScroll() {
 // ─── drop and cancel ──────────────────────────────────────────────────────
 
 function cancelToOrigin() {
+  setOnto(null)
   const origin = session.zones.find((z) => z.node === session.originNode)
   if (session.current !== origin || origin.placeholderIndex !== session.originIndex) {
     if (session.current && session.current !== origin) leave(session.current)
@@ -901,24 +1027,38 @@ function finishDrag(skipAnimation) {
   const target = session.current || session.zones.find((z) => z.node === session.originNode)
   const cfg    = target.config
   const animMs = skipAnimation ? 0 : cfg.dropAnimationMs
+  const onto   = session.onto?.item ? session.onto : null
 
   const settle = () => {
     if (!session) return
-    const finalItems = listOf(target).map((it) => (it[SHADOW_ITEM_MARKER] ? session.itemData : it))
-    // The last line of the same defense: a list replaced in the frame of the
-    // drop has had no chance to take the placeholder back.
-    if (!finalItems.includes(session.itemData) && !finalItems.some((it) => it[ITEM_ID_KEY] === session.itemId))
-      finalItems.splice(Math.min(target.placeholderIndex ?? Infinity, finalItems.length), 0, session.itemData)
-    const trigger = session.outside ? TRIGGERS.DROPPED_OUTSIDE_OF_ANY : TRIGGERS.DROPPED_INTO_ZONE
+    session.onto?.el?.removeAttribute(ONTO_ATTR)
+    const origin = session.zones.find((z) => z.node === session.originNode)
+    let finalItems, trigger
+    let focusOn = session.itemData
+    if (onto) {
+      finalItems = target === origin ? restored(origin) : itemsWithoutShadow(target)
+      trigger    = TRIGGERS.DROPPED_ONTO_ITEM
+    } else if (session.outside) {
+      finalItems = restored(target)
+      trigger    = TRIGGERS.DROPPED_OUTSIDE_OF_ANY
+    } else {
+      const landed = target.accepted ?? session.items
+      finalItems = listOf(target).flatMap((it) => (it[SHADOW_ITEM_MARKER] ? landed : [it]))
+      // The last line of the same defense: a list replaced in the frame of the
+      // drop has had no chance to take the placeholder back.
+      if (!finalItems.includes(landed[0]) && !finalItems.some((it) => it[ITEM_ID_KEY] === landed[0][ITEM_ID_KEY]))
+        finalItems.splice(Math.min(target.placeholderIndex ?? Infinity, finalItems.length), 0, ...landed)
+      trigger = TRIGGERS.DROPPED_INTO_ZONE
+      focusOn = landed[session.grabbedAt]
+    }
+    const extra = onto ? { target: onto.item } : undefined
 
     // `quiet`: the zone the drag was in is gone, so there is no list to hand
     // a drop to and nobody released anything.
     if (!session.quiet) {
-      notify(target.node, 'onfinalize', finalItems, trigger)
-      if (target.node !== session.originNode) {
-        const origin = session.zones.find((z) => z.node === session.originNode)
-        if (origin) notify(session.originNode, 'onfinalize', itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER)
-      }
+      notify(target.node, 'onfinalize', finalItems, trigger, extra)
+      if (target !== origin && origin)
+        notify(origin.node, 'onfinalize', onto ? restored(origin) : itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER, extra)
     }
 
     session.ghost?.remove()
@@ -926,7 +1066,7 @@ function finishDrag(skipAnimation) {
     // The host swaps the placeholder's element for the item's own, and the
     // swap takes focus with it.
     if (session.keyboard && session.keepFocus) {
-      const at = finalItems.indexOf(session.itemData)
+      const at = finalItems.indexOf(focusOn)
       const zoneNode = target.node
       requestAnimationFrame(() => zoneNode.children[at]?.focus())
     }
@@ -934,7 +1074,7 @@ function finishDrag(skipAnimation) {
   }
 
   if (animMs > 0) {
-    const ph = target.node.querySelector(`:scope > [${SHADOW_ATTR}]`)
+    const ph = onto?.el ?? target.node.querySelector(`:scope > [${SHADOW_ATTR}]`)
     if (ph) {
       const to = docRectNoTransform(ph)
       const g = session.ghost
@@ -961,8 +1101,11 @@ function finishDrag(skipAnimation) {
  *   delayTouchStart?: boolean | number,
  *   dragHandleSelector?: string,
  *   announcements?: (event: 'lifted' | 'moved' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement}) => string | undefined,
- *   onconsider?: (e: {items: any[], info: {trigger: string, id: any, source: string}}) => void,
- *   onfinalize?: (e: {items: any[], info: {trigger: string, id: any, source: string}}) => void,
+ *   dropOnto?: boolean | ((item: any) => boolean),
+ *   accept?: (dragged: any) => {id: any} | null | undefined,
+ *   dragSet?: () => Array<{id: any}>,
+ *   onconsider?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string}}) => void,
+ *   onfinalize?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string, target?: any}}) => void,
  * }} getOptions
  */
 export function dndzone(getOptions) {

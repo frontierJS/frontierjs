@@ -803,6 +803,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `workbench-messages.md` — a Messages screen in Workbench: serpgrid's chat UI over the Mattermost mirror, in its own `chat` database
 - `workbench-capture.md` — a Flameshot replacement: Kapture (`~/code/KOBAMI/kapture`, Wayland-only) gains an X11 backend; Workbench's tray and the GNOME Print shortcut run it
 - `workbench-package-chats.md` — a Workbench chat knows its workspace package (inferred from its writes, overridable); tabs group by package like Chrome tab groups; Q1–Q3 ruled D1958–D1960 (all as recommended), 0.1 next
+- `prototypes-catalog.md` — a Workbench `/prototypes/` page over every fjs-prototypes repo, grouped by owner/kind label rather than folder; one `CATALOG.json` is also Claude's entry point for prior art; Q1–Q4 ruled D2266–D2269, 0.1 draft catalog next
 - `workspace-onboarding.md` — Basecamp's `/onboarding` grades each connection missing → present → proven, with vendor links, scopes and Verify; D1578–D1580 ruled, Q4 open, Phase 0 prior art next
 - `zero-to-live.md` — a DigitalOcean account to an FJS app on a Cloudflare domain; Phase 1 ruled, Phase 0's real-droplet run next
 - `box-layout.md` — a fleet box's files under Outpost's name (`/etc/outpost`, `/var/lib/outpost`), app data as bind mounts, `/frontier-outpost` as a folder of links; FJS-D1544 ruled E, Q1–Q4 open, 0.2 real-box probe next

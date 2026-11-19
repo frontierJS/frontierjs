@@ -1,0 +1,278 @@
+---
+title: "Concepts (draft) — FrontierJS docs"
+description: "A conversational draft of the Concepts page, for review beside the current one."
+render: static
+---
+<!--
+  A second voice for /docs/concepts/, kept beside it for review. Same facts
+  and the same verified Lead sample (concepts.meta.js); whichever reads
+  better replaces the other, and this file goes.
+-->
+<script>
+  import DocsShell from '../../components/DocsShell.mesa'
+
+  export let data = null
+
+  const sample = data?.samples ?? {}
+  const toc = [
+    { href: '#why', title: 'Why one file' },
+    { href: '#lead', title: 'A lead, start to finish' },
+    { href: '#code', title: 'Where your code goes' },
+    { href: '#more', title: 'When you need more' },
+    { href: '#access', title: 'Who gets to see what' },
+    { href: '#change', title: 'When something changes' },
+    { href: '#surfaces', title: 'One app, many places' },
+    { href: '#remember', title: 'If you remember three things' },
+  ]
+</script>
+
+<DocsShell nav={data?.nav} current="/docs/concepts/" {toc}>
+<article id="top" class="doc">
+  <p class="eyebrow">Docs · Concepts · Draft</p>
+  <h1>One file, and everything that grows from it.</h1>
+  <p class="lede">
+    This is the page we'd want you to read before anything else. It isn't long,
+    and once it clicks, most of FrontierJS stops being something to look up and
+    starts being something you can guess.
+  </p>
+
+  <section id="why">
+    <h2>Why one file</h2>
+    <p>
+      Think about the last time you added a field to an app. You probably put it in
+      the database, then in a type, then in a validator, then in a form, and maybe in
+      an API doc if you were being good. Five places saying the same thing, and
+      sooner or later one of them is wrong, usually the one you forgot.
+    </p>
+    <p>
+      We got tired of that. So in a FrontierJS app you say it once, in
+      <code>db/schema.lite</code>, and the rest of the app takes it from there.
+      Change the file and everything that came from it changes with it.
+    </p>
+  </section>
+
+  <section id="lead">
+    <h2>A lead, start to finish</h2>
+    <p>
+      Let's use one model for the whole page. Say you're tracking sales leads. Here's
+      the entire definition:
+    </p>
+    <pre class="code">{@html sample.LEAD}</pre>
+    <p>
+      Most of it reads the way you'd guess. A name between 1 and 120 characters. An
+      email that has to look like one, is stored lowercase and can't repeat. A phone
+      number that's encrypted. A status that starts at <code>new</code>.
+    </p>
+    <p>
+      The last few lines are where it gets interesting. <code>@@gate</code> and
+      <code>@@allow</code> say who can do what, and <code>@@transitions</code> says
+      how a lead's status is allowed to move: you can contact a new lead, win one
+      you've contacted, or lose one that's either. That's it. There's no way to jump
+      a lead straight from <code>new</code> to <code>won</code>, because nobody wrote
+      that path.
+    </p>
+    <p>
+      From those eighteen lines you get the table and its migrations, validation
+      that runs the same rule on the server and in the browser, the access checks,
+      the status rules, TypeScript types, a JSON Schema, a default form and the tools
+      an AI agent sees. You didn't write any of those, and you won't have to keep
+      them in step.
+    </p>
+    <p>
+      One thing the schema deliberately doesn't hold: what to do. No UI behavior, no
+      business logic. It says what's true about a lead. Keeping it to that is what
+      makes everything built on it predictable. If you want to watch it happen,
+      <a href="/tour/derived/">Derived</a> on the tour shows one model and everything
+      it produces.
+    </p>
+  </section>
+
+  <section id="code">
+    <h2>Where your code goes</h2>
+    <p>
+      An app has three layers, and we gave each one exactly one noun so you always
+      know which file you're looking for:
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Layer</th><th>Noun</th><th>For our lead</th></tr></thead>
+        <tbody>
+          <tr><td>Data</td><td><strong>Model</strong></td><td><code>model Lead</code>, which you query as <code>db.lead</code></td></tr>
+          <tr><td>API</td><td><strong>Service</strong></td><td><code>leads.service.ts</code>, served at <code>/api/leads</code></td></tr>
+          <tr><td>UI</td><td><strong>Resource</strong></td><td><code>Lead.mesa</code>, which exports <code>leads</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Here's the service and the resource for <code>Lead</code>. Yes, really, this is all of them:</p>
+    <pre class="code">{@html sample.SERVICE}</pre>
+    <pre class="code">{@html sample.RESOURCE}</pre>
+    <p>
+      That empty service already lists, reads, creates, updates and deletes leads.
+      It turns away bad input, checks who's calling and filters the list so each
+      person sees only what they're allowed to. The files stay this small until you
+      have something to say that the model can't, and then that's the only thing
+      in them.
+    </p>
+    <p>
+      You'll also hear two more nouns: a <strong>Release</strong> is how the app
+      ships, and a <strong>Suite</strong> is how it's tested. The
+      <a href="/tour/walkthrough/">walkthrough</a> builds all three layers from one
+      model if you'd like to see it end to end.
+    </p>
+  </section>
+
+  <section id="more">
+    <h2>When you need more</h2>
+    <p>
+      Sooner or later the defaults won't cover something. When that happens, we'd
+      nudge you to reach for the smallest tool that does the job, roughly in this
+      order:
+    </p>
+    <ol>
+      <li><strong>Say it in the schema.</strong> If it's a rule about the data, it belongs there, and then every part of the app knows it.</li>
+      <li><strong>Add a hook.</strong> Step into one service's calls, before or after the work happens.</li>
+      <li><strong>Add a plugin.</strong> Give the whole app a new ability, like background jobs or an integration.</li>
+      <li><strong>Swap a provider.</strong> Change what's behind a seam, like which service sends your mail.</li>
+    </ol>
+    <p>
+      The reason for the order: a rule in the schema is enforced everywhere at once,
+      while a rule in a hook only holds for the calls that pass through it. Put a
+      data rule in a hook and the next script that writes to the table won't know
+      it exists.
+    </p>
+  </section>
+
+  <section id="access">
+    <h2>Who gets to see what</h2>
+    <p>
+      Access lives in the schema too, and it's checked right where the data is read
+      and written. That matters more than it sounds. An API route, a background job,
+      a one-off script and an AI agent all go through the same check, so there's no
+      path where somebody forgot to add it.
+    </p>
+    <p>
+      Every caller lands somewhere on a ladder from 0 to 9, and
+      <code>@@gate</code> says how high you need to be for each operation, in the
+      order read, create, update, delete:
+    </p>
+    <div class="table-wrap">
+      <table class="ladder">
+        <tbody>
+          <tr><td>0</td><td>STRANGER</td><td>5</td><td>ADMINISTRATOR</td></tr>
+          <tr><td>1</td><td>VISITOR</td><td>6</td><td>OWNER</td></tr>
+          <tr><td>2</td><td>READER</td><td>7</td><td>SYSADMIN</td></tr>
+          <tr><td>3</td><td>CREATOR</td><td>8</td><td>SYSTEM, only through <code>asSystem()</code></td></tr>
+          <tr><td>4</td><td>USER</td><td>9</td><td>LOCKED, which nobody passes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      So for our lead, <code>@@gate(2.4.4.5)</code> means a reader can look, a
+      signed-in user can create and edit, and only an administrator can delete.
+      Someone who isn't signed in gets nothing. Then <code>@@allow</code> narrows
+      reading further: it's built into the query, so when a user lists leads they
+      only get back their own. And the encrypted phone number stays out of ordinary
+      reads altogether.
+    </p>
+    <p>
+      The browser gets a copy of these rules too, so a screen can hide a Delete
+      button you can't use. That's a nicety, not the lock. The server checks either
+      way.
+    </p>
+    <p>
+      If your schema has no access rules at all, it behaves like a plain ORM and
+      stays out of your way. Once you add your first one, though, a model with no
+      gate is closed to everyone but the system. And <code>asSystem()</code>, the
+      one way around a gate, is recorded every time it's used.
+    </p>
+  </section>
+
+  <section id="change">
+    <h2>When something changes</h2>
+    <p>
+      When a lead is updated, the update is announced once, and every screen that's
+      showing that lead updates with it. That includes changes that never went
+      through an API call, like a job or a script writing directly, because the
+      announcement comes from the data rather than from whoever made the change.
+    </p>
+    <p>
+      The upshot is that a screen never keeps its own copy of the data that it has
+      to remember to refresh. It points at the data, and live updates are just how
+      apps behave rather than something you add later.
+    </p>
+    <p>
+      The same instinct runs through the rest of the request. Every step where one
+      layer hands off to the next has exactly one place that does it: one place turns
+      an error into an HTTP status, one place reads <code>?$limit=20</code> off the
+      URL. When something comes out wrong, you have one place to look instead of
+      five. <a href="/tour/seams/">The seams</a> follows one request through every
+      handoff.
+    </p>
+  </section>
+
+  <section id="surfaces">
+    <h2>One app, many places</h2>
+    <p>
+      Open an app's folder and you'll see <code>db/</code>, then a folder for each
+      place people reach the app from: <code>api/</code>, <code>web/</code> for the
+      signed-in app, <code>site/</code> for a public site, and, if you need them,
+      <code>widgets/</code>, <code>extension/</code>, <code>desktop/</code>,
+      <code>mobile/</code> and <code>cli/</code>.
+    </p>
+    <p>
+      Every interface is written in Mesa, and each folder is just where it gets
+      built for. So a component you write for the web reads the same in the
+      terminal or on a phone. If two of them need the same plain code, it goes in
+      <code>shared/</code>.
+    </p>
+  </section>
+
+  <section id="remember">
+    <h2>If you remember three things</h2>
+    <p>Everything on this page comes back to three ideas:</p>
+    <ul class="axioms">
+      <li><strong>Say it once.</strong> Every fact has one home, and everything else reads from it.</li>
+      <li><strong>Call it one thing.</strong> <code>Lead</code>, <code>db.lead</code>, <code>/api/leads</code> and <code>leads</code> are the same name in each layer, so finding one finds the others.</li>
+      <li><strong>Give it one owner.</strong> Every rule and every handoff lives in exactly one place.</li>
+    </ul>
+    <p>
+      When something in FrontierJS surprises you, it's usually one of these three
+      doing its job.
+    </p>
+  </section>
+
+  <footer class="next">
+    <p>
+      <strong>Where to next?</strong> <a href="/docs/ecosystem/">Ecosystem</a> covers
+      the packages around an app. <a href="/tour/">The tour</a> shows each idea
+      running. And <a href="https://github.com/frontierjs/frontierjs/blob/main/VOCABULARY.md">Vocabulary</a>
+      has every word we use with a specific meaning.
+    </p>
+  </footer>
+</article>
+</DocsShell>
+
+<style>
+  .doc { max-width: 44rem; font-family: var(--font-primary); }
+  .eyebrow { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .3em 0 .5em; }
+  .lede { font-size: 1.2rem; line-height: 1.6; color: var(--ink-soft); }
+
+  section { padding-top: 1.5rem; margin-top: 1.5rem; scroll-margin-top: calc(var(--sticky-offset) + 1rem); }
+  h2 { font-size: 1.45rem; letter-spacing: -.01em; margin: 0 0 .75rem; }
+  section p, section li { font-size: 1.05rem; line-height: 1.75; color: var(--ink-soft); }
+  section li + li { margin-top: .4rem; }
+  .code { font-size: var(--text-xs); margin: 1.25rem 0; }
+
+  .table-wrap { overflow-x: auto; margin: 1.25rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .95rem; }
+  th, td { text-align: left; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-mute); font-weight: 600; }
+  .ladder td:nth-child(odd) { color: var(--ink-mute); font-variant-numeric: tabular-nums; width: 2rem; }
+
+  .axioms { list-style: none; padding: 0; }
+  .axioms li { padding: .4rem 0; }
+
+  .next { border-top: 1px solid var(--rule); margin-top: 3rem; padding-top: 1.5rem; }
+  .next p { line-height: 1.75; color: var(--ink-soft); }
+</style>

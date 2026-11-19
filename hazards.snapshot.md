@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 195**.
+Graded: **13 of 197**.
 
-## data — 3 of 65
+## data — 3 of 66
 
 ### Schema and parse
 
@@ -35,6 +35,7 @@ Graded: **13 of 195**.
 | A soft-deleted row keeps its `@unique` values, and `restore()` is why. | **none** |
 | A soft-deleted parent's children have THREE fates and each has a spelling. | **none** |
 | A per-call flag the model cannot SATISFY is refused by name, and so is a method. | **none** |
+| On a `@@softDelete` model in a database with `retention`, the index on `createdAt` is FULL, not partial | **none** |
 
 ### Gates, policies and claims
 
@@ -129,7 +130,7 @@ Graded: **13 of 195**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 73
+## api — 6 of 75
 
 ### `ctx` and the call
 
@@ -144,6 +145,7 @@ Graded: **13 of 195**.
 | A write by id the row policy refuses is 403 for a row the caller can read, 404 for one they cannot | **none** |
 | `update` is `patch` with an id REQUIRED, and it MERGES | **none** |
 | The METHOD decides list vs single. | **none** |
+| A claimed mirror's create answers 202 with only the key when the caller cannot read the row it just landed | **none** |
 
 ### The hook pipeline
 
@@ -151,6 +153,7 @@ Graded: **13 of 195**.
 | --- | --- |
 | A custom method takes the model's READ gate as a floor, and declares anything above it | **none** |
 | ↳ A method authenticated by something that is NOT a session states `gate: 0` | **none** |
+| A `stream: true` method's frames leave before the transaction commits, and only `protect()` runs on each | **none** |
 | ↳ Declaring one gate means naming the whole surface | **none** |
 | The gate runs before anything an app wrote, and `validated:` is the phase after the derived layer. | **none** |
 | An `Idempotency-Key` on a mutating request executes once and replays the first answer | **none** |

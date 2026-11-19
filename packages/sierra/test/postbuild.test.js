@@ -166,6 +166,14 @@ describe('injectAnalyticsTag', () => {
     expect(html).not.toContain('script.js"')
   })
 
+  test('proxy: true points the tag same-origin, and the proxy is Plausible\'s alone (FJS-D1037)', () => {
+    const html = vendorTagHtml({ ...PLAUSIBLE, proxy: true, apiHost: 'https://stats.example' })
+    expect(html).toContain('src="/js/script.js"')
+    expect(html).toContain('data-api="/api/event"')
+    expect(html).not.toContain('stats.example')
+    expect(() => vendorTagHtml({ provider: 'gtm', containerId: 'GTM-ABC', proxy: true })).toThrow(/proxy.*"gtm"/)
+  })
+
   test('escapes what the config puts in an attribute', () => {
     const html = vendorTagHtml({ provider: 'plausible', domain: 'a"><script>x</script>' })
     expect(html).not.toContain('"><script>x')

@@ -1,0 +1,242 @@
+---
+title: "Ecosystem — FrontierJS docs"
+description: "The FrontierJS ecosystem: which packages make up the framework, how they depend on each other, and what runs an app once it ships."
+render: static
+---
+<!--
+  Ecosystem: everything around an app. What an app IS is the Concepts page.
+  The six rings and their order are fli ws:atlas's (packages/cli/core/repo-rings.js),
+  so this page and the atlas tell one story; a package that moves ring there
+  moves section here. Each package's state is its own page under /packages/.
+-->
+<script>
+  import DocsShell from '../../components/DocsShell.mesa'
+
+  export let data = null
+
+  const toc = [
+    { href: '#rings', title: 'The rings' },
+    { href: '#spine', title: 'Spine' },
+    { href: '#substrate', title: 'Substrate' },
+    { href: '#batteries', title: 'Batteries' },
+    { href: '#conduits', title: 'Conduits' },
+    { href: '#tooling', title: 'Tooling' },
+    { href: '#running', title: 'Running it' },
+    { href: '#state', title: 'Where each stands' },
+  ]
+</script>
+
+<DocsShell nav={data?.nav} current="/docs/ecosystem/" {toc}>
+<article id="top" class="doc">
+  <p class="eyebrow">Docs · Ecosystem</p>
+  <h1>What sits around an app.</h1>
+  <p class="lede">
+    <a href="/docs/concepts/">Concepts</a> is what an app is. This page is everything
+    around it: the packages it is built from, the direction they depend in, and what
+    runs it once it ships.
+  </p>
+
+  <!-- ─── The rings ───────────────────────────────────────────────────── -->
+  <section id="rings">
+    <h2>Read it center out</h2>
+    <p>
+      FrontierJS is one repository of packages, and they fall into six rings. A ring is
+      a reading order, not a layer: start at the center, and stop reading once you
+      have what your task needs.
+    </p>
+    <ol class="rings">
+      <li><a href="#spine">The spine</a><span>One package per realm. Learn these and you know what every other package plugs into.</span></li>
+      <li><a href="#substrate">The substrate</a><span>What the spine stands on. Read one when a spine package reaches for it.</span></li>
+      <li><a href="#batteries">The batteries</a><span>Optional pieces an app opts into. Nobody needs all of them on day one.</span></li>
+      <li><a href="#conduits">The conduits</a><span>One connector per outside service. Open the one for the vendor you are wiring.</span></li>
+      <li><a href="#tooling">The tooling</a><span>How an app is made, checked and shipped. You run these long before you read them.</span></li>
+      <li><a href="#running">The frontier</a><span>What is built on all of it, including what runs your app in production.</span></li>
+    </ol>
+  </section>
+
+  <!-- ─── Spine ───────────────────────────────────────────────────────── -->
+  <section id="spine">
+    <h2>The spine: one package per realm</h2>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><a href="/packages/litestone/">Litestone</a></td><td>Data</td><td>The schema language and the database client: tables, migrations, validation, gates, encryption, the audit trail. SQLite underneath.</td></tr>
+          <tr><td><a href="/packages/junction/">Junction</a></td><td>API</td><td>Services, the hook pipeline, and HTTP and WebSocket transport over a Litestone database.</td></tr>
+          <tr><td><a href="/packages/sierra/">Sierra</a></td><td>UI</td><td>The app framework over Mesa: resources, forms, routing, and builds for a web app, a static site, a widget or an extension.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Dependencies point one way, toward the data. Junction imports Litestone; Sierra
+      imports both. Nothing imports back up the chain, which is why the data rules hold
+      no matter which realm a call starts in.
+    </p>
+<pre class="figure" aria-label="Dependency direction">Litestone  ←  Junction  ←  Sierra
+                              ↓
+                            Mesa</pre>
+  </section>
+
+  <!-- ─── Substrate ───────────────────────────────────────────────────── -->
+  <section id="substrate">
+    <h2>The substrate: what the spine stands on</h2>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><a href="/packages/mesa/">Mesa</a></td><td>The language every interface is written in: a compiler and a small runtime. It imports nothing from the spine, so it can be used on its own.</td></tr>
+          <tr><td><a href="/packages/css/">@frontierjs/css</a></td><td>The styling language. You style with a tone, like <code>danger</code>, and a treatment, like <code>outlined</code>, never with a color.</td></tr>
+          <tr><td><a href="/packages/toolbelt/">Toolbelt</a></td><td>Pure functions with no dependencies and no I/O: dates, money and units, the query directives. Any package may import it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─── Batteries ───────────────────────────────────────────────────── -->
+  <section id="batteries">
+    <h2>The batteries: opt in to what you need</h2>
+    <p>Each battery has one job and attaches at one seam.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Package</th><th>What it adds</th></tr></thead>
+        <tbody>
+          <tr><td><a href="/packages/auth/">auth</a></td><td>Sign-in, sessions, password reset, email verification and API keys</td></tr>
+          <tr><td><a href="/packages/caravan/">Caravan</a></td><td>Jobs, queues and schedules, stored in SQLite</td></tr>
+          <tr><td><a href="/packages/conduit/">Conduit</a></td><td>Third-party integrations in both directions: calls out and webhooks in</td></tr>
+          <tr><td><a href="/packages/notifications/">notifications</a></td><td>A notification defined once and delivered over whichever transports the app configures</td></tr>
+          <tr><td><a href="/packages/orion/">Orion</a></td><td>Automations: flows of triggers, conditions and actions</td></tr>
+          <tr><td><a href="/packages/mcp/">mcp</a></td><td>An MCP server for AI agents, derived from the schema, with the gate as its permissions</td></tr>
+          <tr><td><a href="/packages/testing/">testing</a></td><td>One test environment across Data and API</td></tr>
+          <tr><td><a href="/packages/ui/">ui</a></td><td>Mesa components: forms, display, layout, overlays, feedback</td></tr>
+          <tr><td><a href="/packages/email-kit/">email-kit</a> · <a href="/packages/print-kit/">print-kit</a></td><td>Email built from Mesa components; a document rendered to PDF</td></tr>
+          <tr><td>site-kit</td><td>The engine a marketing site runs on, this one included</td></tr>
+          <tr><td><a href="/packages/jetty/">Jetty</a></td><td>The browser extension surface</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Two kinds are worth telling apart. A <strong>Kit</strong> is parts one realm
+      composes: ui, email-kit, print-kit and site-kit are all UI. A
+      <strong>Rig</strong> is installed across realms: auth, notifications and Orion
+      each bring a schema fragment, a service and a resource, and an app takes any
+      subset of them.
+    </p>
+  </section>
+
+  <!-- ─── Conduits ────────────────────────────────────────────────────── -->
+  <section id="conduits">
+    <h2>The conduits: one connector per vendor</h2>
+    <p>
+      Conduit runs both ways: your app calls a vendor out through it, and the vendor's
+      webhooks come back in through it, verified before your code sees them. Each
+      conduit is a small package over <a href="/packages/conduit/">Conduit</a> that
+      knows one outside service from both ends: its sign-in, the requests you send it,
+      the webhooks it sends you and their signatures. Open the one you need; none
+      depends on another.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td>Mail</td><td>Gmail, Mailgun, Postmark, Resend, SendGrid</td></tr>
+          <tr><td>Messages and push</td><td>Twilio, Telnyx, Quo, Slack, Mattermost, Apple Push</td></tr>
+          <tr><td>Payments and shipping</td><td>Stripe, EasyPost</td></tr>
+          <tr><td>AI</td><td>Anthropic, OpenAI</td></tr>
+          <tr><td>Identity</td><td>OpenID Connect, Microsoft, Google</td></tr>
+          <tr><td>Infrastructure</td><td>Cloudflare, DigitalOcean, Hetzner, S3, Turnstile</td></tr>
+          <tr><td>Data and automation</td><td>Airtable, Basecamp, n8n, Zapier, Plausible, DataForSEO</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Most are prototypes, driven against a stand-in for the vendor, and each is held
+      out of releases until it is published on its own.
+    </p>
+  </section>
+
+  <!-- ─── Tooling ─────────────────────────────────────────────────────── -->
+  <section id="tooling">
+    <h2>The tooling: make, check, ship</h2>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><a href="/packages/fli/"><code>fli</code></a></td><td>The command line. It scaffolds an app, runs it in development, checks it, migrates it, and deploys and releases it.</td></tr>
+          <tr><td><a href="/packages/create-frontier/"><code>npm create frontier</code></a></td><td>Starts a new app. It runs <code>fli new</code>, so there is one definition of what an app looks like.</td></tr>
+          <tr><td><a href="/packages/config/">config</a></td><td>The TypeScript and Biome settings an app extends in one line.</td></tr>
+          <tr><td><a href="/packages/vscode/">The editor extension</a></td><td>Language support for <code>.lite</code> and <code>.mesa</code> files. Not yet published.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ─── Running it ──────────────────────────────────────────────────── -->
+  <section id="running">
+    <h2>Running it: Basecamp and Outpost</h2>
+    <p>
+      Once an app ships, it is a <strong>Release</strong>: one built, unchangeable
+      version, deployed as a whole. Two pieces move Releases onto servers and keep them
+      running.
+    </p>
+    <ul>
+      <li>
+        <strong><a href="/basecamp/">Basecamp</a></strong> is the control plane. It
+        provisions servers, ships releases, installs the services your apps depend on,
+        and shows what is running where. It is itself a FrontierJS app, the largest one
+        built so far.
+      </li>
+      <li>
+        <strong><a href="/packages/outpost/">Outpost</a></strong> is what runs on each
+        server. It answers Basecamp's signed commands (pull, build, deploy, stop, check
+        health) and reports back. It is not a FrontierJS app, so a server carries no
+        schema or database just to run containers.
+      </li>
+    </ul>
+    <p class="from">See it: <a href="/tour/loop/">The loop</a>, scaffold to deploy as one flow.</p>
+  </section>
+
+  <!-- ─── State ───────────────────────────────────────────────────────── -->
+  <section id="state">
+    <h2>Where each package stands</h2>
+    <p>
+      FrontierJS is pre-alpha, and the packages are not equally far along. Each
+      package states its own standing in one line, shipped, working or prototyped,
+      followed by the fact that standing rests on.
+    </p>
+    <p>
+      In a checkout, <code>fli ws:atlas --as=rings</code> draws every package in its
+      ring with its realm and state, read from the workspace rather than written down.
+    </p>
+    <p class="from">Every package: <a href="/packages/">Packages</a>.</p>
+  </section>
+
+  <footer class="next">
+    <p><strong>Next:</strong> <a href="/docs/concepts/">Concepts</a>, what an app is. <a href="/packages/">Packages</a>, one page per package.</p>
+  </footer>
+</article>
+</DocsShell>
+
+<style>
+  .doc { max-width: 48rem; font-family: var(--font-primary); }
+  .eyebrow { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .3em 0 .5em; }
+  .lede { font-size: 1.15rem; line-height: 1.6; color: var(--ink-soft); }
+
+  section { border-top: 1px solid var(--rule); padding: 2rem 0 1rem; margin-top: 2rem; scroll-margin-top: calc(var(--sticky-offset) + 1rem); }
+  h2 { font-size: 1.4rem; letter-spacing: -.01em; margin: 0 0 .75rem; }
+  section p, section li { line-height: 1.65; color: var(--ink-soft); }
+  section li + li { margin-top: .5rem; }
+  .from { font-size: .875rem; color: var(--ink-mute); }
+
+  .rings { padding-left: 1.25rem; }
+  .rings li { padding: .25rem 0; }
+  .rings a { font-weight: 600; margin-right: .5rem; }
+  .rings span { color: var(--ink-soft); }
+
+  .table-wrap { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .925rem; }
+  th, td { text-align: left; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-mute); font-weight: 600; }
+  td:first-child { white-space: nowrap; font-weight: 600; }
+
+  .figure { font-family: var(--font-mono, monospace); font-size: .9rem; color: var(--ink-soft); background: var(--surface-sunken); padding: 1rem 1.25rem; border-radius: .5rem; overflow-x: auto; }
+
+  .next { border-top: 1px solid var(--rule); margin-top: 2rem; padding-top: 1.5rem; }
+  .next p { line-height: 1.7; color: var(--ink-soft); }
+</style>

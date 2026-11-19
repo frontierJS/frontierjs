@@ -69,6 +69,8 @@ export function relative(instant: InstantInput, now: InstantInput, options?: Rel
 /** 'Today' / 'Yesterday' / 'Tomorrow', a weekday for the five days before yesterday, else 'Jun 27' or 'Dec 31, 2025' — calendar days in `timeZone`. */
 export function dayHeader(instant: InstantInput, now: InstantInput, options: FormatOptions): string
 export function plainDateIn(instant: InstantInput, timeZone: string): PlainDate
+/** The days `instants` fall on in `timeZone`, each once, ascending; a null instant falls on none. */
+export function distinctDays(instants: Iterable<InstantInput | null | undefined>, timeZone: string): PlainDate[]
 export function addToDate(date: PlainDate, duration: DateDuration): PlainDate
 export function daysBetween(from: PlainDate, to: PlainDate): number
 export function startOfDay(date: PlainDate, timeZone: string): number

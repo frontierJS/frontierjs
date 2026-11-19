@@ -1744,7 +1744,7 @@ How this model belongs to a tenant under `tenancy { strategy row }`. `none` says
 @@tenant(none)
 ```
 
-#### `@@transitions` (<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)
+#### `@@transitions` (<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)
 
 tier: **common** · legal in: in a model, in a trait · also called: workflow, status · see also: `gate`
 

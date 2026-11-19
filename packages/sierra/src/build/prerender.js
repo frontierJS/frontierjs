@@ -45,6 +45,7 @@ import { prerenders, declaresStatic }   from '../scanner/render-mode.js'
 import {
   installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
+import { pageReadTap } from './page-reads.js'
 
 // The router as a prerender loads it: the module, not the package entry (FJS-1530).
 const ROUTER_MODULE = fileURLToPath(new URL('../router/index.js', import.meta.url))
@@ -444,7 +445,9 @@ export function islandModule(file, specifier, alias = {}) {
  * Prerender every route the static target prerenders.
  *
  * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}>,
- *   fallback: Array<{route:string, reason:string}> }>}
+ *   fallback: Array<{route:string, reason:string}>,
+ *   pageReads: { routes: Array<{ route: string, paths: import('./page-reads.js').PageRead[],
+ *     pages: Array<{ url: string, reads: import('./page-reads.js').PageRead[] }> }> } | null }>}
  */
 export async function prerenderRoutes(opts) {
   const {
@@ -510,6 +513,10 @@ export async function prerenderRoutes(opts) {
   if (safetyOn) installSchemas(schemaDefs, schemaModels)
   const violations = []
   const safetyRows = []
+  // Each written URL's reads, so a write can name the pages it reaches
+  // (`FJS-D1262`, `page-reads.js`). Null when there is no client to tap.
+  const watchReads = pageReadTap(db)
+  const pageReads  = watchReads ? { routes: [] } : null
   // Union of every island across every page, keyed by component name. A name is
   // what a marker carries and what the loader's registry is keyed by, so a name
   // used for two different modules is a real collision — reported, not merged.
@@ -552,20 +559,25 @@ export async function prerenderRoutes(opts) {
    * `failure`; for a declared route each failed URL is in `skipped` instead and
    * the rest of its pages still render, as the build reports them all.
    */
-  async function renderRoute(node, pageFile, declared) {
-    const out = { pages: [], skipped: [], failure: null, readsData: false }
+  async function renderRoute(node, pageFile, declared, tap) {
+    const out = { pages: [], skipped: [], failure: null, readsData: false, pathReads: [] }
     const fail = (route, reason) => {
       if (declared) out.skipped.push({ route, reason })
       else out.failure = reason
     }
+    // One tap open at a time; the caller closes the last in a finally.
+    const watch   = () => { tap.stop?.(); tap.stop = watchReads ? watchReads() : null }
+    const collect = () => { const reads = tap.stop?.() ?? []; tap.stop = null; return reads }
 
     let targets
+    watch()
     try {
       targets = await bounded(`${node.id}: getStaticPaths()`, timeout, () => pathsForRoute(node, root))
     } catch (err) {
       fail(node.id, `getStaticPaths() threw: ${explainModuleInitFailure(err.message, node.file)}`)
       return out
     }
+    out.pathReads = collect()
     if (targets.length === 0) {
       fail(node.id, !declared && node.meta?.dynamic
         ? 'a dynamic route with no getStaticPaths() naming its pages'
@@ -588,6 +600,7 @@ export async function prerenderRoutes(opts) {
       : companionExists
 
     for (const { path: urlPath, params } of targets) {
+      watch()
       let data = null
       if (mod && typeof mod.load === 'function') {
         try {
@@ -685,7 +698,7 @@ export async function prerenderRoutes(opts) {
           `of the tree writes a file anywhere the build can reach.`
         )
 
-      out.pages.push({ urlPath, file, doc, islands: rendered.islands ?? [] })
+      out.pages.push({ urlPath, file, doc, islands: rendered.islands ?? [], reads: collect() })
     }
     return out
   }
@@ -757,11 +770,13 @@ export async function prerenderRoutes(opts) {
     // for every slug, and reporting it once is what makes the message useful.
     // Stopped in a finally, or a throw leaks the tap onto the next route.
     const recorder = safetyOn ? createReadRecorder(db) : null
+    const tap = { stop: null }
     let route
     try {
-      route = await renderRoute(node, pageFile, declared)
+      route = await renderRoute(node, pageFile, declared, tap)
     } finally {
       recorder?.stop()
+      tap.stop?.()
     }
     skipped.push(...route.skipped)
 
@@ -793,8 +808,14 @@ export async function prerenderRoutes(opts) {
     const refused  = !!verdict && !verdict.ok
     const fellBack = declared ? null : (route.failure ?? (refused ? verdict.reason : null))
     if (fellBack) fallback.push({ route: node.path ?? node.id, reason: fellBack })
-    if (!fellBack && !refused)
+    if (!fellBack && !refused) {
       for (const page of route.pages) await writePage(page, node)
+      if (pageReads && route.pages.length) pageReads.routes.push({
+        route: node.path ?? node.id,
+        paths: route.pathReads,
+        pages: route.pages.map(p => ({ url: p.urlPath, reads: p.reads })),
+      })
+    }
 
     if (verdict) safetyRows.push({
       route:     node.path ?? node.id,
@@ -843,6 +864,7 @@ export async function prerenderRoutes(opts) {
     fallback,
     islands: [...islandsByName.values()],
     islandPages,
+    pageReads,
     // What the check PROVED, not only what it rejected. A check nobody has seen
     // run is a rule nobody trusts, and this table is also the per-route
     // classification `IDEAS/static-safety.md` wants to build on.

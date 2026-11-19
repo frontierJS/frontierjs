@@ -1,15 +1,15 @@
 # @frontierjs/conduit
 
-**The third parties your app integrates with, declared in one place.**
+**The third parties your app integrates with, both ways, declared in one place.**
 
-A counterparty is named once — its address, which credential authorises it, how its bodies are encoded, what happens when it is slow or down — and every call to it goes through that name. Provider APIs, remote outposts, local sidecars.
+A counterparty is named once — its address, which credential authorises it, how its bodies are encoded, what happens when it is slow or down — and every call out to it and every webhook in from it goes through that name: `app.conduit.send()` out, `app.conduit.receive()` in. Provider APIs, remote outposts, local sidecars.
 
 ```
                     app.conduit
                          │
               ┌──────────┴──────────┐
        provider:stripe        outpost:srv-abc
-              │                     │
+     send() ↓   ↑ receive()         │
         a third party         an FJS machine
      (http · generic)       (http · hmac-signed)
 ```

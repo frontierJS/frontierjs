@@ -1,0 +1,80 @@
+<!--
+  The frame every page under /docs/ renders in: the sidebar beside the page.
+
+  It is a component each page wraps itself in, not a docs/_module.mesa layout,
+  because the sidebar needs the Mesa guide's page list and a layout's
+  _module.meta.js contributes static meta only, with no load().
+
+  Below 62rem the sidebar would push the page under a screen of links, so it
+  becomes a native popover the Docs menu button opens: one copy of the nav in
+  the markup, no script, and Escape and tap-outside close it. The site's own
+  topbar menu is the same shape.
+-->
+<script>
+  import DocsNav from './DocsNav.mesa'
+
+  export let nav = { areas: [], trees: {} }
+  export let current = ''
+  export let toc = []
+</script>
+
+<div class="docs-wrap">
+  <button class="dtoggle" popovertarget="docs-menu">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10" /></svg>
+    Docs menu
+  </button>
+
+  <aside id="docs-menu" class="dside" popover>
+    <DocsNav {nav} {current} {toc} />
+  </aside>
+
+  <div class="dmain">
+    <slot />
+  </div>
+</div>
+
+<style>
+  /* minmax(0, ...): a bare 1fr track floors at its widest code sample, and the
+     page then scrolls sideways on a phone. */
+  .docs-wrap {
+    max-width: 80rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; font-family: var(--font-primary);
+    display: grid; grid-template-columns: minmax(0, 1fr); gap: 3rem; align-items: start;
+  }
+  /* A closed popover is display:none by the UA's rule alone, so on a wide
+     screen an author display puts it back in the grid as ordinary flow, and
+     the resets undo the UA's centered-dialog box. `inset` is a shorthand for
+     `top`, so `top` comes after it or the sidebar never sticks. */
+  .dside {
+    display: block; inset: auto; position: sticky; top: calc(var(--sticky-offset) + 1.25rem);
+    margin: 0; border: 0; width: auto; height: auto;
+    max-height: calc(100vh - var(--sticky-offset) - 2.5rem); overflow-y: auto;
+    padding: 0 .5rem 0 0; background: none; color: inherit; scrollbar-width: thin;
+  }
+  .dtoggle { display: none; }
+  /* StubPage brings its own page frame; inside the shell the column is the frame. */
+  .docs-wrap .dmain :global(.stub-page) { padding: 0; margin: 0; }
+
+  @media (min-width: 62rem) {
+    .docs-wrap { grid-template-columns: 16rem minmax(0, 1fr); }
+  }
+
+  @media (max-width: 61.99rem) {
+    .docs-wrap { gap: 1.5rem; }
+    .dside { display: none; }
+    .dside:popover-open {
+      display: block; position: fixed; inset: var(--sticky-offset) 0 auto 0;
+      max-height: calc(100dvh - var(--sticky-offset)); overflow-y: auto;
+      padding: 1rem 1.25rem 1.5rem;
+      background: var(--surface); border-bottom: 1px solid var(--rule);
+      box-shadow: var(--shadow-md);
+    }
+    .dtoggle {
+      display: inline-flex; align-items: center; gap: .5rem; justify-self: start;
+      font: inherit; font-weight: 600; color: var(--ink);
+      padding: .55rem .9rem; border: 1px solid var(--rule); border-radius: 8px;
+      background: var(--surface-raised); cursor: pointer;
+    }
+    .dtoggle:hover { border-color: var(--rule-strong); }
+    .dtoggle svg { width: 1.1rem; height: 1.1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  }
+</style>

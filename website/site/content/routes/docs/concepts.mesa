@@ -1,33 +1,272 @@
 ---
 title: "Concepts — FrontierJS docs"
-description: "The FrontierJS mental model: one schema seeds three realms, Data, API and UI, and everything traces back to it."
+description: "The FrontierJS mental model: one schema seeds three realms, Data, API and UI, and everything in an app traces back to it."
 render: static
 ---
+<!--
+  Concepts: what a FrontierJS app is. Everything here is checkable inside one
+  app's folder; what sits around an app (packages, fleet, tooling) is the
+  Ecosystem page. The step-by-step proof of each idea is the tour, so a
+  section here states the idea once and links there rather than walking it.
+-->
 <script>
-  import StubPage from '../../components/StubPage.mesa'
+  import DocsShell from '../../components/DocsShell.mesa'
+
+  export let data = null
+
+  const sample = data?.samples ?? {}
+  const toc = [
+    { href: '#schema', title: 'The schema' },
+    { href: '#realms', title: 'Three realms' },
+    { href: '#declare', title: 'Declare first' },
+    { href: '#access', title: 'Access' },
+    { href: '#chain', title: 'The chain' },
+    { href: '#change', title: 'Change' },
+    { href: '#surfaces', title: 'Surfaces' },
+    { href: '#axioms', title: 'Three axioms' },
+  ]
 </script>
 
-<StubPage eyebrow="Docs · Concepts" title="One seed, three realms." lede="Everything in a FrontierJS app derives from db/schema.lite. The rest grows outward from it and can be traced back.">
-  <section>
-    <h2>The seed</h2>
-    <p>What the schema states, and what is derived from it: tables, types, migrations, validation, access, forms.</p>
+<DocsShell nav={data?.nav} current="/docs/concepts/" {toc}>
+<article id="top" class="doc">
+  <p class="eyebrow">Docs · Concepts</p>
+  <h1>One seed, three realms.</h1>
+  <p class="lede">
+    Everything in a FrontierJS app derives from one file, <code>db/schema.lite</code>.
+    The rest grows outward from it, and every part can be traced back. This page is
+    the handful of ideas that make that true. Read it before anything else; the
+    guides assume it.
+  </p>
+
+  <!-- ─── The schema ──────────────────────────────────────────────────── -->
+  <section id="schema">
+    <h2>The schema is the seed</h2>
+    <p>
+      A schema states what is true about the data for its whole life: the fields and
+      their rules, the relations, who may touch it, and how it may change. Here is one
+      model. Every section below points back at a line of it.
+    </p>
+    <pre class="code">{@html sample.LEAD}</pre>
+    <p>From those lines, without anyone writing them again:</p>
+    <ul>
+      <li><strong>The table</strong> and every migration after it.</li>
+      <li><strong>Validation</strong>: a bad email is refused before it reaches the database, on the server and in the browser, with the same rule.</li>
+      <li><strong>Access</strong>: who may read, create, update and delete, and which rows each person sees.</li>
+      <li><strong>The lifecycle</strong>: the only ways <code>status</code> can change.</li>
+      <li><strong>Types, a JSON Schema, a default form and an agent's tools</strong>, each a projection of the same model.</li>
+    </ul>
+    <p>
+      What the schema never holds is UI behavior or business logic. It says what is
+      true, not what to do about it, and that limit is what keeps everything derived
+      from it predictable.
+    </p>
+    <p class="from">See it: <a href="/tour/derived/">Derived</a>, one model and everything the schema produces.</p>
   </section>
-  <section>
-    <h2>Three nouns</h2>
-    <p>Model, Service and Resource: what the app knows, how it is reached, how it is shown. Then Release and Suite, the two that sit beside them.</p>
-    <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/ARCHITECT.md">ARCHITECT.md</a> · <a href="/direction/story/">The story</a></p>
+
+  <!-- ─── Three realms ────────────────────────────────────────────────── -->
+  <section id="realms">
+    <h2>Three realms, three nouns</h2>
+    <p>
+      An app has three realms, and each has one noun. Learn the three and you can
+      predict how a feature works before reading its docs.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Realm</th><th>Noun</th><th>What it is</th><th>For a lead</th></tr></thead>
+        <tbody>
+          <tr><td>Data</td><td><strong>Model</strong></td><td>What the app knows, and the rules that govern it</td><td><code>model Lead</code>, reached as <code>db.lead</code></td></tr>
+          <tr><td>API</td><td><strong>Service</strong></td><td>What the outside world may ask for, and how</td><td><code>leads.service.ts</code>, served at <code>/api/leads</code></td></tr>
+          <tr><td>UI</td><td><strong>Resource</strong></td><td>How a screen binds to a service</td><td><code>Lead.mesa</code>, exporting <code>leads</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      The Service and the Resource for <code>Lead</code> are each a few lines, because
+      everything they could say is already in the model:
+    </p>
+    <pre class="code">{@html sample.SERVICE}</pre>
+    <pre class="code">{@html sample.RESOURCE}</pre>
+    <p>
+      That empty service answers find, get, create, update, patch and remove, refuses
+      bad input, grades every caller and filters the list by the row policy. A file in
+      a realm holds only what the model cannot say.
+    </p>
+    <p>
+      Two more nouns describe what an app becomes rather than what it is: a
+      <strong>Release</strong> is how it ships, and a <strong>Suite</strong> is how it
+      is verified.
+    </p>
+    <p class="from">See it: <a href="/tour/walkthrough/">The walkthrough</a>, one model becoming a database, an API and a UI.</p>
   </section>
-  <section>
+
+  <!-- ─── Declare first ───────────────────────────────────────────────── -->
+  <section id="declare">
+    <h2>Declare first, then write code</h2>
+    <p>
+      A <strong>Declaration</strong> is something the app states and the framework
+      enforces: a model, a gate, a transition, a service's list of methods. A
+      <strong>Hook</strong> is code that runs. Prefer the first, because a declaration
+      is read by every part of the app at once, and code is read only where it runs.
+    </p>
+    <p>When an app needs more, there are four ways in, tried in this order:</p>
+    <ol>
+      <li><strong>Declaration</strong>: change the data's own rules in the schema.</li>
+      <li><strong>Hook</strong>: step into one call's pipeline, before or after the work.</li>
+      <li><strong>Plugin</strong>: attach a capability to the whole app, such as jobs or integrations.</li>
+      <li><strong>Provider</strong>: swap the implementation behind a seam, such as where mail is sent.</li>
+    </ol>
+    <p>
+      Each step is wider than the one before it. Reaching for a hook where a
+      declaration would do means the rule lives in one service and nowhere else.
+    </p>
+    <p class="from">See it: <a href="/pitch/#extend">The pitch, Extend</a>, with a sample of each.</p>
+  </section>
+
+  <!-- ─── Access ──────────────────────────────────────────────────────── -->
+  <section id="access">
     <h2>Access lives on the model</h2>
-    <p>Gates, protected fields and transitions are enforced at the data, so no route, job or agent can get around them.</p>
+    <p>
+      Who may do what is declared in the schema and enforced where the data is
+      written and read. A route, a job, a script and an agent all reach the data
+      through the same check, so none of them can forget it.
+    </p>
+    <p>
+      Every caller is graded to a level on a ladder from 0 to 9, and
+      <code>@@gate</code> names the level each operation needs, in the order read,
+      create, update, delete:
+    </p>
+    <div class="table-wrap">
+      <table class="ladder">
+        <tbody>
+          <tr><td>0</td><td>STRANGER</td><td>5</td><td>ADMINISTRATOR</td></tr>
+          <tr><td>1</td><td>VISITOR</td><td>6</td><td>OWNER</td></tr>
+          <tr><td>2</td><td>READER</td><td>7</td><td>SYSADMIN</td></tr>
+          <tr><td>3</td><td>CREATOR</td><td>8</td><td>SYSTEM, reached only by <code>asSystem()</code></td></tr>
+          <tr><td>4</td><td>USER</td><td>9</td><td>LOCKED, which nothing passes</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Reading <code>Lead</code> top to bottom:</p>
+    <ul>
+      <li><code>@@gate(2.4.4.5)</code>: a READER may read, a USER may create and update, an ADMINISTRATOR may delete. A stranger gets nothing.</li>
+      <li><code>@@allow(read, ownerId == auth().id)</code>: a row policy. It is compiled into the query, so a USER's list holds only their own leads.</li>
+      <li><code>@encrypted</code> on <code>phone</code>: stored encrypted and left out of every ordinary read.</li>
+      <li><code>@@transitions</code>: the only moves <code>status</code> can make. Contacting a lead twice is refused, and one move can carry a gate of its own.</li>
+    </ul>
+    <p>
+      The browser receives the same rules, so a screen can hide a button the user
+      cannot press. That is a courtesy and nothing more: the server enforces the rule
+      whatever the screen shows. A schema that declares no access rule at all is an
+      open, plain ORM; once it declares one, a model with no gate is reachable only by
+      the system. <code>asSystem()</code> is the one way past a gate, and it is
+      audited.
+    </p>
+    <p class="from">See it: <a href="/tour/field/#data">One field</a>, from the model through each boundary.</p>
   </section>
-  <section>
-    <h2>Surfaces</h2>
-    <p>api, web, site, widgets, extension, desktop, cli: each one a folder beside db/.</p>
+
+  <!-- ─── The chain ───────────────────────────────────────────────────── -->
+  <section id="chain">
+    <h2>The chain has a direction</h2>
+    <p>
+      A call travels down as data and a query, and comes back up as a result or an
+      error. Each realm meets the next at a <strong>Boundary</strong>, and each
+      boundary is a named checkpoint, not a wall: the caller is graded, input is
+      checked, and the result is wrapped in one envelope.
+    </p>
+    <p>
+      Every translation along the way has exactly one owner. One place turns an error
+      into an HTTP status. One place reads <code>?$limit=20</code> off a URL and hands
+      the service a directive, and nothing past that point sees the
+      <code>$</code>. When something comes out wrong, there is one place to look.
+    </p>
+    <p class="from">See it: <a href="/tour/seams/">The seams</a>, one POST and every handoff it crosses.</p>
   </section>
-  <section>
-    <h2>Extending it</h2>
-    <p>Declaration, Hook, Plugin, Provider. Which one to reach for, and why in that order.</p>
-    <p class="from">From: <a href="/pitch/#extend">The pitch, Extend</a></p>
+
+  <!-- ─── Change ──────────────────────────────────────────────────────── -->
+  <section id="change">
+    <h2>Change flows outward</h2>
+    <p>
+      Every fact has one origin, the row. When a row is written, the write is
+      announced once as an <strong>Event</strong> on a <strong>Channel</strong>, and
+      every screen bound to that channel updates. A write
+      that went through no service, from a job or a script, is still announced,
+      because the announcement comes from the data and not from the caller.
+    </p>
+    <p>
+      So the UI binds; it does not own. A screen holds a reference to the data, never
+      a second copy that has to be kept in step, and live updates are how every app
+      behaves rather than a feature one adds.
+    </p>
+    <p class="from">See it: <a href="/tour/ripple/">The ripple</a>, one line changed and what moves.</p>
   </section>
-</StubPage>
+
+  <!-- ─── Surfaces ────────────────────────────────────────────────────── -->
+  <section id="surfaces">
+    <h2>Surfaces sit beside the schema</h2>
+    <p>
+      An app's folder is <code>db/</code> and, beside it, one folder per
+      <strong>surface</strong>: the places the app is reached from.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><td><code>api/</code></td><td>The services, over HTTP and WebSocket</td></tr>
+          <tr><td><code>web/</code></td><td>The application people sign in to</td></tr>
+          <tr><td><code>site/</code></td><td>A public site, built to static pages</td></tr>
+          <tr><td><code>widgets/</code></td><td>Pieces embedded in somebody else's page</td></tr>
+          <tr><td><code>extension/</code></td><td>A browser extension</td></tr>
+          <tr><td><code>desktop/</code> · <code>mobile/</code></td><td>Native apps</td></tr>
+          <tr><td><code>cli/</code></td><td>A command line and terminal UI</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>
+      Every interface is written in Mesa, and a surface is where its compiled output
+      goes, so a component reads the same in all of them. <code>shared/</code> is a
+      root but not a surface: pure code two surfaces both import, which imports
+      neither.
+    </p>
+  </section>
+
+  <!-- ─── Axioms ──────────────────────────────────────────────────────── -->
+  <section id="axioms">
+    <h2>Three axioms</h2>
+    <p>Everything above is one of three rules, applied again:</p>
+    <ul class="axioms">
+      <li><strong>One origin.</strong> A fact is stated once, and everything else is derived from it. <a href="#schema">The schema</a>, <a href="#change">change</a>.</li>
+      <li><strong>One name.</strong> A thing has one name in every realm, so <code>Lead</code>, <code>db.lead</code>, <code>/api/leads</code> and <code>leads</code> are found from each other. <a href="#realms">Three realms</a>.</li>
+      <li><strong>One owner.</strong> Each rule and each translation lives in one place. <a href="#access">Access</a>, <a href="#chain">the chain</a>.</li>
+    </ul>
+  </section>
+
+  <footer class="next">
+    <p><strong>Next:</strong> <a href="/docs/ecosystem/">Ecosystem</a>, the packages around an app. <a href="/tour/">The tour</a>, each idea shown running. <a href="https://github.com/frontierjs/frontierjs/blob/main/VOCABULARY.md">Vocabulary</a>, every defined word.</p>
+  </footer>
+</article>
+</DocsShell>
+
+<style>
+  .doc { max-width: 48rem; font-family: var(--font-primary); }
+  .eyebrow { font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-mute); margin: 0; }
+  h1 { font-size: clamp(2rem, 5vw, 2.9rem); line-height: 1.08; letter-spacing: -.03em; margin: .3em 0 .5em; }
+  .lede { font-size: 1.15rem; line-height: 1.6; color: var(--ink-soft); }
+
+  section { border-top: 1px solid var(--rule); padding: 2rem 0 1rem; margin-top: 2rem; scroll-margin-top: calc(var(--sticky-offset) + 1rem); }
+  h2 { font-size: 1.4rem; letter-spacing: -.01em; margin: 0 0 .75rem; }
+  section p, section li { line-height: 1.65; color: var(--ink-soft); }
+  section li + li { margin-top: .35rem; }
+  .code { font-size: var(--text-xs); margin: 1rem 0; }
+  .from { font-size: .875rem; color: var(--ink-mute); }
+
+  .table-wrap { overflow-x: auto; margin: 1rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .925rem; }
+  th, td { text-align: left; padding: .5rem .75rem .5rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-mute); font-weight: 600; }
+  .ladder td:nth-child(odd) { color: var(--ink-mute); font-variant-numeric: tabular-nums; width: 2rem; }
+
+  .axioms { list-style: none; padding: 0; }
+  .axioms li { padding: .5rem 0; }
+
+  .next { border-top: 1px solid var(--rule); margin-top: 2rem; padding-top: 1.5rem; }
+  .next p { line-height: 1.7; color: var(--ink-soft); }
+</style>

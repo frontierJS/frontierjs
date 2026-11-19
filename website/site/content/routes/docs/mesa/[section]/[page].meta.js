@@ -6,13 +6,14 @@
 // static text, and fifty-nine pages would otherwise share one.
 
 import { loadGuide, loadPage } from '../../../../data/mesa-guide.js'
+import { docsNav }             from '../../../../data/docs-nav.js'
 
 export async function getStaticPaths() {
   return loadGuide().flatMap((s) => s.pages.map((p) => ({ section: p.dir, page: p.slug })))
 }
 
 export async function load({ params }) {
-  return loadPage(params.section, params.page)
+  return { ...loadPage(params.section, params.page), nav: docsNav() }
 }
 
 export function head({ data }) {

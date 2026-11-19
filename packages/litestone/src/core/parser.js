@@ -3184,20 +3184,30 @@ class Parser {
     // `declaredBy: Model, scope: column` — the moves are rows a tenant writes
     // (`FJS-D365`). Told from a move named `scope` by what follows the value:
     // an argument ends at a comma or the paren, a move goes on to `->`.
+    // `lastMover: column` sits among the moves (`FJS-D1731`).
     const isArg = () => this.check(TK.IDENT) && this.peek(1)?.type === TK.COLON
       && this.peek(2)?.type === TK.IDENT && this.peek(3)?.type !== TK.ARROW
-    if (isArg()) {
-      const args = {}
-      do {
-        if (this.check(TK.RPAREN)) break
-        const name = this.eat(TK.IDENT)
-        if (name.value !== 'declaredBy' && name.value !== 'scope')
-          throw new ParseError(`@@transitions(${field}): unknown argument '${name.value}' — expected 'declaredBy' and 'scope'`, name)
-        if (name.value in args)
-          throw new ParseError(`@@transitions(${field}): ${name.value} stated twice`, name)
-        this.eat(TK.COLON)
-        args[name.value] = this.eat(TK.IDENT).value
-      } while (this.maybeEat(TK.COMMA))
+    const args = {}
+    const readArg = () => {
+      const name = this.eat(TK.IDENT)
+      if (name.value !== 'declaredBy' && name.value !== 'scope' && name.value !== 'lastMover')
+        throw new ParseError(`@@transitions(${field}): unknown argument '${name.value}' — expected 'declaredBy', 'scope' or 'lastMover'`, name)
+      if (name.value in args)
+        throw new ParseError(`@@transitions(${field}): ${name.value} stated twice`, name)
+      this.eat(TK.COLON)
+      args[name.value] = this.eat(TK.IDENT).value
+    }
+    while (isArg()) {
+      readArg()
+      if (!this.maybeEat(TK.COMMA)) break
+    }
+    if (args.declaredBy || args.scope) {
+      if (args.lastMover)
+        throw new ParseError(`@@transitions(${field}, declaredBy: …): lastMover: is not kept on a machine whose moves are rows`, this.peek())
+      while (!this.check(TK.RPAREN)) {
+        readArg()
+        if (!this.maybeEat(TK.COMMA)) break
+      }
       this.eat(TK.RPAREN)
       if (!args.declaredBy)
         throw new ParseError(`@@transitions(${field}, scope: …) needs declaredBy: — the model whose rows are the moves`, this.peek())
@@ -3211,6 +3221,12 @@ class Parser {
     const transitions = {}
     do {
       if (this.check(TK.RPAREN)) break   // tolerate a trailing comma
+      if (isArg()) {
+        readArg()
+        if (args.declaredBy || args.scope)
+          throw new ParseError(`@@transitions(${field}): declaredBy: and scope: replace the moves, so they come first and alone`, this.peek())
+        continue
+      }
 
       // Optional `name:` — an IDENT followed by COLON. Anything else starts `from`.
       let name = null
@@ -3368,7 +3384,9 @@ class Parser {
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)
-    return { field, transitions }
+    if (!Object.keys(transitions).length)
+      throw new ParseError(`@@transitions(${field}): expected at least one transition`, this.peek())
+    return args.lastMover ? { field, transitions, lastMover: args.lastMover } : { field, transitions }
   }
 
   // @stamps(sentAt, …, by: sentById) — the DateTime columns the move writes with
@@ -5249,6 +5267,47 @@ function expandRelator(schema) {
   }
 
   return errors
+}
+
+// ─── Retention's index ───────────────────────────────────────────────────────
+// A database's retention sweeps every model in it by createdAt < cutoff,
+// soft-deleted rows included (FJS-D719). On a @@softDelete model every @@index
+// is partial, so no index an author could write served it and each sweep
+// scanned the table. The sweep is the framework's own reader, so the index is
+// derived, FULL, as a relator's reverse index is (FJS-D849); `ddl.js` leaves
+// the soft-delete clause off anything marked `generated: 'retention'`.
+//
+// An author's @@index([createdAt]) takes the mark instead of earning a twin:
+// the derived index has the same name, and CREATE INDEX IF NOT EXISTS would
+// keep whichever came first. It replaces the attribute rather than marking it,
+// and is idempotent, because `placeModels` runs it again over a copy whose
+// attribute objects the parse it was handed still holds.
+function expandRetentionIndex(schema) {
+  const windowed = new Set((schema.databases ?? [])
+    .filter(d => d.retention && (d.driver ?? 'sqlite') === 'sqlite')
+    .map(d => d.name))
+  if (!windowed.size) return
+
+  for (const model of schema.models) {
+    if (!windowed.has(model.attributes.find(a => a.kind === 'db')?.name ?? 'main')) continue
+    const f = model.fields.find(x => x.name === 'createdAt' && x.type?.name === 'DateTime')
+    if (!f || f.attributes.some(a => a.kind === 'unique' || a.kind === 'id')) continue
+    const soft = model.attributes.some(a => a.kind === 'softDelete')
+
+    const own = model.attributes.findIndex(a =>
+      a.kind === 'index' && !a.where && a.fields.length === 1 && a.fields[0] === 'createdAt')
+    if (own >= 0) {
+      if (soft && model.attributes[own].generated !== 'retention')
+        model.attributes[own] = { ...model.attributes[own], generated: 'retention' }
+      continue
+    }
+
+    const serves = model.attributes.some(a =>
+      !a.where && a.fields?.[0] === 'createdAt' &&
+      (a.kind === 'uniqueIndex' || (a.kind === 'index' && (!soft || a.generated === 'retention'))))
+    if (!serves)
+      model.attributes.push({ kind: 'index', fields: ['createdAt'], sorts: null, where: null, generated: 'retention' })
+  }
 }
 
 function expandEdgeAttributes(schema) {
@@ -8450,6 +8509,16 @@ function validate(schema) {
             errors.push(`${where} — '${move.stampBy}' must be @system or @guarded, or a caller could name the actor`)
         }
       }
+      if (attr.lastMover) {
+        const target = model.fields.find(f => f.name === attr.lastMover)
+        const where  = `Model '${model.name}': @@transitions(${attr.field}, lastMover: ${attr.lastMover})`
+        if (!target) errors.push(`${where} — no such field`)
+        else if (attr.lastMover === attr.field) errors.push(`${where} — that is the state column the move writes`)
+        else if (target.type.array || target.type.name === 'DateTime' || !isStoredField(target))
+          errors.push(`${where} — '${attr.lastMover}' must be a stored column that holds an id`)
+        else if (!target.attributes.some(a => a.kind === 'system' || a.kind === 'guarded'))
+          errors.push(`${where} — '${attr.lastMover}' must be @system or @guarded, or a caller could name the actor`)
+      }
 
       const field = model.fields.find(f => f.name === attr.field)
       if (!field) {
@@ -9896,6 +9965,7 @@ export function parseFile(filePath) {
   allErrors.push(...expandExtensible(schema))
   allErrors.push(...expandRelator(schema))
   allErrors.push(...expandMirror(schema))
+  expandRetentionIndex(schema)
   const tenancy = expandTenancy(schema)
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
@@ -9963,6 +10033,7 @@ export function placeModels(parseResult, placement) {
   })
 
   const placed = { ...schema, databases, models }
+  expandRetentionIndex(placed)
   const { errors } = validate(placed)
   return { ...parseResult, schema: placed, valid: errors.length === 0, errors }
 }
@@ -10000,6 +10071,7 @@ export function parse(src) {
   const extErrors  = expandExtensible(schema)
   const relatorErrors = expandRelator(schema)
   const mirrorErrors  = expandMirror(schema)
+  expandRetentionIndex(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)

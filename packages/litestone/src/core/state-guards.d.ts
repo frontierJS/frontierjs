@@ -19,6 +19,7 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         declared: boolean;
         stamps?: undefined;
         stampBy?: undefined;
+        lastMover?: undefined;
         guard?: undefined;
     } | {
         transitionName: any;
@@ -27,6 +28,7 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         to: any;
         stamps: any;
         stampBy: any;
+        lastMover: any;
         guard: {
             sql: string;
             params: any[];

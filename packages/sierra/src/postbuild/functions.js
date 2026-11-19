@@ -18,9 +18,15 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { proxiedPaths } from '../analytics/tag.js'
+import { refusal } from '../build/refusal.js'
 
 /** Where the entry lands, relative to the project root. `.sierra/` is gitignored. */
 export const FUNCTIONS_ENTRY = join('.sierra', 'functions.js')
+
+const PROXY = fileURLToPath(new URL('./plausible-proxy.js', import.meta.url))
 
 const SOURCE = /\.(?:[cm]?js|ts)$/
 
@@ -78,23 +84,56 @@ function routeFor(rel) {
 }
 
 /**
+ * Every path the site's functions answer: the functions directory's files, then
+ * the paths `analytics.proxy` derives (`FJS-D1037`). A file at a proxied path is
+ * refused rather than either one winning in silence.
+ *
+ * @param {{ functions?: string, analytics?: object }} config
+ * @param {string} root  project root
+ * @returns {Array<{ path: string, file?: string, upstream?: string }>}
+ */
+export function siteFunctionRoutes(config, root) {
+  const files   = config.functions ? functionRoutes(resolve(root, config.functions)) : []
+  const proxied = Object.entries(proxiedPaths(config.analytics) ?? {})
+  for (const [path] of proxied) {
+    const mine = files.find(r => r.path === path)
+    if (mine) {
+      throw refusal(`[Sierra] functions: ${relative(root, mine.file)} answers ${path}, which analytics.proxy answers — delete the file, or drop proxy`)
+    }
+  }
+  return [...files, ...proxied.map(([path, upstream]) => ({ path, upstream }))]
+}
+
+/** Whether the build writes a functions entry, so a host has one to mount. */
+export function hasFunctions(config) {
+  return !!config.functions || !!proxiedPaths(config.analytics)
+}
+
+/**
  * Write the entry: `export const routes = { '/api/event': handler, … }`.
  *
  * @param {object} opts
  * @param {string} opts.root  project root
- * @param {string} opts.dir   the functions directory, relative to `root`
+ * @param {string} [opts.dir]   the functions directory, relative to `root`
+ * @param {object} [opts.analytics]  `analytics` from the config, for its proxy
  * @returns {Promise<string>} the entry's absolute path
  */
-export async function writeFunctionsEntry({ root, dir }) {
-  const routes = functionRoutes(resolve(root, dir))
-  const entry  = join(root, FUNCTIONS_ENTRY)
+export async function writeFunctionsEntry({ root, dir, analytics }) {
+  const routes  = siteFunctionRoutes({ functions: dir, analytics }, root)
+  const files   = routes.filter(r => r.file)
+  const proxied = routes.filter(r => r.upstream)
+  const entry   = join(root, FUNCTIONS_ENTRY)
 
   const lines = [
     '// functions.js — written by Sierra; edit the functions directory instead',
-    ...routes.map((r, i) => `import f${i} from ${JSON.stringify(r.file)}`),
+    ...files.map((r, i) => `import f${i} from ${JSON.stringify(r.file)}`),
+    ...(proxied.length ? [`import { plausibleProxy } from ${JSON.stringify(PROXY)}`] : []),
     '',
     'export const routes = {',
-    ...routes.map((r, i) => `  ${JSON.stringify(r.path)}: f${i},`),
+    ...files.map((r, i) => `  ${JSON.stringify(r.path)}: f${i},`),
+    ...(proxied.length
+      ? [`  ...plausibleProxy(${JSON.stringify(Object.fromEntries(proxied.map(r => [r.path, r.upstream])))}),`]
+      : []),
     '}',
     '',
   ]
@@ -103,11 +142,11 @@ export async function writeFunctionsEntry({ root, dir }) {
   return entry
 }
 
-/** The build step: nothing without a `functions` key. */
+/** The build step: nothing without a `functions` key or `analytics.proxy`. */
 export async function generateFunctions(config, root) {
-  if (!config.functions) return null
-  await writeFunctionsEntry({ root, dir: config.functions })
-  const count = functionRoutes(resolve(root, config.functions)).length
+  if (!hasFunctions(config)) return null
+  await writeFunctionsEntry({ root, dir: config.functions, analytics: config.analytics })
+  const count = siteFunctionRoutes(config, root).length
   return `${FUNCTIONS_ENTRY} (${count} function${count === 1 ? '' : 's'})`
 }
 

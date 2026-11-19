@@ -1932,7 +1932,7 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
 A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
@@ -2312,10 +2312,6 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `index-another-index-already-covers` — an index a longer one already answers
 
 *info*. SQLite uses an index for any PREFIX of its columns, so @@index([a]) beside @@index([a, b]) is never chosen and @@index([email]) on a column that is already @unique duplicates the index the constraint built. Each one is a second B-tree written on every insert and update for no read it can serve. A @@softDelete model is exempt and that is not a hedge: there ddl.js emits every @@index WHERE deletedAt IS NULL and every UNIQUE in full, so the short one is a different, smaller index rather than a duplicate.
-
-### `retention-without-an-index` — a retention window over a model no index orders by createdAt
-
-*warn*. A database block's retention sweeps every model in it with a createdAt column, by createdAt < cutoff, at startup and on every $retain(). With no index leading with createdAt each sweep scans the whole table, whether or not anything is due — measured at 22.8 s a pass over 34M rows, against 0.6 ms with the index. A @@index on a @@softDelete model, or one with a where, is partial, and the sweep reads soft-deleted rows too.
 
 ### `declared-and-unreferenced` — a declaration nothing references
 

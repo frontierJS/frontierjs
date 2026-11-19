@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { partsIn, resolveWall, fromWall, format, relative, dayHeader, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
+import { partsIn, resolveWall, fromWall, format, relative, dayHeader, createDatetime, plainDateIn, distinctDays, addToDate, daysBetween, startOfDay, dueAt, offsetSpans } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
 const VECTORS = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-vectors.json'), 'utf8'))
@@ -178,6 +178,29 @@ test('datetime: plainDateIn is the calendar half of partsIn', function () {
     assert.equal(plainDateIn(ms, zone), `${pad(year, 4)}-${pad(month)}-${pad(day)}`, `${zone} ${ms}`)
   }
   assert.equal(plainDateIn('2026-01-31T01:00:00Z', 'America/New_York'), '2026-01-30', 'an evening in New York is the next day in UTC')
+})
+
+// FJS-2615 / FJS-D999: ELA's contact bars count the distinct days, in the
+// account's zone, a ticket had an outbound attempt on, and keyed each instant
+// through its own Intl formatter. SQLite has no zone table, so a fixed offset
+// is the only SQL form, and it is an hour off across a transition.
+test('datetime: distinctDays is the sorted set of zone days a list of instants falls on', function () {
+  const NY = 'America/New_York'
+  assert.deepEqual(distinctDays(['2026-01-31T20:00:00Z', '2026-01-31T01:00:00Z', '2026-01-30T15:00:00Z'], NY), ['2026-01-30', '2026-01-31'])
+  assert.deepEqual(distinctDays(['2026-01-31T20:00:00Z', '2026-01-31T01:00:00Z'], 'UTC'), ['2026-01-31'])
+
+  // 2026-11-01 is 25 hours in New York: 00:30 EDT and 23:30 EST are one day.
+  const fallBack = ['2026-11-01T04:30:00Z', '2026-11-02T04:30:00Z']
+  assert.deepEqual(distinctDays(fallBack, NY), ['2026-11-01'])
+  const fixedOffset = new Set(fallBack.map(iso => new Date(Date.parse(iso) - 4 * 3_600_000).toISOString().slice(0, 10)))
+  assert.equal(fixedOffset.size, 2, 'the fixed-offset key must split the 25-hour day, or this row grades nothing')
+
+  assert.deepEqual(distinctDays([Date.parse('2026-03-05T12:00:00Z'), new Date('2026-03-05T13:00:00Z'), null, undefined], 'UTC'), ['2026-03-05'], 'a null instant falls on no day')
+  assert.deepEqual(distinctDays(new Set(['2026-03-05T12:00:00Z']), 'UTC'), ['2026-03-05'], 'any iterable')
+  assert.deepEqual(distinctDays([], NY), [])
+  assert.throws(() => distinctDays('2026-03-05T12:00:00Z', NY), /distinctDays\(\) needs a list of instants/)
+  assert.throws(() => distinctDays(['2026-03-05T12:00:00Z']), /timeZone is required/)
+  assert.throws(() => distinctDays(['not a date'], NY), /is not an instant/)
 })
 
 test('datetime: a plain date is YYYY-MM-DD and a real day, or refused by name', function () {

@@ -201,6 +201,23 @@ function walkGuardedOrderBy(orderBy, modelName, facet, shapes, out, depth = 0) {
   return out
 }
 
+// `include._count`'s entries in the three forms `include.js` reads — `true` for
+// every to-many, `{ select: { posts } }`, or the bare map — each with the
+// relation it names (an alias names it by `relation:`) and its where, which is
+// over the TARGET's columns. A count by a column is a read of it one number at a
+// time, so the where gets every question a where gets.
+/** @param {any} count */
+function countEntries(count) {
+  if (!count || typeof count !== 'object') return []
+  const specs = count.select ?? count
+  if (!specs || typeof specs !== 'object') return []
+  return Object.entries(specs).filter(([, spec]) => spec).map(([alias, spec]) => ({
+    alias,
+    relName: typeof spec === 'object' && spec.relation ? spec.relation : alias,
+    where:   typeof spec === 'object' ? spec.where : undefined,
+  }))
+}
+
 // An include carries a whole nested read — its own where, orderBy and include —
 // against the target model, so it is the same questions asked one relation along.
 /** @param {any} include @param {string} modelName @param {ProtectedFacet} facet @param {Record<string, Shape>} shapes @param {Found[]} out @param {number} [depth] */
@@ -208,6 +225,11 @@ function walkGuardedInclude(include, modelName, facet, shapes, out, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return out
   const rels = shapes[modelName].relations
   for (const [k, v] of Object.entries(include)) {
+    if (k === '_count') {
+      for (const { relName, where } of countEntries(v))
+        if (rels[relName]) walkGuardedWhere(where, rels[relName].targetModel, facet, shapes, out, depth + 1)
+      continue
+    }
     const rel = rels[k]
     if (!rel || !v || typeof v !== 'object') continue
     walkGuardedWhere(v.where, rel.targetModel, facet, shapes, out, depth + 1)
@@ -281,6 +303,7 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
   if (!include || typeof include !== 'object' || depth > 12) return
   const rels = ctx.shapes[modelName].relations
   for (const [k, v] of Object.entries(include)) {
+    if (k === '_count') { checkCountArgs(v, modelName, method, ctx, isWrite); continue }
     const rel    = rels[k]
     const target = rel && ctx.models?.[rel.targetModel]
     if (!target || !v || typeof v !== 'object' || Array.isArray(v)) continue
@@ -316,6 +339,32 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
       }
     }
     checkIncludeArgs(v.include, name, method, ctx, isWrite, depth + 1)
+  }
+}
+
+// `include.js` skips a `_count` entry naming no to-many relation, so a typo
+// answered rows without the count, 200, where the same name under `include` is
+// refused (`FJS-776`); and an unknown key in its where reached SQLite as a string
+// literal and counted nothing.
+/** @param {any} count @param {string} modelName @param {string} method @param {Ctx} ctx @param {boolean} isWrite */
+function checkCountArgs(count, modelName, method, ctx, isWrite) {
+  const rels = ctx.shapes[modelName].relations
+  const many = Object.keys(rels).filter(r => rels[r].kind === 'hasMany' || rels[r].kind === 'manyToMany').sort()
+  for (const { alias, relName, where } of countEntries(count)) {
+    const rel = Object.hasOwn(rels, relName) ? rels[relName] : undefined
+    if (!rel || !many.includes(relName)) {
+      const hint = nearest(relName, new Set(many))
+      throw new ValidationError([{
+        path:    ['include', '_count', alias],
+        message: (rel ? `'${relName}' on ${modelName} is a to-one relation, and _count counts a to-many one.`
+                      : `Unknown relation '${relName}' in _count on ${modelName}.`) +
+                 (hint ? ` Did you mean: ${hint}?` : '') +
+                 (many.length ? ` Countable: ${many.join(', ')}` : ` ${modelName} declares no to-many relation`),
+      }])
+    }
+    const target = ctx.models?.[rel.targetModel]
+    if (target) checkWhereKeys(where, whereKeysFor(target, ctx), rel.targetModel, method, isWrite,
+      new Set(Object.keys(ctx.shapes[rel.targetModel].scopes)), ctx)
   }
 }
 

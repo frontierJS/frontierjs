@@ -90,6 +90,38 @@ const asNames = (v) => (v === undefined || v === null || v === '' ? undefined : 
 const asCsv = (v) => (Array.isArray(v) ? v.join(',') : v)
 
 /*
+ * `$count`, a relation count (`FJS-D945`). `surveys,notes` counts each, and
+ * `{"surveys":{"where":{…}}}` counts the related rows the where matches. The
+ * structure arrives as JSON text or as itself (`$count[surveys][where][day][$lt]=…`),
+ * and both read to `{ relation: true | { where } }`. Anything else answers
+ * `undefined`, which `invalidDirectives` reports: a `limit` inside a spec, or a
+ * number where a spec goes, would otherwise count every related row with a 200.
+ * The result is built by `fromEntries` because JSON text may hold `__proto__`.
+ */
+const asCounts = (v) => {
+  if (typeof v === 'string' && v.trimStart().startsWith('{')) {
+    try { v = JSON.parse(v) } catch { return undefined }
+  }
+  if (typeof v === 'string') v = v.split(',').map((n) => n.trim())
+  const entries = Array.isArray(v) ? v.map((n) => [n, (typeof n === 'string' && n !== '') || undefined])
+    : isBag(v) ? Object.entries(v).map(([n, spec]) => [n, countSpecOf(spec)])
+    : []
+  return entries.length && entries.every(([, spec]) => spec) ? Object.fromEntries(entries) : undefined
+}
+
+const isBag = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+
+const countSpecOf = (spec) =>
+  flagOf(spec) || (isBag(spec) && isBag(spec.where) && Object.keys(spec).length === 1 ? { where: spec.where } : undefined)
+
+// Names alone go back out as the bare list; a filtered count as its JSON.
+const asCountsParam = (v) => {
+  if (Array.isArray(v)) return v.join(',')
+  if (!isBag(v)) return v
+  return Object.values(v).every((spec) => spec === true) ? Object.keys(v).join(',') : JSON.stringify(v)
+}
+
+/*
  * What each reader promises about a value, as a JSON Schema — the half a
  * DESCRIBER needs, where `read` is the half a parser needs. An agent's tool
  * schema and a command line's flags are both written from it. `asIs` rows promise
@@ -101,6 +133,10 @@ const TEXT   = Object.freeze({ type: 'string' })
 const FLAG   = Object.freeze({ type: 'boolean' })
 const OPAQUE = Object.freeze({ description: 'Any shape the query builder reads; this table does not fix one.' })
 const NAMES  = Object.freeze({ type: 'array', items: { type: 'string' } })
+const COUNTS = Object.freeze({
+  description: 'Relations to count, answered as row._count: "a,b", or { relation: true | { where } } over the related rows.',
+  type: ['string', 'object'],
+})
 
 /*
  * The directives proper — each has a structured form on the other side, and
@@ -127,6 +163,7 @@ const DIRECTIVES = Object.freeze([
   { param: '$orderBy',       name: 'orderBy',       read: asIs,    schema: OPAQUE },
   { param: '$select',        name: 'select',        read: asIs,    schema: OPAQUE, write: asCsv },
   { param: '$populate',      name: 'populate',      read: asIs,    schema: OPAQUE, write: asCsv },
+  { param: '$count',         name: 'count',         read: asCounts, schema: COUNTS, write: asCountsParam },
   { param: '$search',        name: 'search',        read: asText,  schema: TEXT   },
   { param: '$withDeleted',   name: 'withDeleted',   read: asBool,  schema: FLAG   },
   { param: '$onlyDeleted',   name: 'onlyDeleted',   read: asBool,  schema: FLAG   },
@@ -224,7 +261,7 @@ export function invalidDirectives(params) {
     .map(({ param }) => param)
 }
 
-const GRAMMAR_DIRECTIVES = DIRECTIVES.filter(({ read }) => read === asBool || read === asCount)
+const GRAMMAR_DIRECTIVES = DIRECTIVES.filter(({ read }) => read === asBool || read === asCount || read === asCounts)
 
 /**
  * The single-valued directives (count, text, flag, and `$first`/`$wrap`) given a
@@ -232,7 +269,7 @@ const GRAMMAR_DIRECTIVES = DIRECTIVES.filter(({ read }) => read === asBool || re
  * `{ $limit: [5, 6] }` all arrive as an array, which no reader here can take as
  * one value: the filter half makes a repeated key a list by design, and a
  * directive reading it as `Number([5, 6])` answers the default page with a 200.
- * `$select`, `$populate` and `$orderBy` are lists by nature and are not graded.
+ * `$select`, `$populate`, `$count` and `$orderBy` are lists by nature and are not graded.
  * The kit reports and the boundary refuses (`FJS-D237`).
  *
  * @param {Record<string, unknown>} params
@@ -244,7 +281,7 @@ export function listedDirectives(params) {
 }
 
 const SINGLE_VALUED_PARAMS = Object.freeze([
-  ...DIRECTIVES.filter(({ read }) => read !== asIs && read !== asNames).map(({ param }) => param),
+  ...DIRECTIVES.filter(({ read }) => read !== asIs && read !== asNames && read !== asCounts).map(({ param }) => param),
   ...TRANSPORT_PARAMS,
 ])
 
@@ -277,7 +314,7 @@ export function unknownDirectives(params) {
  *
  * @param {Record<string, unknown>} params
  * @returns {{ limit?: number, offset?: number, after?: string, orderBy?: unknown, select?: unknown,
- *             populate?: unknown, search?: string,
+ *             populate?: unknown, count?: Record<string, true | { where: object }>, search?: string,
  *             withDeleted?: boolean, onlyDeleted?: boolean,
  *             withTemplates?: boolean, onlyTemplates?: boolean,
  *             asOf?: string, withExpired?: boolean, onlyExpired?: boolean }}

@@ -704,7 +704,10 @@ function createIndexes(model, softDelete = false, tableName) {
     // silently un-optimize every read. `whereSql` is the parser's own compiled
     // output — the same compiler a query goes through — which is what makes the
     // two byte-identical and therefore matchable.
-    const parts = [soft, mapExprCols(attr.whereSql, cmap)].filter(Boolean)
+    //
+    // Not on the index retention derives (FJS-D849): the sweep reads
+    // soft-deleted rows too, so a partial one never serves it.
+    const parts = [attr.generated === 'retention' ? null : soft, mapExprCols(attr.whereSql, cmap)].filter(Boolean)
     const where = parts.length === 0 ? ''
                 : parts.length === 1 ? ` WHERE ${parts[0]}`
                 : ` WHERE ${parts.map(p => `(${p})`).join(' AND ')}`

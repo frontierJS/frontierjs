@@ -645,9 +645,13 @@ app.channels.on('connection', async (session, conn) => {
 ```
 
 A service call cannot reach the socket it arrived on, so a room is chosen at the
-upgrade. The client says which with `socketQuery`, kept across a reconnect;
-`client.setSocketQuery({ page: '8' })` cycles the socket into another room, the
-way `setToken` cycles it for another principal.
+upgrade, or asked for later. The client says which at the upgrade with
+`socketQuery`, kept across a reconnect; `client.setSocketQuery({ page: '8' })`
+cycles the socket into another room, the way `setToken` cycles it for another
+principal. A room whose row was created after the socket opened is asked for
+with `client.presence.set('page:9')`: its `subscribe` frame on a BOUND name
+takes the same graded join, and joins only the tab that asked (`FJS-D974`). On
+any other name it never joins.
 
 A room admitted by a credential that is not a session reads it from
 `conn.data.bearer`: the token the client was given with `setToken` rides the
@@ -1058,7 +1062,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `shutdown.pluginTimeout` | `number` | the rest of `shutdown.timeout` | ms each plugin's `shutdown()` gets. One that never settles is logged and skipped instead of taking the rest of the list with it |
 | `shutdown.crashHandlers` | `boolean` | `true` | install `unhandledRejection`/`uncaughtException` handlers that log, emit `app:crash` (`{ message, error }`) and await its listeners for at most 3 s, stop the app and exit 1. The listeners and the stop share `shutdown.timeout`; a second throw is logged and starts nothing. Skipped where the app already has its own |
 | `http.compress` | `boolean` | `true` | gzip responses |
-| `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check |
+| `http.maxBodySize` | `number` | `262144` | max request body bytes. A body declaring no length is read incrementally and cancelled at the bound, so it is a memory limit and not only a check. It also bounds every service call, login and (through `maxFrameBytes`) every socket frame, so one route that takes more states its own `maxBodySize` in its options instead |
 | `http.idleTimeout` | `number` | the runtime's `10` | seconds a connection may go without progress before the RUNTIME closes it. `0` disables; above `255` is refused at boot. Coarse — measured, it closes at about twice the value with a floor near four seconds, so it is not a deadline |
 | `http.requestTimeout` | `number` | off | ms a handler may take before the app answers `503` itself. Absent means no bound. Setting it raises the runtime's per-request timer, so this answer wins the race instead of the socket resetting. It does not stop the handler |
 | `http.tls` | `{ cert, key }` | off | Serve https from a PEM cert and key, given as paths (a missing file is refused at boot, naming it). Development only: a client that refuses `http://`, localhost included (the Bitwarden CLI), needs the app itself to speak TLS; in production a proxy does |
@@ -1133,7 +1137,17 @@ export const PUT = async (ctx) => { /* pipe ctx.body somewhere */ }
 ```
 
 `options` is keyed by verb, and each value is that verb's third argument to
-`app.put`, `app.get` and the rest (`FJS-D2219`). `apiPrefix` applies as it does
+`app.put`, `app.get` and the rest (`FJS-D2219`). A route that takes a larger
+body than `http.maxBodySize` states its own bound there, and login, every other
+route and every socket frame keep the app's:
+
+```ts
+// api/src/routes/ciphers/import.ts  →  POST /ciphers/import, up to 16 MB parsed
+export const options = { POST: { maxBodySize: 16 * 1024 * 1024 } }
+export const POST = async (ctx) => { /* ctx.body is the whole vault */ }
+```
+
+ `apiPrefix` applies as it does
 to `app.get`. A file or folder beginning `_` is private to the files beside it.
 Boot refuses, naming the files, a file that exports no verb, one whose `options`
 names a verb it does not export, one that threw, and two that answer one URL (`routes/a.ts` and
@@ -1530,6 +1544,18 @@ createService({ name: 'tickets', methods: ['find', 'create', 'approve'] })
   from an internal route or a job; HTTP, the socket and an agent's tool call
   (`'mcp'`) answer 405, and `/manifest`, OpenAPI and MCP leave it out. The
   values are `ctx.transport`'s: `http`, `websocket`, `internal`, `mcp`.
+- **A method that answers in frames declares `stream: true`** —
+  `methods: [{ method: 'draft', stream: true }]` on an `async *draft(ctx)`
+  (`FJS-D1031`). Each value it yields is a frame, and every frame goes through
+  the service's `protect()` hooks and the wire's protected-column drop; the
+  after chain runs once, on the last frame, which is the call's answer
+  (`FJS-D854`). The socket sends `{ type: 'service_frame', id, frame }` per
+  frame, HTTP sends `event: frame` over SSE when the request accepts
+  `text/event-stream`, and a wire that cannot stream -- `app.service()`, MCP,
+  HTTP without that `Accept` -- answers the last frame alone (`FJS-D853`).
+  The client's `invoke()` is both: `for await (const f of svc.invoke('draft'))`
+  reads frames, `await` the last. An async generator that is not declared is
+  still refused by name.
 - A name the service does not have **throws at construction**, so `['find','gett']`
   fails immediately instead of silently blocking `get`.
 - `/manifest`, `/metrics` and the OpenAPI spec all filter by the policy, so what
@@ -2341,6 +2367,13 @@ const rows = await posts.findData({ status: 'published' })  // rows only
 const withAuthor = await posts.find({}, { populate: 'author' })
 const both       = await posts.find({}, { populate: ['author', 'comments'] })
 const justTheName = await posts.find({}, { populate: 'author:name+email' })
+
+// count — a to-many relation's size on each row, as row._count, graded by the
+// related model's read policy. A where counts only the related rows it matches,
+// so "surveys this month per area" is one request rather than one per area.
+// Over the wire: ?$count=comments, or ?$count={"comments":{"where":{…}}}.
+const counted = await posts.find({}, { count: 'comments' })
+const recent  = await posts.find({}, { count: { comments: { where: { body: { contains: 'thanks' } } } } })
 
 // get(id) or get(query) → T  (query form uses $first routing)
 const post    = await posts.get(1)

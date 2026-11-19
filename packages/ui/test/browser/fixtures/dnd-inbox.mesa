@@ -1,0 +1,58 @@
+<script>
+  // dnd-inbox.mesa — ELA's inbox gestures (FJS-D1024): a message dropped ONTO
+  // a ticket merges into it, one dropped between tickets lands as a new ticket,
+  // and a selection drags as one stack.
+  //
+  // `tickets` takes a drop onto any ticket but 102 (`dropOnto` as a predicate),
+  // and `accept` turns a message into the ticket record the host renders — the
+  // placeholder included, so the shadow row shows `from m2` mid-drag. `picked`
+  // is the selection `dragSet` hands over. Each onfinalize is logged with its
+  // target's id and the ids that travelled.
+  import { dndzone } from '@frontierjs/ui/dnd'
+
+  let inbox   = [{ id: 1, t: 'm1' }, { id: 2, t: 'm2' }, { id: 3, t: 'm3' }, { id: 4, t: 'm4' }]
+  let tickets = [{ id: 101, t: 'T1' }, { id: 102, t: 'T2' }]
+  let picked  = [1, 3]
+  let log     = []
+
+  const finalize = (list) => ({ items, info }) => {
+    log = [...log, `${list}:${info.trigger}:${info.target?.id ?? ''}:${info.items.map((it) => it.id).join('+')}`]
+    if (list === 'inbox') inbox = items
+    else tickets = items
+  }
+</script>
+
+<div class="board">
+  <ul id="inbox" {@attach dndzone(() => ({
+    items: inbox,
+    type: 'mail',
+    dragSet: () => inbox.filter((m) => picked.includes(m.id)),
+    onconsider: ({ items }) => inbox = items,
+    onfinalize: finalize('inbox'),
+  }))}>
+    {#each inbox as m (m.id)}
+      <li data-id={m.id}>{m.t}</li>
+    {/each}
+  </ul>
+  <ul id="tickets" {@attach dndzone(() => ({
+    items: tickets,
+    type: 'mail',
+    dropOnto: (tk) => tk.id !== 102,
+    accept: (m) => ({ id: `new-${m.id}`, t: `from ${m.t}` }),
+    onconsider: ({ items }) => tickets = items,
+    onfinalize: finalize('tickets'),
+  }))}>
+    {#each tickets as tk (tk.id)}
+      <li data-id={tk.id}>{tk.t}</li>
+    {/each}
+  </ul>
+</div>
+
+<output id="state">{inbox.map((m) => m.id).join(',')}|{tickets.map((tk) => tk.id).join(',')}</output>
+<output id="log">{log.join(' ')}</output>
+
+<style>
+  .board { display: flex; gap: 2rem; align-items: flex-start; }
+  ul { list-style: none; margin: 0; padding: 0.5rem 0.5rem 4rem; width: 10rem; }
+  li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); background: var(--surface, white); }
+</style>

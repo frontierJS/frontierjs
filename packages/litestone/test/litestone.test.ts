@@ -11347,6 +11347,81 @@ model M { id Int @id  s S @default(a)  ${fields}  @@transitions(s, go: a -> b @s
   })
 })
 
+// FJS-3694 (FJS-D1699, FJS-D1731): the machine keeps who made its LAST move, so
+// "nobody approves what they themselves last moved" is a row policy over a column
+// a non-move edit does not touch.
+describe('@@transitions(lastMover:) keeps the last mover (FJS-3694)', () => {
+  const LM = `enum S { draft submitted approved }
+model Claim {
+  id            Int @id
+  status        S @default(draft)
+  note          String?
+  lastMovedById Int? @system
+  @@transitions(status, lastMover: lastMovedById,
+    submit:  draft -> submitted,
+    approve: submitted -> approved,
+    reopen:  approved -> draft)
+  @@allow(all, true)
+  @@deny(update, status == 'submitted' && lastMovedById == auth().id)
+}`
+
+  test('parses lastMover: as a machine argument, and refuses a column that cannot hold a principal', () => {
+    const r = parse(LM)
+    expect(r.errors).toEqual([])
+    const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
+    expect(attr.lastMover).toBe('lastMovedById')
+    expect(Object.keys(attr.transitions)).toEqual(['submit', 'approve', 'reopen'])
+
+    const bad = (fields: string, lm: string) => parse(`enum S { a b }
+model M { id Int @id  s S @default(a)  ${fields}  @@transitions(s, lastMover: ${lm}, go: a -> b) }`)
+    expect(bad('', 'nope').errors.join()).toContain('no such field')
+    expect(bad('', 's').errors.join()).toContain('state column')
+    expect(bad('t DateTime? @system', 't').errors.join()).toContain('must be a stored column')
+    expect(bad('who Int?', 'who').errors.join()).toContain('@system or @guarded')
+    expect(parse(`enum S { a b }
+model M { id Int @id  s S @default(a)  who Int? @system  @@transitions(s, lastMover: who, lastMover: who, go: a -> b) }`).errors.join()).toContain('stated twice')
+    expect(parse(`enum S { a b }
+model M { id Int @id  s S @default(a)  who Int? @system  @@transitions(s, go: a -> b, lastMover: who) }`).errors).toEqual([])
+  })
+
+  test('every move writes the mover, and a non-move edit leaves it', async () => {
+    const { db } = await makeTestClient(LM)
+    await db.claim.create({ data: { id: 1 } })
+
+    const submitted = await db.$setAuth({ id: 7 }).claim.transition(1, 'submit')
+    expect(submitted.lastMovedById).toBe(7)
+
+    const edited = await db.$setAuth({ id: 8 }).claim.update({ where: { id: 1 }, data: { note: 'typo fixed' } })
+    expect(edited.lastMovedById).toBe(7)
+
+    const approved = await db.$setAuth({ id: 8 }).claim.update({ where: { id: 1 }, data: { status: 'approved' } })
+    expect(approved.lastMovedById).toBe(8)
+
+    // A job holding a principal names it; one with none leaves the column as it was.
+    expect((await db.$setAuth({ id: 9 }).asSystem().claim.transition(1, 'reopen')).lastMovedById).toBe(9)
+    expect((await db.asSystem().claim.transition(1, 'submit')).lastMovedById).toBe(9)
+    db.$close()
+  })
+
+  test('a payload naming the last-mover column is refused by name', async () => {
+    const { db } = await makeTestClient(LM)
+    await db.claim.create({ data: { id: 1 } })
+    await expect(db.$setAuth({ id: 7 }).claim.update({ where: { id: 1 }, data: { status: 'submitted', lastMovedById: 99 } }))
+      .rejects.toThrow(/lastMovedById/)
+    expect((await db.claim.findUnique({ where: { id: 1 } })).status).toBe('draft')
+    db.$close()
+  })
+
+  test('a policy over the column refuses the last mover and admits anybody else', async () => {
+    const { db } = await makeTestClient(LM)
+    await db.claim.create({ data: { id: 1 } })
+    await db.$setAuth({ id: 7 }).claim.transition(1, 'submit')
+    await expect(db.$setAuth({ id: 7 }).claim.transition(1, 'approve')).rejects.toThrow()
+    expect((await db.$setAuth({ id: 8 }).claim.transition(1, 'approve')).status).toBe('approved')
+    db.$close()
+  })
+})
+
 
 describe('@@transitions — transitions() listing', () => {
   let db: any

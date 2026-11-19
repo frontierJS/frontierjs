@@ -2,9 +2,10 @@
 // every section and page, in the order the guide's README gives.
 
 import { loadGuide } from '../../../data/mesa-guide.js'
+import { docsNav }   from '../../../data/docs-nav.js'
 
 export async function load() {
-  return { guide: loadGuide() }
+  return { guide: loadGuide(), nav: docsNav() }
 }
 
 export function head() {

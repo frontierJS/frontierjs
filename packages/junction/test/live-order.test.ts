@@ -379,7 +379,7 @@ describe('every directive the client sends is one the bridge strips', () => {
   // and the container no longer pretends otherwise.
   const ALL: QueryDirectives = {
     limit: 10, offset: 20, after: 'eyJpZCI6MX0', total: false, orderBy: '-createdAt',
-    select: ['a', 'b'], populate: 'customer',
+    select: ['a', 'b'], populate: 'customer', count: { orders: { where: { status: 'open' } } },
     search: 'acme', withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,

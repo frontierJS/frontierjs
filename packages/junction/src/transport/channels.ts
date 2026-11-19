@@ -37,8 +37,8 @@ import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders, resolverClaimsFor, PRINCIPAL_RESOLVER, type PrincipalSetting } from '../core/litestone.ts'
-import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb } from '../core/context.ts'
-import { serviceAccessor, channelsOf } from '../core/service.ts'
+import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb, callSlots } from '../core/context.ts'
+import { serviceAccessor, channelsOf, isStreamMethod } from '../core/service.ts'
 import { columnsUnmoved }       from '../core/write-narrowing.ts'
 import { wsSend }               from './send-queue.ts'
 import { firstUnsafeInteger, UnsafeIntegerError } from './body.ts'
@@ -1754,6 +1754,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
       // socketToConnId maps the raw $ws object → connId for lifecycle tracking.
       const socketToConnId = new WeakMap<object, { connId: string; connectedAt: number }>()
       const lastSeen        = new Map<string, number>()   // connId → last frame epoch ms
+      const roomAsks        = new Set<string>()           // connId\0channel of a bound join being graded
 
       // ── Liveness ──────────────────────────────────────────────────────
       // A connection is evicted once nothing has arrived from it in
@@ -1880,6 +1881,9 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           //
           // Success response:
           //   { type: 'service_result', id: '1', result: { id: '...', title: 'Hi' } }
+          //
+          // A method declared stream: true sends each frame first:
+          //   { type: 'service_frame', id: '1', frame: { ... } }
           //
           // Error response:
           //   { type: 'service_error', id: '1', error: { code: 401, message: '...' } }
@@ -2022,6 +2026,15 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   signal:  conn?.__gone?.signal,
                 }, app)
                 const call = svcCtx
+                // A declared stream's frames go back over the socket that
+                // called, correlated by the call id; `service_result` still
+                // closes the call (FJS-D1031).
+                if (isStreamMethod(svc, method as string)) {
+                  callSlots(call).frames = (frame) => {
+                    if (conn?.__gone?.signal.aborted) return false
+                    ctx.send({ type: 'service_frame', id: callId, frame: _bridge2.toStreamFrame(call, frame) })
+                  }
+                }
                 await _enterRequest!({
                   origin:         'websocket',
                   correlationId,
@@ -2048,12 +2061,15 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
           }
 
           // ── Subscribe — meta update + presence sync ─────────────────
-          // Server owns channel membership — subscribe does NOT join a channel.
-          // What it does:
+          // Server owns channel membership — subscribe does NOT join a channel,
+          // except a channel `rooms` binds to a row (`FJS-D974`): there it asks
+          // for the same graded join the server's own takes, or a row created
+          // after this socket opened has no room for anybody until a reconnect.
+          // What it does for a member:
           //   1. Updates presence meta (if provided) for the connection in that channel
           //   2. Emits presence:update to other members
           //   3. Sends presence:sync back to the sender (full current list)
-          // If the connection is not in that channel, silently ignored.
+          // A non-member of an unbound name, or one the room refuses, is told nothing.
           if (parsed.type === 'subscribe') {
             const channelId = parsed.channel as string | undefined
             if (!channelId) return
@@ -2062,9 +2078,33 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             if (!conn) return
 
             const member = manager._presenceGet(channelId, connId)
+            if (member) return subscribed(conn, member, parsed.meta)
+            if (!rooms?.match(channelId)) return
 
-            // Not in this channel — ignore
-            if (!member) return
+            // One grade in flight per connection and name: each costs a row read.
+            const ch  = manager.channel(channelId)
+            const ask = `${connId}\0${channelId}`
+            if (ch.connections.has(conn) || roomAsks.has(ask)) return
+            roomAsks.add(ask)
+            const sent = parsed.meta
+            void Promise.resolve(ch.join(conn))
+              .then(ok => {
+                const joined = ok ? manager._presenceGet(channelId, connId) : undefined
+                if (joined) subscribed(conn, joined, sent)
+              })
+              .finally(() => roomAsks.delete(ask))
+            return
+          }
+
+          if (parsed.type === 'unsubscribe') {
+            // Apps handle explicit unsubscribe via channels.on() if needed
+            return
+          }
+
+          refuse('unknown_frame', `Unknown frame type '${String(parsed.type).slice(0, 64)}'`)
+
+          function subscribed(conn: Connection, member: PresenceMember, sent: unknown): void {
+            const channelId = member.channelId
 
             // Update meta if provided.
             //
@@ -2072,7 +2112,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
             // needs no serialization, the size needs one, and the app's own
             // rule runs last and only on something already known to be small
             // enough to be worth judging.
-            if (parsed.meta && typeof parsed.meta === 'object' && !Array.isArray(parsed.meta)) {
+            if (sent && typeof sent === 'object' && !Array.isArray(sent)) {
               const rate = opts.presenceUpdatesPerSecond ?? 5
               if (rate > 0) {
                 const now = Date.now()
@@ -2087,7 +2127,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 b.tokens -= 1
               }
 
-              const raw   = parsed.meta as Record<string, unknown>
+              const raw   = sent as Record<string, unknown>
               const bytes = Buffer.byteLength(JSON.stringify(raw) ?? '')
               const cap   = opts.presenceMetaBytes ?? 4096
               if (bytes > cap) {
@@ -2129,15 +2169,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               you:     connId,
               members: manager._presenceMembers(channelId),
             })
-            return
           }
-
-          if (parsed.type === 'unsubscribe') {
-            // Apps handle explicit unsubscribe via channels.on() if needed
-            return
-          }
-
-          refuse('unknown_frame', `Unknown frame type '${String(parsed.type).slice(0, 64)}'`)
         },
 
         close: async (ctx: WsContext) => {

@@ -42,6 +42,7 @@ export function pathAliases(alias: Array<{
 }> | Record<string, string> | undefined): Record<string, string>;
 export { generateSchemas } from "./schema-plugin.js";
 export { localDbPlugin } from "./local-db-plugin.js";
+export { affectedPages } from "./page-reads.js";
 export type SierraConfig = {
     target: "spa" | "static" | "widget";
     routesDir?: string;

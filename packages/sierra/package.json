@@ -108,7 +108,7 @@
     "test": "node ../../scripts/tmp-run.mjs 'node ../../scripts/emit-types.mjs --check && vitest run && node bench/run.mjs && bun test test/doc-examples.test.js'",
     "types": "node ../../scripts/emit-types.mjs",
     "bench": "node bench/run.mjs",
-    "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs",
+    "test:safety": "bun test/static-safety-real.mjs && bun test/filter-operators-real.mjs && bun test/page-reads-real.mjs",
     "test:installable": "node test/browser/installable.mjs",
     "test:push-worker": "node test/browser/push-worker.mjs",
     "test:connect-app": "bun test/browser/connect-app.mjs",

@@ -126,6 +126,29 @@ describe('a bound room grades the join', () => {
     expect(lastSync(owner)?.members.map((m: any) => m.userId)).toEqual([OWNER])
     expect(events(stranger, 'presence:sync')).toEqual([])
   })
+
+  // `FJS-2807`, ruled by `FJS-D974`: the connection callback is the server's
+  // one join, and a row created after the socket opened has no room for anyone
+  // until a reconnect. A `subscribe` on a bound name asks for the same graded
+  // join; on an unbound name it is still ignored.
+  test('a subscribe on a bound name created after the socket opened joins a reader and refuses a stranger', async () => {
+    const { port, sys, app } = await mkApp()
+    const owner    = await open(port, OWNER)
+    const stranger = await open(port, '9')
+    await settle()
+
+    const later = await sys.page.create({ data: { ownerId: OWNER, title: 'later' } })
+    const name  = `page:${later.id}`
+    for (const s of [owner, stranger]) s.ws.send(JSON.stringify({ type: 'subscribe', channel: name, meta: { typing: false } }))
+    owner.ws.send(JSON.stringify({ type: 'subscribe', channel: 'lobby' }))
+    await settle()
+
+    expect(app.channel(name).length).toBe(1)
+    const sync = events(owner, 'presence:sync').findLast((f: any) => f.data.channelId === name)?.data
+    expect(sync?.members.map((m: any) => [m.userId, m.meta])).toEqual([[OWNER, { typing: false }]])
+    expect(events(stranger, 'presence:sync').filter((f: any) => f.data.channelId === name)).toEqual([])
+    expect(app.channel('lobby').length).toBe(0)
+  })
 })
 
 describe('a write the read policy reaches asks every member again', () => {

@@ -75,7 +75,6 @@
 <footer class="site-footer">
   <div class="container split">
     <span>FrontierJS — MIT licensed. Built with Bun and SQLite.</span>
-    <span>This page is styled entirely by <code>@frontierjs/css</code>.</span>
   </div>
 </footer>
 

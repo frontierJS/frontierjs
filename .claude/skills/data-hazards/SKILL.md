@@ -28,6 +28,7 @@ Detail: `references/soft-delete-and-unique.md`
 - **A soft-deleted row keeps its `@unique` values, and `restore()` is why.**
 - **A soft-deleted parent's children have THREE fates and each has a spelling.**
 - **A per-call flag the model cannot SATISFY is refused by name, and so is a method.**
+- **On a `@@softDelete` model in a database with `retention`, the index on `createdAt` is FULL, not partial** (`FJS-D849`, `FJS-2291`)
 
 ## Gates, policies and claims
 Detail: `references/gates-policies-and-claims.md`

@@ -14,10 +14,10 @@
  */
 
 import { statSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 import { functionHandler } from '../postbuild/function-handler.js'
-import { functionRoutes, requestFrom, sendResponse } from '../postbuild/functions.js'
+import { hasFunctions, requestFrom, sendResponse, siteFunctionRoutes } from '../postbuild/functions.js'
+import { plausibleProxy } from '../postbuild/plausible-proxy.js'
 import { importFresh } from '../scanner/import-fresh.js'
 
 // absolute file → the mtime it was last imported at, and the module that produced
@@ -34,29 +34,28 @@ async function load(file) {
 }
 
 /**
- * @param {{ functions?: string }} config
+ * @param {{ functions?: string, analytics?: object }} config
  * @returns {import('vite').Plugin | null}
  */
 export function functionsPlugin(config) {
-  if (!config.functions) return null
+  if (!hasFunctions(config)) return null
 
   return {
     name:  'sierra:functions',
     apply: 'serve',
 
     configureServer(server) {
-      const dir = resolve(server.config.root, config.functions)
-
       // Added directly rather than returned, so it runs ahead of Vite's own
       // middleware, the SPA fallback included.
       server.middlewares.use(async (req, res, next) => {
         try {
           const path  = new URL(req.url, 'http://localhost').pathname
-          const route = functionRoutes(dir).find(r => r.path === (path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path))
+          const key   = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path
+          const route = siteFunctionRoutes(config, server.config.root).find(r => r.path === key)
           if (!route) return next()
 
-          const mod     = await load(route.file)
-          const handler = functionHandler({ [route.path]: mod.default }, process.env)
+          const fn      = route.file ? (await load(route.file)).default : plausibleProxy({ [key]: route.upstream })[key]
+          const handler = functionHandler({ [key]: fn }, process.env)
           await sendResponse(req, res, await handler.handle(await requestFrom(req)))
         } catch (err) {
           server.config.logger.error(`[Sierra] functions: ${req.method} ${req.url} failed\n${err?.stack ?? err}`)

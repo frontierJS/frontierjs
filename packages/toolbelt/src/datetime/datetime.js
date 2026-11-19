@@ -346,6 +346,26 @@ export function plainDateIn(instant, timeZone) {
   return writeDate(partsIn(instant, timeZone))
 }
 
+/**
+ * The days a list of instants falls on in `timeZone`, each once, ascending.
+ * `.length` is "on how many days" — SQL cannot answer it, since SQLite has no
+ * zone table and a fixed offset splits a 25-hour day in two (`FJS-D999`).
+ * A null or undefined instant falls on no day, as a nullable column's does.
+ *
+ *   distinctDays(attempts.map(a => a.sentAt), account.timeZone).length
+ */
+export function distinctDays(instants, timeZone) {
+  if (instants == null || typeof instants === 'string' || typeof instants[Symbol.iterator] !== 'function') {
+    throw new TypeError(`datetime: distinctDays() needs a list of instants, got ${JSON.stringify(instants)}`)
+  }
+  requireZone(timeZone)
+  const days = new Set()
+  for (const instant of instants) {
+    if (instant != null) days.add(plainDateIn(instant, timeZone))
+  }
+  return [...days].sort()
+}
+
 const DURATION = ['years', 'months', 'weeks', 'days']
 
 /**

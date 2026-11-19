@@ -239,7 +239,7 @@ test('directives: every name written is a name this table strips', function () {
   // as a column nobody declared, three layers from the cause (`FJS-988`).
   const every = {
     limit: 1, offset: 2, after: 'cur', total: false, orderBy: { name: 'asc' },
-    select: ['a', 'b'], populate: ['c'], search: 'wid',
+    select: ['a', 'b'], populate: ['c'], count: { d: { where: { x: 1 } } }, search: 'wid',
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
@@ -476,4 +476,33 @@ test('directives: a URL spelling of $or reaches the filters whole', function () 
   assert.deepEqual(unknownDirectives(parseQueryString('$or[][name]=a&$not[name]=b')), [])
   assert.deepEqual(query.$not, { name: 'b' })
   assert.ok(Array.isArray(query.$or))
+})
+
+// ─── $count (FJS-D945) ────────────────────────────────────────────────────────
+
+test('directives: $count reads names, JSON text and a structure to one shape', function () {
+  const where = { day: { $gte: '2026-02-01' } }
+  assert.deepEqual(parseDirectives({ $count: 'surveys, notes' }).count, { surveys: true, notes: true })
+  assert.deepEqual(parseDirectives({ $count: ['surveys', 'notes'] }).count, { surveys: true, notes: true })
+  assert.deepEqual(parseDirectives({ $count: JSON.stringify({ surveys: { where } }) }).count, { surveys: { where } })
+  // `$count[surveys]=1` and `$count[surveys][where][…]=…` off the query string.
+  assert.deepEqual(parseDirectives({ $count: { surveys: 1, notes: { where } } }).count, { surveys: true, notes: { where } })
+  assert.deepEqual(listedDirectives({ $count: ['a', 'b'] }), [], 'a repeated $count is a list of names')
+})
+
+test('directives: a $count outside its grammar is reported, never read as every row', function () {
+  for (const bad of ['{"surveys":', '{"surveys":{"limit":2}}', '{"surveys":7}', '{"surveys":{"where":[1]}}', '{}', ',', 7]) {
+    assert.equal(parseDirectives({ $count: bad }).count, undefined, String(bad))
+    assert.deepEqual(invalidDirectives({ $count: bad }), ['$count'], String(bad))
+  }
+  const own = parseDirectives({ $count: '{"__proto__":{"where":{"a":1}}}' }).count
+  assert.equal(Object.getPrototypeOf(own), Object.prototype, 'JSON text cannot set the prototype')
+})
+
+test('directives: $count round-trips through the write half', function () {
+  const where = { day: { $lt: '2026-02-01' } }
+  assert.equal(directiveParams({ count: { surveys: true, notes: true } }).$count, 'surveys,notes')
+  assert.equal(directiveParams({ count: ['surveys'] }).$count, 'surveys')
+  const filtered = { surveys: { where }, notes: true }
+  assert.deepEqual(parseDirectives(directiveParams({ count: filtered })).count, filtered)
 })

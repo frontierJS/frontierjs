@@ -310,7 +310,7 @@ const PKGS = [
     name: 'Conduit',
     realm: 'API · Integrations',
     who: '@frontierjs/conduit',
-    pitch: 'Every third party an app talks to, declared in one place.',
+    pitch: 'Every third party an app talks to, both ways: the calls it makes and the webhooks it receives, declared in one place.',
     rows: [
       {
         k: 'Targets',

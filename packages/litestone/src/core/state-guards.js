@@ -358,7 +358,7 @@ export function makeStateGuards(shape, ctx, deps) {
           throw new TransitionViolationError(tableName, fieldName, currentValue, named.to,
             Object.values(transitions).filter(t => t.from.includes(currentValue)).map(t => t.to))
 
-        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null,
+        return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null, lastMover: spec.lastMover ?? null,
                  guard: guardMove(fieldName, requestedMove, named, whereSql, whereParams) }
       }
 
@@ -381,7 +381,7 @@ export function makeStateGuards(shape, ctx, deps) {
       // The move is legal — is this caller allowed to make it?
       await gradeMove(fieldName, matchedName, transitions[matchedName])
 
-      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null,
+      return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null, lastMover: spec.lastMover ?? null,
                guard: guardMove(fieldName, matchedName, transitions[matchedName], whereSql, whereParams) }
     }
     return null

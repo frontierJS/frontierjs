@@ -22,7 +22,7 @@ export function stampedPage(outDir?: any): Promise<string>;
  *
  * @param {object} opts
  * @param {string} opts.root  project root, where `.sierra/` is
- * @param {object} opts.config  the Sierra config — `siteUrl`, `outDir`, `trailingSlash`, `functions`
+ * @param {object} opts.config  the Sierra config — `siteUrl`, `outDir`, `trailingSlash`, `functions`, `analytics`
  * @returns {object}
  */
 export function wranglerConfig({ root, config }: {

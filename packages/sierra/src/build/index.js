@@ -14,7 +14,7 @@
  */
 
 import { resolve, isAbsolute, relative } from 'path'
-import { readdir, rm } from 'fs/promises'
+import { readdir, rm, writeFile } from 'fs/promises'
 import { mesaPlugin, prepareForCompile, inspectOn, locLines } from './mesa-plugin.js'
 import { devtoolsPlugin } from '../devtools/plugin.js'
 import { scannerPlugin, scanRoutes } from './scanner-plugin.js'
@@ -638,6 +638,14 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           console.log(pre.safety.report)
         }
 
+        // Beside the output and not in it: it names every column a page
+        // filters on, which is the build's business and not a visitor's.
+        if (pre.pageReads) {
+          const file = resolve(outDir, '..', 'page-reads.json')
+          await writeFile(file, JSON.stringify(pre.pageReads), 'utf8')
+          console.log(`\n  [Sierra] What each page read → ${relative(root, file)} (affectedPages)`)
+        }
+
         // Islands: bundle what the prerendered pages actually used, then put a
         // script tag on the pages that use them. A page with no island keeps
         // shipping zero JavaScript.
@@ -884,6 +892,9 @@ export { generateSchemas } from './schema-plugin.js'
 // ask for one — for a build that carries the Resource and is not sierra's own,
 // which is an extension's (`@frontierjs/jetty`).
 export { localDbPlugin } from './local-db-plugin.js'
+// Which prerendered pages one write reaches, read from the build's
+// `page-reads.json` (`FJS-D1262`).
+export { affectedPages } from './page-reads.js'
 
 /**
  * Filenames currently in the build's `assets/` directory.

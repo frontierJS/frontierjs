@@ -13,7 +13,7 @@ import {
   type ServiceContext, type ServiceMethod, type AnyMethod,
   type CallOptions, type QueryDirectives,
 } from '../core/context.ts'
-import { isServiceResult, unwrapResult } from '../core/envelope.ts'
+import { isServiceResult, unwrapResult, type ServiceResult } from '../core/envelope.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
 
 // ─── HTTP method → service method map ────────────────────────────────────
@@ -301,6 +301,12 @@ export const bridge = {
     return resultBody(ctx)
   },
 
+  // One frame of a declared stream (`FJS-D1031`), shaped and withheld as the
+  // final answer is, so no frame says more than the answer would.
+  toStreamFrame(ctx: ServiceContext, frame: ServiceResult | null): unknown {
+    return resultBody(ctx, frame)
+  },
+
   // ── Internal service call context ────────────────────────────────────
   // opts carries only what you VARY per call. user is deep-cloned
   // (frozen-propagates), locals starts fresh {} (never inherits the
@@ -382,9 +388,9 @@ function callContext(parts: CallParts): ServiceContext {
 // Branching on `kind` rather than `object === 'list'` — `object` is always the
 // service name, so a service literally named 'list' does not change how its
 // singles serialize.
-function resultBody(ctx: ServiceContext): unknown {
+function resultBody(ctx: ServiceContext, result: ServiceResult | null = ctx.result as ServiceResult | null): unknown {
   const rawWrap = WRAP.get(ctx)
-  return withholdProtected(unwrapResult(ctx.result, {
+  return withholdProtected(unwrapResult(result, {
     single: rawWrap === true  ? 'envelope' : 'data',
     list:   rawWrap === false ? 'data'     : 'envelope',
   }), ctx)

@@ -1,0 +1,41 @@
+---
+render: static
+---
+<!--
+  One owed guide, as a stub: the brief and where its material lives today.
+  The list is data/docs-guides.js; writing a guide replaces its stub with a
+  page of its own and drops the entry's stub fields.
+-->
+<script>
+  import DocsShell from '../../../components/DocsShell.mesa'
+  import StubPage  from '../../../components/StubPage.mesa'
+
+  export let data = null
+
+  const g = data ?? { covers: [], from: [] }
+</script>
+
+<DocsShell nav={g.nav} current={g.href}>
+<StubPage eyebrow={`Guide · ${g.section}`} title={g.title} lede={g.lede}>
+  <section>
+    <h2>What it covers</h2>
+    <ul>
+      {#each g.covers as c}<li>{c}</li>{/each}
+    </ul>
+  </section>
+  {#if g.tutor}
+    <section>
+      <h2>The lesson that walks it today</h2>
+      <p>Run <code>fli tutor:{g.tutor}</code> in a checkout. The guide is the same ground as reading, with the code to copy.</p>
+      <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a></p>
+    </section>
+  {/if}
+  <section>
+    <h2>Material today</h2>
+    <p>Written for the package, not yet as a guide.</p>
+    <ul class="from">
+      {#each g.from as f}<li><a href={f.href}>{f.label}</a></li>{/each}
+    </ul>
+  </section>
+</StubPage>
+</DocsShell>

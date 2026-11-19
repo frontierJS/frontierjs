@@ -106,7 +106,7 @@ compose freely, so Button takes each as its own prop:
 `MultiSelect` `DatePicker` `DateTimeInput` `MoneyInput` `JsonInput` `CodeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
-`Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
+`Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `ExportButton` `Code`
 `Avatar` `AvatarGroup` `AttachmentList` `FileType` `Stat` `StatCard` `Table` `Bar` `Sparkline`
 `AccountStatus` `SignatureView` `Json` (read, or `editable`) `ThemeSwatch` `ThemePicker`
 

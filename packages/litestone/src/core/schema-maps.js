@@ -1361,6 +1361,7 @@ export function buildTransitionMap(schema) {
         // is a schema that never validated.
         entry:       field?.attributes?.find(a => a.kind === 'default')?.value?.value ?? null,
         transitions: attr.transitions,
+        lastMover:   attr.lastMover ?? null,
         // A machine whose moves are rows (`FJS-D365`): read per write from the
         // declaring model, scoped by the column both models carry.
         declaredBy:  attr.declaredBy ?? null,

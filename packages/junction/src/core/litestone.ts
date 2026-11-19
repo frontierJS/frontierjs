@@ -38,7 +38,7 @@ import { columnsUnmoved } from './write-narrowing.ts'
 import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb, enterCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { COMBINATORS } from '@frontierjs/toolbelt/directives'
+import { COMBINATORS, parseDirectives } from '@frontierjs/toolbelt/directives'
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { BEARER, type ResolvedBearer } from './bearer.ts'
@@ -323,7 +323,7 @@ export function parseQuery(
     after:        typeof afterRaw === 'string' && afterRaw !== '' ? afterRaw : undefined,
     total:        directives.total === false ? false : undefined,
     select:      select && Object.keys(select).length ? select : undefined,
-    include:      popRaw     != null ? parsePopulate(popRaw as PopulateParam) : undefined,
+    include:      withCounts(popRaw != null ? parsePopulate(popRaw as PopulateParam) : undefined, directives.count),
     search:       typeof searchRaw === 'string' ? searchRaw : undefined,
     withDeleted:   withDel  === true || undefined,
     onlyDeleted:   onlyDel  === true || undefined,
@@ -493,7 +493,27 @@ const parseSelect = normalizeSelect
 type PopulateParam = string | string[]
 
 type IncludeTree = { [relation: string]: boolean | IncludeNode }
-type IncludeNode = { select?: Record<string, boolean>; include?: IncludeTree }
+type IncludeNode = { select?: Record<string, boolean | { where: Record<string, unknown> }>; include?: IncludeTree }
+
+/**
+ * `$count` → Litestone's `include._count` (`FJS-D945`), which answers
+ * `row._count[relation]` graded by the target's read policy. The where is over
+ * the TARGET's columns and goes through `parseWhere` as any filter does. An
+ * in-process caller's value is read by the wire's own reader, so `'surveys'`
+ * and a structure mean what they mean over HTTP, and an unreadable one is
+ * refused by name rather than counting every related row.
+ */
+function withCounts(tree: IncludeTree | undefined, raw: QueryDirectives['count']): IncludeTree | undefined {
+  if (raw == null) return tree
+  const counts = parseDirectives({ $count: raw }).count as Record<string, true | { where: Record<string, unknown> }> | undefined
+  if (!counts) throw new BadRequest(
+    `'$count' takes relation names ('surveys,notes') or { relation: true | { where } }.`,
+    [{ field: '$count', message: 'not a relation count' }],
+  )
+  const select = Object.fromEntries(Object.entries(counts).map(([rel, spec]) =>
+    [rel, spec === true ? true : { where: parseWhere(spec.where) }]))
+  return { ...tree, _count: { select } }
+}
 
 // `words.lemma:root` is the second level: the dots before the colon are the
 // path, so `words:text,words.lemma` lands on one `words` node. Litestone's
@@ -1342,7 +1362,16 @@ const columns = writableColumns(db, m.accessor)
     await refuseUnwritable(ctx, m, 'create', ctx.data as Record<string, unknown>)
     const row = await m.forward.create!(ctx.data)
     if (!row) throw new BadGateway(`${providerOf(m)}: the Provider answered a create with nothing the claim reads as a row`)
-    return landMirrored(ctx, m, row)
+    const landed = await landMirrored(ctx, m, row)
+    if (landed != null) return landed
+    // A read policy through a relation the sync fills later (a private channel
+    // readable by its membership) hides the row just landed. The write
+    // happened, so the answer is the key alone and the client re-reads once the
+    // sync lands (FJS-D1305). The key alone is no row to announce; the system
+    // write above announces the landed row, graded per recipient.
+    ctx.statusCode = 202
+    ctx.dispatch   = false
+    return { [m.key]: row[m.key] }
   }
 
   async function forwardUpdate(ctx: ServiceContext, m: ClaimedMirror, verb: 'update' | 'patch'): Promise<unknown> {

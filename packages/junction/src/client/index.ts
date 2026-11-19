@@ -33,6 +33,7 @@ import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/direc
 import { isListResult, isServiceResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
 import { comparatorFor } from '@frontierjs/toolbelt/query'
+import { parseEvents, type ParseState } from '@frontierjs/toolbelt/sse'
 export type { ListResult, ServiceResult }
 export { ResultShapeError }
 
@@ -327,6 +328,58 @@ const _madeAtHeaders = (opts?: CallOptions): Record<string, string> => {
   if (Number.isNaN(made.getTime()))
     throw new TypeError(`madeAt must be an instant — a Date, epoch ms or an ISO string. Got ${String(opts.madeAt)}.`)
   return { 'x-frontier-made-at': made.toISOString(), 'x-frontier-sent-at': new Date().toISOString() }
+}
+
+/**
+ * A custom method's answer: awaited it is the answer, iterated it is each frame a
+ * method declared `stream: true` sends, as it arrives (`FJS-D1031`). The last
+ * frame is the answer. A method that sends no frames yields its answer once, so
+ * a loop does not need to know which kind it called.
+ */
+export type FramedCall<T> = Promise<T> & AsyncIterable<T>
+
+/** A stream's `frame` events to `onFrame`; its `result` is the answer and its `error` throws. */
+async function _readFrames(body: ReadableStream<Uint8Array>, onFrame: (frame: unknown) => void): Promise<unknown> {
+  const reader  = body.getReader()
+  const decoder = new TextDecoder()
+  let state: ParseState | undefined
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const read = parseEvents(decoder.decode(value, { stream: true }), state)
+    state = read.state
+    for (const e of read.events) {
+      if (e.event === 'frame') onFrame(e.data)
+      else if (e.event === 'result') { reader.cancel().catch(() => {}); return e.data }
+      else if (e.event === 'error') {
+        const err = e.data as Record<string, unknown> | null
+        reader.cancel().catch(() => {})
+        throw Object.assign(new Error(String(err?.message ?? 'Service error')), { code: err?.code, data: err })
+      }
+    }
+  }
+  throw Object.assign(new Error('The stream ended before the call answered'), { code: 502 })
+}
+
+function _framed<T>(start: (onFrame: (frame: unknown) => void) => Promise<T>): FramedCall<T> {
+  const frames: unknown[] = []
+  let framed  = false
+  let settled = false
+  let wake: (() => void) | null = null
+  const answer = start((frame) => { framed = true; frames.push(frame); wake?.() })
+  answer.then(() => { settled = true; wake?.() }, () => { settled = true; wake?.() })
+  return Object.assign(answer, {
+    async *[Symbol.asyncIterator]() {
+      for (;;) {
+        if (frames.length) { yield frames.shift() as T; continue }
+        if (settled) break
+        await new Promise<void>((r) => { wake = r })
+        wake = null
+      }
+      const last = await answer
+      if (!framed) yield last
+    },
+  })
 }
 
 /** A custom method's call: the method rides beside the per-call header, never instead of it. */
@@ -679,20 +732,31 @@ export class ServiceProxy<
     data?: Record<string, unknown> | null,
     query?: Record<string, unknown>,
     opts?: CallOptions
-  ): Promise<MethodAnswer<N, M>>
+  ): FramedCall<MethodAnswer<N, M>>
   invoke(
     name: string,
     id?: string | number | null,
     data?: Record<string, unknown> | null,
     query?: Record<string, unknown>,
     opts?: CallOptions
-  ): Promise<unknown>
-  async invoke(
+  ): FramedCall<unknown>
+  invoke(
     name: string,
     id?: string | number | null,
     data?: Record<string, unknown> | null,
     query?: Record<string, unknown>,
     opts?: CallOptions
+  ): FramedCall<unknown> {
+    return _framed((onFrame) => this._invoke(name, id, data, query, opts, onFrame))
+  }
+
+  private async _invoke(
+    name: string,
+    id: string | number | null | undefined,
+    data: Record<string, unknown> | null | undefined,
+    query: Record<string, unknown> | undefined,
+    opts: CallOptions | undefined,
+    onFrame: (frame: unknown) => void
   ): Promise<unknown> {
     // Same rule as CRUD: the socket when it is there, HTTP when it is not.
     // This used to be unconditionally HTTP, which made a custom method the only
@@ -704,7 +768,7 @@ export class ServiceProxy<
     // patch do.
     this._checkId(name, id)
     if (this._client._wsReady && !_hasFiles(data ?? {})) {
-      return this._client._wsCall(this.name, name, id ?? null, data ?? null, query, opts)
+      return this._client._wsCall(this.name, name, id ?? null, data ?? null, query, opts, onFrame)
     }
     // A COLLECTION-level call — `id` omitted or null — posts to the service
     // root. The server has always supported it: the bridge dispatches on the
@@ -723,7 +787,7 @@ export class ServiceProxy<
       'POST',
       `${path}${_plainQuery(query)}`,
       data ?? {},
-      _methodCall(name, opts)
+      { ..._methodCall(name, opts), onFrame }
     )
   }
 
@@ -1284,7 +1348,9 @@ class PresenceClient {
    * The roster is entitled by CHANNEL MEMBERSHIP, which the app decides in its
    * own `channels()` setup: a connection this app never joined to the channel
    * is answered with nothing, and an anonymous connection is not tracked at
-   * all. Nothing here can widen that.
+   * all. Nothing here can widen that. On a room (`channels({ rooms })`) this
+   * asks for the join, graded at the Data boundary as the server's own is
+   * (`FJS-D974`).
    */
   set(channelId: string, meta: Record<string, unknown> = {}): void {
     this._client._presenceSet(channelId, meta)
@@ -1520,7 +1586,7 @@ export class JunctionClient extends EventEmitter {
 
   private _ws: WebSocket | null = null
   _wsReady: boolean = false
-  private _wsCallMap: Map<string, { resolve: Function; reject: Function }> = new Map()
+  private _wsCallMap: Map<string, { resolve: Function; reject: Function; frame?: (frame: unknown) => void }> = new Map()
   private _wsCallSeq: number = 0
   private _reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private _socketQuery: Record<string, string> = {}
@@ -1600,6 +1666,8 @@ export class JunctionClient extends EventEmitter {
    * The server's `subscribe` frame does NOT join a channel — the app decides
    * membership — so this is *here is my meta, send me the roster*, and a frame
    * naming a channel this connection is not in is dropped there in silence.
+   * A channel `channels({ rooms })` binds to a row is the exception: there the
+   * frame asks for the graded join (`FJS-D974`), and a refusal is silent too.
    */
   _presenceSend(channelId?: string): void {
     if (!this._wsReady || !this._ws) return
@@ -2470,7 +2538,10 @@ export class JunctionClient extends EventEmitter {
     method: string,
     path: string,
     body?: unknown,
-    opts: { skipAuth?: boolean; header?: Record<string, string>; callHeaders?: Record<string, string> } = {}
+    opts: {
+      skipAuth?: boolean; header?: Record<string, string>; callHeaders?: Record<string, string>
+      onFrame?: (frame: unknown) => void
+    } = {}
   ): Promise<unknown> {
     if (this._relay) {
       throw new Error(
@@ -2494,6 +2565,9 @@ export class JunctionClient extends EventEmitter {
     if (opts.header) {
       Object.assign(headers, opts.header)
     }
+    // Only a method declared stream: true answers in frames; every other
+    // answers JSON whatever this says.
+    if (opts.onFrame) headers['Accept'] = 'application/json, text/event-stream'
 
     // File values → multipart/form-data so they cross the wire correctly.
     // JSON.stringify({ avatar: File }) silently drops the file — FormData doesn't.
@@ -2520,6 +2594,9 @@ export class JunctionClient extends EventEmitter {
 
       this._noteServerBuild(res.headers.get(BUILD_HEADER))
       this._noteCredential(res.headers.get(CREDENTIAL_HEADER))
+
+      if (opts.onFrame && res.ok && res.body && /^text\/event-stream/i.test(res.headers.get('content-type') ?? ''))
+        return await _readFrames(res.body, opts.onFrame)
 
       const text = await res.text()
       let data: unknown
@@ -2765,6 +2842,11 @@ export class JunctionClient extends EventEmitter {
         return
       }
 
+      if (type === 'service_frame') {
+        this._wsCallMap.get(String(msg.id))?.frame?.(msg.frame)
+        return
+      }
+
       // ── WS service call response ──────────────────────────────────
       if (type === 'service_result' || type === 'service_error') {
         const id = msg.id as string
@@ -2818,7 +2900,8 @@ export class JunctionClient extends EventEmitter {
     id: string | number | null,
     data: Record<string, unknown> | null,
     query?: Record<string, unknown> | null,
-    opts?: CallOptions
+    opts?: CallOptions,
+    onFrame?: (frame: unknown) => void
   ): Promise<unknown> {
     if (this._relay) {
       return this._relay({ service, method, id, data, query: query ?? null, ...(opts ? { opts } : {}) })
@@ -2831,14 +2914,17 @@ export class JunctionClient extends EventEmitter {
     return new Promise((resolve, reject) => {
       const callId = String(++this._wsCallSeq)
 
-      const timer = setTimeout(() => {
+      const expire = () => {
         this._wsCallMap.delete(callId)
         reject(
           Object.assign(new Error(`WS call timed out: ${service}.${method}`), { code: 408 })
         )
-      }, this._timeout)
+      }
+      let timer = setTimeout(expire, this._timeout)
 
       this._wsCallMap.set(callId, {
+        // The timeout is for a call that went silent, and a frame is not silence.
+        ...(onFrame ? { frame: (f: unknown) => { clearTimeout(timer); timer = setTimeout(expire, this._timeout); onFrame(f) } } : {}),
         resolve: (v: unknown) => {
           clearTimeout(timer)
           resolve(v)

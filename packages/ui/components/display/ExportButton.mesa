@@ -1,0 +1,81 @@
+<script module>
+  import { encodeQueryString } from '@frontierjs/toolbelt/query'
+  import { RESERVED_PARAMS }   from '@frontierjs/toolbelt/directives'
+
+  /**
+   * The export route's path for a screen's query (`FJS-D1005`).
+   *
+   * The route refuses every `$` key (Invariant 10): an extract has a fixed
+   * order and no page. A screen's directives and transport flags are dropped
+   * here; a combinator (`$or`, `$and`, `$not`) is kept, so the route refuses it
+   * by name rather than the file silently holding more rows than the screen.
+   */
+  export function exportPath(dataset, query) {
+    const filter = {}
+    for (const [k, v] of Object.entries(query ?? {})) if (!RESERVED_PARAMS.has(k)) filter[k] = v
+    return `/exports/${encodeURIComponent(dataset)}${encodeQueryString(filter)}`
+  }
+</script>
+
+<script>
+  // ExportButton.mesa
+  // Downloads the rows a screen shows: its filter, sent to junction's export
+  // route through `client.fetch` (a link cannot carry the session), saved by
+  // `download` under the name the server gives. FilterBar and Table know
+  // nothing of it; place it wherever the screen wants.
+  //
+  //   <ExportButton dataset="Order" query={page.query} {client} />
+  //
+  // A refusal -- an unknown column, a dataset the schema does not let leave --
+  // shows the server's message beside the button.
+
+  import { cx, download } from '../../utils.js'
+
+  export let dataset   = ''          // a model or view name, as `@@export` declares it
+  export let query     = {}          // the screen's query; `$` directives are dropped
+  export let client    = undefined   // a junction client — anything with `fetch(path)`
+  export let label     = 'Download'
+  export let treatment = 'outlined'  // 'outlined' | 'ghost' | 'link' | ''
+
+  let busy  = false
+  let error = ''
+
+  async function save() {
+    busy  = true
+    error = ''
+    try {
+      await download(await client.fetch(exportPath(dataset, query)), dataset)
+    } catch (e) {
+      error = e?.message ?? String(e)
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+<span class="fjs-export">
+  <button
+    type="button"
+    class={cx('btn', treatment, error && 'danger')}
+    {class}
+    {...$attributes}
+    disabled={busy}
+    aria-busy={busy || null}
+    onclick={save}
+  >{label}</button>
+  {#if error}
+    <small class="fjs-export-error" role="alert">{error}</small>
+  {/if}
+</span>
+
+<style>
+  .fjs-export {
+    display:     inline-flex;
+    align-items: center;
+    gap:         var(--space-xs);
+  }
+  .fjs-export-error {
+    color:     var(--color-danger);
+    font-size: var(--text-xs);
+  }
+</style>

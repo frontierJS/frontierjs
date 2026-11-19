@@ -321,3 +321,86 @@ describe('the Cloudflare adapter', () => {
     expect(await (await entry.fetch(new Request('https://fn.dev/about/'), env)).text()).toBe('from assets')
   })
 })
+
+// ─── analytics.proxy ───────────────────────────────────────────────────────────
+
+describe('analytics.proxy derives the Plausible proxy (FJS-D1037)', () => {
+  let P
+  let upstream
+  let site
+  const seen = []
+
+  beforeAll(async () => {
+    const { createServer } = await import('node:http')
+    upstream = createServer((req, res) => {
+      let body = ''
+      req.on('data', c => { body += c })
+      req.on('end', () => {
+        seen.push({ method: req.method, url: req.url, body, cookie: req.headers.cookie, ua: req.headers['user-agent'], xff: req.headers['x-forwarded-for'] })
+        if (req.url === '/js/script.manual.js') {
+          res.writeHead(200, { 'Content-Type': 'application/javascript', 'Set-Cookie': 'up=1' })
+          return res.end('/* plausible */')
+        }
+        res.writeHead(202, { 'Content-Type': 'text/plain' })
+        res.end('ok')
+      })
+    })
+    await new Promise(r => upstream.listen(0, '127.0.0.1', r))
+
+    P = mkdtempSync(join(tmpdir(), 'sierra-proxy-'))
+    mkdirSync(join(P, 'dist'), { recursive: true })
+    writeFileSync(join(P, 'dist/index.html'), '<h1>home</h1>')
+  })
+
+  afterAll(async () => {
+    await site?.close()
+    await new Promise(r => upstream?.close(r))
+    rmSync(P, { recursive: true, force: true })
+  })
+
+  const analytics = () => ({ provider: 'plausible', domain: 'shop.example', proxy: true, apiHost: `http://127.0.0.1:${upstream.address().port}` })
+
+  test('the build writes both routes with no functions directory', async () => {
+    const results = await runPostBuild({ analytics: analytics() }, { redirects: [] }, join(P, 'dist'), P, null)
+    expect(results.join('\n')).toMatch(/functions\.js \(2 functions\)/)
+    const { routes } = await import(join(P, FUNCTIONS_ENTRY))
+    expect(Object.keys(routes).sort()).toEqual(['/api/event', '/js/script.js'])
+  })
+
+  test('the script and the event reach the upstream, without the visitor\'s cookie', async () => {
+    site = await serveSite({ dir: join(P, 'dist'), functions: join(P, FUNCTIONS_ENTRY) })
+    const script = await fetch(`${site.url}/js/script.js`, { headers: { cookie: 'session=SECRET' } })
+    expect(script.status).toBe(200)
+    expect(await script.text()).toBe('/* plausible */')
+    expect(script.headers.get('set-cookie')).toBe(null)
+
+    const event = await fetch(`${site.url}/api/event`, {
+      method: 'POST', body: '{"n":"pageview"}',
+      headers: { 'Content-Type': 'text/plain', cookie: 'session=SECRET', 'User-Agent': 'probe/1', 'X-Forwarded-For': '203.0.113.9' },
+    })
+    expect(event.status).toBe(202)
+    expect(seen.at(-1)).toMatchObject({ method: 'POST', url: '/api/event', body: '{"n":"pageview"}', cookie: undefined, ua: 'probe/1', xff: '203.0.113.9' })
+    expect(seen.every(s => s.cookie === undefined)).toBe(true)
+    expect(seen[0].url).toBe('/js/script.manual.js')
+  })
+
+  test('a site file at a proxied path is refused as a duplicate, by name', async () => {
+    mkdirSync(join(P, 'functions/api'), { recursive: true })
+    writeFileSync(join(P, 'functions/api/event.js'), `export default () => new Response('mine')`)
+    await expect(writeFunctionsEntry({ root: P, dir: 'functions', analytics: analytics() })).rejects.toThrow(/api\/event\.js.*\/api\/event/)
+    rmSync(join(P, 'functions'), { recursive: true, force: true })
+  })
+
+  test('the Cloudflare Worker runs first on the proxied paths', async () => {
+    const { wranglerConfig } = await import('../src/site/cloudflare.js')
+    const out = wranglerConfig({ root: P, config: { siteUrl: 'https://shop.example', analytics: analytics() } })
+    expect(out.main).toBe('worker.js')
+    expect(out.assets.run_worker_first).toEqual(['/js/script.js', '/js/script.js/', '/api/event', '/api/event/'])
+  })
+
+  // Bundled into the Worker beside function-handler.js, under the same rule.
+  test('the proxy module imports nothing', () => {
+    const src = readFileSync(join(import.meta.dirname, '../src/postbuild/plausible-proxy.js'), 'utf8')
+    expect(src).not.toMatch(/^\s*import\b|\bimport\s*\(|\brequire\s*\(/m)
+  })
+})

@@ -158,6 +158,7 @@ Names follow `locale`; digits are always Latin. `QQQQ` and `WWWW` are English an
 
 ```js fragment
 plainDateIn('2026-01-31T01:00:00Z', 'America/New_York')  // '2026-01-30' — an evening there
+distinctDays(attempts.map(a => a.sentAt), zone).length   // on how many days — SQL has no zone to key them by
 addToDate('2026-01-31', { months: 1 })                   // '2026-02-28' — clamped, Temporal's 'constrain'
 daysBetween('2026-08-30', '2026-09-29')                  // 30
 startOfDay('2026-09-06', 'America/Santiago')             // the instant that day begins — 01:00, not midnight

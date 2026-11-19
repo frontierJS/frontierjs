@@ -25,7 +25,7 @@
       "name": "Feathers.js",
       "url": "https://feathersjs.com",
       "tier": 1,
-      "closeness": 95,
+      "closeness": 85,
       "inspiration": 90,
       "realm": "API",
       "relation": "Direct ancestor of Junction. find/get/create/patch/remove, before/after/around/error hooks, channels + publish, $limit/$skip.",

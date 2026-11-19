@@ -678,3 +678,76 @@ describe('opening an incremental database beside a writer', () => {
     } finally { holder.run('ROLLBACK'); holder.close() }
   })
 })
+
+// The sweep is createdAt < cutoff over every row, soft-deleted ones included
+// (FJS-D719), so it needs a FULL index leading with createdAt. A @@softDelete
+// model's every @@index is partial, so retention derives that index rather than
+// leaving the author a spelling to remember (FJS-D849, FJS-2291).
+describe('the sweep has an index to use', () => {
+  const planOf = (dir: string, table: string) => {
+    const raw = new BunDatabase(join(dir, 'app.db'), { readonly: true })
+    try {
+      return (raw.query(`EXPLAIN QUERY PLAN SELECT rowid AS r FROM "${table}" WHERE "createdAt" < ? LIMIT 1000`)
+        .all('2026-01-01') as { detail: string }[]).map(r => r.detail).join(' | ')
+    } finally { raw.close() }
+  }
+  const indexSql = (dir: string, name: string) => {
+    const raw = new BunDatabase(join(dir, 'app.db'), { readonly: true })
+    try {
+      return (raw.query(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`).get(name) as { sql: string } | null)?.sql ?? null
+    } finally { raw.close() }
+  }
+  const open = async (models: string, retention = 'retention 90d') => {
+    const dir = tmp()
+    const db  = await createClient({ schema: `
+      database main { path "${join(dir, 'app.db')}"  ${retention} }
+      ${models}
+    ` })
+    db.$close()
+    return dir
+  }
+
+  test('a @@softDelete model the author gave no index is searched, not scanned', async () => {
+    const dir = await open(`model Reading { id Int @id  v Int  createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete  @@index([v]) }`)
+    expect(planOf(dir, 'reading')).toMatch(/SEARCH reading USING (COVERING )?INDEX idx_reading_createdAt/)
+    expect(indexSql(dir, 'idx_reading_createdAt')).not.toContain('WHERE')
+    // The declared one keeps the soft-delete clause the live reads match.
+    expect(indexSql(dir, 'idx_reading_v')).toContain('"deletedAt" IS NULL')
+  })
+
+  test('a @@softDelete model\'s own @@index([createdAt]) is built full', async () => {
+    const dir = await open(`model Reading { id Int @id  createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete  @@index([createdAt]) }`)
+    expect(planOf(dir, 'reading')).toMatch(/SEARCH reading USING (COVERING )?INDEX idx_reading_createdAt/)
+    expect(indexSql(dir, 'idx_reading_createdAt')).not.toContain('WHERE')
+  })
+
+  test('a model with no index of its own earns one, and one whose own leads with createdAt earns none', async () => {
+    const dir = await open(`
+      model Reading { id Int @id  createdAt DateTime @default(now()) }
+      model Sample  { id Int @id  v Int  createdAt DateTime @default(now())  @@index([createdAt, v]) }
+    `)
+    expect(planOf(dir, 'reading')).toMatch(/SEARCH reading USING (COVERING )?INDEX idx_reading_createdAt/)
+    expect(indexSql(dir, 'idx_sample_createdAt')).toBeNull()
+    expect(planOf(dir, 'sample')).toMatch(/SEARCH sample USING (COVERING )?INDEX idx_sample_createdAt_v/)
+  })
+
+  test('a database with no window derives nothing', async () => {
+    const dir = await open(`model Reading { id Int @id  createdAt DateTime @default(now()) }`, '')
+    expect(indexSql(dir, 'idx_reading_createdAt')).toBeNull()
+  })
+})
+
+describe('placing a model in a windowed database', () => {
+  test('earns the index there, and leaves the parse it was handed alone', async () => {
+    const { parse, placeModels } = await import('../src/core/parser.js')
+    const parsed = parse(`
+      database main { path "./app.db" }
+      database log  { path "./log.db"  retention 30d }
+      model Reading { id Int @id  createdAt DateTime @default(now())  deletedAt DateTime?  @@softDelete  @@index([createdAt]) }
+    `)
+    const placed = placeModels(parsed, { Reading: 'log' })
+    const own = (r: any) => r.schema.models[0].attributes.filter((a: any) => a.kind === 'index')
+    expect(own(placed)).toEqual([expect.objectContaining({ fields: ['createdAt'], generated: 'retention' })])
+    expect(own(parsed)[0].generated).toBeUndefined()
+  })
+})

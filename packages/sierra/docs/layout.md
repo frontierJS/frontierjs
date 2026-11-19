@@ -213,6 +213,8 @@ src/
                          litestone's parser out of it (`FJS-2318`)
     slot-rewrite.js      named slots only (`page.slots`); the default `<slot />` is Mesa's to lower
     prerender.js         every route but `render: spa` → HTML
+    page-reads.js        each written URL's reads → `page-reads.json` beside
+                         the output; `affectedPages(manifest, write)` (`FJS-D1262`)
     document-shell.js    a static app's `document` applied to index.html, dev and build
     island-bundle.js     one chunk per island the static build needs
     prune-unreachable.js what a static build may publish: the emitted pages walked;
@@ -351,6 +353,9 @@ src/
                            requestFrom/sendResponse, the node-to-web bridge (`FJS-D919`),
                            function-handler.js: the handler a host mounts,
                            importing NOTHING, because the Worker bundles it,
+                           plausible-proxy.js: the routes `analytics.proxy`
+                           adds to that entry, importing nothing for the same
+                           reason (`FJS-D1037`),
                            headers.js: `cacheFor`, the site's cache rule, which
                            serveSite sends and a static build writes as
                            `_headers`; each rule after `/*` detaches before it

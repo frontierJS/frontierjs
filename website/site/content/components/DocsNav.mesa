@@ -1,0 +1,103 @@
+<!--
+  The docs sidebar: a box of areas at the top, then the tree for the area the
+  current page is in. Data is data/docs-nav.js, handed down from each page's
+  load(); this file does not import it, because that module reads the Mesa
+  guide off disk and a component's imports can reach a browser bundle.
+
+  A section is a <details>, so it opens and closes with no script. Only the
+  one holding the current page starts open, and every one on an area's own
+  landing page. Links in a closed section stay in the markup, which the
+  drive's every-page-links-every-page check reads.
+-->
+<script>
+  export let nav = { areas: [], trees: {} }
+  export let current = ''
+  export let toc = []
+
+  const area  = String(current).startsWith('/docs/mesa/') ? 'mesa' : 'learn'
+  const tree  = nav.trees?.[area] ?? []
+  const home  = area === 'mesa' ? '/docs/mesa/' : '/docs/'
+  const holds = (s) => s.pages.some((p) => p.href === current)
+  const opens = (s) => current === home || holds(s) || !tree.some(holds)
+</script>
+
+<nav class="dnav" aria-label="Docs">
+  <div class="areas">
+    {#each nav.areas as a}
+      <a class="area" href={a.href} aria-current={a.id === area ? 'true' : null}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          {#if a.icon === 'rocket'}<path d="M5 15c-1.5 1.3-2 4-2 6 2 0 4.7-.5 6-2m-1-3a22 22 0 0 1 12-13c0 4-1.5 8.6-13 12zm2-6-3.3.4L3 12l3.4 1M14 15l-.4 3.3L12 21l-1-3.4"/>{/if}
+          {#if a.icon === 'book'}<path d="M3 5.5C3 4.7 3.7 4 4.5 4H10a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H3zM21 5.5c0-.8-.7-1.5-1.5-1.5H14a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h7z"/>{/if}
+          {#if a.icon === 'mesa'}<path d="M3 19h18M5 19l3-9h8l3 9M8 10l1.5-4h5L16 10"/>{/if}
+          {#if a.icon === 'info'}<path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01"/>{/if}
+        </svg>
+        {a.title}
+      </a>
+    {/each}
+  </div>
+
+  {#each tree as s}
+    <details class="sect" open={opens(s)}>
+      <summary>{s.section}</summary>
+      <ul>
+        {#each s.pages as p}
+          <li>
+            <a href={p.href} aria-current={p.href === current ? 'page' : null}>{p.title}{#if p.stub}<em class="stub">stub</em>{/if}</a>
+            {#if p.href === current && toc.length}
+              <ul class="toc">
+                {#each toc as t}<li><a href={t.href}>{t.title}</a></li>{/each}
+              </ul>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </details>
+  {/each}
+</nav>
+
+<style>
+  .dnav { display: grid; gap: 1.25rem; align-content: start; font-size: .9rem; }
+
+  .areas {
+    display: grid; gap: .15rem; padding: .35rem;
+    border: 1px solid var(--rule); border-radius: 10px; background: var(--surface-raised);
+  }
+  .area {
+    display: flex; align-items: center; gap: .65rem;
+    padding: .5rem .65rem; border-radius: 7px; border: 1px solid transparent;
+    text-decoration: none; color: var(--ink-soft); font-weight: 600;
+  }
+  .area:hover { background: var(--surface-sunken); color: var(--ink); }
+  .area[aria-current] { background: var(--surface-sunken); border-color: var(--rule-strong); color: var(--ink); }
+  .area svg { width: 1rem; height: 1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+  .sect summary {
+    list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center;
+    font-weight: 700; color: var(--ink); padding: .2rem .25rem .2rem 0;
+  }
+  .sect summary::-webkit-details-marker { display: none; }
+  .sect summary::after {
+    content: ''; width: .45rem; height: .45rem; margin-right: .3rem;
+    border-right: 1.5px solid var(--ink-mute); border-bottom: 1.5px solid var(--ink-mute);
+    transform: rotate(-45deg); transition: transform .15s;
+  }
+  .sect[open] summary::after { transform: rotate(45deg); }
+
+  ul { list-style: none; margin: .35rem 0 0; padding: 0 0 0 .1rem; border-left: 1px solid var(--rule); }
+  li a {
+    display: block; padding: .28rem .75rem; margin-left: -1px; border-left: 2px solid transparent;
+    text-decoration: none; color: var(--ink-soft); line-height: 1.35;
+  }
+  li a:hover { color: var(--ink); border-left-color: var(--rule-strong); }
+  li a[aria-current] {
+    color: var(--ink); font-weight: 600; border-left-color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  }
+  .stub {
+    font-style: normal; font-size: .62rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-mute);
+    margin-left: .45rem; padding: 0 .3rem; border: 1px solid var(--rule); border-radius: 4px; vertical-align: .1em;
+  }
+
+  .toc { border-left: 0; margin: .1rem 0 .3rem .75rem; }
+  .toc a { font-size: .82rem; padding: .18rem .75rem; color: var(--ink-mute); }
+</style>

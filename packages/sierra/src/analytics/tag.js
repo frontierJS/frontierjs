@@ -19,15 +19,12 @@ import { refusal } from '../build/refusal.js'
  * @returns {{ src: string, attrs: Record<string, string|true>, before?: () => void } | null}
  */
 export function vendorTag(config) {
+  const proxied = proxiedPaths(config)
   if (config?.provider === 'plausible') {
     if (!config.domain) throw refusal(`[Sierra] analytics: provider 'plausible' needs a domain`)
     return {
-      // The manual build, not `script.js`: the auto-capturing one reads
-      // `location.href` itself, query string included, so a token in a link
-      // that is not Sierra's scaffold reached the vendor whatever Sierra sent
-      // (`FJS-3317`). Here the page sends its own pageviews, with the address.
-      src:    `${config.apiHost ?? 'https://plausible.io'}/js/script.manual.js`,
-      attrs:  { defer: true, 'data-domain': config.domain },
+      src:    proxied ? PLAUSIBLE_SCRIPT : plausibleUpstream(config).script,
+      attrs:  { defer: true, 'data-domain': config.domain, ...(proxied && { 'data-api': PLAUSIBLE_EVENT }) },
       before: plausibleStart,
     }
   }
@@ -40,6 +37,41 @@ export function vendorTag(config) {
     }
   }
   return null
+}
+
+// ─── the same-origin proxy (FJS-D1037) ───────────────────────────────────────
+
+// The two paths Plausible's own proxy guide uses. Fixed, so the tag and the
+// function entry cannot name different ones.
+const PLAUSIBLE_SCRIPT = '/js/script.js'
+const PLAUSIBLE_EVENT  = '/api/event'
+
+// The manual build, not `script.js`: the auto-capturing one reads
+// `location.href` itself, query string included, so a token in a link that is
+// not Sierra's scaffold reached the vendor whatever Sierra sent (`FJS-3317`).
+// The proxy serves this same build at `/js/script.js`.
+function plausibleUpstream(config) {
+  const host = config.apiHost ?? 'https://plausible.io'
+  return { script: `${host}/js/script.manual.js`, event: `${host}/api/event` }
+}
+
+/**
+ * The paths `analytics.proxy` answers on the site's own origin, each mapped to
+ * the upstream URL it forwards to; null with the proxy off.
+ *
+ * Refused on any provider but Plausible: GTM and a custom module have no
+ * proxy, and a key that did nothing would leave the tag cross-origin unnoticed.
+ *
+ * @param {object} [config]  `analytics` from sierra.config.js
+ * @returns {Record<string, string> | null}
+ */
+export function proxiedPaths(config) {
+  if (!config?.proxy) return null
+  if (config.provider !== 'plausible') {
+    throw refusal(`[Sierra] analytics: proxy is Plausible's same-origin proxy, and provider is ${JSON.stringify(config.provider)} — drop proxy, or use provider 'plausible'`)
+  }
+  const up = plausibleUpstream(config)
+  return { [PLAUSIBLE_SCRIPT]: up.script, [PLAUSIBLE_EVENT]: up.event }
 }
 
 // The manual script sends nothing by itself, so the first pageview is queued

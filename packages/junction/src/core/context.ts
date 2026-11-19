@@ -318,6 +318,10 @@ interface CallSlots {
   // outbox rows this call wrote, only to say whether kicking the relay is worth
   // it — the rows are committed and the sweep would find them anyway
   outbox:      string[]
+  // a streaming method's frame, to the wire that called it; answering false
+  // says the caller left. Absent, the frames are drained and only the last
+  // answers (FJS-D853)
+  frames?:     (frame: import('./envelope.ts').ServiceResult | null) => boolean | void | Promise<boolean | void>
 }
 
 const SLOTS = Symbol('junction.call.slots')

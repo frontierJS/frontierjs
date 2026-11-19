@@ -102,7 +102,9 @@ export function islandModule(file: string, specifier: string, alias?: Record<str
  * Prerender every route the static target prerenders.
  *
  * @returns {Promise<{ written: string[], urls: string[], skipped: Array<{route:string, reason:string}>,
- *   fallback: Array<{route:string, reason:string}> }>}
+ *   fallback: Array<{route:string, reason:string}>,
+ *   pageReads: { routes: Array<{ route: string, paths: import('./page-reads.js').PageRead[],
+ *     pages: Array<{ url: string, reads: import('./page-reads.js').PageRead[] }> }> } | null }>}
  */
 export function prerenderRoutes(opts?: any): Promise<{
     written: string[];
@@ -115,6 +117,16 @@ export function prerenderRoutes(opts?: any): Promise<{
         route: string;
         reason: string;
     }>;
+    pageReads: {
+        routes: Array<{
+            route: string;
+            paths: import("./page-reads.js").PageRead[];
+            pages: Array<{
+                url: string;
+                reads: import("./page-reads.js").PageRead[];
+            }>;
+        }>;
+    } | null;
 }>;
 /**
  * The two shell facts every page carries whether or not the app stated them

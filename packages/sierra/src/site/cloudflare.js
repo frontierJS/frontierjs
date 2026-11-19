@@ -37,7 +37,7 @@ import { createRequire } from 'node:module'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { FUNCTIONS_ENTRY, functionRoutes } from '../postbuild/functions.js'
+import { FUNCTIONS_ENTRY, hasFunctions, siteFunctionRoutes } from '../postbuild/functions.js'
 import { htmlFiles } from '../postbuild/html-files.js'
 
 export const WORKER_ENTRY    = join('.sierra', 'worker.js')
@@ -125,7 +125,7 @@ export async function stampedPage(outDir) {
  *
  * @param {object} opts
  * @param {string} opts.root  project root, where `.sierra/` is
- * @param {object} opts.config  the Sierra config — `siteUrl`, `outDir`, `trailingSlash`, `functions`
+ * @param {object} opts.config  the Sierra config — `siteUrl`, `outDir`, `trailingSlash`, `functions`, `analytics`
  * @returns {object}
  */
 export function wranglerConfig({ root, config }) {
@@ -146,8 +146,8 @@ export function wranglerConfig({ root, config }) {
   }
 
   const out = { name, compatibility_date: COMPATIBILITY_DATE }
-  if (config.functions) {
-    const paths = functionRoutes(resolve(root, config.functions)).map(r => r.path)
+  if (hasFunctions(config)) {
+    const paths = siteFunctionRoutes(config, root).map(r => r.path)
     out.main = 'worker.js'
     assets.binding = 'ASSETS'
     assets.run_worker_first = paths.flatMap(p => p === '/' ? [p] : [p, `${p}/`])
@@ -205,7 +205,7 @@ export async function writeCloudflare({ root, config, preview = false }) {
   let worker = null
   if (wrangler.main) {
     if (!existsSync(join(root, FUNCTIONS_ENTRY))) {
-      throw new Error(`[Sierra] cloudflare: no ${FUNCTIONS_ENTRY} — the build writes it from \`functions:\`; build first`)
+      throw new Error(`[Sierra] cloudflare: no ${FUNCTIONS_ENTRY} — the build writes it from \`functions:\` and \`analytics.proxy\`; build first`)
     }
     worker = join(root, WORKER_ENTRY)
     await writeFile(worker, workerSource(), 'utf8')

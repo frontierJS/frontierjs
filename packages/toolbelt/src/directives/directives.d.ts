@@ -19,6 +19,8 @@ export interface Directives {
   orderBy?:       unknown
   select?:        unknown
   populate?:      unknown
+  /** Relations to count, answered as `row._count` — `'surveys,notes'`, a list, or `{ surveys: true | { where } }`, the where over the related rows. */
+  count?:         string | string[] | Record<string, true | { where: Record<string, unknown> }>
   search?:        string
   withDeleted?:   boolean
   onlyDeleted?:   boolean

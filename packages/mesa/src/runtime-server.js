@@ -40,6 +40,21 @@ const PROPS = new Set([
   'defaultValue', 'defaultChecked', 'volume', 'currentTime', 'playbackRate', 'muted',
   'loop', 'autoplay', 'controls', 'open',
 ])
+// The properties a browser reflects to an attribute, on the elements that
+// have them: the DOM path's property write shows in its HTML, so the string
+// mode writes the attribute too, or a prerendered <details open={x}> ships
+// closed (FJS-4450). On any other element the name is an expando, written by
+// a spread's setAttribute and by nothing else.
+const MEDIA = ['audio', 'video']
+const REFLECTS = new Map([
+  ['open',           { tags: ['details', 'dialog'], attr: 'open' }],
+  ['loop',           { tags: MEDIA,                 attr: 'loop' }],
+  ['controls',       { tags: MEDIA,                 attr: 'controls' }],
+  ['autoplay',       { tags: MEDIA,                 attr: 'autoplay' }],
+  ['muted',          { tags: MEDIA,                 attr: 'muted' }],
+  ['defaultChecked', { tags: ['input'],             attr: 'checked' }],
+  ['defaultValue',   { tags: ['input'],             attr: 'value' }],
+])
 const ARIA_FALSE = new Set(['aria-expanded', 'aria-selected', 'aria-checked', 'aria-pressed'])
 const URL_ATTRS = new Set(['href', 'src', 'action', 'formaction', 'formAction'])
 const refusedURL = (name, value) => URL_ATTRS.has(name) && value != null &&
@@ -178,6 +193,14 @@ export function attrs(tag, entries, scope) {
     }
     if (live && name === 'class') { reserve('class'); if (value != null && value !== false && value !== '') classes.push('' + value); return }
     if (live && refusedURL(name, value)) { out.delete(name); return }
+    const reflects = live && REFLECTS.get(name)
+    if (reflects && reflects.tags.includes(tag)) {
+      if (reflects.attr === 'value') out.set('value', value == null ? '' : '' + value)
+      else if (value) out.set(reflects.attr, '')
+      else out.delete(reflects.attr)
+      return
+    }
+    if (reflects && spread) { if (value == null) out.delete(name); else out.set(name, '' + value); return }
     if (live && (PROPS.has(name) || (name === 'value' && VALUE_PROP.has(tag)))) return
     if (live && name === 'value' && tag === 'input') liveValue = true
     if (value === false && ARIA_FALSE.has(name)) { out.set(name, 'false'); return }

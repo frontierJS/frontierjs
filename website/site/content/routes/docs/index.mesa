@@ -8,8 +8,13 @@ render: static
   routes/docs/ once written.
 -->
 <script>
-  import StubPage from '../../components/StubPage.mesa'
+  import DocsShell from '../../components/DocsShell.mesa'
+  import StubPage  from '../../components/StubPage.mesa'
+
+  export let data = null
 </script>
+
+<DocsShell nav={data?.nav} current="/docs/">
 
 <StubPage eyebrow="Docs" title="The documentation." lede="Concepts first, then guides for each job, then the reference for each package.">
   <section>
@@ -18,8 +23,13 @@ render: static
     <p class="from">Page: <a href="/docs/concepts/">Concepts</a></p>
   </section>
   <section>
+    <h2>Ecosystem</h2>
+    <p>Everything around an app: the packages it is built from, the direction they depend in, and what runs it once it ships.</p>
+    <p class="from">Page: <a href="/docs/ecosystem/">Ecosystem</a></p>
+  </section>
+  <section>
     <h2>Guides</h2>
-    <p>One page per job: a schema, access rules, a service, a resource and its form, live updates, jobs, auth, deploy, testing. Each one ends in code that runs.</p>
+    <p>One page per job, grouped by realm: Data, API, UI, Ship and Test. Each one ends in code that runs. Every guide has a stub page today naming what it will cover and where the material is now; start with <a href="/docs/guides/schema/">A schema</a>.</p>
     <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a> and the package READMEs</p>
   </section>
   <section>
@@ -38,3 +48,4 @@ render: static
     <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/VOCABULARY.md">VOCABULARY.md</a></p>
   </section>
 </StubPage>
+</DocsShell>

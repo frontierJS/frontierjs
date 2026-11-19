@@ -74,7 +74,7 @@ export function paginate(defaultLimit = 20, maxLimit = 100): Hook {
  *  Supports dot-path notation for nested fields: protect('user.password', 'meta.internal')
  */
 export function protect(...fields: string[]): Hook {
-  return (ctx: ServiceContext): void => {
+  return markFrameHook((ctx: ServiceContext): void => {
     if (!ctx.result) return
 
     function stripField(obj: Record<string, unknown>, path: string): void {
@@ -112,7 +112,22 @@ export function protect(...fields: string[]): Hook {
     } else if (target && typeof target === 'object') {
       strip(target as Record<string, unknown>)
     }
-  }
+  })
+}
+
+// A streaming method's frames leave before the after chain runs, which is once,
+// on the final record (FJS-D854). A hook marked here runs on every frame as
+// well, or a field it strips reaches the caller in each frame but the last.
+const FRAME_HOOK = Symbol.for('junction.frameHook')
+
+/** Mark an `after` hook as one that must also run on each frame of a stream. */
+export function markFrameHook<H extends Hook>(hook: H): H {
+  Object.defineProperty(hook, FRAME_HOOK, { value: true })
+  return hook
+}
+
+export function isFrameHook(hook: unknown): boolean {
+  return typeof hook === 'function' && (hook as unknown as Record<symbol, unknown>)[FRAME_HOOK] === true
 }
 
 /** Keep only permitted fields from request data */

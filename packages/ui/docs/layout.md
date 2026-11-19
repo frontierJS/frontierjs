@@ -15,7 +15,8 @@ components/
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · AttachmentList · FileType · Sparkline ·
               Json · Markdown · HtmlFrame · TemplatePreview · SignatureView · BulkBar ·
-              Transcript · Message · ToolCalls · Composer (chat) · ThemeSwatch · ThemePicker
+              Transcript · Message · ToolCalls · Composer (chat) · ExportButton
+              (a list's filter saved through /exports/{dataset}, FJS-D1005) · ThemeSwatch · ThemePicker
               (real radios over swatches; sierra's setTheme is the caller's) ·
               FilterBar, and the two range controls it draws: DayRangeFilter
               (an operator beside one DatePicker, FJS-D1576) and RangeInput

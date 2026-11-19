@@ -384,10 +384,11 @@ table and drains any backlog after `createClient` resolves — the first boot af
 window is declared over an existing table would otherwise not listen until it finished
 (`FJS-2288`); `$retain()` waits for that drain, then sweeps. Rows are read back only
 where something hears the delete — a plugin answering `onAfterDelete`, or a cascade
-child with one. **Index `createdAt`**: the sweep is `createdAt < cutoff`, and without
-`@@index([createdAt])` every pass scans the table whether or not anything is due;
-`litestone advise` reports it as `retention-without-an-index`. The freed pages stay in
-the file — nothing vacuums.
+child with one. **Retention indexes `createdAt` itself**: the sweep is
+`createdAt < cutoff`, so every swept model with no index leading with `createdAt` gets
+a full `@@index([createdAt])` it did not write. On a `@@softDelete` model that index has
+no `WHERE deletedAt IS NULL`, since the sweep reads soft-deleted rows too (`FJS-D849`).
+The freed pages stay in the file — nothing vacuums.
 
 The cutoff is a **rolling instant** rather than a day boundary — `Date.now()` minus the
 duration, with `d` a flat 24 hours and `y` a flat 365 days — so *ninety days* is measured

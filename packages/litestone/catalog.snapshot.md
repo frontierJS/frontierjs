@@ -143,7 +143,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@require` | Decide who may | (create\|postUpdate\|update\|delete, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [lastMover: <column>,] [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
@@ -211,7 +211,6 @@ Shapes the parser accepts and something later refuses.
 | `label-column-that-may-be-null` | warn | @@label names a column that may be null |
 | `unique-on-an-optional-column` | info | @unique on an optional column admits any number of nulls |
 | `index-another-index-already-covers` | info | an index a longer one already answers |
-| `retention-without-an-index` | warn | a retention window over a model no index orders by createdAt |
 | `declared-and-unreferenced` | info | a declaration nothing references |
 | `materialized-view-full-refresh` | info | a materialized view is rebuilt in full on every row written to its sources |
 | `sync-reference-to-a-server-assigned-id` | warn | a queued write references a model whose id only the server can assign |

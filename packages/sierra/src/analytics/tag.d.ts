@@ -11,6 +11,17 @@ export function vendorTag(config: object): {
     before?: () => void;
 } | null;
 /**
+ * The paths `analytics.proxy` answers on the site's own origin, each mapped to
+ * the upstream URL it forwards to; null with the proxy off.
+ *
+ * Refused on any provider but Plausible: GTM and a custom module have no
+ * proxy, and a key that did nothing would leave the tag cross-origin unnoticed.
+ *
+ * @param {object} [config]  `analytics` from sierra.config.js
+ * @returns {Record<string, string> | null}
+ */
+export function proxiedPaths(config?: object): Record<string, string> | null;
+/**
  * The same tag as HTML, for a page written to disk.
  *
  * A custom provider is a module of functions, and a prerendered page has

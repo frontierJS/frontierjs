@@ -21,12 +21,14 @@ Detail: `references/ctx-and-the-call.md`
 - **A write by id the row policy refuses is 403 for a row the caller can read, 404 for one they cannot** (`FJS-1750`)
 - **`update` is `patch` with an id REQUIRED, and it MERGES** (`FJS-D179`)
 - **The METHOD decides list vs single.**
+- **A claimed mirror's create answers 202 with only the key when the caller cannot read the row it just landed** (`FJS-D1305`)
 
 ## The hook pipeline
 Detail: `references/the-hook-pipeline.md`
 
 - **A custom method takes the model's READ gate as a floor, and declares anything above it** (`FJS-826`)
   - **A method authenticated by something that is NOT a session states `gate: 0`**
+- **A `stream: true` method's frames leave before the transaction commits, and only `protect()` runs on each** (`FJS-D1031`, `FJS-D854`)
   - **Declaring one gate means naming the whole surface**
 - **The gate runs before anything an app wrote, and `validated:` is the phase after the derived layer.**
 - **An `Idempotency-Key` on a mutating request executes once and replays the first answer**

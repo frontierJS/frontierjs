@@ -7,11 +7,12 @@ import { HttpTransport }            from '../transport/http.ts'
 import type { WsRouteOptions, HttpTransportOptions } from '../transport/http.ts'
 import { resolveTrustProxy }        from '../transport/forwarded.ts'
 import { mountLocalFiles }          from '../transport/local-files.ts'
-import { bridge, errorResponse, refuseBadDirectives } from '../transport/bridge.ts'
+import { bridge, errorResponse, errorBody, refuseBadDirectives } from '../transport/bridge.ts'
+import { callSlots } from './context.ts'
 import { freezeUser, enterRequest, reenterAs, requestMeta, NEVER_ABORTED, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
-import { ServiceRegistry, callService } from './service.ts'
+import { ServiceRegistry, callService, isStreamMethod } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS, accessorIfModel, resolveRawCaller } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
@@ -2767,6 +2768,37 @@ function refuseShadowedServices(app: App): void {
 
 export function registerServiceRoutes(app: App): void {
 
+  // A declared stream asked for as `text/event-stream` (`FJS-D1031`). The
+  // response waits for the first frame, so a call refused before one -- the
+  // gate, a before hook, validation -- answers its own status rather than a
+  // 200 stream holding an error. Each frame is a `frame` event, the answer
+  // after the after chain a `result` event, a failure mid-stream an `error`.
+  const streamCall = (service: import('./service.ts').Service, svcCtx: ServiceContext, ctx: import('../transport/types.ts').TransportContext): Promise<Response> =>
+    new Promise((resolve) => {
+      let sse: ReturnType<import('../transport/types.ts').TransportContext['sse']> | null = null
+      let gone = false
+      callSlots(svcCtx).frames = (frame) => {
+        if (gone) return false
+        if (!sse) {
+          sse = ctx.sse()
+          sse.onDisconnect(() => { gone = true })
+          resolve(sse.response)
+        }
+        sse.send({ event: 'frame', data: bridge.toStreamFrame(svcCtx, frame) })
+      }
+      callService(service, svcCtx, app._appHooks, app.events, app.telemetry).then(
+        () => {
+          if (!sse) return resolve(bridge.toResponse(svcCtx))
+          sse.send({ event: 'result', data: bridge.toFrame(svcCtx) })
+          sse.close()
+        },
+        (err) => {
+          if (!sse) return resolve(errorResponse(err, svcCtx))
+          sse.send({ event: 'error', data: errorBody(err, svcCtx) })
+          sse.close()
+        })
+    })
+
   refuseShadowedServices(app)
 
   // ── CRUD handler ──────────────────────────────────────────────────
@@ -2793,6 +2825,8 @@ export function registerServiceRoutes(app: App): void {
     // the same principal and open nothing. A handler called with no scope at
     // all, a test driving it by hand, still gets one.
     const run = async (): Promise<Response> => {
+      if (isStreamMethod(service, svcCtx.method as string) && acceptsEventStream(ctx.headers))
+        return streamCall(service, svcCtx, ctx)
       await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
       return bridge.toResponse(svcCtx)
     }
@@ -2836,4 +2870,8 @@ export function registerServiceRoutes(app: App): void {
   app.patch(`/{service}/{id}`,  crudHandler)
   app.put(`/{service}/{id}`,    crudHandler)  // restore via header
   app.delete(`/{service}/{id}`, crudHandler)
+}
+
+function acceptsEventStream(headers: Record<string, string> | undefined): boolean {
+  return /(^|,)\s*text\/event-stream\b/i.test(headers?.accept ?? '')
 }

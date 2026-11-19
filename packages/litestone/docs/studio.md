@@ -225,7 +225,6 @@ in `src/core/advise.js`; among them:
 | `label-column-that-may-be-null` | `@@label` on an optional column: a blank row in every picker, sorted together and matching no search |
 | `unique-on-an-optional-column` | SQLite counts NULLs as distinct, so the constraint applies only to rows that have a value |
 | `index-another-index-already-covers` | a prefix of a longer index, or a duplicate of what `@unique` built. A `@@softDelete` model is exempt: there every `@@index` is partial and every UNIQUE is not |
-| `retention-without-an-index` | a model a `retention` window sweeps by `createdAt < cutoff`, with no index leading with `createdAt`: every sweep scans the table, due or not |
 | `declared-and-unreferenced` | an enum or type nothing uses |
 | `check-without-an-operation-in-a-write-rule` | a bare `check(rel)` takes its rule's operation, so `@@allow(create, check(inbox))` asks who may create an inbox, not who may see one |
 | `write-policy-reads-a-parent-without-post-update` | a create or update policy reads a parent through a key a caller can move, and no `@@allow(postUpdate, …)` grades the row after the move |

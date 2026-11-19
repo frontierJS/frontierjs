@@ -296,7 +296,7 @@ this document's.
 | 1 — Developer Interface          | CLI, editor tooling, scaffolds                   | `fli` · frontierjs-vscode               |
 | 2 — Database                     | Schema, migrations, ORM, gates                   | **Litestone**                           |
 | 3 — Configuration & Secrets      | Env config, secrets, runtime context             | per-tool `config/`, `junction.config.js` |
-| 4 — Integrations                 | Third-party connections                          | **Conduit**                             |
+| 4 — Integrations                 | Third-party connections, both ways: calls out, webhooks in | **Conduit**                   |
 | 5 — Automation & Orchestration   | Jobs, queues, schedules, workflows               | **Caravan** · **Orion**                  |
 | 6 — Authentication               | Identity, sessions, trust resolution             | `@frontierjs/auth`                      |
 | 7 — Observability & Operations   | Monitoring, logging, fleet                       | Basecamp · Outpost · junction telemetry/health/devtools |

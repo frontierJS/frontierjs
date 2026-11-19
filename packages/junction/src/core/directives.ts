@@ -11,7 +11,7 @@
 
 // ─── Query directives ─────────────────────────────────────────────────────
 // The internal form of what arrives on the wire as $limit, $offset, $orderBy,
-// $select, $populate, $search, $withDeleted, $onlyDeleted, $withTemplates,
+// $select, $populate, $count, $search, $withDeleted, $onlyDeleted, $withTemplates,
 // $onlyTemplates, $asOf, $withExpired, $onlyExpired, $scope, $recursive — the same names, in the
 // same order, as the table in
 // `@frontierjs/toolbelt/directives`, which is what the bridge reads them by.
@@ -47,6 +47,11 @@ export interface QueryDirectives {
   select?:      unknown
   /** Relations to include — 'author' | 'author:id+name' */
   populate?:    unknown
+  /**
+   * Relations to count, answered as `row._count` (`FJS-D945`) — `'surveys,notes'`,
+   * a list, or `{ surveys: true | { where } }` with the where over the related rows.
+   */
+  count?:       string | string[] | Record<string, true | { where: Record<string, unknown> }>
   /** Full-text search term (FTS5). */
   search?:        string
   withDeleted?:   boolean

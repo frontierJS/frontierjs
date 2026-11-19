@@ -10,18 +10,39 @@ export function functionRoutes(dir: string): Array<{
     file: string;
 }>;
 /**
+ * Every path the site's functions answer: the functions directory's files, then
+ * the paths `analytics.proxy` derives (`FJS-D1037`). A file at a proxied path is
+ * refused rather than either one winning in silence.
+ *
+ * @param {{ functions?: string, analytics?: object }} config
+ * @param {string} root  project root
+ * @returns {Array<{ path: string, file?: string, upstream?: string }>}
+ */
+export function siteFunctionRoutes(config: {
+    functions?: string;
+    analytics?: object;
+}, root: string): Array<{
+    path: string;
+    file?: string;
+    upstream?: string;
+}>;
+/** Whether the build writes a functions entry, so a host has one to mount. */
+export function hasFunctions(config?: any): boolean;
+/**
  * Write the entry: `export const routes = { '/api/event': handler, … }`.
  *
  * @param {object} opts
  * @param {string} opts.root  project root
- * @param {string} opts.dir   the functions directory, relative to `root`
+ * @param {string} [opts.dir]   the functions directory, relative to `root`
+ * @param {object} [opts.analytics]  `analytics` from the config, for its proxy
  * @returns {Promise<string>} the entry's absolute path
  */
-export function writeFunctionsEntry({ root, dir }: {
+export function writeFunctionsEntry({ root, dir, analytics }: {
     root: string;
-    dir: string;
+    dir?: string;
+    analytics?: object;
 }): Promise<string>;
-/** The build step: nothing without a `functions` key. */
+/** The build step: nothing without a `functions` key or `analytics.proxy`. */
 export function generateFunctions(config?: any, root?: any): Promise<string>;
 /** A node request as the web's `Request` a function takes. */
 export function requestFrom(req?: any): Promise<Request>;

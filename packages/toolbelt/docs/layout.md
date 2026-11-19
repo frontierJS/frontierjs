@@ -415,7 +415,7 @@ src/datetime/        an instant read as a place's wall clock, and written back �
                      partsIn, resolveWall/fromWall (0, 1 or 2 instants),
                      format's token language, relative, and createDatetime,
                      which binds locale, zone and an app-supplied clock.
-                     Plus the PLAIN DATE half — plainDateIn, addToDate,
+                     Plus the PLAIN DATE half — plainDateIn, distinctDays, addToDate,
                      daysBetween, startOfDay — a day in no zone, which is what
                      a billing period is (`FJS-D288`): the zone is spent at the
                      two crossings and the calendar arithmetic has none.

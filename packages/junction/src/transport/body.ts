@@ -92,8 +92,11 @@ export class BodyTooLargeError extends Error {
   readonly size:  number
   constructor(limit: number, size: number, setting = 'http.maxBodySize') {
     // Names the setting, because the reader of a 413 is the one who has to
-    // raise it: a file sent inline over JSON meets this bound (FJS-D666).
-    super(`Request body exceeds ${limit} bytes; an app that takes larger bodies raises ${setting}`)
+    // raise it: a file sent inline over JSON meets this bound (FJS-D666). The
+    // app-wide bound also bounds login and every socket frame, so the route's
+    // own bound is named beside it (FJS-3132).
+    const oneRoute = setting === 'http.maxBodySize' ? ', or the one route that needs more states its own maxBodySize' : ''
+    super(`Request body exceeds ${limit} bytes; an app that takes larger bodies raises ${setting}${oneRoute}`)
     this.name  = 'BodyTooLargeError'
     this.limit = limit
     this.size  = size

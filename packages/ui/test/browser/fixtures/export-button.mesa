@@ -1,0 +1,25 @@
+<script>
+  // export-button.mesa -- a screen's query handed to ExportButton, over a
+  // client whose `fetch` records the path it was asked for and answers the way
+  // junction's export route does: a CSV named by content-disposition.
+  import ExportButton from '../../../components/display/ExportButton.mesa'
+
+  let asked = ''
+  const client = {
+    fetch: async (path) => {
+      asked = path
+      return new Response('id,status\n1,open\n', {
+        headers: { 'content-disposition': 'attachment; filename="order.csv"' },
+      })
+    },
+  }
+  const refusing = {
+    fetch: async () => { throw Object.assign(new Error('Unknown column "colour"'), { code: 400 }) },
+  }
+
+  const query = { status: 'open', $orderBy: '-createdAt', $limit: 25, $offset: 50 }
+</script>
+
+<div id="ok"><ExportButton dataset="Order" {query} {client} /></div>
+<div id="bad"><ExportButton dataset="Order" query={{ colour: 'red' }} client={refusing} label="Export" /></div>
+<output id="asked">{asked}</output>

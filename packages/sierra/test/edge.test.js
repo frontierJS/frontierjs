@@ -68,6 +68,7 @@ const TOOLS = {
 const ALLOWED = [
   { from: 'build/index.js', to: 'devtools/plugin.js', why: 'FJS-D649 — `devtools:` is a battery key in sierra.config.js, and the build is what reads that file' },
   { from: 'postbuild/inject-analytics.js', to: 'analytics/tag.js', why: 'FJS-D658 — a static page never loads virtual:sierra, so the build is the only thing that can put the vendor tag on it' },
+  { from: 'postbuild/functions.js', to: 'analytics/tag.js', why: 'FJS-D1037 — analytics.proxy adds its routes to the functions entry, and tag.js names the paths the tag points at' },
 ]
 
 /**
@@ -86,6 +87,7 @@ const POSTBUILD = {
   'widget-headers.js':   'build',
   'functions.js':        'site',
   'function-handler.js': 'site',
+  'plausible-proxy.js':  'site',
   'inject-theme.js':     'build',
   'inject-analytics.js': 'build',
   'manifest.js':         'build',

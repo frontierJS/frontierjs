@@ -136,6 +136,27 @@ describe('routes/ — export const options is each verb\'s third argument', () =
     expect(msg).toContain('content.ts')
     expect(msg).toContain('Put')
   })
+
+  // FJS-3132. A vault import is a 1 MB body; raising http.maxBodySize for it
+  // raised it for login, every service and every socket frame too.
+  it('a verb that states maxBodySize takes a body past the app bound, and a route beside it keeps the app bound', async () => {
+    const files = {
+      'import.ts': `export const options = { POST: { maxBodySize: 2 * 1024 * 1024 } }\n` +
+        `export const POST = (ctx: any) => new Response(String(ctx.body.items.length))\n`,
+      'login.ts':  `export const POST = (ctx: any) => new Response('in')\n`,
+    }
+    const vault = JSON.stringify({ items: Array.from({ length: 1000 }, (_, i) => ({ i, note: 'x'.repeat(1000) })) })
+    expect(vault.length).toBeGreaterThan(256 * 1024)
+    await withApp(files, async base => {
+      const send = (path: string) => fetch(`${base}${path}`, { method: 'POST', body: vault, headers: { 'content-type': 'application/json' } })
+      const imported = await send('/import')
+      expect(imported.status).toBe(200)
+      expect(await imported.text()).toBe('1000')
+      const login = await send('/login')
+      expect(login.status).toBe(413)
+      expect(await login.text()).toContain('states its own maxBodySize')
+    })
+  })
 })
 
 // FJS-3596 / FJS-D1663. A route file is handed only its TransportContext, so a

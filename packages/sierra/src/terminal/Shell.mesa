@@ -35,13 +35,13 @@
   let path = ''
   const go = () => { if (path.trim()) onopen?.(path.trim()) }
 
-  // The keys are modal, and only `i` and `a` enter INSERT, `a` one character
-  // right of the cursor and never past a line's end, as vim's does. The field takes every
-  // key but Esc. Landing on a text field does not: a route focuses its first
-  // control when it mounts, and a scene that opened already typing would eat
-  // the h j k l it walks on. Every focus is NORMAL, so Tab to the next field
-  // is too. In NORMAL a letter types nothing, and `/` enters INSERT and is
-  // typed, so a line that begins with a slash is one keystroke away. h j k l reach this as the arrows (shell.js).
+  // The keys are modal (`FJS-D987`, `FJS-D1312`). A text field a key focuses,
+  // a Tab or a j the page leaves alone, is INSERT and takes every key but Esc.
+  // One a route focuses as it mounts is NORMAL: a scene that opened already
+  // typing would eat the h j k l it walks on. There `i` and `a` enter INSERT,
+  // `a` one character right of the cursor and never past a line's end, as
+  // vim's does, and `/` enters INSERT and is typed, so a line that begins with
+  // a slash is one keystroke away. In NORMAL a letter types nothing. h j k l reach this as the arrows (shell.js).
   // `i a /` are stepped after the page's keymaps (`step`), so a page's pending
   // `f` takes the `a` after it. Esc out of INSERT stops here, so a dialog or
   // the shell's back hears only a second one. A control that keeps its own
@@ -54,9 +54,12 @@
   let mode  = 'normal'
   let field = false
   const set = (m) => { mode = m; onmode?.({ mode, field }) }
+  // A key's focus lands before the microtask its keydown queues, Tab's inside
+  // the key itself; a route's mount focuses after the await that loads it.
+  let keyed = false
   const focusin = (e) => {
     field = types(e.target)
-    set(e.target === jumpField ? 'insert' : kept?.() ?? 'normal')
+    set(e.target === jumpField ? 'insert' : kept?.() ?? (keyed && field ? 'insert' : 'normal'))
   }
   // In INSERT a field types `?` and Ctrl+P still jumps.
   const actionOf = (e, active, text) => step(null, chordOf(e), { active, mac: false, text }, 0).outcome?.action
@@ -76,6 +79,8 @@
   }
   steps?.(keyStep)
   const keydown = (e) => {
+    keyed = true
+    queueMicrotask(() => { keyed = false })
     if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey || kept?.() !== undefined) return
     const typing = types(e.target)
     if (mode === 'insert' && typing) {

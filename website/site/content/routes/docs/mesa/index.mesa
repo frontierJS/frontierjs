@@ -6,18 +6,15 @@ render: static
   from `index.meta.js`, which reads the same list the sidebar does.
 -->
 <script>
-  import MesaGuideNav from '../../../components/MesaGuideNav.mesa'
+  import DocsShell from '../../../components/DocsShell.mesa'
 
   export let data = null
 
   const guide = data?.guide ?? []
+  const nav   = data?.nav
 </script>
 
-<div class="container"><div class="gbody">
-  <aside class="gside">
-    <MesaGuideNav {guide} current="" />
-  </aside>
-
+<DocsShell {nav} current="/docs/mesa/">
   <article class="prose">
     <p class="crumb"><a href="/docs/">Docs</a> / Mesa</p>
     <h1>The Mesa guide</h1>
@@ -37,16 +34,9 @@ render: static
       </section>
     {/each}
   </article>
-</div></div>
+</DocsShell>
 
 <style>
-  .gbody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; align-items: start; padding: 2.5rem 0 4rem; }
-  .gside { display: none; }
-  @media (min-width: 62rem) {
-    .gbody { grid-template-columns: 15rem minmax(0, 1fr); gap: 3rem; }
-    .gside { display: block; position: sticky; top: 5rem; max-height: calc(100vh - 6rem); overflow-y: auto; }
-  }
-
   .prose { max-width: 48rem; line-height: 1.7; color: var(--ink-soft); }
   .crumb { font-size: .78rem; color: var(--ink-mute); margin: 0 0 .75rem; }
   .crumb a { color: inherit; }

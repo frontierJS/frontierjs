@@ -22,7 +22,8 @@ import {
 } from './hooks.ts'
 import { NotFound, BadRequest, Forbidden, MethodNotAllowed, Unprocessable, toFrameworkError } from './errors.ts'
 import { createMemoryCache, type ICache }         from '../cache/index.ts'
-import { wrapResult, isServiceResult, resultData, refuseStream } from './envelope.ts'
+import { wrapResult, isServiceResult, resultData, refuseStream, describeStream, describeShape, ResultShapeError, type ServiceResult } from './envelope.ts'
+import { isFrameHook } from './hooks-builtin.ts'
 // NOTE: service.ts ⇄ litestone.ts is an intentional, safe ESM cycle:
 // litestone imports buildService (used only inside functions) and this
 // module imports createLitestoneBase (used only inside buildBase).
@@ -244,6 +245,8 @@ export interface ServiceDescription {
   methodClaims: Record<string, string[]>
   /** The custom methods declared `read: true`, whose answer is never kept or announced (`FJS-D505`). */
   readMethods: string[]
+  /** The custom methods declared `stream: true`, which answer in frames (`FJS-D1031`). */
+  streamMethods: string[]
   /** The model each method declared it answers, where not the service's own (`FJS-D914`). */
   answers: Record<string, string>
   /**
@@ -365,6 +368,8 @@ export interface Service {
   _methodClaims?: Record<string, string[]>
   /** The custom methods DECLARED `read: true` in `methods:`. Read through `isReadMethod`. */
   _readMethods?: string[]
+  /** The custom methods DECLARED `stream: true` in `methods:`. Read through `isStreamMethod`. */
+  _streamMethods?: string[]
   /** The custom methods DECLARED `log: false` in `methods:`. Read through `isUnloggedMethod`. */
   _unloggedMethods?: string[]
   /** The `transports:` each `methods:` entry DECLARED, keyed by name. Read through `isMethodAllowed`. */
@@ -762,6 +767,39 @@ function settleResult(ctx: ServiceContext, service: Service, raw: unknown): void
   }
 }
 
+/*
+ * A declared stream's frames, each through the protect hooks and out to the
+ * wire that asked for them; the last is the call's answer. With no wire
+ * listening the frames are only drained, which is the buffering a transport
+ * that cannot stream gets (FJS-D853). The transport puts its sender in the
+ * call's slots, so the context carries no connection.
+ */
+async function drainFrames(ctx: ServiceContext, service: Service, raw: unknown, after: Hook[]): Promise<unknown> {
+  const method = ctx.method as string
+  if (!raw || typeof (raw as Record<symbol, unknown>)[Symbol.asyncIterator] !== 'function') {
+    throw new ResultShapeError(service.name, method, raw,
+      `declares stream: true and answered ${describeStream(raw) ?? describeShape(raw)}, not an async ` +
+      `iterable. A streaming method is an async generator: yield each frame, and the last is the answer.`)
+  }
+  const send = callSlots(ctx).frames
+  const protects = after.filter(isFrameHook)
+  let last: unknown = null
+  for await (const frame of raw as AsyncIterable<unknown>) {
+    last = frame
+    if (send) {
+      const each = Object.create(ctx) as ServiceContext
+      each.type   = 'after'
+      each.result = frame === null || frame === undefined ? null : wrapResult(frame, service.name, method)
+      for (const hook of protects) await hook(each)
+      // false is the wire saying its caller left; breaking calls the generator's
+      // return(), so the method stops instead of running to the end for nobody.
+      if (await send(each.result as ServiceResult | null) === false) break
+    }
+    if (ctx.signal?.aborted) break
+  }
+  return last
+}
+
 async function _callService(
   service:    Service,
   ctx:        ServiceContext,
@@ -851,7 +889,10 @@ async function _callService(
       const watched = !isCustom && !isDerivedHook(methodFn)
       const settleFilterReads    = watched ? watchFilterReads(ctx) : undefined
       const settleDirectiveReads = watched ? watchDirectiveReads(ctx, sent) : undefined
-      const raw = await methodFn(ctx)
+      const answered = await methodFn(ctx)
+      const raw = isStreamMethod(service, method as string)
+        ? await drainFrames(ctx, service, answered, resolvedPipeline.after)
+        : answered
       settleFilterReads?.()
       settleDirectiveReads?.()
       // The method returned, so any write it made is real. Recorded here rather
@@ -1760,6 +1801,15 @@ export interface MethodDeclaration {
    */
   log?: boolean
   /**
+   * The method is an async generator and each value it yields is a FRAME
+   * (`FJS-D1031`). Every frame goes through the `protect()` hooks; the after
+   * chain runs once, on the last frame, which is the call's answer (`FJS-D854`).
+   * A wire that can stream sends each frame as it is yielded; one that cannot --
+   * an in-process call, MCP, HTTP without `Accept: text/event-stream` -- answers
+   * the last frame alone. Undeclared, an async generator is refused by name.
+   */
+  stream?: boolean
+  /**
    * Which callers may reach the method, from `ctx.transport`'s values
    * (`FJS-D2237`). `['internal']` is a method an internal route or a job calls
    * through `app.service()`, which `methods:` must list to admit at all; absent,
@@ -1913,6 +1963,30 @@ export function collectMethodTransports(
   return out
 }
 
+/** The custom methods a `methods:` list declares `stream: true`. */
+export function collectStreamMethods(
+  declared:    MethodSelection | undefined,
+  serviceName: string,
+): string[] {
+  const out: string[] = []
+  if (!declared || declared === 'readOnly') return out
+
+  for (const entry of declared) {
+    if (typeof entry === 'string' || entry?.stream === undefined) continue
+    const name = methodEntryName(entry, serviceName)
+    if (typeof entry.stream !== 'boolean')
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares stream ${JSON.stringify(entry.stream)}, ` +
+        `which is not true or false.`)
+    if (CRUD_METHOD_SET.has(name))
+      throw new TypeError(
+        `[Junction] service '${serviceName}': ${name} declares stream, but ${name} is a CRUD verb, ` +
+        `whose answer is a record or a page. stream: is for a custom method.`)
+    if (entry.stream) out.push(name)
+  }
+  return out
+}
+
 /** The custom methods a `methods:` list declares `read: true`. */
 export function collectReadMethods(
   declared:    MethodSelection | undefined,
@@ -2043,6 +2117,11 @@ export function scopeRefusal(
   if (need === undefined)
     return `${name}.${method} states no scope, so a key issued with scopes (${held.join(', ')}) cannot call it`
   return held.includes(need) ? null : `${name}.${method} needs the '${need}' scope`
+}
+
+/** The method declared `stream: true`, whose answer is frames (`FJS-D1031`). */
+export function isStreamMethod(service: Service | undefined, method: string): boolean {
+  return !!service?._streamMethods?.includes(method)
 }
 
 /**
@@ -2838,6 +2917,7 @@ export function buildService(def: ServiceDefinition): Service {
   const declaredGates  = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredClaims = collectMethodClaims(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredReads  = collectReadMethods(def.methods, (def.name as string) ?? '(unnamed)')
+  const declaredStreams = collectStreamMethods(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredUnlogged = collectUnloggedMethods(def.methods, (def.name as string) ?? '(unnamed)')
   const declaredTransports = collectMethodTransports(def.methods, (def.name as string) ?? '(unnamed)')
   const methodInputs   = collectMethodInputs(def.methods, (def.name as string) ?? '(unnamed)', def)
@@ -3079,6 +3159,7 @@ export function buildService(def: ServiceDefinition): Service {
         methodGates:   { ...(service._methodGates ?? {}) },
         methodClaims:  Object.fromEntries(Object.entries(service._methodClaims ?? {}).map(([k, v]) => [k, [...v]])),
         readMethods:   [...(service._readMethods ?? [])],
+        streamMethods: [...(service._streamMethods ?? [])],
         answers:       { ...(service._answers ?? {}) },
         transports:    Object.fromEntries(Object.entries(service._methodTransports ?? {}).map(([k, v]) => [k, [...v]])),
         scopes:      Object.fromEntries(allowedMethodNames(service)
@@ -3212,6 +3293,7 @@ export function buildService(def: ServiceDefinition): Service {
   ;(service as Service)._methodGates = declaredGates
   ;(service as Service)._methodClaims = declaredClaims
   ;(service as Service)._readMethods = declaredReads
+  ;(service as Service)._streamMethods = declaredStreams
   ;(service as Service)._unloggedMethods = declaredUnlogged
   ;(service as Service)._methodTransports = declaredTransports
   ;(service as Service)._answers = collectMethodAnswers(def.methods, defName ?? '(unnamed)')

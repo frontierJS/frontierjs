@@ -212,8 +212,9 @@ Each step adds its case to the website's `verify` drive before it is done.
    `serveSite`; ksite's two move. Closes `FJS-1540`.~~ Done for the entry and
    the mount (`functions:` config key, `.sierra/functions.js`,
    `test/site-functions.test.js`). The Vite dev mount and the compiled-binary
-   mount are done (`FJS-2775`). Left: the Plausible proxy derived from
-   `analytics:` (`FJS-2893`), and the bundling the adapter does in step 4.
+   mount are done (`FJS-2775`), and so is the Plausible proxy derived from
+   `analytics.proxy` (`FJS-2893`, `FJS-D1037`). Left: the bundling the
+   adapter does in step 4.
 4. ~~**The Cloudflare adapter**: the Worker entry (functions first, then
    `env.ASSETS.fetch`) and the generated wrangler config; `site-kit deploy`.~~
    Done for frontierjs.com: `site/cloudflare.js` writes `.sierra/wrangler.json`
@@ -225,8 +226,8 @@ Each step adds its case to the website's `verify` drive before it is done.
    not a rebuild, so `bun run deploy` ships what the drive passed.
    `website/wrangler.jsonc` is deleted (question 4). Proved by
    `test/site-functions.test.js`, the website drive's `host.worker`, and by
-   hand under `wrangler dev`. Left: ksite leaves Pages, which waits on its
-   Plausible proxy (`FJS-2893`). The first real deploy of frontierjs.com
+   hand under `wrangler dev`. Left: ksite leaves Pages, setting
+   `analytics.proxy: true` and deleting its `functions/api/event.js`. The first real deploy of frontierjs.com
    creates the Worker `frontierjs-com`, so frontierjs.com's custom domain
    moves off `frontierjs-site`, which is then deleted by hand.
 5. ~~**Preview deploys** of `site-kit build --preview` through the same adapter.~~
