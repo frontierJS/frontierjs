@@ -79,7 +79,10 @@ const SINCE_LIMIT = 1000
 interface SocketData { caller: string | null; seq: number; connectionId: string; authBy: 'header' | 'challenge' | null; silent?: boolean }
 
 export function startMattermostSink(opts: MattermostSinkOptions = {}) {
-  const now = () => Date.now()
+  // Strictly increasing: two posts in one millisecond would tie, and every
+  // "since this post" count (set_unread, a thread's replies) reads create_at.
+  let last = 0
+  const now = () => (last = Math.max(Date.now(), last + 1))
   const users: Record<string, User> = {}
   const user = (username: string, extra: Partial<User> = {}): User => {
     const u: User = { id: mint(username), create_at: now(), update_at: now(), delete_at: 0, username, roles: 'system_user', email: `${username}@example.test`, ...extra }
@@ -557,8 +560,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (!channels[channel_id] || !isMember(channel_id, caller)) return forbidden()
         if (root_id && !posts[root_id]) return record(refuse(400, 'api.draft.upsert_draft.invalid_root_id.app_error', 'Invalid RootId parameter'))
         const t = now(), had = drafts.find(d => d.user_id === caller && d.channel_id === channel_id && d.root_id === root_id)
-        // Read before the assign below overwrites delete_at: a save within the
-        // same millisecond as the first has create_at === t and is still an update.
+        // Read before the assign below overwrites delete_at.
         const live = !!had && !had.delete_at
         const fresh: Draft = { create_at: live ? had!.create_at : t, update_at: t, delete_at: 0, user_id: caller, channel_id, root_id, message: String(body.message ?? ''), props: (body.props as Record<string, unknown>) ?? {}, file_ids: Array.isArray(body.file_ids) ? (body.file_ids as unknown[]).map(String) : [] }
         if (had) Object.assign(had, fresh); else drafts.push(fresh)

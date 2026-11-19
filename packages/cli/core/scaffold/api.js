@@ -185,10 +185,15 @@ export function makeApiEnvTs() {
 
 import { defineEnv } from '@frontierjs/junction'
 
+// Publicly known, so a snapshot, a test and CI build the app with no .env.
+// Refused in production below; a release still has to set the real one,
+// because the deploy preflight grades required and ignores the default.
+export const DEV_ENCRYPTION_KEY = '0'.repeat(64)
+
 export const env = defineEnv({
-  // Required — used for HMAC of API keys, encrypted columns, OAuth state.
+  // HMAC of API keys, encrypted columns, OAuth state.
   // Generate with: openssl rand -hex 32
-  ENCRYPTION_KEY: { type: 'string', required: true, minLength: 64 },
+  ENCRYPTION_KEY: { type: 'string', required: true, minLength: 64, default: DEV_ENCRYPTION_KEY },
 
   // Database file path. Use ':memory:' for tests.
   DATABASE_URL: { type: 'string', default: './db/app.db' },
@@ -213,6 +218,11 @@ export const env = defineEnv({
   FRONTIER_APP_URL: { type: 'url', default: 'http://localhost:' + (process.env.FRONTIER_PORT_FE ?? 8000) },
   NODE_ENV: { type: 'string', default: 'development' },
 })
+
+// Every encrypted column would be readable by anyone holding this file, and
+// still look protected.
+if (env.NODE_ENV === 'production' && env.ENCRYPTION_KEY === DEV_ENCRYPTION_KEY)
+  throw new Error('ENCRYPTION_KEY is the public dev placeholder. Set one: openssl rand -hex 32')
 `
 }
 
