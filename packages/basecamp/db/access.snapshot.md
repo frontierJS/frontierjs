@@ -26,7 +26,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `AlertRule` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AlertRuleChannel` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
-| `App` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `App` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppCopy` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppDrill` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -49,7 +49,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Deployment` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DeploymentStep` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `DiskUsage` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
-| `Domain` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Domain` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `DomainRoute` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Environment` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Flag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
@@ -703,6 +703,7 @@ rather than refusing the row.
 | `ApiKey` | `totalUses` | `@system` |
 | `ApiKey` | `usageDate` | `@system` |
 | `ApiKey` | `usesOnDate` | `@system` |
+| `App` | `projectId` | `@system` |
 | `App` | `status` | `@system` |
 | `App` | `isDeployedOnPush` | `@system` |
 | `App` | `pushSecret` | `@encrypted` |

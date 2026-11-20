@@ -222,7 +222,7 @@ const audit = await db.asSystem().auditTrail.findMany({
   orderBy: { createdAt: 'desc' },
   limit:   100,
 })
-// → [{ operation: 'update', model: 'User', records: [1], actorId: 1, ... }]
+// → [{ operation: 'update', model: 'User', recordId: '1', actorId: 1, ... }]
 if (audit.length !== 1 || audit[0].actorId !== admin.id) throw new Error(JSON.stringify(audit))
 ```
 

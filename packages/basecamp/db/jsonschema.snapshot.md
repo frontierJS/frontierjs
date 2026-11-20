@@ -268,7 +268,7 @@ validates, and a select that silently drops an option.
 - `ChannelKind` — `slack`, `pagerduty`, `email`, `webhook`, `chat`
 - `FlagType` — `boolean`, `variant`
 - `TileKind` — `serverFleet`, `serverHealth`, `appStatus`, `deployFeed`, `jobHistory`, `activityFeed`, `alertStatus`, `serviceHealth`, `statCounter`
-- `ParamGenerator` — `randomHex`, `randomAlphanumeric`, `randomBase64`, `uuid`
+- `ParamGenerator` — `randomHex`, `randomAlphanumeric`, `randomBase64`, `uuid`, `ntfyToken`
 - `BackupKind` — `manual`, `scheduled`, `found`, `release`
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
@@ -575,7 +575,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `model` | `string` | yes | — | — | — |
 | `field` | `string`? | — | — | — | — |
 | `transition` | `string`? | — | — | — | — |
-| `records` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `recordId` | `string`? | — | — | — | — |
 | `before` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `after` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `actorId` | `string`? | — | — | — | — |
@@ -591,7 +591,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `meta` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `id` | `integer` | — | — | — | — |
 
-**On create**: required — `operation`, `model`, `records` · not accepted — `id`
+**On create**: required — `operation`, `model` · not accepted — `id`
 
 ### `User`
 
@@ -922,6 +922,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - gate `read:2 create:4 update:4 delete:5` · version field `version` · closed (`additionalProperties: false`)
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `environments` — hasMany `Environment`
+- relation `apps` — hasMany `App`
 - relation `dependencyUses` — hasMany `DependencyUse`
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -962,8 +963,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `App`
 
-- gate `read:2 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
 - relation `environment` — belongsTo `Environment` via `environmentId` · on delete Cascade
+- relation `project` — belongsTo `Project` via `projectId` · on delete Cascade
 - relation `blueprint` — belongsTo `Blueprint` via `blueprintId` · on delete SetNull · optional
 - relation `backupDestination` — belongsTo `BackupDestination` via `backupDestinationId` · on delete SetNull · optional
 - relation `replicaDestination` — belongsTo `BackupDestination` via `replicaDestinationId` · on delete SetNull · optional
@@ -985,6 +987,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `workspaceId` | `string` | — | — | `x-litestone-kind` | — |
 | `environmentId` | `string` | yes | — | — | — |
+| `projectId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` `x-transforms` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 64` `x-transforms` | — |
 | `kind` | `AppKind` = `"container"` | — | — | — | — |
@@ -1057,7 +1060,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Domain`
 
-- gate `read:2 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+- gate `read:2 create:4 update:4 delete:4` · version field `version` · closed (`additionalProperties: false`)
 - relation `app` — belongsTo `App` via `appId` · on delete Cascade
 - relation `routes` — hasMany `DomainRoute`
 

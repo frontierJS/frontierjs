@@ -154,7 +154,7 @@ const CASES = [
 
   // $audit — no floor: it is a call nothing else makes
   { name: 'audit/$audit',       floor: null,           schema: item({ head: AUDIT_DB }),
-    op: (t, i) => t.$audit({ operation: 'bench.event', model: 'Item', records: [i], meta: { i } }) },
+    op: (t, i) => t.$audit({ operation: 'bench.event', model: 'Item', recordId: i, meta: { i } }) },
 
   // read — 100 of 5,000 rows per call
   { name: 'read/bare',          floor: null,           schema: item(), seed: seedItems, reads: true,

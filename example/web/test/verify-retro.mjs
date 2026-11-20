@@ -199,7 +199,7 @@ const trail = await sys.auditTrail.findMany({
   orderBy: { createdAt: 'desc' }, limit: 50,
 })
 const decoded = v => typeof v === 'string' ? JSON.parse(v) : v
-const closing = trail.find(r => [].concat(decoded(r.records)).includes(A.window.id))
+const closing = trail.find(r => r.recordId === String(A.window.id))
 const was     = closing && decoded(closing.before)
 const became  = closing && decoded(closing.after)
 
@@ -208,7 +208,7 @@ t('gap.theRowKeepsNoTraceOfWhatItUsedToSay',
 t('gap.butTheAuditLogDoes',        was?.effectiveTo === null)
 t('gap.andItRecordsWhatItBecame',  became?.effectiveTo === RAISE_AT)
 t('gap.andTheLogKeepsItAsData',
-  Array.isArray(closing.records) && typeof closing.before === 'object' && closing.before !== null)
+  closing.recordId != null && typeof closing.before === 'object' && closing.before !== null)
 
 // The refusals, asserted against the rule the service calls.
 const NOW = TODAY

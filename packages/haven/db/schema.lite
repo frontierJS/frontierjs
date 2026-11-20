@@ -48,10 +48,15 @@ model Member {
   nick      String    @unique @trim @lower @length(2, 16) @regex("^[a-z0-9_-]+$", "letters, digits, - and _")
 
   /// Who the member is: the root of their Frontier chain, so every machine in
-  /// the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). A
-  /// machine with no chain is its own key here until 3.2 refuses it, and an
-  /// imported voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
+  /// the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). An
+  /// agent's is `agent:<nick>`, so a new key listed for the nick is the same
+  /// member, and a voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
   root      String    @unique @immutable
+
+  /// A member the Haven lists in `HAVEN_AGENTS` rather than a person's chain
+  /// (`FJS-D1651`), so the room can mark them. Written by the login alone: a
+  /// member flagging themselves would pass for a bot.
+  agent     Boolean   @default(false) @system
 
   /// The standing: `mod`, or none. Read off the row on every call and every
   /// socket frame (`api/src/principal.ts`), written by the login from

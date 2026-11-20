@@ -79,6 +79,9 @@ export function imageNeeds(root) {
   return {
     chrome: deps.has(PRINT_KIT) ? PRINT_KIT : drives ? DRIVE : null,
     webSrc: code.some(c => /['"`][^'"`\n]*\bweb\/src\b/.test(c)),
+    // Left out, the import resolves on the laptop and the container exits at
+    // start: `Cannot find package '#shared'` (FJS-D1320 puts shared/ beside api/).
+    shared: code.some(c => /['"`]#shared\//.test(c)),
     offRoad: OFF_ROAD.filter(name => deps.has(name)),
   }
 }
@@ -141,5 +144,16 @@ export function carriesWebSrc(dockerfile, dockerignore) {
   const ignore = instructions(dockerignore)
   const dropped = ignore.some(l => l === '*' || /^\/?web(\/\*?)?$/.test(l))
   const restored = ignore.some(l => /^!\/?web\/src\b/.test(l))
+  return !dropped || restored
+}
+
+/** True when the image COPYs shared/ (or the whole context) and .dockerignore lets it through. */
+export function carriesShared(dockerfile, dockerignore) {
+  const copies = instructions(dockerfile).some(l => !/--from\b/.test(l) &&
+    /^COPY\b/i.test(l) && /\s(\.\/?|\/?shared\/?)\s/.test(l + ' '))
+  if (!copies) return false
+  const ignore = instructions(dockerignore)
+  const dropped = ignore.some(l => l === '*' || /^\/?shared(\/\*?)?$/.test(l))
+  const restored = ignore.some(l => /^!\/?shared\/?$/.test(l))
   return !dropped || restored
 }

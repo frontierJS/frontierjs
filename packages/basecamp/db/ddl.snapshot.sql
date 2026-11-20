@@ -252,10 +252,10 @@ CREATE TABLE IF NOT EXISTS "blueprint_param" (
   "generateLength" INTEGER,
   "validRegex" TEXT,
   "position" INTEGER NOT NULL DEFAULT 0,
-  CHECK ("generate" IN ('randomHex', 'randomAlphanumeric', 'randomBase64', 'uuid')),
+  CHECK ("generate" IN ('randomHex', 'randomAlphanumeric', 'randomBase64', 'uuid', 'ntfyToken')),
   UNIQUE ("blueprintId", "key"),
-  CHECK (generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL),
-  CHECK (generate IS NOT 'uuid' OR generateLength IS NULL),
+  CHECK (generate IS NULL OR generate IN ('uuid', 'ntfyToken') OR generateLength IS NOT NULL),
+  CHECK (generate IS NULL OR generate NOT IN ('uuid', 'ntfyToken') OR generateLength IS NULL),
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_param_blueprintId" ON "blueprint_param" ("blueprintId");
@@ -1038,6 +1038,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "workspaceId" TEXT NOT NULL,
   "environmentId" TEXT NOT NULL,
+  "projectId" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "slug" TEXT NOT NULL,
   "kind" TEXT NOT NULL DEFAULT 'container',
@@ -1075,6 +1076,7 @@ CREATE TABLE IF NOT EXISTS "app" (
   CHECK ("swap" IN ('startFirst', 'stopFirst')),
   UNIQUE ("environmentId", "slug"),
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("projectId") REFERENCES "project" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE SET NULL,
   FOREIGN KEY ("backupDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL,
   FOREIGN KEY ("replicaDestinationId") REFERENCES "backup_destination" ("id") ON DELETE SET NULL
@@ -1512,7 +1514,7 @@ CREATE TABLE IF NOT EXISTS "audit_trail" (
   "model" TEXT NOT NULL,
   "field" TEXT,
   "transition" TEXT,
-  "records" TEXT NOT NULL,
+  "recordId" TEXT,
   "before" TEXT,
   "after" TEXT,
   "actorId" TEXT,
@@ -1530,7 +1532,7 @@ CREATE TABLE IF NOT EXISTS "audit_trail" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_actorId" ON "audit_trail" ("actorId");
-CREATE INDEX IF NOT EXISTS "idx_audit_trail_model" ON "audit_trail" ("model");
+CREATE INDEX IF NOT EXISTS "idx_audit_trail_model_recordId" ON "audit_trail" ("model", "recordId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_correlationId" ON "audit_trail" ("correlationId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_episodeId" ON "audit_trail" ("episodeId");
 CREATE INDEX IF NOT EXISTS "idx_audit_trail_createdAt" ON "audit_trail" ("createdAt");

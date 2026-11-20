@@ -17,7 +17,7 @@ import { createCasts }             from './fishing.ts'
 import type { Casts }              from './fishing.ts'
 import { createInventories }       from '#shared/inventory.ts'
 import type { Inventories }        from '#shared/inventory.ts'
-import { loginRoute }              from './login.ts'
+import { loginRoute, parseAgents } from './login.ts'
 import { LOGIN_PATH }              from '#shared/login.ts'
 import { createRoomMemory }        from '#shared/memory.ts'
 import type { RoomMemory }         from '#shared/memory.ts'
@@ -42,6 +42,8 @@ export interface HavenAppOptions {
   mods?:       string[]
   /** The Frontier post's public key a chain login's row is signed under. Default `HAVEN_POST_KEY`. */
   postKey?:    string
+  /** The agents admitted with no chain, nick → public key. Default `HAVEN_AGENTS`, `ace:<key>,charles:<key>`. */
+  agents?:     Record<string, string>
   /** Sockets one IP may hold. Default `HAVEN_WS_PER_IP`, else 4. */
   wsPerIp?:    number
 }
@@ -87,7 +89,11 @@ export async function buildHavenApp (opts: HavenAppOptions = {}): Promise<App> {
   app.configure(channels(setup as never, options))
   // Inside configure() so it registers during start(), after the router is patched.
   const mods  = opts.mods ?? (process.env.HAVEN_MODS ?? '').split(',').map(n => n.trim()).filter(Boolean)
-  const login = loginRoute(db, auth, { now: opts.now, mods, welcome: crier.welcome, postKey: opts.postKey ?? process.env.HAVEN_POST_KEY })
+  const login = loginRoute(db, auth, {
+    now: opts.now, mods, welcome: crier.welcome,
+    postKey: opts.postKey ?? process.env.HAVEN_POST_KEY,
+    agents:  opts.agents ?? parseAgents(process.env.HAVEN_AGENTS),
+  })
   app.configure(a => {
     a.get(CLIENT_PATH, clientRoute())
     a.post(LOGIN_PATH, login)

@@ -7,8 +7,9 @@
 // answers reads exactly like a runner that never heard it, so every silence
 // sits beside a delivery: the line itself reaching another socket.
 //
-// The live halves are skipped: an agent signs in with a key in no chain, which
-// a Haven refuses (`FJS-D1477`), and how an agent walks in is unruled.
+// An agent's key is in no chain, so the Haven admits it only off its own list
+// (`HAVEN_AGENTS`, `FJS-D1651`): every agent's key is made before the Haven is
+// built and listed on it, where the runner then finds it.
 
 import { test, expect, describe, beforeAll, beforeEach, afterEach } from 'bun:test'
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -19,6 +20,7 @@ import { createTestEnv } from '@frontierjs/testing'
 
 import { buildHavenApp } from '../../api/src/app.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
+import { machineKeys } from '../../web/src/lib/session/sign-in.js'
 import { AGENTS, benchSpot, checkPlan, claudeArgv, idsIn, names, oneLine, parseMods, PLANNER, promptFor, responders, rollOf, startAgents, taskOf } from '../agents.js'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
@@ -28,8 +30,9 @@ let dir, stub, stubLog, tree, planFile, loopLog, fliLog
 let env, square, jo, sam, run
 const open = []
 const said = []
+const listed = {}
 
-beforeAll(() => {
+beforeAll(async () => {
   dir     = mkdtempSync(join(tmpdir(), 'haven-agents-'))
   stubLog = join(dir, 'claude.log')
   stub    = join(dir, 'claude')
@@ -82,6 +85,7 @@ const other = name === 'Ace' ? 'charles' : 'ace'
 console.log(name + ': "heard ' + line + ' -- over to ' + other + '"')
 `)
   chmodSync(stub, 0o755)
+  for (const a of AGENTS) listed[a.nick] = (await machineKeys(join(dir, 'keys', a.nick, 'key.json'))).keys.publicKey
 })
 
 const jsonl = (f) => existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : []
@@ -94,7 +98,7 @@ beforeEach(async () => {
   env = await createTestEnv({
     schema: SCHEMA,
     listen: true,
-    api:    ({ db }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, postKey: POST_KEY, mods: ['jo'], wsPerIp: 12 }),
+    api:    ({ db }) => buildHavenApp({ db, sessionKey: 'test-session-key', port: 0, postKey: POST_KEY, mods: ['jo'], agents: listed, wsPerIp: 12 }),
   })
   square = await env.system.room.create({ data: { slug: 'square', name: 'The square' } })
   jo     = await signIn(env.port, 'jo')
@@ -213,7 +217,7 @@ describe('who answers', () => {
   })
 })
 
-describe.skip('in the tavern', () => {
+describe('in the tavern', () => {
   test('the regulars each stand in the tavern, not the square', async () => {
     const tavern = await env.system.room.create({ data: { slug: 'tavern', name: 'The tavern' } })
     const a = await agents('jo', {}, AGENTS.filter(x => x.room === 'tavern'))
@@ -242,7 +246,7 @@ describe.skip('in the tavern', () => {
   })
 })
 
-describe.skip('in the square', () => {
+describe('in the square', () => {
   test('both stand where they were put, on keys of their own', async () => {
     const a = await agents()
     const s = await enter(sam, 30, 21)
@@ -332,7 +336,7 @@ describe.skip('in the square', () => {
   })
 })
 
-describe.skip('at work', () => {
+describe('at work', () => {
   beforeEach(async () => {
     await env.system.room.create({ data: { slug: 'workshop', name: 'The workshop' } })
   })

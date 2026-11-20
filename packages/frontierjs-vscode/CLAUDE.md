@@ -90,10 +90,12 @@ The corpus row is the half the hand-written cases cannot make: every
 since most files carry a module block AND a plain one and a per-file check is
 answered by whichever one still works.
 
-`source.js` and `source.css` are empty stubs — VS Code supplies them. They
+`source.js` and `source.css` are stubs — VS Code supplies them. They
 cannot be left unresolved: a block whose `patterns` is nothing BUT an
 unresolvable include is dropped whole, so `<style>` reported as broken for a
-reason that existed only in the harness.
+reason that existed only in the harness. Each stub's one rule opens on
+`/*TRAP*/` and never closes, because VS Code's real JS grammar does that on
+`a ? b?.() : c`; a block body is a `while` rule so its close tag still ends it.
 
 Mutation-checked: reverting `script-block`'s begin to `(<)(script)(>)` reds 6.
 

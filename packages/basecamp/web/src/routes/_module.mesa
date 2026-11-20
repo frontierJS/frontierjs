@@ -384,7 +384,7 @@ siteName: Basecamp
            width between 'live' and 'offline' shifted every control after it.
            It opens only once a token is stored, so offline before sign-in is
            correct. -->
-      <Dot class="spare" tone={status.connected ? 'success' : 'muted'}
+      <Dot class={status.connected ? 'spare live-dot' : 'spare'} tone={status.connected ? 'success' : 'muted'}
            role="status"
            title={status.connected ? 'Live' : 'Offline'}
            label={status.connected ? 'Live' : 'Offline'} />
@@ -526,6 +526,19 @@ siteName: Basecamp
     :global(.shell:has(.signin) :is(.sidebar, .topbar .sidebar-toggle, .topbar :is(.spare, .topbar-nav), .topbar > .cluster:last-child > *)) {
       opacity: 0;
     }
+  }
+
+  /* The live dot breathes on its inner dot: the wrapper's opacity belongs to
+     the sign-in transition above, and a keyframe there would override it. */
+  :global(.live-dot .feed-dot) {
+    animation: live-beat 3.2s ease-in-out infinite;
+  }
+  @keyframes live-beat {
+    0%, 100% { opacity: 0.65; transform: scale(0.92); }
+    50%      { opacity: 1;    transform: scale(1.12); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.live-dot .feed-dot) { animation: none; }
   }
 
   /* The tone only sets --bg-mix; a navlink reads it just when current. */

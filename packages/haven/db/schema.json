@@ -1,5 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema",
+  "x-opaque": [],
   "$defs": {
     "AuditTrail": {
       "type": "object",
@@ -25,9 +26,12 @@
           ],
           "description": "WHICH named move an update was, where it was one. Two moves between the same states write identical images; only this separates them."
         },
-        "records": {
-          "x-aggregatable": "json",
-          "x-sortable": "json"
+        "recordId": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The one row this entry is about, as text: a read of a page or a bulk write files an entry per row, so *who looked at this record* is one indexed column a policy or a service filter can name (`FJS-D1744`)."
         },
         "before": {
           "anyOf": [
@@ -126,8 +130,7 @@
       "additionalProperties": false,
       "required": [
         "operation",
-        "model",
-        "records"
+        "model"
       ],
       "x-gate": {
         "read": 8,

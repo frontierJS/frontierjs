@@ -31,22 +31,50 @@
     },
 
     "script-block": {
-      "comment": "The open tag takes attributes: <script module>, <script lang=\"js\">. A grammar matching only <script> leaves every resource file in a Sierra app unhighlighted, since the data half of one is <script module>.",
-      "name": "meta.script.mesa",
-      "begin": "(<)(script)((?:\\s[^>]*)?)(>)",
-      "end": "(</)(script)(>)",
-      "beginCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.html" },
-        "2": { "name": "entity.name.tag.html" },
-        "3": { "patterns": [{ "include": "#script-tag-attributes" }] },
-        "4": { "name": "punctuation.definition.tag.end.html" }
-      },
-      "endCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.html" },
-        "2": { "name": "entity.name.tag.html" },
-        "3": { "name": "punctuation.definition.tag.end.html" }
-      },
-      "contentName": "source.js.embedded.mesa",
+      "comment": "The open tag takes attributes: <script module>, <script lang=\"js\">. A grammar matching only <script> leaves every resource file in a Sierra app unhighlighted, since the data half of one is <script module>. The body is a `while` rule because an `end` is only seen when the embedded grammar is back at its top level: VS Code's JS grammar reads `a ? b?.() : c` as an arrow with a return type and never closes it, so `</script>` was taken for JSX and the style block below rendered as plain text. A `while` is checked at every line start whatever is open inside it, so a multi-line block closes at a line that starts with `</script>`; a one-line block is matched whole.",
+      "patterns": [
+        {
+          "name": "meta.script.mesa",
+          "match": "(<)(script)((?:\\s[^>]*)?)(>)(.*?)(</)(script)(>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "patterns": [{ "include": "#script-tag-attributes" }] },
+            "4": { "name": "punctuation.definition.tag.end.html" },
+            "5": { "name": "source.js.embedded.mesa", "patterns": [{ "include": "#script-body" }] },
+            "6": { "name": "punctuation.definition.tag.begin.html" },
+            "7": { "name": "entity.name.tag.html" },
+            "8": { "name": "punctuation.definition.tag.end.html" }
+          }
+        },
+        {
+          "name": "meta.script.mesa",
+          "begin": "(<)(script)((?:\\s[^>]*)?)(>)",
+          "end": "(</)(script)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "patterns": [{ "include": "#script-tag-attributes" }] },
+            "4": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "patterns": [
+            {
+              "begin": "\\G",
+              "while": "^(?!\\s*</script>)",
+              "contentName": "source.js.embedded.mesa",
+              "patterns": [{ "include": "#script-body" }]
+            }
+          ]
+        }
+      ]
+    },
+
+    "script-body": {
       "patterns": [
         { "include": "#mesa-script-annotations" },
         { "include": "source.js" }
@@ -54,22 +82,47 @@
     },
 
     "style-block": {
-      "name": "meta.style.mesa",
-      "begin": "(<)(style)((?:\\s[^>]*)?)(>)",
-      "end": "(</)(style)(>)",
-      "beginCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.html" },
-        "2": { "name": "entity.name.tag.html" },
-        "3": { "patterns": [{ "include": "#html-attribute" }] },
-        "4": { "name": "punctuation.definition.tag.end.html" }
-      },
-      "endCaptures": {
-        "1": { "name": "punctuation.definition.tag.begin.html" },
-        "2": { "name": "entity.name.tag.html" },
-        "3": { "name": "punctuation.definition.tag.end.html" }
-      },
-      "contentName": "source.css.embedded.mesa",
-      "patterns": [{ "include": "source.css" }]
+      "comment": "Shaped like #script-block, for the same reason: a CSS rule left open must not carry past `</style>`.",
+      "patterns": [
+        {
+          "name": "meta.style.mesa",
+          "match": "(<)(style)((?:\\s[^>]*)?)(>)(.*?)(</)(style)(>)",
+          "captures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "patterns": [{ "include": "#html-attribute" }] },
+            "4": { "name": "punctuation.definition.tag.end.html" },
+            "5": { "name": "source.css.embedded.mesa", "patterns": [{ "include": "source.css" }] },
+            "6": { "name": "punctuation.definition.tag.begin.html" },
+            "7": { "name": "entity.name.tag.html" },
+            "8": { "name": "punctuation.definition.tag.end.html" }
+          }
+        },
+        {
+          "name": "meta.style.mesa",
+          "begin": "(<)(style)((?:\\s[^>]*)?)(>)",
+          "end": "(</)(style)(>)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "patterns": [{ "include": "#html-attribute" }] },
+            "4": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "endCaptures": {
+            "1": { "name": "punctuation.definition.tag.begin.html" },
+            "2": { "name": "entity.name.tag.html" },
+            "3": { "name": "punctuation.definition.tag.end.html" }
+          },
+          "patterns": [
+            {
+              "begin": "\\G",
+              "while": "^(?!\\s*</style>)",
+              "contentName": "source.css.embedded.mesa",
+              "patterns": [{ "include": "source.css" }]
+            }
+          ]
+        }
+      ]
     },
 
     "script-tag-attributes": {

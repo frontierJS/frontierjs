@@ -26,7 +26,7 @@ const TRAIL = `
   operation     String
   model         String
   field         String?
-  records       Json
+  recordId      String?
   before        Json?
   after         Json?
   actorId       String?
@@ -50,7 +50,7 @@ async function client(schema: string) {
 describe('a trail in SQLite', () => {
 
   test('writes a real row, and the JSON columns come back parsed', async () => {
-    // The jsonl trail answers `records` and `before`/`after` as STRINGS, so
+    // The jsonl trail answers `before`/`after` as STRINGS, so
     // nothing in it joins to anything — a record rather than a dimension. A
     // column typed `Json` round-trips as the value.
     const db = await client(`
@@ -64,7 +64,7 @@ describe('a trail in SQLite', () => {
     const rows = await db.asSystem().auditRow.findMany({})
     expect(rows).toHaveLength(1)
     expect(rows[0].operation).toBe('create')
-    expect(rows[0].records).toEqual([1])
+    expect(rows[0].recordId).toBe('1')
     expect(rows[0].after).toEqual({ id: 1, name: 'one' })
     db.$close()
   })
@@ -132,7 +132,7 @@ describe('a trail in SQLite', () => {
     await tick()
     const rows = await db.asSystem().auditTrail.findMany({})
     expect(rows).toHaveLength(1)
-    expect(rows[0].records).toEqual([1])
+    expect(rows[0].recordId).toBe('1')
     db.$close()
   })
 })
@@ -257,7 +257,7 @@ describe('every write path files an entry (FJS-1042)', () => {
     await tick()
     const rows = await db.asSystem().auditRow.findMany({ orderBy: { id: 'asc' } })
     return rows.filter((r: any) => r.field === null)
-      .map((r: any) => ({ op: r.operation, records: r.records, before: r.before, after: r.after }))
+      .map((r: any) => ({ op: r.operation, recordId: r.recordId, before: r.before, after: r.after }))
   }
 
   async function fresh() {
@@ -268,17 +268,16 @@ describe('every write path files an entry (FJS-1042)', () => {
   test('create · createMany', async () => {
     const db = await fresh()
     await db.asSystem().thing.create({ data: { id: 1, name: 'one' } })
-    expect(await trail(db)).toEqual([{ op: 'create', records: [1], before: null, after: { id: 1, name: 'one', state: 'draft', deletedAt: null } }])
+    expect(await trail(db)).toEqual([{ op: 'create', recordId: '1', before: null, after: { id: 1, name: 'one', state: 'draft', deletedAt: null } }])
 
     const db2 = await fresh()
     await db2.asSystem().thing.createMany({ data: [{ id: 1, name: 'one' }, { id: 2, name: 'two' }] })
     const t2 = await trail(db2)
-    expect(t2).toHaveLength(1)
-    expect(t2[0].op).toBe('create')
-    expect(t2[0].records).toEqual([1, 2])
+    expect(t2).toHaveLength(2)
+    expect(t2.map((e: any) => e.op)).toEqual(['create', 'create'])
+    expect(t2.map((e: any) => e.recordId)).toEqual(['1', '2'])
     // Documented: a bulk write names its rows and never their contents.
-    expect(t2[0].before).toBeNull()
-    expect(t2[0].after).toBeNull()
+    for (const e of t2) { expect(e.before).toBeNull(); expect(e.after).toBeNull() }
     db.$close(); db2.$close()
   })
 
@@ -288,7 +287,7 @@ describe('every write path files an entry (FJS-1042)', () => {
     await db.asSystem().thing.update({ where: { id: 1 }, data: { state: 'live' } })
     const one = (await trail(db)).at(-1)
     expect(one.op).toBe('update')
-    expect(one.records).toEqual([1])
+    expect(one.recordId).toBe('1')
     // The single-row half is the one that carries snapshots, and the pair with
     // the bulk row above is what makes the asymmetry an assertion rather than
     // an accident.
@@ -296,10 +295,10 @@ describe('every write path files an entry (FJS-1042)', () => {
     expect(one.after.state).toBe('live')
 
     await db.asSystem().thing.updateMany({ where: {}, data: { state: 'archived' } })
-    const many = (await trail(db)).at(-1)
-    expect(many.op).toBe('update')
-    expect(many.records).toEqual([1, 2])
-    expect(many.before).toBeNull()
+    const many = (await trail(db)).slice(-2)
+    expect(many.map((e: any) => e.op)).toEqual(['update', 'update'])
+    expect(many.map((e: any) => e.recordId)).toEqual(['1', '2'])
+    expect(many.every((e: any) => e.before === null)).toBe(true)
     db.$close()
   })
 
@@ -336,7 +335,7 @@ describe('every write path files an entry (FJS-1042)', () => {
     await db.asSystem().thing.remove({ where: { id: 1 } })
     const rm = (await trail(db)).at(-1)
     expect(rm.op).toBe('delete')
-    expect(rm.records).toEqual([1])
+    expect(rm.recordId).toBe('1')
 
     // Documented: a restored row CHANGED STATE, it was not created. Filing it
     // as `create` would make the trail claim the row did not exist before.
@@ -344,9 +343,9 @@ describe('every write path files an entry (FJS-1042)', () => {
     expect((await trail(db)).at(-1).op).toBe('update')
 
     await db.asSystem().thing.removeMany({ where: {} })
-    const rmm = (await trail(db)).at(-1)
-    expect(rmm.op).toBe('delete')
-    expect(rmm.records).toEqual([1, 2])
+    const rmm = (await trail(db)).slice(-2)
+    expect(rmm.map((e: any) => e.op)).toEqual(['delete', 'delete'])
+    expect(rmm.map((e: any) => e.recordId)).toEqual(['1', '2'])
     db.$close()
   })
 
@@ -383,13 +382,13 @@ describe('every write path files an entry (FJS-1042)', () => {
     await db.asSystem().thing.delete({ where: { id: 1 } })
     const d = (await trail(db)).at(-1)
     expect(d.op).toBe('delete')
-    expect(d.records).toEqual([1])
+    expect(d.recordId).toBe('1')
     expect(d.before.name).toBe('one')
 
     await db.asSystem().thing.deleteMany({ where: {} })
     const dm = (await trail(db)).at(-1)
     expect(dm.op).toBe('delete')
-    expect(dm.records).toEqual([2])
+    expect(dm.recordId).toBe('2')
     db.$close()
   })
 
@@ -416,6 +415,8 @@ describe('a logged read names its rows whatever it selects (FJS-1422)', () => {
     for (const id of [1, 2, 3]) await db.asSystem().rule.create({ data: { id, domain: `d${id}.com` } })
     await tick()
   }
+  const lastReads = async (db: any, n: number) =>
+    (await db.asSystem().auditRow.findMany({ where: { operation: 'read' }, orderBy: { id: 'desc' }, limit: n })).reverse()
   const lastRead = async (db: any) =>
     (await db.asSystem().auditRow.findMany({ where: { operation: 'read' }, orderBy: { id: 'desc' }, limit: 1 }))[0]
 
@@ -426,20 +427,20 @@ describe('a logged read names its rows whatever it selects (FJS-1422)', () => {
     const rows = await db.asSystem().rule.findMany({ select: { domain: true }, orderBy: { id: 'asc' } })
     expect(rows).toEqual([{ domain: 'd1.com' }, { domain: 'd2.com' }, { domain: 'd3.com' }])
     await tick()
-    expect((await lastRead(db)).records).toEqual([1, 2, 3])
+    expect((await lastReads(db, 3)).map((r: any) => r.recordId)).toEqual(['1', '2', '3'])
 
     const page = await db.asSystem().rule.findManyAndCount({ select: { domain: true }, where: { id: { gt: 1 } }, orderBy: { id: 'asc' } })
     expect(page.rows).toEqual([{ domain: 'd2.com' }, { domain: 'd3.com' }])
     await tick()
-    expect((await lastRead(db)).records).toEqual([2, 3])
+    expect((await lastReads(db, 2)).map((r: any) => r.recordId)).toEqual(['2', '3'])
 
     expect(await db.asSystem().rule.findFirst({ select: { domain: true }, where: { id: 2 } })).toEqual({ domain: 'd2.com' })
     await tick()
-    expect((await lastRead(db)).records).toEqual([2])
+    expect((await lastRead(db)).recordId).toBe('2')
 
     expect(await db.asSystem().rule.findUnique({ select: { domain: true }, where: { id: 3 } })).toEqual({ domain: 'd3.com' })
     await tick()
-    expect((await lastRead(db)).records).toEqual([3])
+    expect((await lastRead(db)).recordId).toBe('3')
     db.$close()
   })
 })
@@ -565,7 +566,7 @@ describe('a read through a relation files the related model\'s read entry (FJS-3
   `
   const reads = async (sys: any) =>
     (await sys.auditRow.findMany({ where: { operation: 'read' }, orderBy: { id: 'asc' } }))
-      .map((r: any) => `${r.model} ${r.records}`).sort()
+      .map((r: any) => `${r.model} ${r.recordId}`).sort()
 
   test('include and a nested select each file the note, by id', async () => {
     const db = await client(lite)
@@ -580,13 +581,13 @@ describe('a read through a relation files the related model\'s read entry (FJS-3
     const p = await who.patient.findFirst({ where: { id: 1 }, include: { notes: true } })
     expect(p.notes.length).toBe(2)
     await tick()
-    expect(await reads(sys)).toEqual(['Note 10,11', 'Patient 1'])
+    expect(await reads(sys)).toEqual(['Note 10', 'Note 11', 'Patient 1'])
 
     await sys.auditRow.deleteMany({})
     const q = await who.patient.findFirst({ where: { id: 1 }, include: { notes: { select: { body: true } } } })
     expect(q.notes).toEqual([{ body: 'x' }, { body: 'y' }])
     await tick()
-    expect(await reads(sys)).toEqual(['Note 10,11', 'Patient 1'])
+    expect(await reads(sys)).toEqual(['Note 10', 'Note 11', 'Patient 1'])
 
     // The other direction: a belongsTo include reads the patient.
     await sys.auditRow.deleteMany({})
@@ -620,7 +621,7 @@ describe('a refused access files a denied entry (FJS-3708)', () => {
   `
   const denied = async (sys: any) =>
     (await sys.auditRow.findMany({ where: { operation: 'denied' }, orderBy: { id: 'asc' } }))
-      .map((r: any) => `${r.meta?.attempted} ${r.model} ${JSON.stringify(r.records)} ${r.actorId}`)
+      .map((r: any) => `${r.meta?.attempted} ${r.model} ${r.recordId} ${r.actorId}`)
 
   async function seeded() {
     const db = await client(lite)
@@ -639,7 +640,7 @@ describe('a refused access files a denied entry (FJS-3708)', () => {
     expect(await out.patient.findFirst({ where: { id: 1 } })).toBeNull()
     expect(await out.patient.findMany({ where: { name: 'Kestrel' } })).toEqual([])
     await tick()
-    expect(await denied(sys)).toEqual(['read Patient [1] 9', 'read Patient [1] 9', 'read Patient [] 9'])
+    expect(await denied(sys)).toEqual(['read Patient 1 9', 'read Patient 1 9', 'read Patient null 9'])
   })
 
   test('a miss is not a refusal, the caller allowed files a read, and the system files nothing', async () => {
@@ -662,7 +663,7 @@ describe('a refused access files a denied entry (FJS-3708)', () => {
     expect(await out.memo.findUnique({ where: { id: 'm1' } })).toBeNull()
     await expect(out.memo.create({ data: { id: 'm2', careId: 5 } })).rejects.toThrow()
     await tick()
-    expect(await denied(sys)).toEqual(['update Patient [1] 9', 'delete Patient [1] 9', 'update Memo [] 9', 'create Memo [] 9'])
+    expect(await denied(sys)).toEqual(['update Patient 1 9', 'delete Patient 1 9', 'update Memo null 9', 'create Memo null 9'])
     expect((await sys.patient.findUnique({ where: { id: 1 } })).name).toBe('Kestrel')
   })
 
@@ -677,7 +678,7 @@ describe('a refused access files a denied entry (FJS-3708)', () => {
       throw new Error('roll back')
     })).rejects.toThrow('roll back')
     await tick()
-    expect(await denied(sys)).toEqual(['update Memo [] 9', 'update Patient [1] 9'])
+    expect(await denied(sys)).toEqual(['update Memo null 9', 'update Patient 1 9'])
   })
 })
 
@@ -710,7 +711,7 @@ describe('an entry with no tenant on the call takes the described row\'s tenant 
     expect(await tenants(sys)).toEqual(['create Chart 7', 'update Chart 7', 'read Chart 7', 'create Visit 3', 'delete Chart 7'])
   })
 
-  test('the caller\'s tenant wins, and rows in two tenants name none', async () => {
+  test('the caller\'s tenant wins, and each row of two tenants names its own', async () => {
     const db = await client(lite)
     const sys = db.asSystem()
     await sys.chart.create({ data: { id: 1, clinicId: 7, name: 'A' } })
@@ -722,7 +723,7 @@ describe('an entry with no tenant on the call takes the described row\'s tenant 
     db.$logContext(() => ({ tenant: '9' }))
     await sys.chart.update({ where: { id: 1 }, data: { name: 'C' } })
     await tick()
-    expect(await tenants(sys)).toEqual(['read Chart null', 'update Chart 9'])
+    expect(await tenants(sys)).toEqual(['read Chart 7', 'read Chart 8', 'update Chart 9'])
   })
 
   test('a model with @@tenant(none) and a protected tenant column file no tenant', async () => {
@@ -748,7 +749,7 @@ describe('a system write @@require refuses throws and files a denied entry (FJS-
   `
   const denied = async (sys: any) =>
     (await sys.auditRow.findMany({ where: { operation: 'denied' }, orderBy: { id: 'asc' } }))
-      .map((r: any) => `${r.meta?.attempted} ${r.model} ${JSON.stringify(r.records)} ${r.actorId}`)
+      .map((r: any) => `${r.meta?.attempted} ${r.model} ${r.recordId} ${r.actorId}`)
 
   async function seeded() {
     const db = await client(lite)
@@ -765,7 +766,7 @@ describe('a system write @@require refuses throws and files a denied entry (FJS-
     await expect(sys.note.update({ where: { id: 1 }, data: { body: 'x' } })).rejects.toThrow('A signed note is frozen.')
     await expect(sys.note.delete({ where: { id: 1 } })).rejects.toThrow(/refused by @@require/)
     await tick()
-    expect(await denied(sys)).toEqual(['update Note [1] null', 'delete Note [1] null'])
+    expect(await denied(sys)).toEqual(['update Note 1 null', 'delete Note 1 null'])
     expect((await sys.note.findUnique({ where: { id: 1 } })).body).toBe('signed')
   })
 
@@ -776,7 +777,45 @@ describe('a system write @@require refuses throws and files a denied entry (FJS-
     expect(await sys.note.updateMany({ where: {}, data: { body: 'y' } })).toEqual({ count: 1 })
     expect(await sys.note.delete({ where: { id: 9 } })).toBeNull()
     await tick()
-    expect(await denied(sys)).toEqual(['delete Note [1] null', 'update Note [1] null'])
+    expect(await denied(sys)).toEqual(['delete Note 1 null', 'update Note 1 null'])
     expect(await sys.note.count()).toBe(2)
+  })
+})
+
+describe('an entry names one row, so a reader filters by one indexed column (FJS-D1744)', () => {
+  // A privacy officer's question is per chart: *who looked at this one*. An
+  // entry naming a page of ids in a Json array answers it to no policy and no
+  // index, so a list read that included the chart was invisible (FJS-3784).
+  test('a bulk write and a read of three rows each file one entry per row', async () => {
+    const db = await client(`
+      database main { path ":memory:" model AuditRow }
+      model AuditRow { ${TRAIL} @@index([model, recordId]) }
+      model Chart { id Int @id  name String  @@trail(main, reads: true) }
+    `)
+    await db.asSystem().chart.createMany({ data: [1, 2, 3].map((id) => ({ id, name: `c${id}` })) })
+    await db.asSystem().chart.findMany({ orderBy: { id: 'asc' } })
+    await tick()
+    const of = async (operation: string) =>
+      (await db.asSystem().auditRow.findMany({ where: { operation }, orderBy: { id: 'asc' } })).map((r: any) => r.recordId)
+    expect(await of('create')).toEqual(['1', '2', '3'])
+    expect(await of('read')).toEqual(['1', '2', '3'])
+
+    const chart2 = await db.asSystem().auditRow.findMany({ where: { model: 'Chart', recordId: '2' }, orderBy: { id: 'asc' } })
+    expect(chart2.map((r: any) => r.operation)).toEqual(['create', 'read'])
+    // Documented: a bulk write names its rows and never their contents.
+    expect(chart2[0].after).toBeNull()
+    db.$close()
+  })
+
+  test('a call that names no row still files one entry, with no recordId', async () => {
+    const db = await client(`
+      database main { path ":memory:" model AuditRow }
+      model AuditRow { ${TRAIL} }
+      model Chart { id Int @id  name String  @@trail(main) }
+    `)
+    await db.$audit({ operation: 'login.failed', model: 'User' })
+    const rows = await db.asSystem().auditRow.findMany({})
+    expect(rows.map((r: any) => [r.operation, r.recordId])).toEqual([['login.failed', null]])
+    db.$close()
   })
 })

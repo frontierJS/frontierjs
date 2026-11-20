@@ -687,7 +687,7 @@ db.$inTransaction         // is one open on this connection right now? Same answ
 db.$attach('./other.db', 'other')
 db.$detach('other')
 db.$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; returns per-model stats
-await db.$audit({ operation: 'login.failed', model: 'User', records: [id],
+await db.$audit({ operation: 'login.failed', model: 'User', recordId: String(id),
                  actorId: id, meta: { reason: 'bad-password' } })
                            // the ONE owner of putting a row in the audit trail.
                            // For what @@trail(audit) cannot see: an event that

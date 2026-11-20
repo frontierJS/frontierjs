@@ -140,16 +140,26 @@ const ROWS = [
     command: ['serve', '--listen-http', ':2586', '--cache-file', '/var/lib/ntfy/cache.db', '--auth-file', '/var/lib/ntfy/user.db', '--behind-proxy'],
     volumePath: '/var/lib/ntfy', healthCheck: '/v1/health',
     cpuLimit: 0.25, memLimitMb: 128,
-    notes: 'Install the ntfy app on your phone and subscribe it to your server. A password hash comes from `docker run --rm -i binwiederhier/ntfy user hash`. A token whose name is not a user above, or whose tk_ part is not exactly 29 characters, restart-loops the container (\'user … is not provisioned\', \'token invalid\'); the reason shows only in `docker logs`. `ntfy token generate` makes a valid one. iOS delivers through Apple, so a self-hosted server forwards a content-free poll request to the upstream URL and the phone fetches the message from you; leave it blank and iOS hears nothing in the background.',
+    notes: 'Install the ntfy app on your phone and subscribe it to your server. A password hash comes from `docker run --rm -i binwiederhier/ntfy user hash`. The sender token is minted for you; its sender user must also be a user above, or the install is refused. iOS delivers through Apple, so a self-hosted server forwards a content-free poll request to the upstream URL and the phone fetches the message from you; leave it blank and iOS hears nothing in the background.',
     links: [{ label: 'Docs', url: 'https://docs.ntfy.sh/config/' },
             { label: 'Docker Hub', url: 'https://hub.docker.com/r/binwiederhier/ntfy' }],
     params: [
       { key: 'NTFY_BASE_URL',            label: 'Public URL', isRequired: true, hint: 'https://ntfy.acme.com — the address phones subscribe to' },
       { key: 'NTFY_AUTH_USERS',          label: 'Users', isRequired: true, isSecret: true, hint: 'name:hash:role (admin or user), comma-separated; hash from `ntfy user hash`' },
-      { key: 'NTFY_AUTH_TOKENS',         label: 'Access tokens', isSecret: true, hint: 'name:tk_<exactly 29 letters or digits>:label — what a sender such as the Frontier post publishes with; name must also be a user above, role `user`' },
+      { key: 'NTFY_SENDER',              label: 'Sender user', isRequired: true, defaultValue: 'frontier', validRegex: '^[^:,\\s]+$', hint: 'The user the Frontier post publishes as; must also be a user above, role `user`' },
+      { key: 'NTFY_SENDER_TOKEN',        label: 'Sender token', isRequired: true, isSecret: true, generate: 'ntfyToken', validRegex: '^tk_[A-Za-z0-9]{29}$', hint: 'Left blank, one is minted' },
       { key: 'NTFY_AUTH_DEFAULT_ACCESS', label: 'Access without a login', defaultValue: 'deny-all', hint: 'deny-all, read-only, write-only or read-write' },
       { key: 'NTFY_UPSTREAM_BASE_URL',   label: 'iOS relay', defaultValue: 'https://ntfy.sh', hint: 'Where iOS poll requests go; blank keeps everything on this box' },
     ],
+    // ntfy reads a token only as name:token:label, so the sender's two params
+    // are composed into it rather than passed through as env of their own.
+    environment: {
+      NTFY_BASE_URL:            '${NTFY_BASE_URL}',
+      NTFY_AUTH_USERS:          '${NTFY_AUTH_USERS}',
+      NTFY_AUTH_TOKENS:         '${NTFY_SENDER}:${NTFY_SENDER_TOKEN}:frontier-post',
+      NTFY_AUTH_DEFAULT_ACCESS: '${NTFY_AUTH_DEFAULT_ACCESS}',
+      NTFY_UPSTREAM_BASE_URL:   '${NTFY_UPSTREAM_BASE_URL}',
+    },
   },
   {
     slug: 'ghost', name: 'Ghost', category: 'CMS', icon: '👻', brandColor: null,
@@ -173,10 +183,10 @@ const ROWS = [
   },
 ]
 
-// Each param reaches the container under its own name, which compose would
-// write as `KEY: ${KEY}`. Only `environment` keys become Variables
-// (`FJS-D2157`), so a row with no map here deploys with no env at all.
+// A row without its own `environment` passes each param to the container under
+// its own name, which compose would write as `KEY: ${KEY}`. Only `environment`
+// keys become Variables (`FJS-D2157`), so a row's own map names every key.
 export const BLUEPRINTS = ROWS.map(bp => ({
   ...bp,
-  environment: Object.fromEntries(bp.params.map(p => [p.key, `\${${p.key}}`])),
+  environment: bp.environment ?? Object.fromEntries(bp.params.map(p => [p.key, `\${${p.key}}`])),
 }))

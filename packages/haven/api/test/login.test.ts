@@ -64,7 +64,7 @@ describe('a member walks in', () => {
     const first = await signIn(env.port, 'sam')
     const { status, json } = await postLogin(env.port, await signedLogin(first.member.keys, chainOf(first.member)))
     expect(status).toBe(200)
-    expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null })
+    expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null, agent: false })
     expect(json.token).not.toBe(first.token)
     expect(await sessions()).toBe(2)
   })
@@ -107,6 +107,76 @@ describe('a member walks in', () => {
     expect(status).toBe(401)
     expect(json.message).toContain('no Frontier chain')
     expect(await members()).toEqual([])
+  })
+})
+
+describe('an agent', () => {
+  // The list is the Haven's (`HAVEN_AGENTS`, `FJS-D1651`), read at build as
+  // the mods are: a key it names walks in with no chain, as the nick it names.
+  let ace: { publicKey: string, privateKey: string }
+  let agents: Record<string, string> = {}
+  async function startListing () {
+    await env?.close?.()
+    env = await createTestEnv({
+      schema: SCHEMA,
+      listen: true,
+      api:    ({ db }: { db: any }) => buildHavenApp({ db, sessionKey: KEY, port: 0, postKey: POST_KEY, agents }),
+    })
+    sys = env.system
+  }
+  beforeEach(async () => {
+    ace = await generateSigningKeys()
+    agents = { ace: ace.publicKey }
+    await startListing()
+  })
+
+  test('a listed key walks in with no chain as the listed nick, flagged an agent, and is that member every time', async () => {
+    const first = await postLogin(env.port, await signedLogin(ace, { nick: 'somebody' }))
+    expect(first.status).toBe(200)
+    expect(first.json.member).toMatchObject({ nick: 'ace', agent: true })
+    const again = await postLogin(env.port, await signedLogin(ace, {}))
+    expect(again.json.member.id).toBe(first.json.member.id)
+    expect(await members()).toEqual(['ace'])
+
+    const sam = await signIn(env.port, 'sam')
+    expect(sam.member).toBeTruthy()
+    const seen = await whoami(sam.token)
+    const rows = (seen.rows?.data ?? seen.rows) as any[]
+    expect(rows.find(r => r.nick === 'ace')?.agent).toBe(true)
+    expect(rows.find(r => r.nick === 'sam')?.agent).toBe(false)
+  })
+
+  test('a key the list does not name is refused as before, and a chain member is no agent', async () => {
+    const stranger = await generateSigningKeys()
+    expect((await postLogin(env.port, await signedLogin(stranger, { nick: 'ace' }))).status).toBe(401)
+    const sam = await postLogin(env.port, await signedLogin((await member('sam')).keys, {}))
+    expect(sam.status).toBe(401)
+    expect(await members()).toEqual([])
+  })
+
+  test("an agent's nick is held against a chain, and a chain's against the agent", async () => {
+    await postLogin(env.port, await signedLogin(ace, {}))
+    const other = await member('ace')
+    const taken = await postLogin(env.port, await signedLogin(other.keys, chainOf(other)))
+    expect(taken.status).toBe(409)
+
+    const charles = await generateSigningKeys()
+    agents = { ace: ace.publicKey, charles: charles.publicKey }
+    await startListing()
+    await signIn(env.port, 'charles')
+    const held = await postLogin(env.port, await signedLogin(charles, {}))
+    expect(held.status).toBe(409)
+    expect(held.json.message).toContain('held')
+  })
+
+  test('a member cannot flag themselves an agent', async () => {
+    const sam = await signIn(env.port, 'sam')
+    await fetch(`http://localhost:${env.port}/members/${sam.id}`, {
+      method: 'PATCH', body: JSON.stringify({ agent: true }),
+      headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
+    })
+    const row = await sys.member.findFirst({ where: { id: sam.id }, select: { agent: true } })
+    expect(row.agent).toBe(false)
   })
 })
 

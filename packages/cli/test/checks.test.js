@@ -152,7 +152,7 @@ const CLEAN = {
   // same for `test-not-hermetic`: a stub upstream on port 0. The `test`
   // script's `--timeout` is the package timeout `test-timeout-inline` grades
   // against, and that test sets none of its own.
-  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*' },
+  'package.json': JSON.stringify({ name: 'app', dependencies: { '@acme/kit': '*', '@acme/skin': '*', 'happy-dom': '*' },
                                    scripts: { test: 'bun test --timeout 20000',
                                               'verify:leads': 'bun web/test/verify-leads.mjs' } }),
   // A dependency that ships CSS, so `css-token-undefined` RUNS on the clean tree
@@ -251,7 +251,10 @@ const CLEAN = {
   // image copies it, so `deploy-image-needs` RUNS here too and finds nothing.
   'deploy/Dockerfile':                  'FROM oven/bun\nCOPY web/src ./web/src\n' +
                                         'CMD ["sh","-c","bun run db:migrate && bun run start"]\n',
+  // Renders through mesa's server half with happy-dom declared, so
+  // `mesa-peer-declared` runs and is answered.
   'api/src/report.ts':                  "import { resolve } from 'path'\n" +
+                                        "import { renderFile } from '@frontierjs/mesa/render-component'\n" +
                                         "export const template = resolve('web/src/components/lead.mesa')\n",
   'db/migrations/20260101000000_init.sql': 'CREATE TABLE "lead" ("id" INTEGER);\n',
   // And the service, for the same reason: `service-model` skips an app with no
@@ -489,6 +492,8 @@ describe('the clean app', () => {
     symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
     // And litestone, which `schema-runs` asks whether the schema opens.
     symlinkSync(join(import.meta.dir, '..', '..', 'litestone'), join(root, 'node_modules', '@frontierjs', 'litestone'))
+    // And mesa, whose source `mesa-peer-declared` reads for the peers a subpath loads.
+    symlinkSync(join(import.meta.dir, '..', '..', 'mesa'), join(root, 'node_modules', '@frontierjs', 'mesa'))
     // And the migration litestone writes for it: `migration-history` replays the
     // files and diffs them against the schema, which a placeholder .sql does not build.
     rmSync(join(root, 'db', 'migrations'), { recursive: true, force: true })
@@ -887,6 +892,79 @@ describe('a @frontierjs import names a subpath its package exports', () => {
     const root = tree('ise-none', { 'package.json': '{}',
       'web/src/routes/a.mesa': route("import { x } from '@frontierjs/kit/junction'") })
     const res = only(root, 'import-subpath-exported')
+    expect(res.findings).toEqual([])
+    expect(res.skipped.length).toBe(1)
+  })
+})
+
+describe('mesa-peer-declared (FJS-4465)', () => {
+  // A stand-in mesa, so the graph the rule walks is the one written here: a
+  // peer loaded at module scope through a static import, one behind a relative
+  // import() the rule must not follow, and one named only in a comment.
+  const MESA = {
+    'node_modules/@frontierjs/mesa/package.json': JSON.stringify({
+      name: '@frontierjs/mesa',
+      exports: { './render': { import: './src/render.js' }, './render-component': './src/render-component.js',
+                 './runtime': './src/runtime.js' },
+      peerDependencies: { 'happy-dom': '*', 'css-tree': '*' },
+      peerDependenciesMeta: { 'happy-dom': { optional: true }, 'css-tree': { optional: true } },
+    }),
+    'node_modules/@frontierjs/mesa/src/peer.js': "// await import('css-tree') names the peer in prose only\nexport const p = 1\n",
+    'node_modules/@frontierjs/mesa/src/render.js':
+      "import { p } from './peer.js'\nconst { Window } = await import('happy-dom').catch(() => {})\nexport const r = p\n",
+    'node_modules/@frontierjs/mesa/src/render-component.js':
+      "import {\n  r,\n} from './render.js'\nexport const inline = () => import('./css-inliner.js')\n",
+    'node_modules/@frontierjs/mesa/src/css-inliner.js': "await import('css-tree')\n",
+    'node_modules/@frontierjs/mesa/src/runtime.js': 'export const signal = 1\n',
+  }
+  const app = (name, pkg, files) => tree(name, { 'package.json': JSON.stringify(pkg), ...MESA, ...files })
+  const IMPORT = "import { renderFile } from '@frontierjs/mesa/render-component'\n"
+
+  test('an API importing a server subpath with the peer undeclared is an error naming the install', () => {
+    const root = app('mpd-none', {}, { 'api/src/share.ts': IMPORT })
+    const { findings } = only(root, 'mesa-peer-declared')
+    expect(findings.map(f => [f.line, f.ships])).toEqual([[1, true]])
+    expect(findings[0].message).toMatch(/loads happy-dom, an optional peer/)
+    expect(findings[0].message).toMatch(/bun add -d happy-dom/)
+    expect(findings[0].message).not.toMatch(/css-tree/)
+  })
+
+  test('a peer under devDependencies does not ship, so the API is still refused', () => {
+    const root = app('mpd-dev', { devDependencies: { 'happy-dom': '*' } }, { 'api/src/share.ts': IMPORT })
+    const { findings } = only(root, 'mesa-peer-declared')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toMatch(/under devDependencies.*--production/)
+    expect(findings[0].message).toMatch(/bun add happy-dom/)
+  })
+
+  test('a test or a web/ build may take the peer from devDependencies', () => {
+    const root = app('mpd-test', { devDependencies: { 'happy-dom': '*' } }, {
+      'api/test/share.test.ts': IMPORT, 'web/src/prerender.js': IMPORT })
+    expect(only(root, 'mesa-peer-declared').findings).toEqual([])
+  })
+
+  test('a test with the peer declared nowhere is a finding that does not ship', () => {
+    const root = app('mpd-test-none', {}, { 'api/test/share.test.ts': IMPORT })
+    const { findings } = only(root, 'mesa-peer-declared')
+    expect(findings.map(f => f.ships)).toEqual([false])
+    expect(findings[0].message).toMatch(/a fresh install fails/)
+  })
+
+  test('a peer declared in dependencies, here or in a surface package.json, is quiet', () => {
+    expect(only(app('mpd-ok', { dependencies: { 'happy-dom': '*' } }, { 'api/src/share.ts': IMPORT }),
+      'mesa-peer-declared').findings).toEqual([])
+    expect(only(app('mpd-surface', {}, { 'api/package.json': JSON.stringify({ dependencies: { 'happy-dom': '*' } }),
+      'api/src/share.ts': IMPORT }), 'mesa-peer-declared').findings).toEqual([])
+  })
+
+  test('a client subpath loads no peer', () => {
+    const root = app('mpd-client', {}, { 'web/src/a.js': "import { signal } from '@frontierjs/mesa/runtime'\n" })
+    expect(only(root, 'mesa-peer-declared').findings).toEqual([])
+  })
+
+  test('an app with no mesa installed is skipped, not passed', () => {
+    const root = tree('mpd-uninstalled', { 'package.json': '{}', 'api/src/share.ts': IMPORT })
+    const res = only(root, 'mesa-peer-declared')
     expect(res.findings).toEqual([])
     expect(res.skipped.length).toBe(1)
   })
@@ -5189,6 +5267,22 @@ describe('deploy-image-needs', () => {
       'deploy-image-needs').findings).toEqual([])
   })
 
+  test('an API importing #shared/* on an image that drops shared/ is reported, and carrying it is clean', () => {
+    // capture's devices service: the release exited at start with Cannot find package '#shared'.
+    const imports = "import { connectRefusal } from '#shared/connect.js'\nexport const x = connectRefusal\n"
+    const bad = tree('din-shared', {
+      'deploy/Dockerfile': SLIM, '.dockerignore': '*\n!api\n!db\n', 'api/src/devices.ts': imports,
+    })
+    const { findings } = only(bad, 'deploy-image-needs')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/#shared/)
+    const good = tree('din-shared-ok', {
+      'deploy/Dockerfile': SLIM.replace('COPY db ./db', 'COPY db ./db\nCOPY shared ./shared'),
+      '.dockerignore': '*\n!api\n!db\n!shared\n', 'api/src/devices.ts': imports,
+    })
+    expect(only(good, 'deploy-image-needs').findings).toEqual([])
+  })
+
   test('playwright in dependencies is off the road, whatever the image installs (FJS-3113)', () => {
     // page-performer's tests service: a pinned browser build no reading here knows.
     const root = tree('din-playwright', {
@@ -5541,6 +5635,19 @@ describe('schema-runs', () => {
     expect(findings[0].severity).toBe('warn')
     expect(findings[0].message).toContain('(error) required-guarded-uncreatable')
     expect(findings[0].message).toContain('Thing.token')
+  })
+
+  // An app whose service answers the rule (FJS-3816: basecamp writes Invitation.token
+  // through asSystem) excuses that column by name, and a second advise rule on the
+  // same column still counts.
+  test('an advise finding is excused by an allow entry naming its rule and column', () => {
+    const root = withLitestone('sr-allow', 'model Thing {\n  id Int @id\n  token String @guarded\n  other String @guarded\n}\n')
+    const run = runChecks({ root, only: ['schema-runs'], allow: {
+      'schema-runs:db/schema.lite:required-guarded-uncreatable:Thing.token': 'minted through asSystem',
+      'schema-runs:db/schema.lite:gate-over-own-standing:Thing.other':       'a different rule',
+    } })
+    expect(run.findings.map(f => f.subject)).toEqual(['required-guarded-uncreatable:Thing.other'])
+    expect(run.allowed.map(f => f.subject)).toEqual(['required-guarded-uncreatable:Thing.token'])
   })
 
   test('a suggestion nobody declared is not a finding', () => {

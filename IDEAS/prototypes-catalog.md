@@ -169,17 +169,27 @@ Done when: an API test over a temp folder of three repos (one recorded, one
 unrecorded, one record with a missing path) returns all three, each in its
 right bucket, and a write round-trips.
 
-- [ ] 1.1 `domain/prototypes/catalog.ts` — read and validate `CATALOG.json`.
+- [x] 1.1 `domain/prototypes/catalog.ts` — read and validate `CATALOG.json`.
   Validate owner/kind/status against their sets. Write it atomically, keep key
   order, and preserve unknown fields so hand edits survive.
-- [ ] 1.2 The scan reads the records' parent folders plus the default root and
+  *Done 2026-11-19: `PROTOTYPES_DIR` in `core/env.ts`; a copy of the real file
+  reads clean (56 records) and re-serializes byte-identically; a bad record is
+  listed under `problems`, never dropped from the file.*
+- [x] 1.2 The scan reads the records' parent folders plus the default root and
   calls `listLocalRepos` once per folder, then merges by real path into
   recorded / unsorted / missing. The folder holding `CATALOG.json` is skipped,
   not *Unsorted*.
-- [ ] 1.3 View state in `WORKBENCH_DIR/prototypes.json`: favorites, order,
+  *Done 2026-11-19: one `listLocalRepos` per folder at depth 1; a recorded
+  non-git folder is `recorded` with `git: null`.*
+- [x] 1.3 View state in `WORKBENCH_DIR/prototypes.json`: favorites, order,
   folded groups. A name that matches no record is ignored.
-- [ ] 1.4 `prototypes.service.ts`: `list`, `saveRecord`, `saveView`. It refuses
+  *Done 2026-11-19: `readView` drops unknown names; `writeView` keeps them, so a
+  catalog that failed to read does not empty the view.*
+- [x] 1.4 `prototypes.service.ts`: `list`, `saveRecord`, `saveView`. It refuses
   a record path outside the scanned folders.
+  *Done 2026-11-19: `saveRecord` refuses a path whose parent folder does not exist
+  (the scanned set is derived from the records, so "outside" has no other
+  meaning); `list` also returns the view. Registered by autoload.*
 
 ### Phase 2 — The page
 

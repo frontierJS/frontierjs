@@ -7423,7 +7423,7 @@ export async function createClient({
 
   // ─── $audit ─────────────────────────────────────────────────────────────
   //
-  // $audit({ operation, model, records, actorId, meta }) → the written row
+  // $audit({ operation, model, recordId, actorId, meta }) → the written row
   //
   // Record something the audit trail cannot see for itself. `@@trail(audit)` is a
   // side effect of a write, so it covers exactly the events that ARE writes —
@@ -7446,7 +7446,7 @@ export async function createClient({
   // password, a token or a key in it. Field-level redaction protects columns the
   // SCHEMA declared protected, and this has no schema behind it.
 
-  const AUDIT_KEYS = ['operation', 'model', 'field', 'records', 'before', 'after', 'actorId', 'actorType', 'meta']
+  const AUDIT_KEYS = ['operation', 'model', 'field', 'recordId', 'before', 'after', 'actorId', 'actorType', 'meta']
 
   async function auditWith(principal, entry, opts = {}) {
     if (typeof entry?.operation !== 'string' || !entry.operation)
@@ -7455,7 +7455,7 @@ export async function createClient({
     // reads as a validation failure on a column, and a caller that reports its
     // own audit failures as warnings (auth, mcp) loses a security event to noise.
     if (typeof entry.model !== 'string' || !entry.model)
-      throw new Error(`$audit: 'model' is required — what '${entry.operation}' is about, e.g. 'User'. With no row, pass records: [].`)
+      throw new Error(`$audit: 'model' is required — what '${entry.operation}' is about, e.g. 'User'. With no row, leave recordId out.`)
 
     // Refused by name rather than dropped: a misspelled key is a caller that
     // meant to record something, and a silently thinner row is worse than none.

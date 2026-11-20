@@ -76,7 +76,7 @@ function jsonSchemaKeywords() {
 // The entry's field list is whatever buildLogEntry returns for the smallest call
 // it accepts, so a field added there appears here.
 function trailEntryFields() {
-  const entry = buildLogEntry({ operation: 'create', model: 'M', records: [] },
+  const entry = buildLogEntry({ operation: 'create', model: 'M' },
                               /** @type {any} */ ({ auth: null, isSystem: false, _logContext: null }), undefined)
   return Object.keys(entry)
 }

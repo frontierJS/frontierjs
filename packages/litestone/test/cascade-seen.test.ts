@@ -17,7 +17,7 @@ const TRAIL = `
   operation     String
   model         String
   field         String?
-  records       Json
+  recordId       String?
   before        Json?
   after         Json?
   actorId       String?
@@ -88,7 +88,7 @@ async function deleteLines(sys: any) {
   await tick()
   const rows = await sys.auditRow.findMany({ where: { operation: 'delete' } })
   const out: Record<string, number[]> = {}
-  for (const r of rows) (out[r.model] ??= []).push(...r.records)
+  for (const r of rows) (out[r.model] ??= []).push(Number(r.recordId))
   for (const k of Object.keys(out)) out[k].sort((a, b) => a - b)
   return out
 }
@@ -297,7 +297,7 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
       await sys.person[verb]({ where: { id: 1 } })
       expect((await sys.note.findMany({ where: { personId: null } })).map((n: any) => n.id).sort()).toEqual([10, 11])
       const lines = await updateLines(sys)
-      const ids = lines.flatMap((l: any) => l.records).sort((a: number, b: number) => a - b)
+      const ids = lines.map((l: any) => Number(l.recordId)).sort((a: number, b: number) => a - b)
       expect(ids).toEqual([10, 11])
       for (const l of lines) {
         expect(l.before.personId).toBe(1)
@@ -323,7 +323,7 @@ describe('a child a foreign key\'s onDelete: SetNull clears is an updated row (F
     const { db, sys } = await seededNotes()
     await sys.person.delete({ where: { id: 1 } })
     const lines = await updateLines(sys)
-    expect(lines.flatMap((l: any) => l.records)).not.toContain(20)
+    expect(lines.map((l: any) => Number(l.recordId))).not.toContain(20)
     db.$close()
   })
 })

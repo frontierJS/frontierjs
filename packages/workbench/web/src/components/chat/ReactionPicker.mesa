@@ -31,6 +31,7 @@
 <style>
   .reaction-grid { display: flex; flex-wrap: wrap; gap: var(--space-2xs); }
   .reaction-all { max-inline-size: calc(var(--space-2xl) * 7); max-block-size: calc(var(--space-2xl) * 4); overflow-y: auto; }
-  .reaction-grid :global([role="menuitem"]) { justify-content: center; padding-inline: var(--space-xs); }
+  /* The menu's rows are full width (`.items button.item`); a wrapping grid needs each cell its own width. */
+  .reaction-grid :global([role="menuitem"]) { inline-size: auto; justify-content: center; padding-inline: var(--space-xs); }
   .reaction-emoji { font-size: var(--text-lg); line-height: 1; }
 </style>

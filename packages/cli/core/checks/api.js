@@ -10,7 +10,7 @@ import { existsSync, readdirSync, readFileSync }     from 'fs'
 import { camel, singularize, pluralize }             from '@frontierjs/toolbelt/inflect'
 import { importedAs }                                from '../utils.js'
 import { shippedSchemas, appSchemaModels }           from '../app-schema.js'
-import { imageNeeds, installsChrome, carriesWebSrc } from '../deploy-image.js'
+import { imageNeeds, installsChrome, carriesWebSrc, carriesShared } from '../deploy-image.js'
 import {
   isAppRoot, scripts, readCode, lineOf, CLIENT_SURFACES, schemaFile,
   modelResolver, spanFrom, models,
@@ -613,7 +613,7 @@ export const CHECKS = {
     if (!dockerfile) return { skipped: 'no Dockerfile — not deployed this way' }
 
     const needs = imageNeeds(root)
-    if (!needs.chrome && !needs.webSrc && !needs.offRoad.length) return { skipped: 'the API needs nothing beyond api/ and db/' }
+    if (!needs.chrome && !needs.webSrc && !needs.shared && !needs.offRoad.length) return { skipped: 'the API needs nothing beyond api/ and db/' }
 
     const text = readFileSync(dockerfile, 'utf8')
     const ignorePath = join(root, '.dockerignore')
@@ -638,6 +638,10 @@ export const CHECKS = {
       'the API reads a template from web/src and the image does not carry it — no COPY names it, or ' +
       '.dockerignore drops web/ whole — so the first render fails in production. COPY web/src into the ' +
       'image and write web/* then !web/src in .dockerignore' })
+    if (needs.shared && !carriesShared(text, ignore)) findings.push({ file, message:
+      'the API imports #shared/* and the image does not carry shared/ — no COPY names it, or ' +
+      '.dockerignore drops it — so the release exits at start with Cannot find package #shared. ' +
+      'COPY shared ./shared into the image and write !shared/ in .dockerignore' })
     return { findings }
   },
 }

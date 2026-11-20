@@ -19,7 +19,7 @@ async function setup() {
         operation String
         model String
         field String?
-        records Json
+        recordId String?
         before Json?
         after Json?
         actorId String?
@@ -69,7 +69,7 @@ describe('a field log records a write of that field', () => {
     const { db, sys, trail } = await setup()
     await sys.account.createMany({ data: [{ id: 1 }, { id: 2, saPassword: 'x' }, { id: 3, saPassword: 'y' }] })
     const rows = await trail()
-    expect(rows.map((r: any) => [r.operation, r.field, r.records])).toEqual([['create', 'saPassword', [2, 3]]])
+    expect(rows.map((r: any) => [r.operation, r.field, r.recordId])).toEqual([['create', 'saPassword', '2'], ['create', 'saPassword', '3']])
     db.$close()
   })
 
@@ -99,7 +99,7 @@ describe('a field log records a write of that field', () => {
     await sys.account.updateMany({ where: {}, data: { timeZone: 'UTC' } })
     expect(await trail()).toEqual([])
     await sys.account.updateMany({ where: {}, data: { saPassword: 'z' } })
-    expect((await trail()).map((r: any) => [r.operation, r.records])).toEqual([['update', [1, 2]]])
+    expect((await trail()).map((r: any) => [r.operation, r.recordId])).toEqual([['update', '1'], ['update', '2']])
     db.$close()
   })
 
@@ -123,7 +123,7 @@ describe('a field log records a write of that field', () => {
       conflictTarget: ['id'],
     })
     const rows = (await trail()).slice(before)
-    expect(rows.map((r: any) => [r.operation, r.records])).toEqual([['update', [2]], ['create', [4]]])
+    expect(rows.map((r: any) => [r.operation, r.recordId])).toEqual([['update', '2'], ['create', '4']])
     db.$close()
   })
 

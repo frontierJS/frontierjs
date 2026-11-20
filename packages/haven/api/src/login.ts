@@ -6,8 +6,10 @@
 // word on that chain, under `HAVEN_POST_KEY`. The member is the chain's root,
 // so every machine in it is one figure, and the nick is the row's: the post
 // gave it out, so nobody here races for it. A key in no chain is refused
-// (3.2, `FJS-D1477`); a browser walks in on a session `fli haven --browser`
-// hands it, and holds no key.
+// (3.2, `FJS-D1477`) unless the Haven lists it as an agent (`HAVEN_AGENTS`,
+// `FJS-D1651`): the list is the operator's, so a caller cannot name itself
+// onto it. A browser walks in on a session `fli haven --browser` hands it,
+// and holds no key.
 //
 // Verified here, by toolbelt's verifyRequest, and not through the app's
 // `credentials` door: that door turns a signature into a principal, and an
@@ -36,14 +38,28 @@ export interface LoginOptions {
   /** The Frontier post's public signing key, which a chain login's row must be
    *  signed under. Without it a chain login is refused. */
   postKey?: string | null
+  /** The agents this Haven admits with no chain: nick → public signing key. */
+  agents?: Record<string, string>
 }
 
-type Member = { id: number, nick: string, role: string | null }
-const MEMBER = { id: true, nick: true, role: true }
+type Member = { id: number, nick: string, role: string | null, agent: boolean }
+const MEMBER = { id: true, nick: true, role: true, agent: true }
+
+/** `HAVEN_AGENTS`, `ace:<publicKey>,charles:<publicKey>`, as a nick → key map. */
+export function parseAgents (list: string | undefined): Record<string, string> {
+  const agents: Record<string, string> = {}
+  for (const entry of (list ?? '').split(',')) {
+    const at = entry.indexOf(':')
+    if (at < 1) continue
+    agents[entry.slice(0, at).trim().toLowerCase()] = entry.slice(at + 1).trim()
+  }
+  return agents
+}
 
 export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
   const now  = opts.now ?? (() => Math.floor(Date.now() / 1000))
   const mods = new Set((opts.mods ?? []).map(n => n.trim().toLowerCase()))
+  const agentOf = new Map(Object.entries(opts.agents ?? {}).map(([nick, key]) => [key, nick]))
 
   // Without it a captured login replays for the whole window and the replayer
   // is handed a fresh session for somebody else's key. TWICE the window, since
@@ -89,8 +105,23 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     return { member: await made(sys, nick, chain.root) }
   }
 
-  const made = async (sys: any, nick: string, root: string): Promise<Member> => {
-    const member = await sys.member.create({ data: { nick, root }, select: MEMBER })
+  /**
+   * A listed agent: the member is the nick's, not the key's, so a key the
+   * operator replaces walks in as the same agent. A nick a chain already holds
+   * is refused here as a chain's is against the agent.
+   */
+  const agentMember = async (sys: any, nick: string): Promise<Found> => {
+    const root = `agent:${nick}`
+    const member = await sys.member.findFirst({ where: { root }, select: MEMBER })
+    if (member) return { member }
+    if (isVoice(nick) || await sys.member.findFirst({ where: { nick }, select: { id: true } })) {
+      return { refused: `The nick '${nick}' is held here by somebody else.`, status: 409 }
+    }
+    return { member: await made(sys, nick, root, true) }
+  }
+
+  const made = async (sys: any, nick: string, root: string, agent = false): Promise<Member> => {
+    const member = await sys.member.create({ data: { nick, root, agent }, select: MEMBER })
     await opts.welcome?.(member.nick)
     return member
   }
@@ -109,10 +140,11 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     })
     if (!verdict.ok) return ctx.json({ message: `The login signature does not verify: ${verdict.reason}.` }, 401)
 
-    if (body.links === undefined) return ctx.json({ message: 'This key is in no Frontier chain, and a haven takes only a member\'s machine: run `fli frontier:stake` or `fli frontier:link` on it.' }, 401)
+    const agent = body.links === undefined ? agentOf.get(publicKey) : undefined
+    if (body.links === undefined && !agent) return ctx.json({ message: 'This key is in no Frontier chain, and a haven takes only a member\'s machine: run `fli frontier:stake` or `fli frontier:link` on it.' }, 401)
 
     const sys = db.asSystem()
-    const found = await chainMember(sys, publicKey, body.links, body.row)
+    const found = agent ? await agentMember(sys, agent) : await chainMember(sys, publicKey, body.links, body.row)
     if ('refused' in found) return ctx.json({ message: found.refused }, found.status)
     const member = found.member
 
@@ -125,6 +157,6 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     // A banned member is minted a session like anyone: the ban is a policy, so
     // they walk into an empty Haven rather than being told when to make a key.
     const { token, expiresAt } = await auth.mint(member.id)
-    return ctx.json({ token, expiresAt, member: { id: member.id, nick: member.nick, role } }, 200)
+    return ctx.json({ token, expiresAt, member: { id: member.id, nick: member.nick, role, agent: member.agent } }, 200)
   }
 }

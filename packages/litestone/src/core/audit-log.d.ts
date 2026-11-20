@@ -19,17 +19,17 @@ export function buildLogMap(schema: LitestoneSchema): {
 };
 /**
  * @param {{ operation: LogEntry['operation'], model: string, field?: string | null, transition?: string | null,
- *           records?: unknown[], before?: unknown, after?: unknown, lifted?: string[] | null, attempted?: string | null,
+ *           recordId?: unknown, before?: unknown, after?: unknown, lifted?: string[] | null, attempted?: string | null,
  *           rowTenant?: string | null }} write
  * @param {Ctx} ctx
  * @param {((entry: Record<string, unknown>, ctx: Ctx) => Record<string, any> | null | void) | null | undefined} onLog
  */
-export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted, attempted, rowTenant }: {
+export function buildLogEntry({ operation, model, field, transition, recordId, before, after, lifted, attempted, rowTenant }: {
     operation: LogEntry["operation"];
     model: string;
     field?: string | null;
     transition?: string | null;
-    records?: unknown[];
+    recordId?: unknown;
     before?: unknown;
     after?: unknown;
     lifted?: string[] | null;
@@ -40,7 +40,7 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     model: string;
     field: string;
     transition: string;
-    records: string;
+    recordId: string;
     before: string;
     after: string;
     actorId: unknown;

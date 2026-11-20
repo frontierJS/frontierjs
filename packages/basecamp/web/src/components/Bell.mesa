@@ -17,6 +17,7 @@
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import NavIcon from './NavIcon.mesa'
   import { session } from '../lib/session.js'
   import { ago, at } from '../lib/datetime.js'
   import { notifications, INBOX, isUnread, isTrouble, titleOf, bodyOf, actionOf, markRead, markAllRead }
@@ -46,7 +47,7 @@
   {#snippet trigger()}
     <Button treatment="ghost" id="bell"
             aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
-    >🔔{#if unread.length} <Badge tone={countTone} id="bell-count">{unread.length}</Badge>{/if}</Button>
+    ><NavIcon name="alerts" />{#if unread.length} <Badge tone={countTone} id="bell-count">{unread.length}</Badge>{/if}</Button>
   {/snippet}
   {#if unread.length}
     <DropdownGroup heading="Unread">

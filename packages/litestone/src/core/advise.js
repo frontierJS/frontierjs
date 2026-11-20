@@ -287,6 +287,8 @@ export const RULES = [
             a.kind === 'fieldAllow' && a.operations?.some(op => op === 'write' || op === 'all'))
           if (fieldPolicy) continue
           if (frozenAtCreate(f, model, sealing) || has(f, 'system')) continue
+          // @guarded is system-only both ways, which no @allow(write, …) could tighten.
+          if (has(f, 'guarded') || has(f, 'secret')) continue
 
           const head = why
             ? `${model.name} is ${why === 'auth' ? 'the @@auth model' : 'where the tenancy claim is read from'}, is gated at update=${gate.update}, and carries '${f.name}'.`

@@ -38,7 +38,7 @@ import { columnsUnmoved } from './write-narrowing.ts'
 import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb, enterCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, list, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
-import { COMBINATORS, parseDirectives } from '@frontierjs/toolbelt/directives'
+import { CALLER_TOKEN, COMBINATORS, parseDirectives, resolveCallerTokens } from '@frontierjs/toolbelt/directives'
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { BEARER, type ResolvedBearer } from './bearer.ts'
@@ -475,6 +475,13 @@ function translateOps(ops: Record<string, unknown>): Record<string, unknown> {
       result['contains'] = typeof val === 'string' ? val.toLowerCase() : val
       continue
     }
+    // Put on ctx.query after the claims hook resolved it, or by a service with
+    // no Data boundary: Litestone would call it an unknown operator.
+    if (op === CALLER_TOKEN) throw new BadRequest(
+      `${CALLER_TOKEN} reached the query builder unresolved. It is replaced from the caller's claims when the ` +
+      `call is scoped to them; a hook that adds a filter after that sets the value.`,
+      [{ field: CALLER_TOKEN, message: 'unresolved caller token' }],
+    )
     const litestoneOp = OPS[op]
     if (!litestoneOp) { result[op] = val; continue }
     result[litestoneOp] = val
@@ -4216,6 +4223,7 @@ export function withLitestoneDb(
     await applySchemaClaims(ctx, db)
     if (principal)
       applyClaims(ctx, db, await resolveAppClaims(ctx, db, principal))
+    resolveCallerFilter(ctx)
 
     // After the claims, because under `strategy row` the tenant IS a claim and
     // is not known until they are merged.
@@ -4290,6 +4298,36 @@ export async function resolveRawCaller(
     claims: heldClaims(ctx),
     user:   (ctx.user ?? null) as RawRouteCaller['user'],
   }
+}
+
+// ─── The caller as a filter value (FJS-D1730) ───────────────────────────────
+//
+// After every claim is merged, since `{ $auth: 'employeeId' }` usually names
+// one the schema reads off a row. Read off the principal the Data boundary
+// grades, so the token is what `auth().<claim>` is in a policy; a guest's are
+// the claims its request proved. Rewritten on `ctx.query` once, so a hook and
+// the method both read the value rather than the token.
+function resolveCallerFilter(ctx: ServiceContext): void {
+  const query = ctx.query as Record<string, unknown> | undefined
+  if (!query || typeof query !== 'object') return
+  const claims = ctx.user ? toDataPrincipal(ctx.user) as Record<string, unknown> : heldClaims(ctx)
+  const out = resolveCallerTokens(query, claims)
+  if (!out.found) return
+  if (out.malformed.length) throw new BadRequest(
+    `${CALLER_TOKEN} names one claim: { ${CALLER_TOKEN}: 'employeeId' }, or ${CALLER_TOKEN}=employeeId on the wire. ` +
+    `Got ${out.malformed.join(', ')}.`,
+    out.malformed.map(v => ({ field: CALLER_TOKEN, message: `not one claim name: ${v}` })),
+  )
+  if (!ctx.user && !Object.keys(claims).length) throw new BadRequest(
+    `A filter names the caller with ${CALLER_TOKEN}, and this request has no principal.`,
+    [{ field: CALLER_TOKEN, message: 'no caller to name' }],
+  )
+  if (out.unknown.length) throw new BadRequest(
+    `${out.unknown.map(n => `'${n}'`).join(', ')}: the caller holds no such claim, so ${CALLER_TOKEN} has no value ` +
+    `to stand for. A claim with no value (no row behind 'claim … from') is refused rather than matched against NULL.`,
+    out.unknown.map(n => ({ field: CALLER_TOKEN, message: `'${n}' is not a claim this caller holds` })),
+  )
+  ctx.query = out.query
 }
 
 // Last, after every re-scope: a claim re-scopes from the ROOT client, so a
@@ -5666,6 +5704,7 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       await applySchemaClaims(ctx, client)
       if (principal)
         applyClaims(ctx, client, await resolveAppClaims(ctx, client, principal))
+      resolveCallerFilter(ctx)
 
       await warmTenantConfig(ctx)
 

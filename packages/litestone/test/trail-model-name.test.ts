@@ -24,10 +24,10 @@ describe('the trail names a model by its model name', () => {
       const sys = db.asSystem()
       await sys.payWindow.create({ data: { id: 1, name: 'a' } })
       await sys.payWindow.update({ where: { id: 1 }, data: { name: 'b' } })
-      await db.$audit({ operation: 'read', model: 'PayWindow', records: [1] })
+      await db.$audit({ operation: 'read', model: 'PayWindow', recordId: '1' })
       // The accessor and the table name are spellings of the same model.
-      await db.$audit({ operation: 'read', model: 'payWindow', records: [1] })
-      await db.$audit({ operation: 'read', model: 'pay_window', records: [1] })
+      await db.$audit({ operation: 'read', model: 'payWindow', recordId: '1' })
+      await db.$audit({ operation: 'read', model: 'pay_window', recordId: '1' })
       // A name that is no model (an extract's dataset) is written as given.
       await db.$audit({ operation: 'export', model: 'monthly' })
       await tick(); await tick()

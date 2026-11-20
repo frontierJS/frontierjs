@@ -35,7 +35,7 @@ describe('a jsonl where refuses an operator it does not know', () => {
       await expect(sys.auditTrail.findMany({ where: { $raw: raw } })).rejects.toThrow(/\$raw/)
       await expect(sys.auditTrail.findMany({ where: { NOT: { $raw: raw } } })).rejects.toThrow(/\$raw/)
       await expect(sys.auditTrail.findMany({ where: { OR: [{ model: 'Thing' }, { $raw: raw }] } })).rejects.toThrow(/\$raw/)
-      await expect(sys.auditTrail.findMany({ where: { records: { $raw: raw } } })).rejects.toThrow(/\$raw/)
+      await expect(sys.auditTrail.findMany({ where: { recordId: { $raw: raw } } })).rejects.toThrow(/\$raw/)
       await expect(sys.auditTrail.count({ where: { $raw: raw } })).rejects.toThrow(/\$raw/)
     })
   })

@@ -1496,7 +1496,7 @@ title: App
       <Table id="app-releases" columns={APP_RELEASES_COLUMNS} rows={app.recent_deployments} striped>
         {#snippet row(d)}
           <tr>
-            <td class="text-sm text-muted">{at(d.queuedAt)}</td>
+            <td class="text-sm text-muted">{at(d.queuedAt)}<br>{ago(d.queuedAt)}</td>
             <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
             <td><code>{shortSha(d.commitSha) ?? '—'}</code>
               {#if d.commitMessage}<span class="text-sm"> {d.commitMessage}</span>{/if}</td>

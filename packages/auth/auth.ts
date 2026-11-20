@@ -298,7 +298,7 @@ export function createLitestoneAuth(
   async function refuseUnlessPerson(user: any, meta: Record<string, unknown>): Promise<void> {
     if ((user.kind ?? 'user') === 'user') return
     await audit('login.failed', {
-      model: personModel, records: [user.id], actorId: user.id,
+      model: personModel, recordId: user.id, actorId: user.id,
       meta:  { ...meta, reason: 'not-a-person', kind: user.kind },
     })
     throw new InvalidCredentialsError()
@@ -321,7 +321,7 @@ export function createLitestoneAuth(
     } catch (err) {
       // A veto that leaves no trace is the class of defect FJS-277 was.
       await audit('login.failed', {
-        model: personModel, records: [user.id], actorId: user.id,
+        model: personModel, recordId: user.id, actorId: user.id,
         meta:  { ...meta, reason: 'refused-by-app', email: user.email, message: (err as Error)?.message },
       })
       throw err
@@ -358,7 +358,7 @@ export function createLitestoneAuth(
     // of it: that one records the WRITE and cannot name the actor, this one
     // records the EVENT and does.
     await audit('login.succeeded', {
-      model: 'Session', records: [session.id], actorId: user.id, actorType: 'user',
+      model: 'Session', recordId: session.id, actorId: user.id, actorType: 'user',
       ...(Object.keys(meta).length || held ? { meta: { ...meta, ...(held ? { isEnrollmentOnly: true } : {}) } } : {}),
     })
 
@@ -457,13 +457,13 @@ export function createLitestoneAuth(
     // counting it would lock out a person for not having enrolled yet.
     if (held) {
       await audit('login.failed', {
-        model: personModel, records: [user.id], actorId: user.id,
+        model: personModel, recordId: user.id, actorId: user.id,
         meta:  { ...meta, reason: 'enrollment-owed' },
       })
       throw new SecondFactorEnrollmentOwedError()
     }
     await audit('login.proven', {
-      model: personModel, records: [user.id], actorId: user.id, actorType: 'user',
+      model: personModel, recordId: user.id, actorId: user.id, actorType: 'user',
       ...(Object.keys(meta).length ? { meta } : {}),
     })
     return { userId: String(user.id) }
@@ -504,7 +504,7 @@ export function createLitestoneAuth(
     // and no further, and nothing else in the trail would say so.
     await audit('login.challenged', {
       model:   'LoginChallenge',
-      records: [String(row.id)],
+      recordId: String(row.id),
       actorId: user.id,
       actorType: 'user',
       meta:    { ...meta, factor: 'totp' },
@@ -525,7 +525,7 @@ export function createLitestoneAuth(
     const refuse = async (reason: string, userId: string | null) => {
       await audit('login.failed', {
         model:   personModel,
-        records: userId ? [userId] : [],
+        recordId: userId || null,
         actorId: userId,
         // The attempted address, on purpose: a spray across many addresses is
         // invisible without it, and it is the only identifier a failed attempt
@@ -591,7 +591,7 @@ export function createLitestoneAuth(
     const spend = async (reason: string, row: any, retryable = true) => {
       await audit('login.failed', {
         model:   'LoginChallenge',
-        records: row ? [String(row.id)] : [],
+        recordId: row ? String(row.id) : null,
         actorId: row ? String(row.userId) : null,
         meta:    { reason, stage: 'second-factor' },
       })
@@ -671,7 +671,7 @@ export function createLitestoneAuth(
       const left = await countRecoveryCodes(row.userId)
       await credentialChanged('recovery.used', String(row.userId), {
         model:   'Credential',
-        records: [String(recovery.id)],
+        recordId: String(recovery.id),
         actorId: String(row.userId),
         actorType: 'user',
         meta:    { remaining: left },
@@ -750,7 +750,7 @@ export function createLitestoneAuth(
   // holds the tab, and the trail is where a lockout policy reads it from.
   async function reauthenticationFailed(userId: string, method: string, reason: string): Promise<void> {
     await audit('reauthentication.failed', {
-      model: personModel, records: [userId],
+      model: personModel, recordId: userId,
       actorId: userId, actorType: 'user',
       meta: { method, reason },
     })
@@ -774,7 +774,7 @@ export function createLitestoneAuth(
     const apps = await sys.session.findMany({ where: { ...where, clientId: { not: null } } })
     const { count } = await sys.session.deleteMany({ where, ...PURGE })
     for (const app of apps) await audit('app.revoked', {
-      model: 'Session', records: [String(app.id)], actorId, actorType: 'user',
+      model: 'Session', recordId: String(app.id), actorId, actorType: 'user',
       meta:  { clientId: app.clientId },
     })
     return { count, apps: apps.length }
@@ -798,7 +798,7 @@ export function createLitestoneAuth(
         const holder = await sys[person].findFirst({ where: { email: address } })
         if (holder) {
           await credentialChanged('registration.attempted', String(holder.id), {
-            model: personModel, records: [String(holder.id)], actorId: String(holder.id), actorType: 'user',
+            model: personModel, recordId: String(holder.id), actorId: String(holder.id), actorType: 'user',
           })
           return
         }
@@ -847,7 +847,7 @@ export function createLitestoneAuth(
       return user
     })
     await audit('registration.confirmed', {
-      model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
+      model: personModel, recordId: String(made.id), actorId: String(made.id), actorType: 'user',
     })
     return made
   }
@@ -914,7 +914,7 @@ export function createLitestoneAuth(
     // The OLD mailbox is told. Whoever changed the address held the session and
     // the password; if that was not the owner, this mail is how they find out.
     await credentialChanged('email.changed', String(user.id), {
-      model: personModel, records: [String(user.id)], actorId: String(user.id), actorType: 'user',
+      model: personModel, recordId: String(user.id), actorId: String(user.id), actorType: 'user',
       meta: { sessionsRevoked },
     }, from)
 
@@ -1024,7 +1024,7 @@ export function createLitestoneAuth(
   async function refuseMagicLink(reason: string, userId: string | null, email: string | null, retryable = false): Promise<never> {
     await audit('login.failed', {
       model:   personModel,
-      records: userId ? [userId] : [],
+      recordId: userId || null,
       actorId: userId,
       meta:    { ...MAGIC_META, reason, email },
     })
@@ -1044,7 +1044,7 @@ export function createLitestoneAuth(
         const user    = await sys[person].findFirst({ where: { email: address } })
         if (user && await providerOnly(user.id)) {
           await audit('login.failed', {
-            model: personModel, records: [user.id], actorId: user.id,
+            model: personModel, recordId: user.id, actorId: user.id,
             meta:  { ...MAGIC_META, reason: 'no-password-credential', email: address, stage: 'request' },
           })
           return
@@ -1109,7 +1109,7 @@ export function createLitestoneAuth(
     if (!user) {
       const made = await registerUser(tx => tx[person].create({ data: { email, isEmailVerified: true } }))
       await audit('magiclink.registered', {
-        model: personModel, records: [String(made.id)], actorId: String(made.id), actorType: 'user',
+        model: personModel, recordId: String(made.id), actorId: String(made.id), actorType: 'user',
         meta:  MAGIC_META,
       })
       return firstFactorProven(made, MAGIC_META, 'session', from)
@@ -1225,7 +1225,7 @@ export function createLitestoneAuth(
       ...(opts.userAgent ? { userAgent: opts.userAgent } : {}),
     } })
     await audit('app.authorized', {
-      model: 'Session', records: [String(row.id)], actorId: opts.userId, actorType: 'user',
+      model: 'Session', recordId: String(row.id), actorId: opts.userId, actorType: 'user',
       meta:  { clientId: opts.clientId },
     })
     return { ...(await accessFor(row, opts.audience)), refreshToken }
@@ -1251,7 +1251,7 @@ export function createLitestoneAuth(
       })
       if (count) {
         await audit('app.refreshed', {
-          model: 'Session', records: [String(current.id)], actorId: String(current.userId), actorType: 'user',
+          model: 'Session', recordId: String(current.id), actorId: String(current.userId), actorType: 'user',
           meta:  { clientId: opts.clientId },
         })
         return { ...(await accessFor(current, opts.audience)), refreshToken: next }
@@ -1273,7 +1273,7 @@ export function createLitestoneAuth(
 
     await sys.session.deleteMany({ where: { id: prior.id }, ...PURGE })
     await audit('app.reuse-refused', {
-      model: 'Session', records: [String(prior.id)],
+      model: 'Session', recordId: String(prior.id),
       meta:  { clientId: opts.clientId, userId: String(prior.userId) },
     })
     throw new InvalidGrantError(REFRESH_REFUSED)
@@ -1476,7 +1476,7 @@ export function createLitestoneAuth(
       // their account is the change they could learn of no other way.
       await credentialChanged('support.started', String(subjectId), {
         model:   'Session',
-        records: [String(session.id)],
+        recordId: String(session.id),
         actorId: String(session.userId),
         meta:    { subjectId: String(subjectId), reason: reason.trim(), endsAt },
       })
@@ -1501,7 +1501,7 @@ export function createLitestoneAuth(
 
       await audit('support.ended', {
         model:   'Session',
-        records: [String(session.id)],
+        recordId: String(session.id),
         actorId: String(session.userId),
         meta:    { subjectId: String(session.impersonatingUserId) },
       })
@@ -1568,7 +1568,7 @@ export function createLitestoneAuth(
         const missed = (enrollmentMisses.get(id) ?? 0) + 1
         const spent  = missed >= loginChallengeAttempts
         await audit('totp.confirm.failed', {
-          model: 'Credential', records: [id],
+          model: 'Credential', recordId: id,
           actorId: userId, actorType: 'user',
           meta: { attempts: missed, spent },
         })
@@ -1606,7 +1606,7 @@ export function createLitestoneAuth(
       await sys.session.updateMany({ where: { userId, isEnrollmentOnly: true }, data: { isEnrollmentOnly: false } })
 
       await credentialChanged('totp.enabled', userId, {
-        model: 'Credential', records: [String(pending.id)],
+        model: 'Credential', recordId: String(pending.id),
         actorId: userId, actorType: 'user',
         meta: { recoveryCodes: recoveryCodes.length, sessionsRevoked },
       })
@@ -1627,7 +1627,7 @@ export function createLitestoneAuth(
       const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
 
       await credentialChanged('totp.disabled', userId, {
-        model: 'Credential', records: [String(cred.id)],
+        model: 'Credential', recordId: String(cred.id),
         actorId: userId, actorType: 'user',
         meta: { sessionsRevoked },
       })
@@ -1639,7 +1639,7 @@ export function createLitestoneAuth(
       const recoveryCodes   = await issueRecoveryCodes(userId)
       const sessionsRevoked = await endOtherSessions(userId, opts?.exceptSessionId)
       await credentialChanged('recoveryCodes.regenerated', userId, {
-        model: 'Credential', records: [],
+        model: 'Credential', recordId: null,
         actorId: userId, actorType: 'user',
         meta: { count: recoveryCodes.length, sessionsRevoked },
       })
@@ -1676,7 +1676,7 @@ export function createLitestoneAuth(
       const { count } = await deleteSessions({ userId }, String(opts.actorId))
 
       await credentialChanged('totp.reset', userId, {
-        model: 'Credential', records: [String(cred.id)],
+        model: 'Credential', recordId: String(cred.id),
         actorId: String(opts.actorId), actorType: 'user',
         meta: { subjectId: String(userId), sessionsRevoked: count },
       })
@@ -1799,13 +1799,13 @@ export function createLitestoneAuth(
       // never started this flow, and there is nothing to look up on their behalf
       // — doing the lookup anyway would make the row's existence probeable.
       if (!stateMatches(args.cookieState, args.state)) {
-        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'state-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', recordId: null, meta: { provider: providerName, reason: 'state-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
       const flow = await sys.oauthFlow.findFirst({ where: { state: args.state } })
       if (!flow) {
-        await audit('oauth.refused', { model: 'OauthFlow', records: [], meta: { provider: providerName, reason: 'no-flow' } })
+        await audit('oauth.refused', { model: 'OauthFlow', recordId: null, meta: { provider: providerName, reason: 'no-flow' } })
         throw new OAuthError('OAuth flow has expired or was already used')
       }
 
@@ -1820,7 +1820,7 @@ export function createLitestoneAuth(
       // code — the state matched and the cookie matched, and the only thing
       // left saying which provider this is, is the URL the browser came back on.
       if (flow.provider !== providerName) {
-        await audit('oauth.refused', { model: 'OauthFlow', records: [flow.id], meta: { provider: providerName, reason: 'provider-mismatch' } })
+        await audit('oauth.refused', { model: 'OauthFlow', recordId: flow.id, meta: { provider: providerName, reason: 'provider-mismatch' } })
         throw new OAuthError('OAuth state did not match')
       }
 
@@ -1873,7 +1873,7 @@ export function createLitestoneAuth(
         const known = await sys[person].findUnique({ where: { id: cred.userId } })
         if (!known) throw new UserNotFoundError()
         await audit('oauth.signin', {
-          model: personModel, records: [known.id], actorId: known.id,
+          model: personModel, recordId: known.id, actorId: known.id,
           meta:  { provider: providerName },
         })
         return oauthFirstFactor(known, { provider: providerName }, from)
@@ -1958,7 +1958,7 @@ export function createLitestoneAuth(
           return lostRace(err)
         }
         await audit('oauth.registered', {
-          model: personModel, records: [made.id], actorId: made.id,
+          model: personModel, recordId: made.id, actorId: made.id,
           meta:  { provider: providerName, isEmailVerified: true },
         })
         return oauthFirstFactor(made, { provider: providerName }, from)
@@ -1976,7 +1976,7 @@ export function createLitestoneAuth(
 
       if (!linkable) {
         await audit('oauth.link.refused', {
-          model: personModel, records: [existing.id], actorId: existing.id,
+          model: personModel, recordId: existing.id, actorId: existing.id,
           meta: {
             provider:         providerName,
             trustedProvider:  provider.trustEmail,
@@ -1993,7 +1993,7 @@ export function createLitestoneAuth(
         return lostRace(err)
       }
       await credentialChanged('oauth.linked', existing.id, {
-        model: personModel, records: [existing.id], actorId: existing.id,
+        model: personModel, recordId: existing.id, actorId: existing.id,
         meta:  { provider: providerName },
       })
       return oauthFirstFactor(existing, { provider: providerName }, from)
@@ -2044,7 +2044,7 @@ export function createLitestoneAuth(
 
       if (pending.provider !== providerName || pending.subject !== identity?.providerId) {
         await audit('oauth.link.refused', {
-          model: personModel, records: [],
+          model: personModel, recordId: null,
           meta:  { provider: providerName, reason: 'subject-mismatch', email: pending.identifier },
         })
         throw new OAuthError('The identity returned is not the one this link was sent for')
@@ -2059,7 +2059,7 @@ export function createLitestoneAuth(
       const taken = await sys.credential.findFirst({ where: { type, value: pending.subject } })
       if (taken && taken.userId !== user?.id) {
         await audit('oauth.link.refused', {
-          model: personModel, records: user ? [user.id] : [], actorId: user?.id,
+          model: personModel, recordId: user ? user.id : null, actorId: user?.id,
           meta:  { provider: providerName, reason: 'subject-taken' },
         })
         throw new OAuthError('That identity is already connected to another account')
@@ -2076,7 +2076,7 @@ export function createLitestoneAuth(
           return row
         })
         await audit('oauth.registered', {
-          model: personModel, records: [made.id], actorId: made.id,
+          model: personModel, recordId: made.id, actorId: made.id,
           meta:  { provider: pending.provider, isEmailVerified: true, viaProof: true },
         })
         return firstFactorProven(made, { provider: pending.provider }, 'session', from)
@@ -2103,7 +2103,7 @@ export function createLitestoneAuth(
       })
 
       await credentialChanged('oauth.linked', user.id, {
-        model: personModel, records: [user.id], actorId: user.id,
+        model: personModel, recordId: user.id, actorId: user.id,
         meta:  { provider: pending.provider, viaProof: true, evictedPriorCredentials: wasUnverified },
       })
 
@@ -2165,7 +2165,7 @@ export function createLitestoneAuth(
 
       await sys.credential.delete({ where: { id: row.id } })
       await credentialChanged('oauth.unlinked', userId, {
-        model: personModel, records: [userId], actorId: userId,
+        model: personModel, recordId: userId, actorId: userId,
         meta:  { provider: String(row.type).slice('oauth:'.length) },
       })
       return { id: String(credentialId) }
@@ -2188,7 +2188,7 @@ export function createLitestoneAuth(
 
       await audit('logout', {
         model:   'Session',
-        records: session ? [session.id] : [],
+        recordId: session ? session.id : null,
         actorId: session?.userId ?? null,
         meta:    session ? undefined : { reason: 'unknown-session' },
       })
@@ -2253,7 +2253,7 @@ export function createLitestoneAuth(
       })
 
       await audit('invitation.created', {
-        model: personModel, records: [String(user.id)], actorId: opts.actorId, actorType: 'user',
+        model: personModel, recordId: String(user.id), actorId: opts.actorId, actorType: 'user',
       })
       return { userId: String(user.id), token, expiresAt: new Date(until).toISOString() }
     },
@@ -2282,7 +2282,7 @@ export function createLitestoneAuth(
       // Only when somebody else did it: the model's own log files a delete as
       // the system's, which says nothing about who asked.
       if (opts?.actorId) await audit('user.removed', {
-        model: personModel, records: [String(userId)], actorId: opts.actorId, actorType: 'user',
+        model: personModel, recordId: String(userId), actorId: opts.actorId, actorType: 'user',
       })
     },
 
@@ -2366,7 +2366,7 @@ export function createLitestoneAuth(
 
       if (securedByProvider(creds)) {
         await audit('password.reset.refused', {
-          model: personModel, records: [user.id], actorId: user.id,
+          model: personModel, recordId: user.id, actorId: user.id,
           meta:  { reason: 'no-password-credential' },
         })
         throw new NoPasswordCredentialError(
@@ -2390,7 +2390,7 @@ export function createLitestoneAuth(
       // nothing: whoever holds the inbox holds the account, and a reset nobody
       // asked for is how they find out.
       await credentialChanged('password.reset', user.id, {
-        model: 'Credential', records: [String(written.id)], actorId: user.id, actorType: 'user',
+        model: 'Credential', recordId: String(written.id), actorId: user.id, actorType: 'user',
         meta:  { sessionsRevoked: count, firstPassword: !existing },
       })
     },
@@ -2500,10 +2500,10 @@ export function createLitestoneAuth(
       // The sibling of `apikey.revoked`. Minting a credential that
       // authenticates as this person indefinitely is at least as worth
       // recording as ending one browser session (FJS-991). The key material is
-      // never in the entry — `records` is the credential id, and Invariant 7
+      // never in the entry — `recordId` is the credential id, and Invariant 7
       // would redact the column regardless.
       await credentialChanged('apikey.created', userId, {
-        model: 'Credential', records: [String(cred.id)],
+        model: 'Credential', recordId: String(cred.id),
         actorId: userId, actorType: 'user',
       })
 
@@ -2560,7 +2560,7 @@ export function createLitestoneAuth(
       // one that most needs it: an API key outlives a session, carries its own
       // scopes, and is spent by a machine nobody is watching (FJS-991).
       await credentialChanged('apikey.revoked', opts.userId, {
-        model: 'Credential', records: [String(keyId)],
+        model: 'Credential', recordId: String(keyId),
         actorId: opts.actorId ?? opts.userId, actorType: 'user',
       })
     },
@@ -2627,7 +2627,7 @@ export function createLitestoneAuth(
         label: opts.resource, clientId: opts.clientId, redirectUri: opts.redirectUri, tokenExpiresAt: until,
       } })
       await audit('authcode.issued', {
-        model: 'Credential', records: [String(row.id)], actorId: opts.userId, actorType: 'user',
+        model: 'Credential', recordId: String(row.id), actorId: opts.userId, actorType: 'user',
         meta:  { clientId: opts.clientId, resource: opts.resource },
       })
       return { code, expiresAt: until }
@@ -2639,7 +2639,7 @@ export function createLitestoneAuth(
       const secret = requireEncryptionKey('redeemAuthorizationCode')
       const refuse = async (reason: string, rowId?: string) => {
         await audit('authcode.refused', {
-          model: 'Credential', records: rowId ? [rowId] : [],
+          model: 'Credential', recordId: rowId || null,
           meta:  { reason, clientId: opts?.clientId ?? null, resource: opts?.resource ?? null },
         })
         return new InvalidGrantError()
@@ -2688,7 +2688,7 @@ export function createLitestoneAuth(
       const now = sys.$now()
       await sys.session.update({ where: { id: session.id }, data: { reauthenticatedAt: now.toISOString() } })
       await audit('reauthenticated', {
-        model: 'Session', records: [String(session.id)], actorId: userId, actorType: 'user',
+        model: 'Session', recordId: String(session.id), actorId: userId, actorType: 'user',
         ...(totp ? { meta: { factor: 'totp' } } : {}),
       })
       return { until: expiresAt(reauthenticationWindow, now) }
@@ -2718,7 +2718,7 @@ export function createLitestoneAuth(
       const count = await endOtherSessions(userId, opts?.exceptSessionId)
 
       await credentialChanged('password.changed', userId, {
-        model: 'Credential', records: [String(cred.id)], actorId: userId, actorType: 'user',
+        model: 'Credential', recordId: String(cred.id), actorId: userId, actorType: 'user',
         meta:  { sessionsRevoked: count },
       })
     },
@@ -2755,7 +2755,7 @@ export function createLitestoneAuth(
       if (!count) throw new InvalidTokenError(`No session with id ${sessionId}`)
 
       if (!apps) await audit('session.revoked', {
-        model: 'Session', records: [String(sessionId)], actorId, actorType: 'user',
+        model: 'Session', recordId: String(sessionId), actorId, actorType: 'user',
       })
     },
 
@@ -2768,7 +2768,7 @@ export function createLitestoneAuth(
       const { count } = await deleteSessions(where, opts?.actorId ?? userId)
 
       await audit('session.revoked', {
-        model: 'Session', records: [], actorId: opts?.actorId ?? userId, actorType: 'user',
+        model: 'Session', recordId: null, actorId: opts?.actorId ?? userId, actorType: 'user',
         meta:  { count, keptCurrent: Boolean(opts?.exceptSessionId) },
       })
       return count

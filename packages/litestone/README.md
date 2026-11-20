@@ -1474,7 +1474,7 @@ const user = { id: 1 }
 await db.$audit({
   operation: 'login.failed',
   model:     'User',
-  records:   [user.id],
+  recordId:  user.id,      // the one row the event names; stored as text
   actorId:   user.id,          // defaults to this client's principal; a system context has none
   meta:      { reason: 'bad-password' },
 })
@@ -2516,7 +2516,7 @@ db.$close()
 
 // Writes and the trail
 await db.$rotateKey(newKey)             // re-key every @encrypted/@secret; refused while @hashed or rotate: false exists
-await db.$audit({ operation, model, records, actorId, meta })
+await db.$audit({ operation, model, recordId, actorId, meta })
 const stop = db.$tapEvents(e => …)      // every write, announced
 db.$checkWhere('post', where)           // is this a valid filter?
 db.$checkOrderBy('post', orderBy)       // …and a valid sort?

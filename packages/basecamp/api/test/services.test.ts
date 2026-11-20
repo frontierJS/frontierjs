@@ -56,6 +56,7 @@ import { rescanAppArchives, hashFoundArchives } from '../src/domain/backup/backu
 import { HOST_SLUG, useHost, behindPin, publicIp, hostServer, hubIds, placeHub } from '../src/domain/host/host-machine.ts'
 import { OUTPOST_VERSION } from '../src/providers/compute/enrollment.ts'
 import { startS3Sink }            from '../src/providers/storage/s3-sink.ts'
+import { BLUEPRINTS }             from '../../db/blueprints.js'
 
 // The certificate a machine's command port answers with, which enrollment pins
 // on its Conduit target (FJS-1603). Every enrollment below presents it.
@@ -646,6 +647,22 @@ describe('apps.find — the caller\'s $orderBy (FJS-2832)', () => {
     await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'web', slug: `web-${tag}` } })
     const got = await env.as(owner).service('apps').find({ environmentId: e.id }, { directives: { populate: ['environment'] } })
     expect((got.data ?? got)[0].environment.name).toBe('Staging')
+  })
+
+  // The project screen lists every app across a project's environments by
+  // `?projectId=`, which is App's own column (FJS-3639).
+  test('an app list filtered by project holds that project\'s apps alone', async () => {
+    const sys  = env.system as any
+    const tag  = uniq()
+    const made = [] as string[]
+    for (const p of ['one', 'two']) {
+      const project = await sys.project.create({ data: { workspaceId: ws.id, name: p, slug: `${p}-${tag}` } })
+      const e       = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'Production', slug: `prod-${tag}` } })
+      made.push(project.id)
+      await sys.app.create({ data: { workspaceId: ws.id, environmentId: e.id, name: 'worker', slug: `worker-${p}-${tag}` } })
+    }
+    const got = await env.as(owner).service('apps').find({ projectId: made[0] })
+    expect((got.data ?? got).map((a: any) => a.slug)).toEqual([`worker-one-${tag}`])
   })
 })
 
@@ -1367,8 +1384,7 @@ describe('a workspace role is not a thing you may hand yourself', () => {
 async function trailEntry(model: string, operation: string, id: string): Promise<any> {
   const sys = env.system as any
   for (let i = 0; i < 100; i++) {
-    const rows = await sys.auditTrail.findMany({ where: { model, operation } })
-    const hit  = rows.find((r: any) => (typeof r.records === 'string' ? JSON.parse(r.records) : r.records).includes(id))
+    const [hit] = await sys.auditTrail.findMany({ where: { model, operation, recordId: String(id) }, limit: 1 })
     if (hit) return hit
     await Bun.sleep(20)
   }
@@ -1695,7 +1711,9 @@ describe('the catalog takes no workspace', () => {
     const set = (p: Record<string, unknown>) =>
       env.as(sysadmin).service('blueprints').call('setParams', made.id, { params: [{ key: 'K', label: 'K', ...p }] })
 
-    await expect(set({ generate: 'uuid', generateLength: 32 })).rejects.toThrow(/a uuid generator takes no generateLength/)
+    await expect(set({ generate: 'uuid', generateLength: 32 })).rejects.toThrow(/uuid and ntfyToken take no generateLength/)
+    await expect(set({ generate: 'ntfyToken', generateLength: 29 })).rejects.toThrow(/uuid and ntfyToken take no generateLength/)
+    expect((await set({ generate: 'ntfyToken' })).params[0].generateLength).toBeNull()
     await expect(set({ generate: 'randomHex' })).rejects.toThrow(/randomHex.* need a generateLength/)
     await expect(set({ generate: 'randomHex', generateLength: 257 })).rejects.toThrow(/generateLength/)
     await expect(set({ validRegex: '([a-z' })).rejects.toThrow(/'K' has a validRegex/)
@@ -3158,11 +3176,12 @@ describe('an app made from a blueprint', () => {
   const shippedEnv = async (r: any) => releaseEnv(env.system, await snapshotVariables(env.system, r))
 
   test('a generator mints the number of characters it states', async () => {
-    const row = await composed('mint:1', { HEX: '${HEX}', ALNUM: '${ALNUM}', B64: '${B64}', ID: '${ID}' }, [
+    const row = await composed('mint:1', { HEX: '${HEX}', ALNUM: '${ALNUM}', B64: '${B64}', ID: '${ID}', TOK: '${TOK}' }, [
       { key: 'HEX',  label: 'Hex',  generate: 'randomHex',          generateLength: 24 },
       { key: 'ALNUM', label: 'An',  generate: 'randomAlphanumeric', generateLength: 37 },
       { key: 'B64',  label: 'B64',  generate: 'randomBase64',       generateLength: 43 },
       { key: 'ID',   label: 'Id',   generate: 'uuid' },
+      { key: 'TOK',  label: 'Tok',  generate: 'ntfyToken' },
     ])
     const r = await make(developer, { blueprintId: row.id, environmentId: environment.id, name: `Mint ${tag()}` }) as any
     const shipped = await shippedEnv(r)
@@ -3170,6 +3189,8 @@ describe('an app made from a blueprint', () => {
     expect(shipped.ALNUM).toMatch(/^[A-Za-z0-9]{37}$/)
     expect(shipped.B64).toMatch(/^[A-Za-z0-9+/]{43}$/)
     expect(shipped.ID).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    // What `ntfy token generate` prints; any other length restart-loops ntfy (FJS-3657).
+    expect(shipped.TOK).toMatch(/^tk_[a-z0-9]{29}$/)
   })
 
   test('${PARAM} in the image and the environment is interpolated, and a secret one stays secret', async () => {
@@ -3237,6 +3258,51 @@ describe('an app made from a blueprint', () => {
       blueprintId: row.id, environmentId: environment.id, name: `Rx ${tag()}`, values: { SUBDOMAIN: 'fine-1' },
     }) as any
     expect((await shippedEnv(ok)).SUBDOMAIN).toBe('fine-1')
+  })
+
+  // The shipped catalog row, as `db:seed` and `db:catalog-sync` write it.
+  async function catalogNtfy() {
+    const sys = env.system as any
+    const have = await sys.blueprint.findFirst({ where: { slug: 'ntfy' } })
+    if (have) return have
+    const { params, ...columns } = BLUEPRINTS.find(b => b.slug === 'ntfy') as any
+    const row = await sys.blueprint.create({ data: columns })
+    for (const [position, p] of params.entries())
+      await sys.blueprintParam.create({ data: { blueprintId: row.id, position, ...p } })
+    return row
+  }
+  const NTFY_USERS = 'frontier:$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234:user'
+
+  test('the ntfy blueprint mints its sender token and composes NTFY_AUTH_TOKENS around it (FJS-4461)', async () => {
+    const ntfy = await catalogNtfy()
+    const ok = await make(developer, {
+      blueprintId: ntfy.id, environmentId: environment.id, name: `Ntfy ${tag()}`,
+      values: { NTFY_BASE_URL: 'https://ntfy.example.test', NTFY_AUTH_USERS: NTFY_USERS },
+    }) as any
+    const shipped = await shippedEnv(ok)
+    expect(shipped.NTFY_AUTH_TOKENS).toMatch(/^frontier:tk_[a-z0-9]{29}:[^:,]+$/)
+    expect(shipped.NTFY_BASE_URL).toBe('https://ntfy.example.test')
+    expect(shipped.NTFY_AUTH_DEFAULT_ACCESS).toBe('deny-all')
+    // The parts are inputs to the composed value, never the container's own env.
+    expect(Object.keys(shipped).filter(k => k.startsWith('NTFY_SENDER'))).toEqual([])
+  })
+
+  test('an ntfy token ntfy would exit on is refused at install by field name, not left to restart-loop (FJS-4460)', async () => {
+    const ntfy = await catalogNtfy()
+    const good = `tk_${'a1'.repeat(14)}z`
+    const install = (values: Record<string, string>) => make(developer, {
+      blueprintId: ntfy.id, environmentId: environment.id, name: `Ntfy ${tag()}`,
+      values: { NTFY_BASE_URL: 'https://ntfy.example.test', NTFY_AUTH_USERS: NTFY_USERS, ...values },
+    })
+    await expect(install({ NTFY_SENDER_TOKEN: 'tk_tooshort' })).rejects.toThrow(/'NTFY_SENDER_TOKEN'/)
+    await expect(install({ NTFY_SENDER: 'stranger', NTFY_SENDER_TOKEN: good }))
+      .rejects.toThrow(/'NTFY_AUTH_TOKENS'.*stranger.*'NTFY_AUTH_USERS'/)
+    // The refusal names the field, never echoes the secret.
+    const refused = await install({ NTFY_SENDER: 'stranger', NTFY_SENDER_TOKEN: good }).catch((e: Error) => e.message)
+    expect(refused).not.toContain(good)
+
+    const ok = await install({ NTFY_SENDER_TOKEN: good }) as any
+    expect((await shippedEnv(ok)).NTFY_AUTH_TOKENS).toMatch(new RegExp(`^frontier:${good}:`))
   })
 
   test('a required parameter is refused by its label, an unknown one by its key', async () => {

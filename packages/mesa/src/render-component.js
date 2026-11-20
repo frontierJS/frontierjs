@@ -58,7 +58,8 @@
 import path          from 'path'
 import { createHash } from 'crypto'
 import { readFile, writeFile, mkdir, realpath } from 'fs/promises'
-import { existsSync, unlinkSync, readdirSync, statSync } from 'fs'
+import { existsSync, unlinkSync, readdirSync, statSync, accessSync, constants } from 'fs'
+import { tmpdir }     from 'os'
 import { fileURLToPath, pathToFileURL } from 'url'
 import { compileSource } from './compiler.js'
 import { initRenderer, renderToParts, escapeHTML } from './render.js'
@@ -149,8 +150,22 @@ let _defaultTmpDir = null
  * modules at its own tree instead.
  */
 async function defaultTmpDir() {
-  if (_defaultTmpDir === null) _defaultTmpDir = await Promise.resolve(findMesaDir())
+  if (_defaultTmpDir === null) _defaultTmpDir = writableOrTemp(await Promise.resolve(findMesaDir()))
   return typeof _defaultTmpDir === 'string' ? _defaultTmpDir : '/tmp'
+}
+
+// A production image installs node_modules as root and runs the server as
+// another user, so the package root refuses the write and every request-time
+// render failed with EACCES. The OS temp dir still runs a module whose only
+// imports are the runtime (rewritten to absolute paths below) and other .mesa
+// files; a bare third-party import there fails by name instead.
+function writableOrTemp(dir) {
+  try {
+    accessSync(dir, constants.W_OK)
+    return dir
+  } catch {
+    return tmpdir()
+  }
 }
 
 /**

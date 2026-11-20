@@ -165,6 +165,20 @@ if ($.config.doApi) {
   }
 }
 
+// ─── The optional peers the API loads ─────────────────────────────────────────
+// A linked workspace resolves a Mesa peer the app never declared, so every
+// local run passes and the container exits at start on the import (FJS-4465).
+if ($.config.doApi) {
+  const { undeclaredPeers } = await import(new URL('file://' + global.fliRoot + '/core/release-preflight.js'))
+  const peers = undeclaredPeers($.paths.root)
+  if (peers.length) {
+    log.error("The API loads a package the image's --production install leaves out:")
+    for (const p of peers) log.error(`  ${p.file}:${p.line} ${p.message}`)
+    $.config.abort = true
+    return
+  }
+}
+
 // ─── Acquire deploy lock ──────────────────────────────────────────────────────
 // Prevents two deploys running simultaneously against the same server.
 // One lock per machine+path pair. A split app is two locks; an app whose halves

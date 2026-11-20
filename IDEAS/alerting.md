@@ -148,6 +148,19 @@ Done when: in `packages/notifications`, an app crashed by an uncaught throw deli
 - [x] 1.4 `example`: one drive that crashes the API on purpose against a local listener, run twice inside the window. **Built 2026-11-15:** `example` `verify:crash` (`web/test/verify-crash.mjs`). It runs the API from a scratch copy of the app on 7110, because a `tenancy { strategy database }` fleet is fixed beside the schema file and no setting moves it; a `--preload` fixture throws on `SIGUSR2`, so the app carries no crash switch. One ping at priority 5, then none and `since: 1`. The record lands in `db/shops/`, the directory of the shop file, which `.gitignore` already covers.
 - [x] 1.5 `packages/notifications/README.md` § the crash ping, and `example/.env.example` names the settings. **Written 2026-11-15:** README § The crash ping, after § ntfy; `.env.example` § Crash ping.
 
+### Phase 2 — The operator picks where a crash goes
+
+Goal: in an app Basecamp deploys, the crash ping reaches the channels the operator picked on the App page, and an app with no Basecamp rings exactly as Phase 1 does.
+Done when: an app deployed by a local Basecamp, with a webhook channel picked and crash alerts on, crashes and the webhook listener receives one `AppCrashed` POST and the workspace topic one push; with Basecamp stopped the same crash reaches the ntfy trio directly; a second crash inside the window sends nothing either way.
+
+- [x] 2.1 Rule Q5–Q7. (`FJS-D2272`–`FJS-D2274`)
+- [ ] 2.2 basecamp schema: `AppCrashed` in `NotificationKind` and `kinds.ts` (email, in-app, push); the `AppChannel` join; the on/off switch on `App`. Check whether `NotificationContext` needs `App`.
+- [ ] 2.3 basecamp: find the seam that writes an app's env at release, and mint the per-app crash credential there. A raw route takes the crash (typed body, the credential, a rate limit after `FJS-D2183`), queues the fan-out and answers 202 — the app holds its exit for at most 3 s (`FJS-D2185`), so nothing is delivered inline.
+- [ ] 2.4 notifications `crash.ts`: the destination is the relay when its settings are present, else the Q1 trio, else off; a relay that fails falls back to the trio; the window stays here (`FJS-D2186`), so a crash loop POSTs once. The boot line names the destination. `crash-ping.test.ts` gains the relay and the fallback.
+- [ ] 2.5 basecamp web: the switch and the channel picker on the App page.
+- [ ] 2.6 The Done line as a drive, extending `example` `verify:crash`.
+- [ ] 2.7 `packages/notifications/README.md` § The crash ping and Basecamp's alerting docs name the relay.
+
 ## Open questions
 
 - ~~**Q1 — Where does a crash ping go in an app with no Basecamp?**~~ **Answered 2026-11-15 (`FJS-D2184`): A — three settings, all or none: `NTFY_BASE_URL`, `NTFY_TOKEN` (optional on a public server) and `NTFY_TOPIC`. Absent, no ping, and the boot banner says so once.** `app.notify` takes a `User`, and an app has no operator row to name. Basecamp's ladder (`api/src/push.ts`) is Basecamp's own and an app cannot import it.
@@ -170,6 +183,20 @@ Done when: in `packages/notifications`, an app crashed by an uncaught throw deli
   - **B** — junction calls `app.notify` when a plugin has installed it.
   - **C** — notifications installs its own `uncaughtException` handler.
   - **Recommend A** — one owner each (Invariant 4). C is wrong twice: junction installs its handlers only when `listenerCount` is zero, so a plugin's handler would switch junction's drain off and the app would vanish rather than stop. B needs a `User` (Q1) and puts a delivery decision in junction.
+- ~~**Q5 — In an app Basecamp deploys, where is the crash ping sent from?**~~ **Answered 2026-11-19 (`FJS-D2272`): A — relay: the app POSTs the crash once to its Basecamp under a per-app credential minted at release; Basecamp records `AppCrashed` and fans out through `fanOutToChannels` as `MonitorDown` does. Basecamp unreachable, the app falls back to the Q1 ntfy trio when it is set.** Q1 hard-wires ntfy, and an operator wants to pick the destination from Basecamp's `NotificationChannel` list (slack, pagerduty, email, webhook, chat) and the workspace push topic.
+  - **A** — relay: the app POSTs the crash once to its Basecamp under a per-app credential minted at release; Basecamp records `AppCrashed` and fans out through `fanOutToChannels` as `MonitorDown` does. Basecamp unreachable, the app falls back to the Q1 ntfy trio when it is set.
+  - **B** — at release Basecamp writes the chosen channel's settings, credential included, into the app's env, and `notifications` grows slack, pagerduty and webhook drivers.
+  - **C** — Outpost sees the container exit and reports it to Basecamp; no app code.
+  - **Recommend A** — one origin for destinations and one owner of delivery (Invariant 4); the credential stays an `@encrypted` Secret row, and a change needs no redeploy. B puts a plaintext copy in every app and a second Slack renderer in `notifications`. C catches what an app cannot report (OOM kill, SIGKILL) but has no stack; it complements A rather than replacing it.
+- ~~**Q6 — Where does the operator choose an app's crash destinations?**~~ **Answered 2026-11-19 (`FJS-D2273`): A — per app: an on/off switch on `App` and an `AppChannel` join (`appId`, `channelId`), the shape of `MonitorChannel` and `AlertRuleChannel`, picked on the App page.**
+  - **A** — per app: an on/off switch on `App` and an `AppChannel` join (`appId`, `channelId`), the shape of `MonitorChannel` and `AlertRuleChannel`, picked on the App page.
+  - **B** — per channel: an `isPagedForCrashes` flag beside `isPagedForFleet`, so every app goes to the same place.
+  - **C** — follow the app's managed `Monitor`'s `MonitorChannel` picks.
+  - **Recommend A** — the operator asked to choose per app. C has no source for an app with no domain (no managed Monitor) and lets the Monitor screen silently govern crashes. B is the reopen path if per-app picks are never used.
+- ~~**Q7 — Does an `AppCrashed` page ever resolve?**~~ **Answered 2026-11-19 (`FJS-D2275`): A — trigger only, no `dedupKey`: a person closes the incident.** PagerDuty keeps an incident open until a `resolve` with its `dedupKey`; a crash is an event with no recovery to observe.
+  - **A** — trigger only, no `dedupKey`: a person closes the incident.
+  - **B** — `dedupKey` per app, resolved after the app has run one crash window without crashing.
+  - **Recommend A** — B invents a recovery Basecamp cannot see; the managed `Monitor`'s `MonitorUp` already reports the URL answering again.
 
 ## See also
 

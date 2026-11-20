@@ -221,11 +221,11 @@ describe('a trailed write inside a transaction', () => {
     const { sys, trail, close } = await open()
     await expect(sys.$transaction(async (tx: any) => {
       await tx.note.create({ data: { id: 1, body: 'a' } })
-      await tx.$audit({ operation: 'login.failed', model: 'Note', records: [1] })
+      await tx.$audit({ operation: 'login.failed', model: 'Note', recordId: '1' })
       throw new Error('refused')
     })).rejects.toThrow('refused')
     expect(await sys.note.count()).toBe(0)
-    expect(await trail()).toEqual(['login.failed'])
+    expect(await trail()).toEqual(['login.failed 1'])
     close()
   })
 })

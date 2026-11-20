@@ -33,6 +33,10 @@ import { walk }                                        from '../fs.js'
 // Each is a warning whatever advise grades it: CI fails a per-finding error
 // outright, past `check-baseline.json`, and the ceiling is how an app takes
 // existing advise debt on while a new one still fails (ceiling 0).
+//
+// The subject names the advise rule as well as the column, so an allow entry an
+// app writes for one answer (`required-guarded-uncreatable:Invitation.token`,
+// minted through asSystem) does not also excuse a second rule on that column.
 const ADVISE_GRADED_ELSEWHERE = new Set(['required-system-unfilled'])
 
 function adviseRules(stdout, file) {
@@ -42,6 +46,7 @@ function adviseRules(stdout, file) {
     .filter(r => (r.severity === 'error' || r.severity === 'warn') && !ADVISE_GRADED_ELSEWHERE.has(r.id))
     .map(r => ({
       file, severity: 'warn',
+      ...(r.model && { subject: `${r.id}:${r.model}${r.field ? `.${r.field}` : ''}` }),
       message: `litestone advise (${r.severity}) ${r.id}${r.model ? ` — ${r.model}${r.field ? `.${r.field}` : ''}` : ''}: ${r.message ?? r.title} ` +
                `\`fli advise\` prints the same rule.`,
     }))

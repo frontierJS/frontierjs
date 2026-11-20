@@ -70,8 +70,7 @@ const openBody = (slug: string) => ({
 
 async function trailEntry(model: string, operation: string, id: string): Promise<any> {
   for (let i = 0; i < 100; i++) {
-    const rows = await (env.system as any).auditTrail.findMany({ where: { model, operation } })
-    const hit  = rows.find((r: any) => (typeof r.records === 'string' ? JSON.parse(r.records) : r.records).includes(id))
+    const [hit] = await (env.system as any).auditTrail.findMany({ where: { model, operation, recordId: String(id) }, limit: 1 })
     if (hit) return hit
     await Bun.sleep(20)
   }

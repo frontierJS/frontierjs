@@ -377,6 +377,46 @@ describe('a setup that stopped part way is finished by the next run (FJS-3529, F
   })
 })
 
+// FJS-4465: capture's API imported mesa/render with happy-dom undeclared; the
+// linked workspace resolved it and the container exited at start on chartered.
+describe('peer-undeclared: an optional peer the API loads is asked before the build', () => {
+  const app = (pkg, files) => {
+    const root = mkdtempSync(join(tmpdir(), 'release-peer-'))
+    for (const [path, text] of Object.entries({ 'package.json': JSON.stringify(pkg), ...files })) {
+      mkdirSync(join(root, dirname(path)), { recursive: true })
+      writeFileSync(join(root, path), text)
+    }
+    mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '..', '..', 'mesa'), join(root, 'node_modules', '@frontierjs', 'mesa'))
+    return root
+  }
+  const graded = (root) => {
+    try { return run({ peers: gatherReleaseInputs(root).peers }).filter(f => f.rule === 'peer-undeclared') }
+    finally { rmSync(root, { recursive: true, force: true }) }
+  }
+  const RENDER = "import { renderFile, wrapPage } from '@frontierjs/mesa/render'\n"
+
+  test('the real mesa/render with happy-dom undeclared is an error naming the file', () => {
+    const found = graded(app({}, { 'api/src/share/routes.ts': RENDER }))
+    expect(found.map(f => f.level)).toEqual(['error'])
+    expect(found[0].detail).toMatch(/^api\/src\/share\/routes\.ts:1 .*happy-dom/)
+  })
+
+  test('declared under dependencies, it is quiet', () => {
+    expect(graded(app({ dependencies: { 'happy-dom': '*' } }, { 'api/src/share/routes.ts': RENDER }))).toEqual([])
+  })
+
+  test("a test's import is fli check's, not the release's", () => {
+    expect(graded(app({}, { 'api/test/share.test.ts': RENDER }))).toEqual([])
+  })
+
+  test('the SSH door asks it before the lock', () => {
+    const step = readFileSync(new URL('../commands/deploy/_steps-docker/01-preflight.md', import.meta.url), 'utf8')
+    expect(step.indexOf('undeclaredPeers(')).toBeGreaterThan(-1)
+    expect(step.indexOf('undeclaredPeers(')).toBeLessThan(step.indexOf('acquireLock('))
+  })
+})
+
 // FJS-4071: the image's db:migrate refused a history that no longer built the
 // schema, on the box, after the build and the upload had been paid for.
 describe('migration-history: the history is asked before the build', () => {

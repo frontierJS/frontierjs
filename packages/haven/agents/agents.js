@@ -3,9 +3,10 @@
 //
 // Each signs in with an Ed25519 key of its own under
 // `~/.fli/haven/agents/<nick>/` through the `POST /haven/login` a terminal
-// uses, which refuses a key in no chain (`FJS-D1477`): until an agent's way in
-// is ruled, `bun run agents` is refused at its first login. Signed in, each
-// stands in the square on a socket of its own and steps about near its spot.
+// uses, with no chain: the Haven admits the key only when `HAVEN_AGENTS` lists
+// it under the agent's nick (`FJS-D1651`), and the refusal names the entry to
+// add. Signed in, each stands in the square on a socket of its own and steps
+// about near its spot.
 //
 // It answers a line only from a mod (`FJS-D1017`), so the bill is the owner's
 // and a stranger has no prompt to inject. A client cannot read a speaker's
@@ -750,7 +751,9 @@ export async function startAgents (opts) {
   async function enter (agent) {
     mkdirSync(agent.dir, { recursive: true, mode: 0o700 })
     const { keys, made } = await machineKeys(join(agent.dir, 'key.json'))
-    const { token, member } = await signIn(api, { keys, nick: agent.nick })
+    const { token, member } = await signIn(api, { keys }).catch(e => {
+      throw new Error(`${e.message} An agent walks in on the Haven's list: start it with HAVEN_AGENTS naming ${agent.nick}:${keys.publicKey}`)
+    })
     if (made) log(`${agent.name}: a new key at ${join(agent.dir, 'key.json')}`)
     if (member.nick !== agent.nick) log(`${agent.name}: this key walks in as '${member.nick}'`)
     agent.id = member.id

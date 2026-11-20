@@ -52,6 +52,11 @@ export const spec = {
   // this repo, where the prototypes are checked out.
   CHARTER_DIR: {},
 
+  // The folder the prototypes are checked out in; its catalog/CATALOG.json
+  // is the one record file (`IDEAS/prototypes-catalog.md`). Absent,
+  // `prototypesDir()` takes fjs-prototypes beside this repo.
+  PROTOTYPES_DIR: {},
+
   // The team chat server (`IDEAS/workbench-messages.md`). Unset, chat is off:
   // no socket is dialed and the mirrored models answer only what they hold.
   // No default, on purpose -- a dev value that named a real server would post

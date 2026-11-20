@@ -315,7 +315,7 @@ try {
     if (!existsSync(AUDIT)) return null
     return readFileSync(AUDIT, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
       .find(r => r.operation === 'update' && r.field == null
-        && [].concat(typeof r.records === 'string' ? JSON.parse(r.records) : r.records).includes(agedId)
+        && r.recordId === String(agedId)
         && (typeof r.after === 'string' ? JSON.parse(r.after) : r.after)?.status === 'cancelled') ?? null
   })
   t('commitment.trailNamesTheMove', {
@@ -583,7 +583,7 @@ try {
   const MARK   = `retention-probe-${Date.now().toString(36)}`
   const stamp  = (daysAgo) => new Date(Date.now() - daysAgo * 86_400_000).toISOString()
   const line   = (age) => JSON.stringify({
-    operation: 'create', model: MARK, field: null, records: '[0]',
+    operation: 'create', model: MARK, field: null, recordId: '0',
     before: null, after: null, actorId: null, actorType: null, meta: null,
     createdAt: stamp(age),
   })

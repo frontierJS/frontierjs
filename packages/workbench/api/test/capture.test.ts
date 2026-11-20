@@ -112,6 +112,24 @@ describe('write', () => {
     expect(readFileSync(file, 'utf8')).toContain('size = 30.0')
     expect(captureConfig({ file }).toolStyles.pen).toEqual({ color: '#0080ff', size: 'large' })
   })
+
+  test('a tool size the wheel set is a number, kept beside the preset names', () => {
+    set({ toolStyles: { pen: { size: 6 }, highlighter: { size: 22.5 }, arrow: { size: 'small' } } })
+    const parsed = Bun.TOML.parse(readFileSync(file, 'utf8')) as any
+    expect(parsed.tool_styles.pen.size).toBe(6)
+    expect(parsed.tool_styles.highlighter.size).toBe(22.5)
+    expect(parsed.tool_styles.arrow.size).toBe('small')
+    expect(readFileSync(file, 'utf8')).toContain('size = 6.0')
+    expect(captureConfig({ file })).toMatchObject({ invalid: null })
+    expect(captureConfig({ file }).toolStyles.pen.size).toBe(6)
+
+    // Capture wrote it; a later save of something else leaves it alone.
+    writeFileSync(file, ['[tool_styles.rect]', 'size = 14.0', ''].join('\n'))
+    chmodSync(file, 0o600)
+    expect(captureConfig({ file })).toMatchObject({ invalid: null })
+    set({ delaySecs: 7 })
+    expect((Bun.TOML.parse(readFileSync(file, 'utf8')) as any).tool_styles.rect.size).toBe(14)
+  })
 })
 
 describe('refusals', () => {
@@ -167,6 +185,10 @@ describe('refusals', () => {
     refuses({ toolStyles: { laser: {} } })
     refuses({ toolStyles: { pen: { color: 'red' } } })
     refuses({ toolStyles: { pen: { size: 'huge' } } })
+    refuses({ toolStyles: { pen: { size: 0 } } })
+    refuses({ toolStyles: { pen: { size: -2 } } })
+    refuses({ toolStyles: { pen: { size: Infinity } } })
+    refuses({ webcamSize: 6 })
     refuses({ toolStyles: { text: { size: 5 } } })
     refuses({ toolStyles: { pen: { wobble: 1 } } })
   })

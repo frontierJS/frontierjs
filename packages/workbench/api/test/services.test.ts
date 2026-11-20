@@ -19,9 +19,10 @@ import basecamps from '../src/services/basecamps/basecamps.service.ts'
 import claude    from '../src/services/claude/claude.service.ts'
 import git       from '../src/services/git/git.service.ts'
 import laptop    from '../src/services/laptop/laptop.service.ts'
+import prototypes from '../src/services/prototypes/prototypes.service.ts'
 import workbench from '../src/services/workbench/workbench.service.ts'
 
-const services = { atlas, basecamps, claude, git, laptop, workbench } as Record<string, { methods: Array<{ method: string, gate?: number }> }>
+const services = { atlas, basecamps, claude, git, laptop, prototypes, workbench } as Record<string, { methods: Array<{ method: string, gate?: number }> }>
 
 describe('every method of the moved services is gated at ADMINISTRATOR', () => {
   for (const [name, service] of Object.entries(services)) {

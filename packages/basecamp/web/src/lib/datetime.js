@@ -30,12 +30,12 @@ export function day(instant, none = '—') {
   return instant ? dt.format(instant, 'MMM D, YYYY') : none
 }
 
-/** `'Sep 14, 2026, 4:05:03 PM'` — an event somebody may need to line up with a log. */
+/** `'Sep 14, 2026, 16:05:03'` — an event somebody may need to line up with a log. */
 export function at(instant, none = '—') {
-  return instant ? dt.format(instant, 'MMM D, YYYY, h:mm:ss aa') : none
+  return instant ? dt.format(instant, 'MMM D, YYYY, hh:mm:ss') : none
 }
 
-/** `'4:05:03 PM'` — a step in a run that is already dated by the page around it. */
+/** `'16:05:03'` — a step in a run that is already dated by the page around it. */
 export function clock(instant, none = '—') {
-  return instant ? dt.format(instant, 'h:mm:ss aa') : none
+  return instant ? dt.format(instant, 'hh:mm:ss') : none
 }

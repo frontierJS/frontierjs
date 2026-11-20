@@ -97,7 +97,7 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
   }
 
   // A logged read whose `select` leaves out the id still has to name its rows:
-  // the entry was written with actor and clock and `records: []`, a trail with
+  // the entry was written with actor and clock and no `recordId`, a trail with
   // a hole a reviewer cannot see (FJS-1422). So the STATEMENT selects the id,
   // and `finalize` with the caller's own parse strips it again. `distinct`
   // keeps the caller's select, since an id would make every row distinct.
@@ -217,6 +217,15 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
     return only == null ? null : String(only)
   }
 
+  // One entry per row (FJS-D1744): a reader asks about one record, and a page
+  // of ids in one entry answers that to no policy and no index. Each entry's
+  // tenant is its own row's. A call that names no row still files one entry.
+  function perRow(/** @type {any[]} */ rows, /** @type {any[]} */ ids) {
+    if (!ids.length) return [{ recordId: null, rowTenant: rowTenantOf(rows) }]
+    const aligned = rows?.length === ids.length
+    return ids.map((id, i) => ({ recordId: id, rowTenant: rowTenantOf(aligned ? [rows[i]] : rows) }))
+  }
+
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
@@ -234,8 +243,7 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
       }
     }
     if (tableAnonymous) return
-    const ids = readIds ?? extractIds(rows)         // extract once, shared below
-    const rowTenant = rowTenantOf(rows)
+    const each = perRow(rows, readIds ?? extractIds(rows))
 
     // ── Field-level logs ──────────────────────────────────────────────────
     if (tableNeedsField) {
@@ -252,24 +260,27 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
           // zone (FJS-2048). The returned row can't say, since read() strips a
           // guarded or hashed field; `written` is the data as it was bound.
           // A path with no `written` logs the field as it always did. One
-          // entry per row (upsertMany, createMany) narrows the records to the
+          // datum per row (upsertMany, createMany) narrows the entries to the
           // rows that named it.
-          let records = ids
+          let named = each
           if (written && (operation === 'create' || operation === 'update')) {
             const names = operation === 'create'
               ? (/** @type {any} */ d) => d?.[field] != null
               : (/** @type {any} */ d) => field in d || Object.keys(d).some((/** @type {any} */ k) => k.startsWith(`${field}.`))
             const given = written.flatMap((/** @type {any} */ d, /** @type {number} */ i) => names(d) ? [i] : [])
             if (!given.length) continue
-            if (given.length < written.length && rows.length === written.length) records = extractIds(given.map((/** @type {number} */ i) => rows[i]))
+            if (given.length < written.length && rows.length === written.length) {
+              const picked = given.map((/** @type {number} */ i) => rows[i])
+              named = perRow(picked, extractIds(picked))
+            }
           }
 
-          emitLog(db, {
+          for (const { recordId, rowTenant } of named) emitLog(db, {
             operation,
             model:   modelName,
             field,
             transition,
-            records,
+            recordId,
             before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
             after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
             lifted,
@@ -286,12 +297,12 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
         if (operation === 'read' && !reads)  continue
         if (isWrite              && !writes) continue
 
-        emitLog(db, {
+        for (const { recordId, rowTenant } of each) emitLog(db, {
           operation,
           model:   modelName,
           field:   null,
           transition,
-          records: ids,
+          recordId,
           before:  beforeMap ? redactSnapshot(beforeMap) : null,
           after:   afterMap  ? redactSnapshot(afterMap)  : null,
           lifted,
@@ -317,26 +328,26 @@ export function makeTrailEntries(/** @type {any} */ shape, /** @type {any} */ ct
   }
 
   function namedId(/** @type {any} */ where) {
-    if (!where || typeof where !== 'object') return []
+    if (!where || typeof where !== 'object') return null
     const keys = Object.keys(where)
-    if (keys.length !== 1 || keys[0] !== idField) return []
+    if (keys.length !== 1 || keys[0] !== idField) return null
     const v = where[idField]
     if (idType === 'Int') {
       const n = typeof v === 'number' ? v : typeof v === 'string' && /^-?\d{1,16}$/.test(v) ? Number(v) : NaN
-      return Number.isSafeInteger(n) ? [n] : []
+      return Number.isSafeInteger(n) ? n : null
     }
-    if (idType === 'String') return typeof v === 'string' && v.length > 0 && v.length <= NAMED_ID_MAX ? [v] : []
-    return []
+    if (idType === 'String') return typeof v === 'string' && v.length > 0 && v.length <= NAMED_ID_MAX ? v : null
+    return null
   }
 
   // Filed now rather than at commit: the refusal happened whether or not the
   // transaction that tried it commits, and a refused write is usually why it
   // rolls back.
   function emitDenied(/** @type {string} */ attempted, /** @type {any} */ where) {
-    const records = namedId(where)
+    const recordId = namedId(where)
     for (const { db, reads, writes } of tableModelLogs) {
       if (attempted === 'read' ? !reads : !writes) continue
-      emitLog(db, { operation: 'denied', model: modelName, field: null, transition: null, records, before: null, after: null, attempted })
+      emitLog(db, { operation: 'denied', model: modelName, field: null, transition: null, recordId, before: null, after: null, attempted })
     }
   }
 

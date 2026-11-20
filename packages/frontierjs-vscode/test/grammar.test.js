@@ -63,12 +63,18 @@ async function makeRegistry() {
     // broken for a reason that exists only in this harness. Empty is enough —
     // what these assertions read is the block's own `contentName` and the mesa
     // rules beside the include, never JavaScript's own scopes.
+    //
+    // Each carries one rule that opens on `/*TRAP*/` and never closes: VS Code's
+    // own JS grammar does exactly that on `a ? b?.() : c`, and a block that
+    // closes only when the embedded grammar lets it go swallowed the rest of
+    // the file, `<style>` included.
     loadGrammar: async (scope) => {
       const file = GRAMMARS[scope]
       if (file) return vsctm.parseRawGrammar(fs.readFileSync(file, 'utf8'), file)
-      if (scope === 'source.js' || scope === 'source.css' || scope === 'source.yaml') {
-        return { scopeName: scope, patterns: [] }
+      if (scope === 'source.js' || scope === 'source.css') {
+        return { scopeName: scope, patterns: [{ name: 'meta.trap.stub', begin: '/\\*TRAP\\*/', end: '(?!)' }] }
       }
+      if (scope === 'source.yaml') return { scopeName: scope, patterns: [] }
       return null
     }
   })
@@ -188,6 +194,48 @@ async function main() {
     ok(`${open}: the body is embedded CSS`,
       scopesOf(tk, '.a').includes('source.css.embedded.mesa'),
       scopesOf(tk, '.a').join(' ') || '(no scopes)')
+  }
+
+  // ── A block closes whatever its embedded grammar left open ────────────────
+
+  section('mesa: a block closes even when the embedded grammar does not')
+  {
+    const tk = tokenize(mesa, '<script>\n  const x = /*TRAP*/ 1\n</script>\n<style>\n  .a { color: red }\n</style>\n<p>after</p>\n')
+    ok('the trap did open (the stub is live)',
+      scopesOf(tk, '/*TRAP*/').includes('meta.trap.stub'))
+    const close = tk.find(t => t.line === 3 && t.text === 'script')?.scopes ?? []
+    ok('</script> is the close tag, not script body',
+      close.includes('entity.name.tag.html') && !close.includes('source.js.embedded.mesa'),
+      close.join(' ') || '(no token)')
+    ok('the style block after it is CSS',
+      scopesOf(tk, '.a').includes('source.css.embedded.mesa') && !scopesOf(tk, '.a').includes('meta.script.mesa'),
+      scopesOf(tk, '.a').join(' '))
+  }
+  {
+    const tk = tokenize(mesa, '<style>\n  .a { /*TRAP*/\n</style>\n<p>after</p>\n')
+    ok('markup after a trapped style block is not CSS',
+      !scopesOf(tk, 'after').includes('source.css.embedded.mesa'),
+      scopesOf(tk, 'after').join(' '))
+  }
+  // One-line blocks are matched whole: the `while` that rescues a multi-line
+  // block is only checked at a line start, so it would never see this close.
+  {
+    const tk = tokenize(mesa, '<script>export let data = null</script>\n<p>after</p>\n')
+    ok('a one-line script body is JS',
+      scopesOf(tk, 'export').includes('source.js.embedded.mesa'),
+      scopesOf(tk, 'export').join(' ') || '(no scopes)')
+    ok('markup after a one-line script is not JS',
+      !scopesOf(tk, 'after').includes('source.js.embedded.mesa'),
+      scopesOf(tk, 'after').join(' '))
+  }
+  {
+    const tk = tokenize(mesa, '<style>button { color: red }</style>\n<p>after</p>\n')
+    ok('a one-line style body is CSS',
+      scopesOf(tk, 'button').includes('source.css.embedded.mesa'),
+      scopesOf(tk, 'button').join(' ') || '(no scopes)')
+    ok('markup after a one-line style is not CSS',
+      !scopesOf(tk, 'after').includes('source.css.embedded.mesa'),
+      scopesOf(tk, 'after').join(' '))
   }
 
   // ── The mesa annotations, which only fire inside a script block ───────────

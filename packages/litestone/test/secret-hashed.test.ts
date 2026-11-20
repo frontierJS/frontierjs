@@ -102,7 +102,7 @@ describe('@secret @hashed', () => {
     expect(JSON.stringify(calls)).not.toContain('PLAINTEXT-TOKEN')
     const entry = calls.find(e => e.field === 'token')
     expect(entry).toBeDefined()
-    expect(JSON.parse(entry.records)).toEqual([row.id])
+    expect(entry.recordId).toBe(String(row.id))
     db.$close()
   })
 

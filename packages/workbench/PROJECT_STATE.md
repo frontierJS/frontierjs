@@ -1,19 +1,26 @@
 # Workbench -- Project State
 
-**Phase 1 (the skeleton) of `IDEAS/workbench-package.md` is built.** Nothing of
-the wing has moved in yet; Basecamp still carries all of it.
+**`IDEAS/workbench-package.md` is shipped**: every phase is closed, the wing
+has moved out of Basecamp, and the desktop shell is how the owner opens it
+(`fli desktop:install --release`).
 
 ## What exists
 
-- `db/schema.lite` -- Member, Session, ClaudeTranscript, ClaudeMessage,
-  ClaudeWrite; `db/migrations/main/` holds the fresh init.
-- `api/` -- `createApp`, the `workbench` claim, the door (`POST /door/login`,
-  `GET /door/me`, `POST /door/logout`), `GET /health`.
-- `web/` -- the shell, `/login/`, and `/workbench/` as an empty state; nav
-  entries Chats, Atlas, Decide, Autopilot (the last three have no route yet).
+- Screens under `web/src/routes/`: home, workbench (Claude Code chats per
+  pinned checkout), terminal, atlas (the registers, Decide), messages (the
+  Mattermost mirror), notifications, capture, git-activity, laptop, servers,
+  basecamps, charter, recommended-services, settings.
+- Providers `bc3` (37signals Basecamp, `FJS-D2265`) and `chat` (the Mattermost
+  sync into the Messages mirror models).
+- `desktop/`: the Tauri shell around `web/`, with a tray, single instance and
+  `--go <path>`.
+- Drives: `verify:desktop`, `verify:atlas`, `verify:capture`, `verify:messages`,
+  `verify:chat`.
 
-## Not yet
+## Open
 
-- The wing's domains, services, jobs, plugin, routes and resources (Phase 2).
-- The import-direction check against Basecamp (Phase 2.4).
-- A `desktop/` surface (Phase 4.1), a `/ws` channel, any test.
+- `FJS-4440` -- `verify:messages` sometimes never shows the second pick.
+- `FJS-3237` -- a lane worktree's build cannot resolve `@xterm/xterm`.
+- `FJS-4332`, `FJS-4252`, `FJS-4418` -- a session-file reader, `runAsk` and
+  the chat view each have a copy outside Workbench and no shared owner.
+- `verify:chat` and `verify:messages` have no row in `DRIVES.md`.

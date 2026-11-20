@@ -130,7 +130,7 @@ export type FlagType = 'boolean' | 'variant'
 
 export type TileKind = 'serverFleet' | 'serverHealth' | 'appStatus' | 'deployFeed' | 'jobHistory' | 'activityFeed' | 'alertStatus' | 'serviceHealth' | 'statCounter'
 
-export type ParamGenerator = 'randomHex' | 'randomAlphanumeric' | 'randomBase64' | 'uuid'
+export type ParamGenerator = 'randomHex' | 'randomAlphanumeric' | 'randomBase64' | 'uuid' | 'ntfyToken'
 
 export type BackupKind = 'manual' | 'scheduled' | 'found' | 'release'
 
@@ -1796,7 +1796,12 @@ export interface AuditTrail {
    * same states write identical images; only this separates them.
    */
   transition?: string | null
-  records: unknown
+  /**
+   * The one row this entry is about, as text: a read of a page or a bulk write
+   * files an entry per row, so *who looked at this record* is one indexed
+   * column a policy or a service filter can name (`FJS-D1744`).
+   */
+  recordId?: string | null
   /**
    * Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
    * land as `[redacted]`, `@personal` as `[personal]`.
@@ -1835,7 +1840,12 @@ export interface AuditTrailCreate {
    * same states write identical images; only this separates them.
    */
   transition?: string | null
-  records: unknown
+  /**
+   * The one row this entry is about, as text: a read of a page or a bulk write
+   * files an entry per row, so *who looked at this record* is one indexed
+   * column a policy or a service filter can name (`FJS-D1744`).
+   */
+  recordId?: string | null
   /**
    * Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
    * land as `[redacted]`, `@personal` as `[personal]`.
@@ -1869,7 +1879,7 @@ export interface AuditTrailUpdate {
   model?: string
   field?: string | null
   transition?: string | null
-  records?: unknown
+  recordId?: string | null
   before?: unknown | null
   after?: unknown | null
   actorId?: string | null
@@ -1891,7 +1901,7 @@ export interface AuditTrailWhere extends WhereBase {
   model?: string | WhereOp<string> | null
   field?: string | WhereOp<string> | null
   transition?: string | WhereOp<string> | null
-  records?: unknown | WhereOp<unknown> | null
+  recordId?: string | WhereOp<string> | null
   before?: unknown | WhereOp<unknown> | null
   after?: unknown | WhereOp<unknown> | null
   actorId?: string | WhereOp<string> | null
@@ -3167,6 +3177,7 @@ export type ProjectOrderBy =
 export interface ProjectRelations {
   workspace: Workspace | null
   environments: Environment[]
+  apps: App[]
   dependencyUses: DependencyUse[]
 }
 
@@ -3242,6 +3253,7 @@ export interface App {
   id: string
   workspaceId: string
   environmentId: string
+  projectId: string
   name: string
   slug: string
   kind: AppKind
@@ -3331,6 +3343,7 @@ export interface AppUpdate {
 }
 
 export interface AppSystem {
+  projectId?: string
   status?: AppStatus
   isDeployedOnPush?: boolean
   pushSecret?: string | null
@@ -3346,6 +3359,7 @@ export interface AppWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   environmentId?: string | WhereOp<string> | null
+  projectId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   kind?: AppKind | WhereOp<AppKind> | null
@@ -3389,6 +3403,7 @@ export type AppOrderBy =
 
 export interface AppRelations {
   environment: Environment | null
+  project: Project | null
   blueprint: Blueprint | null
   backupDestination: BackupDestination | null
   replicaDestination: BackupDestination | null
@@ -6911,7 +6926,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
   readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate', {}, Required<Pick<ProjectCreate, 'workspaceId'>>>
   readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate', {}, Required<Pick<EnvironmentCreate, 'workspaceId'>>>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'projectId' | 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>>
   readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, 'revision' | '@@gate', VariableSystem, Required<Pick<VariableCreate, 'workspaceId'>>>
   readonly variableVersion: TableClient<VariableVersion, VariableVersionCreate, VariableVersionUpdate, VariableVersionWhere, VariableVersionRelations, never, '@@gate', {}, Required<Pick<VariableVersionCreate, 'workspaceId'>>>
   readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem, Required<Pick<DomainCreate, 'workspaceId'>>>

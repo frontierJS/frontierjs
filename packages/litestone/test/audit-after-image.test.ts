@@ -15,7 +15,7 @@ async function setup() {
         operation String
         model String
         field String?
-        records Json
+        recordId String?
         before Json?
         after Json?
         actorId String?
@@ -71,7 +71,7 @@ describe('a relation read for the caller stays out of the trail', () => {
           operation String
           model String
           field String?
-          records Json
+          recordId String?
           before Json?
           after Json?
           actorId String?

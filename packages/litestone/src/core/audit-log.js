@@ -42,7 +42,9 @@ export function makeLoggerAutoModel(dbName) {
       // write identical before- and after-images, and only this separates
       // an order abandoned by its commitment from one a person cancelled.
       f('transition', 'String',     true),
-      f('records',    'Json'),
+      // ONE row per entry, as text, so *who touched this record* is one indexed
+      // column a policy can name (FJS-D1744).
+      f('recordId',   'String',   true),
       f('before',     'Json',     true),
       f('after',      'Json',     true),
       // NOT Int. The actor is whatever the host app's users are keyed by, and
@@ -93,7 +95,7 @@ export function makeLoggerAutoModel(dbName) {
       // records refuses them. The trail's own writes do not pass the gate.
       { kind: 'gate',  value: '8' },
       { kind: 'index', fields: ['actorId'] },
-      { kind: 'index', fields: ['model'] },
+      { kind: 'index', fields: ['model', 'recordId'] },
       // *Everything that happened in this request* is the question a trail is
       // read with once it can be asked at all.
       { kind: 'index', fields: ['correlationId'] },
@@ -183,12 +185,12 @@ function imageJson(image) {
 // onLog is the user-supplied function from createClient options.
 /**
  * @param {{ operation: LogEntry['operation'], model: string, field?: string | null, transition?: string | null,
- *           records?: unknown[], before?: unknown, after?: unknown, lifted?: string[] | null, attempted?: string | null,
+ *           recordId?: unknown, before?: unknown, after?: unknown, lifted?: string[] | null, attempted?: string | null,
  *           rowTenant?: string | null }} write
  * @param {Ctx} ctx
  * @param {((entry: Record<string, unknown>, ctx: Ctx) => Record<string, any> | null | void) | null | undefined} onLog
  */
-export function buildLogEntry({ operation, model, field, transition, records, before, after, lifted, attempted, rowTenant }, ctx, onLog) {
+export function buildLogEntry({ operation, model, field, transition, recordId, before, after, lifted, attempted, rowTenant }, ctx, onLog) {
   // WHERE the write came from. Supplied by whoever owns the request — junction
   // installs a closure over its own request store — because this package sits
   // BELOW the one that has a request (Invariant 1) and must not learn about it.
@@ -213,7 +215,9 @@ export function buildLogEntry({ operation, model, field, transition, records, be
     model,
     field:     field    ?? null,
     transition: transition ?? null,
-    records:   JSON.stringify(records ?? []),
+    // Text whatever the id's type: `where: { recordId: '2' }` answers the same
+    // on a SQL trail and a jsonl one, and an Int key compares by affinity.
+    recordId:  recordId != null ? String(recordId) : null,
     before:    before   != null ? imageJson(before) : null,
     after:     after    != null ? imageJson(after)  : null,
     // An episode inverts the actor. Inside one the principal in scope IS the
@@ -289,7 +293,7 @@ export function buildLogEntry({ operation, model, field, transition, records, be
  */
 export function trailRowValues(entry) {
   const out = { ...entry }
-  for (const column of ['records', 'before', 'after', 'meta'])
+  for (const column of ['before', 'after', 'meta'])
     if (typeof out[column] === 'string') out[column] = JSON.parse(out[column])
   return out
 }

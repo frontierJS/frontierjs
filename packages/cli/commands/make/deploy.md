@@ -64,6 +64,7 @@ const imageSources = (needs = {}) => [
   ['api',            './api'],
   ['db',             './db'],
   ...(needs.webSrc ? [['web/src', './web/src']] : []),
+  ...(needs.shared ? [['shared', './shared']] : []),
 ]
 
 const makeDockerfile = (appId, needs = {}) => `# FrontierJS API — ${appId}
@@ -284,6 +285,7 @@ if (existsSync(dockerfilePath)) {
   log.done(`Created: deploy/Dockerfile`)
   if (needs.chrome) log.info(`  with Chromium: the app uses ${needs.chrome}`)
   if (needs.webSrc) log.info('  with web/src: the API reads a template from it')
+  if (needs.shared) log.info('  with shared/: the API imports #shared/*')
   created.push(dockerfilePath)
 }
 

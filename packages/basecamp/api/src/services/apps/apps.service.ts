@@ -81,6 +81,7 @@ import { previewSettings, previewLabelRefusal, openPreview, freezePreview, thawP
   from '../../domain/workbench/workbench-preview.ts'
 import type { PreviewSettings, Opened } from '../../domain/workbench/workbench-preview.ts'
 import { replicaLag } from '../../domain/host/posture.ts'
+import { ntfyAuthRefusal } from '../../push.ts'
 import { syncManagedMonitor } from '../../domain/monitor/managed.ts'
 import { outpostRouteId, trafficOf, unavailable, unavailableOf } from '../../domain/host/traffic.ts'
 
@@ -89,7 +90,8 @@ const _WITH_ENV = { environment: true }
 
 /** A build is up to 24 MB written file by file; conduit's 10s default fails it mid-write. */
 
-const ALPHANUMERIC = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const ALPHANUMERIC       = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+const LOWER_ALPHANUMERIC = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const MEASURED_KINDS = new Set(['randomHex', 'randomAlphanumeric', 'randomBase64'])
 
 /** A value for a parameter that says how to mint one: `length` CHARACTERS of
@@ -97,9 +99,9 @@ const MEASURED_KINDS = new Set(['randomHex', 'randomAlphanumeric', 'randomBase64
  *  minted 64. `uuid` is its own length, so one given a length is refused
  *  rather than ignored. */
 function mint(kind: string, length?: number | null): string {
-  if (kind === 'uuid') {
-    if (length != null) throw new BadRequest(`The 'uuid' generator takes no length, and was given ${length}`)
-    return randomUUID()
+  if (kind === 'uuid' || kind === 'ntfyToken') {
+    if (length != null) throw new BadRequest(`The '${kind}' generator takes no length, and was given ${length}`)
+    return kind === 'uuid' ? randomUUID() : `tk_${drawFrom(LOWER_ALPHANUMERIC, 29)}`
   }
   if (!MEASURED_KINDS.has(kind)) throw new BadRequest(`No generator named '${kind}'`)
   if (!Number.isInteger(length) || (length as number) < 1 || (length as number) > 256)
@@ -107,11 +109,17 @@ function mint(kind: string, length?: number | null): string {
   const n = length as number
   if (kind === 'randomHex')    return randomBytes(Math.ceil(n / 2)).toString('hex').slice(0, n)
   if (kind === 'randomBase64') return randomBytes(Math.ceil(n * 3 / 4)).toString('base64').slice(0, n)
-  // A byte at or above 248 is redrawn: 256 is not a multiple of 62, and taking
-  // the remainder of every byte would make the first eight characters likelier.
+  return drawFrom(ALPHANUMERIC, n)
+}
+
+/** `n` characters of `alphabet`. A byte at or above the largest multiple of
+ *  the alphabet's size is redrawn: taking the remainder of every byte would
+ *  make the first characters likelier. */
+function drawFrom(alphabet: string, n: number): string {
+  const ceiling = 256 - 256 % alphabet.length
   let out = ''
   while (out.length < n)
-    for (const b of randomBytes(n - out.length + 8)) if (b < 248 && out.length < n) out += ALPHANUMERIC[b % 62]
+    for (const b of randomBytes(n - out.length + 8)) if (b < ceiling && out.length < n) out += alphabet[b % alphabet.length]
   return out
 }
 
@@ -920,14 +928,11 @@ export default createService({
   channel: workspaceChannel,
   // `?serverId=` is not a column of App — a placement is an AppServer row —
   // so it is reserved rather than graded as a filter, and read below.
-  // `?projectId=` likewise: it is the environment's column, and the project
-  // screen lists every app across its environments by it.
-  reservedQuery: [...WORKSPACE_QUERY, 'serverId', 'projectId'],
+  reservedQuery: [...WORKSPACE_QUERY, 'serverId'],
 
   async find() {
     const { limit, offset } = getPagination()
     const serverId  = $.reserved.serverId as string | undefined
-    const projectId = $.reserved.projectId as string | undefined
     // The caller's `$orderBy` wins over newest-first; autoSort has validated
     // the key but left the value raw, and junction refuses a directive the
     // body never read (the jobs form sorts its app picker by name).
@@ -944,7 +949,6 @@ export default createService({
         ...parseWhere($.query),
         workspaceId: ws(),
         ...(serverId ? { appServers: { some: { serverId } } } : {}),
-        ...(projectId ? { environment: { is: { projectId } } } : {}),
         ...await notHub(db().asSystem(), 'app'),
       },
       // `environment` last: a picker's `$populate=environment` would otherwise
@@ -1199,6 +1203,13 @@ export default createService({
     }
     const image = interpolate(bp.image, 'The image', scope).value
     const variables = environmentValues(bp.environment, scope)
+    // Graded on what the container is handed: NTFY_AUTH_TOKENS is composed
+    // from params, so no single param holds it.
+    if (bp.slug === 'ntfy') {
+      const valueOf = (key: string) => variables.find(v => v.key === key)?.value
+      const refusal = ntfyAuthRefusal(valueOf('NTFY_AUTH_USERS'), valueOf('NTFY_AUTH_TOKENS'))
+      if (refusal) throw new BadRequest(refusal)
+    }
 
     // One transaction: an app whose variables did not land is an app whose
     // first release starts a container without its password.

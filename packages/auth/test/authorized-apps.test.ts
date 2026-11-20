@@ -21,7 +21,7 @@ afterAll(() => c.h.cleanup())
 const settle = () => new Promise((r) => setImmediate(r))
 const trailFor = async (sessionId: string) =>
   (await c.h.sys.auditTrail.findMany({ where: { model: 'Session' } }))
-    .filter((e: any) => JSON.stringify(e.records).includes(sessionId))
+    .filter((e: any) => e.recordId === String(sessionId))
 
 describe('the sessions list', () => {
   test('an authorized app is listed with its client id and host; a browser session with no client', async () => {

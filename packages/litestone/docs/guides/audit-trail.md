@@ -129,7 +129,7 @@ const [, entry] = await db.asSystem().auditTrail.findMany({ orderBy: { createdAt
 //   model:         'User',       // the model name, as a $audit event spells it
 //   field:         null,         // model-level entry (not field-level)
 //   transition:    null,         // the move's name, where the update was one
-//   records:       [1],          // ids of affected rows
+//   recordId:      '1',         // the one row this entry names, as text
 //   before:        { id: 1, email: 'ada@example.com', name: null, role: 'member' },
 //   after:         { id: 1, email: 'ada@example.com', name: null, role: 'admin' },
 //   actorId:       42,
@@ -146,15 +146,16 @@ A protected field never reaches an image as its value: `@encrypted`,
 `@guarded`, `@secret` and `@hashed` log as `'[redacted]'` and `@personal` as
 `'[personal]'`.
 
-The trail's `records`, `before`, `after` and `meta` read back as the values
-above, not as JSON text:
+The trail's `before`, `after` and `meta` read back as the values above, not as
+JSON text. Every operation files one entry per row, so a bulk write of three
+rows is three entries, each with its own `recordId` (indexed with `model`):
 
 ```js
 const db = await createClient({ path: './schema.lite', db: './app.db' })
 await db.asSystem().user.create({ data: { id: 1, email: 'ada@example.com' } })
 await new Promise(r => setImmediate(r))
 const [entry] = await db.asSystem().auditTrail.findMany()
-if (!Array.isArray(entry.records)) throw new Error(`records is ${typeof entry.records}: ${entry.records}`)
+if (typeof entry.recordId !== 'string') throw new Error(`recordId is ${typeof entry.recordId}: ${entry.recordId}`)
 ```
 
 ---
@@ -180,7 +181,7 @@ const recent = await trail.findMany({
   orderBy: { createdAt: 'desc' },
   limit:   100,
 })
-// → [{ operation: 'update', model: 'Order', records: [5], ... }, ...]
+// → [{ operation: 'update', model: 'Order', recordId: '5', ... }, ...]
 
 // All changes by a specific actor
 const actorHistory = await trail.findMany({
@@ -203,8 +204,8 @@ the application's loop over a windowed `findMany`.
 
 **A `$raw` predicate on the trail is refused by name**: a `where` on a
 `driver trail` or `driver jsonl` model answers the scalar operators only, and
-`$raw` is SQL over a column. The full history of one record is therefore not a
-`json_extract` over `records`:
+`$raw` is SQL over a column. The full history of one record needs none: it is
+a plain `where` on `model` and `recordId`, and a `$raw` beside it is refused:
 
 ```js throws
 import { sql } from '@frontierjs/litestone'
@@ -216,7 +217,7 @@ await sys.order.create({ data: { id: 6, userId: 1, amount: 1 } })
 await new Promise(r => setImmediate(r))
 
 await sys.auditTrail.findMany({
-  where:   { model: 'Order', $raw: sql`json_extract(records, '$[0]') = ${5}` },
+  where:   { model: 'Order', $raw: sql`recordId = '5'` },
   orderBy: { createdAt: 'asc' },
 })
 ```

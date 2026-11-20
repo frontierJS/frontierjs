@@ -410,8 +410,9 @@ env.close()
   not move `@default(now())` or `@updatedAt`; state those on the write.
 - **The audit trail is a model in the env.** `await env.system.auditTrail.findMany({
   where: { model: 'lead' } })` after one tick (`await new Promise(r => setTimeout(r, 0))`).
-  Its `model` is the accessor spelling, and `records`/`before`/`after` come back as JSON
-  strings. `db.$audit({ operation, model, records })` writes an entry by hand (`meta`
+  Its `model` is the accessor spelling, `recordId` is the one row an entry names (as text;
+  a bulk write or a read files one entry per row), and `before`/`after` come back as JSON
+  strings. `db.$audit({ operation, model, recordId })` writes an entry by hand (`meta`
   is never redacted). **Declare `database main { … }` beside a `trail` database**, or
   `createTestEnv` throws a bare `TypeError` (`FJS-2532`).
 - **Local file storage is the double.** `plugins: [FileStorage({ provider: 'local',

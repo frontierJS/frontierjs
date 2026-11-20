@@ -579,6 +579,7 @@ Sierra surface:
 | `route-part-prefix` | a `_folder.Part.mesa` sitting in a different folder than its prefix names |
 | `page-path-retired` · `detail-read-dead` | `page.path` / `to.path`; a `service.get()` result kept in screen state |
 | `import-subpath-exported` | an import of a `@frontierjs/*` subpath the installed package no longer exports — a rename keeps no alias — or a relative path into its files that is gone |
+| `mesa-peer-declared` | an import of a `@frontierjs/mesa` server subpath (`render`, `render-component`, `css-inliner`, `compiler-md`) whose optional peer the app does not declare — under `dependencies` when `api/` ships it, since the image installs with `--production` |
 | `table-column-key` · `money-rendered-raw` | a `<Table>` column spelled `key` instead of `name`; a `@money` column interpolated bare |
 | `static-publish-db` | a `target: 'static'` surface with companions and no `db:` |
 | `app-layout` · `surface-config` · `widget-entry-name` | a surface in the wrong place; config outside `config/`; a misnamed widget |

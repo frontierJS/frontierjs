@@ -199,7 +199,7 @@ title: Blueprints
   const setParam  = (i, field, v) => params = params.map((p, j) => j === i ? { ...p, [field]: v } : p)
   const addParam  = () => params = [...params, { key: '', label: '', hint: '', defaultValue: '', isRequired: false, isSecret: false, generate: '', generateLength: undefined, validRegex: '' }]
   // Every kind but `uuid` mints a stated number of characters (`FJS-D2122`).
-  const isMeasured = (generate) => Boolean(generate) && generate !== 'uuid'
+  const isMeasured = (generate) => Boolean(generate) && generate !== 'uuid' && generate !== 'ntfyToken'
   const dropParam = (i) => params = params.filter((_, j) => j !== i)
   function moveParam(i, d) {
     const to = i + d

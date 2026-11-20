@@ -68,7 +68,7 @@ describe('authorization_code', () => {
     const row = await h.sys.session.findFirst({ where: { userId: a.userId, clientId: CODE_ID } })
     await new Promise((r) => setImmediate(r))
     const entries = await h.sys.auditTrail.findMany({ where: { model: 'Session' } })
-    const mine    = entries.filter((e: any) => JSON.stringify(e.records).includes(String(row.id)))
+    const mine    = entries.filter((e: any) => e.recordId === String(row.id))
     const event   = mine.find((e: any) => e.operation === 'app.authorized')
     expect(event.actorId).toBe(a.userId)
     expect(event.meta.clientId).toBe(CODE_ID)
@@ -134,7 +134,7 @@ describe('refresh_token', () => {
     expect(after.authorizedApp.sessionId).toBe(before.authorizedApp.sessionId)
     await new Promise((r) => setImmediate(r))
     const entries = (await h.sys.auditTrail.findMany({ where: { model: 'Session' } }))
-      .filter((e: any) => JSON.stringify(e.records).includes(after.authorizedApp.sessionId))
+      .filter((e: any) => e.recordId === String(after.authorizedApp.sessionId))
     expect(entries.map((e: any) => e.operation)).toContain('app.refreshed')
     // A rotation is an `updateMany`, whose entry carries no image; neither the
     // token nor either hash may reach the trail by any entry.
@@ -169,7 +169,7 @@ describe('refresh_token', () => {
     expect(await h.sys.session.findFirst({ where: { id: sid } })).toBeNull()
     refusedWith(await refresh(third.body.refresh_token), 'invalid_grant')
     const refused = await h.sys.auditTrail.findMany({ where: { operation: 'app.reuse-refused' } })
-    expect(refused.some((e: any) => JSON.stringify(e.records).includes(sid))).toBe(true)
+    expect(refused.some((e: any) => e.recordId === String(sid))).toBe(true)
   })
 
   test('an unknown token, another client\'s id, a revoked row and an expired row are invalid_grant', async () => {

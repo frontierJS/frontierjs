@@ -590,8 +590,8 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     }
 
     // A read through a relation is a read of the target, so the target's own
-    // `reads: true` trail files it (FJS-3709). The entry names rows by id, and a
-    // nested `select` that left the id out would file `records: []`.
+    // `reads: true` trail files it (FJS-3709). An entry names its row by id, and a
+    // nested `select` that left the id out would file one naming none.
     const readSink = ctx.readSinkFor?.(rel.targetModel) ?? null
     const parseNested = () => {
       if (!nestedSelect) return null

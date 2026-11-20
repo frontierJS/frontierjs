@@ -51,7 +51,7 @@ describe('a real trail', () => {
       await tick(); await tick()
 
       const lines = readFileSync(join(dir, 'audit', 'AuditTrail.jsonl'), 'utf8').split('\n').filter(Boolean)
-      expect(lines.map(l => JSON.parse(l).records)).toEqual(Array.from({ length: 20 }, (_, i) => [i + 1]))
+      expect(lines.map(l => JSON.parse(l).recordId)).toEqual(Array.from({ length: 20 }, (_, i) => String(i + 1)))
       // The index rows name the right lines — an indexed read answers each one.
       expect(await sys.auditTrail.count({ where: { model: 'Thing' } })).toBe(20)
       expect(db.$logStats()).toMatchObject({ written: 20, dropped: 0 })
@@ -67,7 +67,7 @@ describe('a real trail', () => {
         id        Int      @id @default(autoincrement())
         operation String
         model     Audited
-        records   Json
+        recordId  String?
         createdAt DateTime @default(now())
       }
       model Thing { id Int @id  name String  @@trail(main) }
@@ -87,7 +87,7 @@ describe('a real trail', () => {
     } finally { console.warn = warn }
 
     const rows = await sys.auditRow.findMany({ orderBy: { id: 'asc' } })
-    expect(rows.map((r: any) => r.records)).toEqual([[1], [2]])
+    expect(rows.map((r: any) => r.recordId)).toEqual(['1', '2'])
     expect(db.$logStats()).toMatchObject({ written: 2, dropped: 1 })
     db.$close()
   })

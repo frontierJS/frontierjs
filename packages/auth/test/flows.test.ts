@@ -870,7 +870,7 @@ describe('auth records what @@trail(audit) cannot see', () => {
 
     expect(row).toBeDefined()
     expect(row.actorId).toBe(u.id)
-    expect(row.records).toHaveLength(1)
+    expect(row.recordId).not.toBeNull()
     h.cleanup()
   })
 

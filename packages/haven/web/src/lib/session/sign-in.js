@@ -27,7 +27,7 @@ export async function machineKeys(file) {
   return { keys, made: true }
 }
 
-/** A signed POST /haven/login with the member's chain `links` and the post's `row`, answered `{ token, member }`; the row is the nick. */
+/** A signed POST /haven/login with the member's chain `links` and the post's `row`, answered `{ token, member }`; the row is the nick. With neither it is an agent's login, admitted only when the Haven lists the key (`HAVEN_AGENTS`). */
 export async function signIn(api, { keys, links, row }) {
   const body = JSON.stringify({ publicKey: keys.publicKey, links, row })
   const headers = await signRequest({

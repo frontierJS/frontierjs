@@ -137,7 +137,10 @@ export interface TransportContext {
    * urlencoded, XML or text. Absent for multipart and for no body at all.
    *
    * For verifying a signature over the body, and nothing else: read `body`.
-   * A hook reaches it as `ctx.raw.rawBody`.
+   * A hook reaches it as `ctx.raw.rawBody`. It is a UTF-8 decode, so a
+   * multipart, binary or non-UTF-8 delivery is verified over the bytes of
+   * `await ctx.$raw.$req.arrayBuffer()`, and one past `http.maxBodySize` on a
+   * route stating its own `maxBodySize` (`FJS-2927`).
    */
   rawBody?: string
   files:    UploadedFile[]

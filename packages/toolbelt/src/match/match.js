@@ -45,7 +45,7 @@
  * is why a caller with a schema should pass one.
  */
 
-import { DIRECTIVE_PARAMS } from '../directives/directives.js'
+import { DIRECTIVE_PARAMS, CALLER_TOKEN } from '../directives/directives.js'
 import { isPoint, isNear }    from '../geo/geo.js'
 import { parseLength }        from '../units/units.js'
 
@@ -134,10 +134,16 @@ const _like = (operand, test) => {
   return actual => actual == null ? false : test(_ascii(actual), want)
 }
 
+const _isCallerToken = v => !!v && typeof v === 'object' && !Array.isArray(v) && Object.hasOwn(v, CALLER_TOKEN)
+
 // One operator block entry as a function of the stored value. The operand is
 // folded here, once, so a filter graded over a document does not repeat it per
 // row (`FJS-3763`).
 function _compileOp(rule, op, operand) {
+  // `{ $auth: 'employeeId' }` is the caller's claim, which the server resolves
+  // and this side never holds (`FJS-D1730`). Compared as an object, `not` kept
+  // the caller's own row in a "not mine" list.
+  if (_isCallerToken(operand) || (Array.isArray(operand) && operand.some(_isCallerToken))) return () => null
   switch (op) {
     case 'in':     return _inList(rule, operand)
     // NOT IN excludes NULL rows in SQLite, so Litestone ORs `IS NULL` back in.

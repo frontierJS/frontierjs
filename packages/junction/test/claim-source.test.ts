@@ -232,3 +232,100 @@ describe("a claim the app's resolver answers, on a broadcast", () => {
     expect(u2()).toEqual([])
   })
 })
+
+// ─── the caller as a filter value (FJS-D1730, FJS-3725) ─────────────────────
+//
+// An approver inbox is "submitted and not mine": the filter names the caller's
+// own Employee id, which the client never holds. `{ $auth: 'employeeId' }` is
+// replaced by the caller's claim before Litestone sees the where.
+
+const INBOX = `
+  claim employeeId from Employee(userId)
+
+  model User { id String @id  @@auth }
+
+  model Employee {
+    id     Int    @id @default(autoincrement())
+    userId String @unique
+    user   User   @relation(fields: [userId], references: [id])
+  }
+
+  model Expense {
+    id            Int    @id @default(autoincrement())
+    note          String
+    status        String
+    submittedById Int
+    @@allow(read, auth() != null)
+  }
+`
+
+describe('a filter naming the caller with { $auth }', () => {
+  async function inbox() {
+    const db: any = await createClient({ db: ':memory:', schema: INBOX })
+    const sys = db.asSystem()
+    await sys.user.create({ data: { id: 'u1' } })
+    await sys.user.create({ data: { id: 'u2' } })
+    await sys.user.create({ data: { id: 'u3' } })
+    await sys.employee.create({ data: { userId: 'u1' } })
+    await sys.employee.create({ data: { userId: 'u2' } })
+    await sys.expense.create({ data: { note: 'by one', status: 'submitted', submittedById: 1 } })
+    await sys.expense.create({ data: { note: 'by two', status: 'submitted', submittedById: 2 } })
+    await sys.expense.create({ data: { note: 'drafted', status: 'draft', submittedById: 2 } })
+    const app: any = createApp({ db })
+    app.services.register(createService({ name: 'expenses', model: 'Expense' }))
+    return app
+  }
+  const notesFor = async (app: any, query: object, userId: string) =>
+    rowsOf(await app.service('expenses').find(query, as(userId))).map((r: any) => r.note).sort()
+
+  test('is the caller\'s claim, under an operator and inside $or', async () => {
+    const app = await inbox()
+    const notMine = { $or: [{ status: 'submitted', submittedById: { not: { $auth: 'employeeId' } } }] }
+    expect(await notesFor(app, notMine, 'u1')).toEqual(['by two'])
+    expect(await notesFor(app, notMine, 'u2')).toEqual(['by one'])
+  })
+
+  test('as an equality, it is the caller\'s own rows', async () => {
+    const app = await inbox()
+    expect(await notesFor(app, { submittedById: { $auth: 'employeeId' } }, 'u2')).toEqual(['by two', 'drafted'])
+  })
+
+  test('arrives off the wire as a structure, never as text', async () => {
+    const { parseQuery: parseQueryString } = await import('../src/transport/body.ts')
+    expect(parseQueryString('submittedById[not][$auth]=employeeId'))
+      .toEqual({ submittedById: { not: { $auth: 'employeeId' } } })
+  })
+
+  test('a claim the caller does not hold is refused by name', async () => {
+    const app = await inbox()
+    await expect(notesFor(app, { submittedById: { $auth: 'siteId' } }, 'u1')).rejects.toThrow(/'siteId'/)
+  })
+
+  test('a caller with no row behind the claim is refused, never matched against NULL', async () => {
+    const app = await inbox()
+    await expect(notesFor(app, { submittedById: { $auth: 'employeeId' } }, 'u3')).rejects.toThrow(/'employeeId'/)
+  })
+
+  test('a guest is refused by name', async () => {
+    const app = await inbox()
+    await expect(app.service('expenses').find({ submittedById: { $auth: 'employeeId' } }, { user: null } as any))
+      .rejects.toThrow(/has no principal/)
+  })
+
+  test('a token that is not one name alone is refused', async () => {
+    const app = await inbox()
+    await expect(notesFor(app, { submittedById: { $auth: 'employeeId', extra: 1 } }, 'u1')).rejects.toThrow(/names one claim/)
+    await expect(notesFor(app, { submittedById: { $auth: ['employeeId'] } }, 'u1')).rejects.toThrow(/names one claim/)
+  })
+
+  test('a token a hook adds after the claims is refused, not handed to Litestone as an operator', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: INBOX })
+    await db.asSystem().user.create({ data: { id: 'u1' } })
+    const app: any = createApp({ db })
+    app.services.register(createService({
+      name: 'expenses', model: 'Expense',
+      hooks: { before: { find: [(c: ServiceContext) => { c.query = { submittedById: { $auth: 'employeeId' } } }] } },
+    } as never))
+    await expect(app.service('expenses').find({}, as('u1'))).rejects.toThrow(/reached the query builder unresolved/)
+  })
+})

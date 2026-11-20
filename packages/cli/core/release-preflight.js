@@ -28,7 +28,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
-import { join, posix } from 'node:path'
+import { join, posix, relative } from 'node:path'
 
 import { runChecks } from './checks.js'
 import { declaredDatabasePaths } from './db-preflight.js'
@@ -49,6 +49,7 @@ export const RULES = {
   'local-default':    'a URL left on a localhost default, which inside the container is the container',
   'node-env':         'NODE_ENV resolving to development in a release',
   'migration-history': 'a schema the migrations do not build, which the container refuses at boot',
+  'peer-undeclared':  'a package the API loads that the --production install leaves out, so it exits at start',
   'unreadable':       'something the check could not read, so its rules did not run',
   'surface-unreleased': 'a surface of the app that no App in this environment releases',
   'widgets-unrouted': "a widgets App with no Domain, so the widget origin answers no one",
@@ -155,11 +156,12 @@ export function imageRuntime(dockerfile) {
  * @param image      `imageRuntime()` of the Dockerfile
  * @param surfaces   the app's surfaces beside api/ — `['web', 'widgets']`
  * @param migrations `runChecks()` of `migration-history`, or null for an app with no schema
+ * @param peers      `undeclaredPeers()` — the Mesa optional peers api/ loads and does not declare
  */
 export function releaseFindings({
   app, variables = null, siblings = null, envSpec = null, unread = {},
   databases = [], health = null, image = { workdir: '/', env: {} }, surfaces = [],
-  routes = null, prefixes = ['/api', '/ws'], migrations = null,
+  routes = null, prefixes = ['/api', '/ws'], migrations = null, peers = [],
 }) {
   const findings = []
   // A fix fills what is missing and never rewrites a row the App holds
@@ -352,6 +354,10 @@ export function releaseFindings({
   for (const s of migrations?.skipped ?? [])
     add('unreadable', 'warn', 'could not ask whether the migration history builds the schema', s.why, null)
 
+  // ── will it load ──────────────────────────────────────────────────────────
+  for (const f of peers)
+    add('peer-undeclared', 'error', 'the API loads a package the image does not install', `${f.file}:${f.line} ${f.message}`, null)
+
   // ── what else ─────────────────────────────────────────────────────────────
   if (siblings) {
     const released = (surface) => staticApps.filter(s => surfaceOf(s) === surface)
@@ -522,7 +528,21 @@ export function gatherReleaseInputs(root, { dockerfile = 'deploy/Dockerfile', do
     image:     imageRuntime(dockerfileText ?? (existsSync(dfPath) ? readFileSync(dfPath, 'utf8') : '')),
     surfaces:  ['web', 'widgets', 'site'].filter(s => existsSync(join(root, s))),
     migrations: existsSync(join(root, 'db', 'schema.lite')) ? runChecks({ root, only: ['migration-history'] }) : null,
+    peers:     undeclaredPeers(root),
   }
+}
+
+/**
+ * The `mesa-peer-declared` findings in code the image ships (`FJS-4465`): a
+ * linked workspace resolves an undeclared peer, so this is the last place the
+ * gap shows before the container exits at start. A test's finding is
+ * `fli check`'s, not the release's. Both doors ask it.
+ * @returns {{ file: string, line: number, message: string }[]}
+ */
+export function undeclaredPeers(root) {
+  return runChecks({ root, only: ['mesa-peer-declared'] }).findings
+    .filter(f => f.ships)
+    .map(f => ({ file: relative(root, f.file), line: f.line, message: f.message }))
 }
 
 /**

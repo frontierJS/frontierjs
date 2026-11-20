@@ -59,7 +59,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
 | `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
 | `NotificationKind` | `AlertFiring` · `AlertResolved` · `AppBackupFailed` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorCertExpiring` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
-| `ParamGenerator` | `randomAlphanumeric` · `randomBase64` · `randomHex` · `uuid` |
+| `ParamGenerator` | `ntfyToken` · `randomAlphanumeric` · `randomBase64` · `randomHex` · `uuid` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
 | `ProjectStatus` | `active` · `archived` |
@@ -243,7 +243,7 @@ table `api_key` · db `main` · gate `5`
 
 ### `App`
 
-table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
+table `app` · db `main` · gate `2.4.4.4` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -282,6 +282,8 @@ table `app` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 | `memLimitMb` | `Int` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
 | `port` | `Int` | yes | — | — |
+| `project` | `Project` | — | — | relation |
+| `projectId` | `String` | no | — | @system · **required on write** |
 | `pushActorId` | `String` | yes | — | @system |
 | `pushSecret` | `String` | yes | — | @encrypted |
 | `pushTokenHash` | `String` | yes | — | @guarded @system |
@@ -621,7 +623,7 @@ table `audit_trail` · db `audit` · gate `8`
 | `model` | `String` | no | — | **required on write** |
 | `operation` | `String` | no | — | **required on write** |
 | `origin` | `String` | yes | — | — |
-| `records` | `Json` | no | — | **required on write** |
+| `recordId` | `String` | yes | — | — |
 | `source` | `String` | yes | — | — |
 | `subjectId` | `String` | yes | — | — |
 | `tenant` | `String` | yes | — | — |
@@ -633,7 +635,7 @@ table `audit_trail` · db `audit` · gate `8`
 @@index(correlationId)
 @@index(createdAt)
 @@index(episodeId)
-@@index(model)
+@@index(model, recordId)
 ```
 
 ### `BackupDestination`
@@ -733,8 +735,8 @@ table `blueprint_param` · db `main` · gate `1.7`
 ```
 @@unique(blueprintId, key)
 @@index(blueprintId)
-@@check(generate IS NOT 'uuid' OR generateLength IS NULL)
-@@check(generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL)
+@@check(generate IS NULL OR generate IN ('uuid', 'ntfyToken') OR generateLength IS NOT NULL)
+@@check(generate IS NULL OR generate NOT IN ('uuid', 'ntfyToken') OR generateLength IS NULL)
 ```
 
 ### `conduit_receipts`
@@ -1041,7 +1043,7 @@ table `disk_usage` · db `main` · gate `2.8`
 
 ### `Domain`
 
-table `domain` · db `main` · gate `2.5` · @@softDelete
+table `domain` · db `main` · gate `2.4.4.4` · @@softDelete
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -1882,6 +1884,7 @@ table `project` · db `main` · gate `2.4.4.5` · @@softDelete(cascade)
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `apps` | `App[]` | — | — | relation |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `dependencyUses` | `DependencyUse[]` | — | — | relation |

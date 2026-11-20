@@ -45,6 +45,19 @@ siteName: Workbench
     goto('/login/')
   }
 
+  // Focus mode hides the top nav on every screen; ⌘K is how it comes back. The
+  // /workbench/ page's own Focus (data-workbench-focus) is a different switch.
+  const FOCUS_MODE_KEY = 'workbench.focus-mode'
+  let focusMode = false
+  try { focusMode = localStorage.getItem(FOCUS_MODE_KEY) === '1' } catch {}
+  const showFocusMode = () => document.documentElement.toggleAttribute('data-focus-mode', focusMode)
+  showFocusMode()
+  function toggleFocusMode() {
+    focusMode = !focusMode
+    try { localStorage.setItem(FOCUS_MODE_KEY, focusMode ? '1' : '0') } catch {}
+    showFocusMode()
+  }
+
   // ─── ⌘K ──────────────────────────────────────────────────────────────────
   // The nav and the topbar's own behaviors reached a second way, plus what
   // the screen on show offers (lib/commands.js). Navigate comes from
@@ -66,6 +79,9 @@ siteName: Workbench
       })),
       { id: 'theme:system', group: 'Theme', label: 'Match system', keywords: 'theme appearance os light dark',
         badge: theme.preference === 'system' ? 'Current' : undefined, action: () => setTheme('system') },
+      { id: 'focus-mode', group: 'Workbench', label: focusMode ? 'Focus mode: turn off' : 'Focus mode: turn on',
+        sub: 'hide the top nav', keywords: 'focus mode hide show top nav bar header toggle',
+        badge: focusMode ? 'On' : undefined, action: toggleFocusMode },
       { id: 'sign-out', group: 'Session', label: 'Sign out', action: leave },
     ]
   }
@@ -86,7 +102,9 @@ siteName: Workbench
   }
 </script>
 
-<div class="shell">
+<!-- Messages scroll inside themselves (the channel list, the post list), so the
+     shell is one viewport tall there; every other page scrolls the document. -->
+<div class="shell" class:viewport={page.pathname.startsWith('/messages')}>
   <header class="topbar">
     <span class="cluster wb-head">
       {#if session.user}
@@ -189,5 +207,6 @@ siteName: Workbench
     .screen { padding-inline: 0; }
   }
   /* The workbench page's Focus sets this, and clears it when the page goes. */
-  :global(html[data-workbench-focus] .topbar) { display: none; }
+  :global(html[data-workbench-focus] .topbar),
+  :global(html[data-focus-mode] .topbar) { display: none; }
 </style>

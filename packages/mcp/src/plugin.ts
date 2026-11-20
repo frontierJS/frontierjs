@@ -750,7 +750,7 @@ const CALL_OPERATION = 'mcp.call'
 type Outcome = 'done' | 'refused' | 'rejected' | 'failed'
 
 interface TrailRow {
-  records?:   string[] | null
+  recordId?:  string | null
   actorId?:   string | null
   meta?:      Record<string, unknown> | null
   createdAt?: string
@@ -810,7 +810,7 @@ async function recordCall(
       await (db as { $audit(e: Record<string, unknown>): Promise<unknown> }).$audit({
         operation: CALL_OPERATION,
         model:     tool.model ?? tool.service,
-        records:   id == null ? [] : [String(id)],
+        recordId:  id == null ? null : String(id),
         ...(actor?.id != null ? { actorId: String(actor.id), actorType: 'user' } : {}),
         meta: {
           tool: tool.name, kind: tool.kind, method: tool.method, outcome: how.outcome,
@@ -834,7 +834,7 @@ function callOf(r: TrailRow) {
   return {
     at:      r.createdAt ?? null,
     actorId: r.actorId ?? null,
-    records: r.records ?? [],
+    recordId: r.recordId ?? null,
     ...r.meta,
   }
 }

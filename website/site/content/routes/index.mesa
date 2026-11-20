@@ -1,6 +1,6 @@
 ---
 title: FrontierJS — coming soon
-description: One schema file seeds your database, your API, and your UI. FrontierJS is coming soon — read the journey while it gets there.
+description: One schema file seeds the database, the API and the UI. FrontierJS is coming soon — read the journey while it gets there.
 render: static
 ---
 <!--
@@ -41,8 +41,8 @@ render: static
     <h1>The Frontier<br><span class="accent">awaits.</span></h1>
 
     <p class="lede">
-      One starting source of truth. Get your database, API and UI
-      …with validation, authorization, pagination, live updates, migrations, typed clients and forms
+      One source of truth: the schema. Database, API, UI, validation, authorization,
+      pagination, live updates, migrations, typed clients and forms are
       <strong>derived, not written</strong>.
     </p>
 

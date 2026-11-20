@@ -44,7 +44,7 @@ async function withDb(fn: (db: any) => Promise<void>) {
 async function updatesFor(db: any, id: number) {
   await tick()
   const rows = await db.asSystem().auditTrail.findMany({})
-  return rows.filter((r: any) => r.operation === 'update' && r.records.includes(id))
+  return rows.filter((r: any) => r.operation === 'update' && r.recordId === String(id))
 }
 
 describe('an audited update names the move it made', () => {

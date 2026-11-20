@@ -5,10 +5,8 @@ the registers read and ruled on, the loops as a town. An FJS application, not a
 library, and **private** -- it is never published, because a laptop tool with a
 database and a shell is not a thing `bun publish` should see.
 
-**Built so far: the skeleton.** A schema (`Member`, `Session`, and the three
-Claude usage models), an API with the door (`POST /door/login`), and a web shell
-whose `/workbench/` screen is an empty state behind the sign-in. The wing moves
-in from Basecamp in Phase 2 of `IDEAS/workbench-package.md`.
+What it has and what is open is `PROJECT_STATE.md`; the desktop shell is
+`CLAUDE.md` § Desktop.
 
 ```bash
 fli dev            # preflights the ports and the database, then runs both servers

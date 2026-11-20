@@ -68,7 +68,7 @@ const customer = (tag) =>
 const trailFor = (email) =>
   `const c = await sys.customer.findFirst({ where: { email: '${email}' }, withDeleted: true }); ` +
   `const rows = await sys.auditTrail.findMany({ where: { model: 'Customer' } }); ` +
-  `return rows.filter(r => r.records?.includes(c.id) && r.createdAt >= '${START}')` +
+  `return rows.filter(r => r.recordId === String(c.id) && r.createdAt >= '${START}')` +
   `.map(r => [r.operation, r.actorId, r.actorType])`
 
 let stoppedEarly = null

@@ -1697,8 +1697,8 @@ check('a scheduled job\'s next run is the next Monday at 09:00',
 await goto(`/jobs/${weekly.id}/`)
 check('and the job screen shows it',
   await waitFor(`[...document.querySelectorAll('.facts dt')].find(d => d.textContent === 'Next run')?.nextElementSibling?.textContent ?? ''`,
-    t => t.includes('9:00:00 AM')),
-  t => t.includes('9:00:00 AM'))
+    t => t.includes('09:00:00')),
+  t => t.includes('09:00:00'))
 
 // ── 13. The sysadmin zone ─────────────────────────────────────────────
 await goto('/admin/')

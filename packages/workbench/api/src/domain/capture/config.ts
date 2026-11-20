@@ -69,8 +69,14 @@ export const FIELDS: Field[] = [
   { key: 'web_key',                wire: 'webKey',               shape: isStr, range: v => /[\r\n\0]/.test(v as string) ? 'the key must be one line' : null },
 ]
 
+// A tool's size is a preset, or a number once the wheel moved it off one. Rust
+// reads any number (a non-positive one as medium) and draws it in the tool's
+// own unit, so the file's reader accepts them all and a write wants a real size.
+const toolSize = (v: unknown) => oneOf(SIZES)(v) || typeof v === 'number'
+const writableToolSize = (v: unknown) => oneOf(SIZES)(v) || (isNum(v) && v > 0)
+
 const toolShape: Record<string, (v: unknown) => boolean> = {
-  color: hex, size: oneOf(SIZES), family: oneOf(FAMILIES), background: oneOf(BACKS),
+  color: hex, size: toolSize, family: oneOf(FAMILIES), background: oneOf(BACKS),
   bold: isBool, italic: isBool,
 }
 const TOOL_KEYS = ['color', 'size']
@@ -173,7 +179,7 @@ function scalar(v: unknown, float: boolean): string {
   throw new Error(`cannot write ${typeof v} to TOML`)
 }
 
-const FLOATS = new Set(['ui_scale', 'video_ink_secs', 'tool_styles.text.size'])
+const FLOATS = new Set(['ui_scale', 'video_ink_secs', ...TOOLS.map(t => `tool_styles.${t}.size`)])
 
 function emit(table: Table, path: string[], out: string[]) {
   const subs: [string, Table][] = []
@@ -314,6 +320,8 @@ export function setCaptureConfig(patch: Patch, where: Where = {}): ConfigView | 
         if (!allowed.includes(k)) return { refused: `toolStyles.${tool}.${k} is not a setting` }
         if (k === 'size' && tool === 'text') {
           if (!isNum(v) || v < 12 || v > 72) return { refused: 'text size is 12 to 72' }
+        } else if (k === 'size') {
+          if (!writableToolSize(v)) return { refused: `toolStyles.${tool}.size is small, medium, large or a size above 0` }
         } else if (!toolShape[k](v)) return { refused: `toolStyles.${tool}.${k} has the wrong value` }
         one[k] = k === 'color' ? '#' + (v as string).trim().replace(/^#/, '').toLowerCase() : v
       }

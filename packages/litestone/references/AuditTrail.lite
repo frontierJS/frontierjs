@@ -49,7 +49,11 @@ trait AuditTrail {
   /// WHICH named move an update was, where it was one. Two moves between the
   /// same states write identical images; only this separates them.
   transition    String?
-  records       Json
+
+  /// The one row this entry is about, as text: a read of a page or a bulk write
+  /// files an entry per row, so *who looked at this record* is one indexed
+  /// column a policy or a service filter can name (`FJS-D1744`).
+  recordId      String?
 
   /// Redacted by the writer: `@encrypted`, `@guarded`, `@secret` and `@hashed`
   /// land as `[redacted]`, `@personal` as `[personal]`.
@@ -75,7 +79,7 @@ trait AuditTrail {
   createdAt     DateTime @default(now())
 
   @@index([actorId])
-  @@index([model])
+  @@index([model, recordId])
   @@index([correlationId])
   @@index([episodeId])
 }

@@ -207,7 +207,8 @@ export interface LogEntry {
   field:      string | null
   /** The named `@@transitions` move an update made, or null. */
   transition: string | null
-  records:    string         // JSON array of affected IDs
+  /** The one row this entry names, as text; null where the call named none (`FJS-D1744`). */
+  recordId:   string | null
   before:     string | null  // JSON image
   after:      string | null  // JSON image
   actorId:    number | string | null
@@ -817,7 +818,8 @@ export interface LitestoneClient {
     /** The model name (`User`); its accessor or table name is written as the model's. A name that is no model (a dataset, a service) is kept as given. */
     model: string
     field?: string | null
-    records?: unknown[]
+    /** The one row the event is about; left out where it is about none. */
+    recordId?: string | number | null
     before?: unknown
     after?: unknown
     actorId?: unknown

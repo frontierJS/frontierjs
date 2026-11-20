@@ -502,6 +502,119 @@ export const CHECKS = {
     if (!graded) return { skipped: 'no @frontierjs import resolves to an installed package' }
     return { findings }
   },
+
+  // Mesa's server half loads happy-dom, css-tree and the markdown chain as
+  // optional peers (FJS-D1649), so an app that imports `render` must install
+  // happy-dom itself. In a linked workspace the peer resolves from the
+  // framework's own tree, every local check passes, and the release exits at
+  // start (FJS-4465). The image installs with --production, so a peer the API
+  // loads is owed under dependencies; a test or a build may take it from
+  // devDependencies. Which peers a subpath loads is read off the installed
+  // mesa's own source, so the rule carries no list.
+  'mesa-peer-declared': ({ root }) => {
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...SURFACES, 'tests', 'db')
+    const findings = []
+    let graded = 0
+    for (const path of files) {
+      const code = readCode(path)
+      const runtime = shipsToApi(root, path)
+      const missing = new Map()
+      for (const m of code.matchAll(FJS_IMPORT_RE)) {
+        const [, , pkg, tail = ''] = m
+        if (pkg !== '@frontierjs/mesa' || !tail) continue
+        const manifest = installedManifest(dirname(path), pkg)
+        if (!manifest) continue
+        graded++
+        const peers = loadedPeers(manifest, '.' + tail)
+        const owed  = peers.filter(p => !declaredPeer(root, path, p, runtime))
+        if (!owed.length) continue
+        const at = missing.get(pkg + tail) ?? { line: lineOf(code, m.index), peers: new Set() }
+        for (const p of owed) at.peers.add(p)
+        missing.set(pkg + tail, at)
+      }
+      for (const [spec, { line, peers }] of missing) {
+        const names = [...peers]
+        const dev   = runtime && names.filter(p => declaredPeer(root, path, p, false))
+        findings.push({ file: path, line, ships: runtime, message:
+          `\`${spec}\` loads ${names.join(', ')}, ${names.length > 1 ? 'optional peers' : 'an optional peer'} ` +
+          `of @frontierjs/mesa, and ${dev?.length ? `the app lists ${dev.join(', ')} under devDependencies, which ` +
+          "the image's --production install skips" : 'no package.json from here to the app root declares it'}. ` +
+          'A linked workspace resolves it from the framework\'s own tree, so every local run passes and ' +
+          (runtime ? 'the release exits at start' : 'a fresh install fails on the import') +
+          ` (FJS-D1649). Add it: bun add ${dev?.length ? '' : '-d '}${names.join(' ')}` })
+      }
+    }
+    if (!graded) return { skipped: 'no @frontierjs/mesa subpath import resolves to an installed mesa' }
+    return { findings }
+  },
+}
+
+// ─── the optional peers a mesa subpath loads ──────────────────────────────────
+
+/**
+ * The optional peers `subpath` imports by name anywhere in its static graph.
+ * A relative `import()` is not followed: `render-component` reaches the CSS
+ * inliner only when asked to inline, and owing css-tree for that would fire
+ * on every app that renders a page.
+ */
+const peersCache = new Map()
+
+function loadedPeers(manifest, subpath) {
+  const dir = manifestDir.get(manifest)
+  const key = `${dir}\0${subpath}`
+  if (peersCache.has(key)) return peersCache.get(key)
+  const meta     = manifest.peerDependenciesMeta ?? {}
+  const optional = new Set(Object.keys(meta).filter(name => meta[name]?.optional))
+  const entry    = exportTarget(manifest.exports?.[subpath])
+  const found    = new Set()
+  const seen     = new Set()
+  const walk = (file) => {
+    if (seen.has(file) || !existsSync(file)) return
+    seen.add(file)
+    const code = readCode(file)
+    for (const [, spec] of code.matchAll(STATIC_FROM_RE)) {
+      if (spec.startsWith('.')) walk(resolve(dirname(file), spec))
+      else if (optional.has(peerName(spec))) found.add(peerName(spec))
+    }
+    for (const [, spec] of code.matchAll(BARE_DYNAMIC_RE))
+      if (optional.has(peerName(spec))) found.add(peerName(spec))
+  }
+  if (entry && dir) walk(resolve(dir, entry))
+  const peers = [...found].sort()
+  peersCache.set(key, peers)
+  return peers
+}
+
+const STATIC_FROM_RE  = /^\s*(?:import|export)\b(?:[^'"`;]*?\bfrom)?\s*['"]([^'"]+)['"]/gm
+const BARE_DYNAMIC_RE = /\bimport\s*\(\s*['"]([^.'"][^'"]*)['"]\s*\)/g
+
+const peerName = (spec) => spec.split('/').slice(0, spec.startsWith('@') ? 2 : 1).join('/')
+
+/** The file an `exports` entry names for `import`, through one level of conditions. */
+function exportTarget(entry) {
+  if (typeof entry === 'string') return entry
+  if (!entry || typeof entry !== 'object') return null
+  return exportTarget(entry.import ?? entry.default ?? entry.node)
+}
+
+/** Whether a file under api/ that is not a test, so it ships in the image. */
+function shipsToApi(root, path) {
+  const inApp = relative(root, path).split(/[\\/]/)
+  return inApp[0] === 'api' && !inApp.includes('test') && !/\.test\.[a-z]+$/.test(path)
+}
+
+/**
+ * Whether a package.json between the file and the app root declares `peer` —
+ * under dependencies for code that ships, under either list otherwise.
+ */
+function declaredPeer(root, path, peer, runtime) {
+  for (let dir = dirname(path); ; dir = dirname(dir)) {
+    let pkg = null
+    try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch { /* none here */ }
+    if (pkg && (pkg.dependencies?.[peer] || pkg.optionalDependencies?.[peer] ||
+                (!runtime && pkg.devDependencies?.[peer]))) return true
+    if (dir === root || dirname(dir) === dir || !dir.startsWith(root)) return false
+  }
 }
 
 // ─── a @frontierjs specifier against its package's exports ────────────────────

@@ -380,3 +380,10 @@ test('match: compileQuery — reads the query once and grades any number of rows
   assert.equal(grade(null), null)
   assert.equal(compileQuery(FIELDS, null)(null), true)
 })
+
+test('match: operators — a { $auth } operand is the caller, which only the server holds', function () {
+  // FJS-D1730: compared as an object, `not` answered true for the caller's own row.
+  assert.equal(match(row(), { id: { not: { $auth: 'employeeId' } } }), null)
+  assert.equal(match(row(), { id: { $auth: 'employeeId' } }), null)
+  assert.equal(match(row(), { id: { in: [{ $auth: 'employeeId' }] } }), null)
+})

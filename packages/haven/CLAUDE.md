@@ -47,7 +47,9 @@ checkout. The script supplies a dev session key and 16 sockets per address
 with a 503, which the agent reads as a 1002 close); `bun run start`, which a
 deploy runs, refuses to boot without `HAVEN_SESSION_KEY`. `HAVEN_MODS=<nick>`
 before either makes that nick a mod on its next login, so `/ban` and
-`/unban` can be tried on a second terminal.
+`/unban` can be tried on a second terminal. `bun run agents` walks in only
+when the API lists each agent's key, `HAVEN_AGENTS=ace:<key>,charles:<key>`
+(`FJS-D1651`); its refusal prints the entry to add.
 
 `bun run test` from this directory — `scenes.test.js` pins each scene's
 picture, and `bun run frames` rewrites the pictures when a scene was meant to
@@ -62,8 +64,7 @@ signs this machine in first. `bun run web` beside `bun run api` serves the
 browser Haven on 5506, and `bun run dev` runs both. `editor/` and `fli haven:scenes` are proved by `bun run verify:scenes`
 (Chrome; it starts its own server over a copy of `web/src`). `Workers.mesa`, `#workers`, the workshop or the hook are proved by `bun run verify:workshop` (bun, util-linux `script`; it starts its own API). `Ledger.mesa`, `#ledger` or the workshop route by `bun run verify:ledger` (the same; it never writes this tree's `ledger.data.js`). `Assembly.mesa`, `TownHall.mesa`, `pieces/townhall.js` or the votes service by `bun run verify:townhall` (the same). `Barkeep.mesa` and the tavern route by `bun run verify:bar` (the same), which does not ask him anything; `barkeep.ts` has no test of its own yet. `Taskmaster.mesa`, `taskmaster.js`, `commands.js` or any actor on `$context.commands` are proved by `bun run verify:taskmaster` (the same); it never runs the real loop, which spends money. `HomeRow.mesa`, `home-row.js` or `Scene.mesa`'s keydown are proved by `bun run verify:home-row` and `bun run verify:bolt` (the same). `map.js`, `WorldMap.mesa`, `#seen` or `/map` are proved by `bun run verify:map` (the same) and, for the browser twin, `verify:browser`. `hearing.ts`, the messages service's channel or `/w` are proved by `bun run verify:hearing` (the same). `cells.js`, or the width of anything said — a bubble, the history, the booth — by `bun run verify:emoji` (Chrome too). Footprints — `stepped()`, `rooms.steps`, `presenceMeta` in `rooms.ts`, `tread` or the `steps` layer — by `bun run verify:steps` (the same). The view's size — `viewFor`, `fit()`, `follow()` in `stage.js`, the fit in `paint.js` — by `bun run verify:view` (the same; it resizes its pty). `hidden` in `Door.mesa` or `stage.js`, or `Cellar.mesa`, is proved by `bun run verify:cellar` (the same); `night` there, `Glade.mesa`, the woods' plank or `clock-at.mjs` by `bun run verify:glade` (the same). `Runner.mesa`, `errand.js` or the tavern route are proved by `bun run verify:errand` (the same). A change to
 `agents/` is proved by `agents/test/agents.test.js` in `bun run test`, which
-never runs the real `claude`; its live halves are skipped until an agent can
-walk in ([FJS-3471](../../ISSUES.md#fjs-3471)). A change to
+never runs the real `claude`. A change to
 `web/src/lib/session/sign-in.js` or `packages/cli/commands/haven/` is proved by
 `verify:explore` too, `sign-in.browser.js` by `verify:browser`, and `api/src/client.ts`, the door's installer or this
 manifest's `dependencies` by `bun run verify:fresh` (Docker, network).

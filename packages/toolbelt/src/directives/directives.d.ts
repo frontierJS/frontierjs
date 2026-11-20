@@ -48,6 +48,15 @@ export const TRANSPORT_PARAMS: readonly string[]
 /** `$or`, `$and`, `$not`: filters written with a `$`, so they stay in the filters and are never unknown. */
 export const COMBINATORS: readonly string[]
 
+/** `$auth`: a filter value standing for the caller's own claim (`FJS-D1730`). */
+export const CALLER_TOKEN: '$auth'
+
+/** A filter bag with every `{ $auth: '<claim>' }` replaced by the claim's value; what cannot be is reported. */
+export function resolveCallerTokens(
+  query: Record<string, unknown>,
+  claims: Record<string, unknown> | null | undefined,
+): { query: Record<string, unknown>; found: boolean; unknown: string[]; malformed: string[] }
+
 /** Every `$` key the wire understands. Neither kind is a filter. */
 export const RESERVED_PARAMS: ReadonlySet<string>
 

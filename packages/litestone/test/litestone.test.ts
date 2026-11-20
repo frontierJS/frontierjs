@@ -7217,7 +7217,7 @@ describe('onLog callback', () => {
     const row: any = await (db as any).$audit({
       operation: 'login.failed',
       model:     'User',
-      records:   ['u1'],
+      recordId:   'u1',
       actorId:   'u1',
       meta:      { reason: 'bad-password' },
     })
@@ -7659,7 +7659,7 @@ describe('audit trail redaction', () => {
     const fieldLog = calls.find(e => e.field === 'secretF')
     expect(fieldLog).toBeDefined()
     expect(fieldLog.operation).toBe('create')
-    expect(JSON.parse(fieldLog.records)).toEqual([row.id])
+    expect(fieldLog.recordId).toBe(String(row.id))
     expect(JSON.parse(fieldLog.after)).toBe('[redacted]')
     db.$close()
   })
@@ -7820,9 +7820,12 @@ describe('audit trail covers bulk writes', () => {
     const rows = await db.asSystem().auditTrail.findMany({})
     return rows.map((r: any) => ({
       operation: r.operation,
-      records:   typeof r.records === 'string' ? JSON.parse(r.records) : r.records,
+      recordId:  r.recordId,
     }))
   }
+
+  // The ids one operation filed, one entry per row.
+  const idsOf = (es: any[], operation: string) => es.filter((e: any) => e.operation === operation).map((e: any) => e.recordId)
 
   async function seed(db: any) {
     await db.widget.createMany({ data: [
@@ -7833,20 +7836,18 @@ describe('audit trail covers bulk writes', () => {
   test('createMany names rows by their assigned ids', async () => {
     const db = await makeBulkDb()
     await seed(db)
-    const [e] = await entries(db)
-    expect(e.operation).toBe('create')
-    expect(e.records).toEqual([1, 2, 3])
+    const es = await entries(db)
+    expect(es.every((e: any) => e.operation === 'create')).toBe(true)
+    expect(idsOf(es, 'create')).toEqual(['1', '2', '3'])
     db.$close()
   })
 
-  test('updateMany writes one entry naming every changed row', async () => {
+  test('updateMany writes one entry per changed row', async () => {
     const db = await makeBulkDb()
     await seed(db)
     const res = await db.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
     expect(res.count).toBe(3)
-    const log = (await entries(db)).find((e: any) => e.operation === 'update')
-    expect(log).toBeDefined()
-    expect(log!.records).toEqual([1, 2, 3])
+    expect(idsOf(await entries(db), 'update')).toEqual(['1', '2', '3'])
     db.$close()
   })
 
@@ -7863,9 +7864,7 @@ describe('audit trail covers bulk writes', () => {
     await seed(db)
     const res = await db.widget.deleteMany({ where: { state: 'draft' } })
     expect(res.count).toBe(3)
-    const log = (await entries(db)).find((e: any) => e.operation === 'delete')
-    expect(log).toBeDefined()
-    expect(log!.records).toEqual([1, 2, 3])
+    expect(idsOf(await entries(db), 'delete')).toEqual(['1', '2', '3'])
     db.$close()
   })
 
@@ -7874,8 +7873,7 @@ describe('audit trail covers bulk writes', () => {
     await seed(db)
     const res = await db.widget.removeMany({ where: { code: 'b' } })
     expect(res.count).toBe(1)
-    const log = (await entries(db)).find((e: any) => e.operation === 'delete')
-    expect(log!.records).toEqual([2])
+    expect(idsOf(await entries(db), 'delete')).toEqual(['2'])
     // The row is soft-deleted, not gone
     expect(await db.widget.count({})).toBe(2)
     db.$close()
@@ -7890,9 +7888,7 @@ describe('audit trail covers bulk writes', () => {
     const res = await db.widget.restore({ where: { code: 'c' } })
     expect(res).toHaveLength(1)
     expect(res[0].code).toBe('c')
-    const log = (await entries(db)).filter((e: any) => e.operation === 'update')
-    expect(log.length).toBe(1)
-    expect(log[0].records).toEqual([3])
+    expect(idsOf(await entries(db), 'update')).toEqual(['3'])
     db.$close()
   })
 
@@ -7909,9 +7905,8 @@ describe('audit trail covers bulk writes', () => {
     // The conflicting insert of 'b' spends an autoincrement id, so the new row's
     // id is read rather than assumed.
     const d = (await db.widget.findUnique({ where: { code: 'd' } }))!
-    expect(all.filter((e: any) => e.operation === 'create').map((e: any) => e.records))
-      .toEqual([[1, 2, 3], [d.id]])       // the seed, then the one new row
-    expect(all.filter((e: any) => e.operation === 'update')[0].records).toEqual([2])
+    expect(idsOf(all, 'create')).toEqual(['1', '2', '3', String(d.id)])       // the seed, then the one new row
+    expect(idsOf(all, 'update')).toEqual(['2'])
     expect((await db.widget.findUnique({ where: { code: 'b' } }))!.name).toBe('B2')
     db.$close()
   })

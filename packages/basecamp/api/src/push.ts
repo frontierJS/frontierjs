@@ -41,6 +41,28 @@ export function firstSenderToken(authTokens: string | null | undefined): string 
   return undefined
 }
 
+const NTFY_TOKEN = /^tk_[A-Za-z0-9]{29}$/
+
+/** Why ntfy v2.14 would exit at start on these two params, naming the field —
+ *  undefined when it would not. ntfy restart-loops on a token that is not
+ *  `tk_` plus 29 letters or digits, or whose name is not a user in
+ *  `NTFY_AUTH_USERS`, and says so only in `docker logs` (`FJS-4460`). The
+ *  message never repeats a token: the field is a secret. */
+export function ntfyAuthRefusal(authUsers: string | undefined, authTokens: string | undefined): string | undefined {
+  const users = new Set((authUsers ?? '').split(',').map(e => e.trim().split(':')[0]).filter(Boolean))
+  for (const [i, entry] of (authTokens ?? '').split(',').map(e => e.trim()).filter(Boolean).entries()) {
+    const [name, token, ...rest] = entry.split(':')
+    const which = `'NTFY_AUTH_TOKENS' entry ${i + 1} (${name || 'no name'})`
+    if (!name || token === undefined || rest.length > 1)
+      return `${which} must be name:token or name:token:label`
+    if (!NTFY_TOKEN.test(token))
+      return `${which} has a token that is not tk_ plus exactly 29 letters or digits; \`ntfy token generate\` makes one`
+    if (!users.has(name))
+      return `${which} names ${name}, who is not a user in 'NTFY_AUTH_USERS'`
+  }
+  return undefined
+}
+
 async function ownNtfyApp(db: any): Promise<PushServer | undefined> {
   const sys = db.asSystem()
   const bp  = await sys.blueprint.findFirst({ where: { slug: 'ntfy' } })

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-27 services · 22 routes · 8 plugins · prefix (none)
+28 services · 22 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -435,6 +435,25 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`
 - **broadcasts on** — `profiles`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `prototypes` · model `prototypes`
+
+- **methods** — `list`, `saveRecord`, `saveView`
+- **custom methods** — `list`, `saveRecord`, `saveView`
+- **who may call** —
+  - `list` — standing 5 or above — declared `gate: 5`
+  - `saveRecord` — standing 5 or above — declared `gate: 5`
+  - `saveView` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

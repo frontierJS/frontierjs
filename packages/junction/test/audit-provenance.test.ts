@@ -1,6 +1,6 @@
 // test/audit-provenance.test.ts — WHERE a write came from, on the audit row.
 //
-// The trail recorded who (`actorId`) and what (`model`, `records`, before/after)
+// The trail recorded who (`actorId`) and what (`model`, `recordId`, before/after)
 // and nothing about the request that carried the write — no correlation id, no
 // ip, no user agent, no tenant. So an app log line and the audit row from the
 // same request could not be joined by anything, which is the join the whole of

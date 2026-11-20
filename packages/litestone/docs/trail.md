@@ -1,4 +1,5 @@
-# Audit Trail
+const entries = await sys.auditTrail.findMany({ where: { model: 'Widget', operation: 'update' } })// three entries, each { operation: 'update', model: 'Widget', recordId: '1' | '2' | '3', before: null, after: null, ... }
+if (entries.length !== 3 || entries.some(e => e.before !== null || e.after !== null) || entries.map(e => e.recordId).sort().join() !== '1,2,3') throw new Error('a bulk write logs ids and no images')# Audit Trail
 
 Litestone provides a field-level and model-level audit trail via the `trail` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
 
@@ -62,7 +63,7 @@ const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', fi
 //   model:      'User',               // the model name, as a $audit event spells it
 //   field:      'salary',             // only for @trail field-level entries; null on a model-level one
 //   transition: null,                 // the named @@transitions move, where an update was one
-//   records:    [1],                  // the affected IDs
+//   recordId:   '1',                // the one row this entry names, as text; null where none
 //   before:     50000,                // a field entry carries the one value; a model entry the row image
 //   after:      75000,
 //   actorId:    'user_abc',  actorType: 'user',  subjectId: null,  episodeId: null,
@@ -70,12 +71,12 @@ const [entry] = await sys.auditTrail.findMany({ where: { operation: 'update', fi
 //   meta:       { requestId: 'req_xyz' },
 //   createdAt:  '2026-01-15T10:30:00.000Z',
 // }
-if (entry?.model !== 'User' || !/\b1\b/.test(JSON.stringify(entry.records))) throw new Error(`unexpected entry ${JSON.stringify(entry)}`)
+if (entry?.model !== 'User' || entry.recordId !== '1') throw new Error(`unexpected entry ${JSON.stringify(entry)}`)
 ```
 
-The entry's `records`, `before`, `after` and `meta` are `Json` columns and read back decoded on a jsonl trail and a SQL trail alike. `onLog` is handed the entry before that, with the four as JSON text.
+Every operation files **one entry per row**: a bulk write of three rows is three entries, and a `findMany` read of three rows is three. `recordId` is indexed with `model`, so the history of one record is a plain `where: { model, recordId }`. The entry's `before`, `after` and `meta` are `Json` columns and read back decoded on a jsonl trail and a SQL trail alike. `onLog` is handed the entry before that, with the four as JSON text.
 
-`before`/`after` images are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write records **which** rows it touched and **what** it did to them, never their contents:
+`before`/`after` images are only included for single-row writes — `update()`, `delete()` and `remove()`. A bulk write files one entry per row it touched, naming **which** row and **what** was done to it, never the contents:
 
 ```lite
 database audit { path "./audit/"  driver trail }
@@ -93,12 +94,11 @@ await sys.widget.createMany({ data: [{ id: 1, state: 'draft' }, { id: 2, state: 
 await sys.widget.updateMany({ where: { state: 'draft' }, data: { state: 'live' } })
 await new Promise(r => setTimeout(r, 0))
 
-const [entry] = await sys.auditTrail.findMany({ where: { model: 'Widget', operation: 'update' } })
-// { operation: 'update', model: 'Widget', records: [1, 2, 3], before: null, after: null, ... }
-if (entry.before !== null || entry.after !== null || !/1,2,3/.test(JSON.stringify(entry.records))) throw new Error('a bulk write logs ids and no images')
+const entries = await sys.auditTrail.findMany({ where: { model: 'Widget', operation: 'update' } })// three entries, each { operation: 'update', model: 'Widget', recordId: '1' | '2' | '3', before: null, after: null, ... }
+if (entries.length !== 3 || entries.some(e => e.before !== null || e.after !== null) || entries.map(e => e.recordId).sort().join() !== '1,2,3') throw new Error('a bulk write logs ids and no images')
 ```
 
-Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so the entry can name the rows by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created. `remove` and `delete` both log as `delete`, and the entry tells them apart: a trash has an `after` (the row, stamped with `deletedAt`) and a purge has none. A `restore` of one row carries `before` (stamped) and `after` (cleared).
+Every write path reaches the trail: `create`, `createMany`, `update`, `updateMany`, `upsert`, `upsertMany`, `remove`, `removeMany`, `delete`, `deleteMany` and `restore`. A bulk op on a logged model takes a `RETURNING` path so each entry can name its row by id — an autoincrement id does not exist until SQLite assigns one — and `upsertMany` splits its batch into a `create` entry and an `update` entry, because it did both. `restore` logs as `update`: a restored row changed state, it was not created. `remove` and `delete` both log as `delete`, and the entry tells them apart: a trash has an `after` (the row, stamped with `deletedAt`) and a purge has none. A `restore` of one row carries `before` (stamped) and `after` (cleared).
 
 An unlogged model pays none of this — the `RETURNING` path is taken only when the model declares `@trail` / `@@trail`.
 
@@ -106,7 +106,7 @@ An unlogged model pays none of this — the `RETURNING` path is taken only when 
 
 A row policy is folded into the statement, so a caller it refuses gets a miss: `null` from `findUnique`, `[]` from `findMany`, `null` from `update`, `{ count: 0 }` from `updateMany`. The trail tells that from a real miss by asking the same `where` once more without the policy, on the empty answer only, and files one model-level entry with `operation: 'denied'` and `meta.attempted` naming the policy op (`read`, `create`, `update`, `delete`). A thrown refusal (a create policy, a sealed document, a move's gate) files the same entry. A refused read is heard by `reads: true` and a refused write by the write log, so `@@trail(audit)` alone records refused writes and not refused reads.
 
-`records` holds the id only where the caller named it, as a single-key `where` on the id field, and only when it reads as that field's type and is at most 128 characters: the caller already held it, so it discloses nothing. A list or a filter names none (`FJS-D1707`). The entry files at once, not at commit, so a refused write whose transaction rolls back still leaves it. A system caller is refused by nothing it can be blamed for and files none; `@@require` holding silently under `asSystem()` is a separate question.
+`recordId` holds the id only where the caller named it, as a single-key `where` on the id field, and only when it reads as that field's type and is at most 128 characters: the caller already held it, so it discloses nothing. A list or a filter names none (`FJS-D1707`). The entry files at once, not at commit, so a refused write whose transaction rolls back still leaves it. A system caller is refused by nothing it can be blamed for and files none; `@@require` holding silently under `asSystem()` is a separate question.
 
 ## Protected fields are redacted
 
@@ -131,10 +131,10 @@ await new Promise(r => setTimeout(r, 0))
 
 const entries = await sys.auditTrail.findMany({ where: { model: 'Vault', operation: 'update' } })
 // { operation: 'update', model: 'Vault', field: 'apiKey',
-//   records: [7], before: '[redacted]', after: '[redacted]', actorId: 'user_abc', ... }
+//   recordId: '7', before: '[redacted]', after: '[redacted]', actorId: 'user_abc', ... }
 
 // model-level image — name is logged, apiKey is not
-// { operation: 'update', model: 'Vault', field: null, records: [7],
+// { operation: 'update', model: 'Vault', field: null, recordId: '7',
 //   before: { id: 7, name: 'prod', apiKey: '[redacted]' },
 //   after:  { id: 7, name: 'prod', apiKey: '[redacted]' }, ... }
 const text = JSON.stringify(entries)
@@ -176,7 +176,7 @@ await sys.candidate.update({ where: { id: 3 }, data: { stage: 'interview' } })
 await new Promise(r => setTimeout(r, 0))
 
 const [entry] = await sys.auditTrail.findMany({ where: { model: 'Candidate', operation: 'update' } })
-// { operation: 'update', model: 'Candidate', field: null, records: [3],
+// { operation: 'update', model: 'Candidate', field: null, recordId: '3',
 //   after: { id: 3, email: '[personal]', coverLetter: '[personal]', stage: 'interview' }, ... }
 const after = JSON.stringify(entry.after)
 if (/c@example/.test(after) || !/\[personal\]/.test(after) || !/interview/.test(after)) throw new Error('personal data is dropped, the rest kept')
@@ -251,7 +251,7 @@ const actorWrites = await trail.findMany({
 if (writes.length !== 1 || actorWrites.length !== 1) throw new Error('expected the one create')
 ```
 
-A `$raw` predicate over `records` — *all changes to a specific record* — is refused by name: the jsonl reader filters JSON lines in JS and `$raw` is SQL, so the narrowing is done in JS:
+*All changes to a specific record* is a plain `where: { model, recordId }` and needs no SQL. A `$raw` predicate is refused by name on a jsonl or trail driver: the reader filters JSON lines in JS and `$raw` is SQL:
 
 ```js throws
 const trail = db.asSystem().auditTrail
@@ -261,7 +261,7 @@ await new Promise(r => setTimeout(r, 0))
 const history = await trail.findMany({
   where: {
     model:   'Candidate',
-    records: { $raw: sql`json_extract(records, '$[0]') = ${999}` }
+    recordId: { $raw: sql`recordId = '999'` }
   }
 })
 ```
@@ -289,8 +289,8 @@ model AuditTrail {
 
 Then a service over it (`createService({ channel })` in `api/src/services/auditTrails.service.ts`) serves `GET /api/auditTrails`. `@@tenant(none)` is what lets the policy name `tenant` itself: the trail spans tenants, and the `@@allow` is the only thing narrowing it. Three limits of this shape:
 
-- **`tenant` is the caller's tenant, else the tenant of the rows the entry describes** (`FJS-D1745`), so a system write or a seed files under the tenant it touched. It stays null where the rows span two tenants (an `asSystem()` list across clinics), on a `@@tenant(none)` or `@@tenant(via:)` model, where the tenant column is protected, and on a `denied` entry; a review queue built on this policy omits those, so read them as `asSystem()`. A support write across tenants keeps the caller's tenant, so the touched tenant's reader misses it.
-- **`records` is a JSON array of ids**, so a policy cannot ask "reads on charts the actor has no row for". That anti-join is done by the service after the read.
+- **`tenant` is the caller's tenant, else the tenant of the rows the entry describes** (`FJS-D1745`), so a system write or a seed files under the tenant it touched. Each entry takes its own row's tenant, so a list across clinics files each row under its clinic. It stays null on a `@@tenant(none)` or `@@tenant(via:)` model, where the tenant column is protected, and on a `denied` entry; a review queue built on this policy omits those, so read them as `asSystem()`. A support write across tenants keeps the caller's tenant, so the touched tenant's reader misses it.
+- **`recordId` is one text id**, so a policy cannot join it to the row's own table and ask "reads on charts the actor has no row for". That anti-join is done by the service after the read.
 - **Invariant:** the gate and the policy are enforced at the Data boundary, so a client `x-gate` is only an affordance.
 
 ## @secret — encrypted + guarded + logged

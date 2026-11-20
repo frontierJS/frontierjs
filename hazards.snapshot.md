@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 197**.
+Graded: **13 of 199**.
 
-## data — 3 of 66
+## data — 3 of 67
 
 ### Schema and parse
 
@@ -117,6 +117,7 @@ Graded: **13 of 197**.
 | An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it. | **none** |
 | `@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws. | **none** |
 | "Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`. | **none** |
+| An entry names ONE row, so a read of a page files an entry per row | **none** |
 
 ### Reads and windows
 

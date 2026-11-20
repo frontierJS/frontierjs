@@ -255,3 +255,56 @@ describe('a multipart file part', () => {
     expect(parseBody(upload(2 * 1024 * 1024), 1024 * 1024)).rejects.toThrow(BodyTooLargeError)
   })
 })
+
+// ─── a signed vendor delivery ──────────────────────────────────────────────
+
+// A signature covers the BYTES (FJS-2927). `ctx.rawBody` is a decoded string,
+// absent for multipart, so a raw route verifies a large or multipart delivery
+// over `ctx.$raw.$req`, on a route whose own `maxBodySize` admits it.
+describe('a signed delivery past the default bound', () => {
+  const { createHmac } = require('node:crypto') as typeof import('node:crypto')
+  const SECRET = 'whsec_test'
+  const sign   = (bytes: Uint8Array) => createHmac('sha256', SECRET).update(bytes).digest('hex')
+
+  // 300 KB of multipart whose file part holds bytes no UTF-8 decode keeps.
+  function delivery() {
+    const head = '--B0\r\nContent-Disposition: form-data; name="mime"; filename="m.eml"\r\nContent-Type: application/octet-stream\r\n\r\n'
+    const tail = '\r\n--B0--\r\n'
+    const part = new Uint8Array(300 * 1024).map((_, i) => (i * 7 + 0x80) & 0xff)
+    const enc  = new TextEncoder()
+    const bytes = new Uint8Array([...enc.encode(head), ...part, ...enc.encode(tail)])
+    return { bytes, headers: { 'content-type': 'multipart/form-data; boundary=B0', 'x-signature': sign(bytes) } }
+  }
+
+  async function serve(maxBodySize?: number) {
+    const { HttpTransport } = await import('../src/transport/http.ts')
+    const t = new HttpTransport({ port: 0 })
+    t.router.post('/hook', async (ctx) => {
+      const bytes = new Uint8Array(await ctx.$raw.$req.arrayBuffer())
+      return ctx.json({ verified: sign(bytes) === ctx.headers['x-signature'], rawBody: ctx.rawBody ?? null })
+    }, maxBodySize ? { maxBodySize } : undefined)
+    t.router.build()
+    t.start(0)
+    return { t, url: `http://localhost:${t.port}/hook` }
+  }
+
+  it('verifies over the bytes on a route stating its own bound', async () => {
+    const { t, url } = await serve(1024 * 1024)
+    try {
+      const { bytes, headers } = delivery()
+      const r = await fetch(url, { method: 'POST', headers, body: bytes })
+      expect(r.status).toBe(200)
+      expect(await r.json()).toEqual({ verified: true, rawBody: null })
+    } finally { await t.stop(100) }
+  })
+
+  it('refuses it 413 naming the route bound on a route stating none', async () => {
+    const { t, url } = await serve()
+    try {
+      const { bytes, headers } = delivery()
+      const r = await fetch(url, { method: 'POST', headers, body: bytes })
+      expect(r.status).toBe(413)
+      expect(await r.text()).toContain('maxBodySize')
+    } finally { await t.stop(100) }
+  })
+})

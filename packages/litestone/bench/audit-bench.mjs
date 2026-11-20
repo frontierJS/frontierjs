@@ -284,7 +284,7 @@ await run('audit-trail-ab', async () => {
   operation     String
   model         String
   field         String?
-  records       Json
+  recordId      String?
   before        Json?
   after         Json?
   actorId       String?

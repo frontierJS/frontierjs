@@ -1169,9 +1169,11 @@ describe('Project · Environment · App — the tenancy declared', () => {
     const caller = db.$setAuth(as('developer', { workspaceId: a.id }))
 
     for (const accessor of ACCESSORS) {
+      // An App's project is read from its environment as the caller, so the
+      // other workspace's environment is refused as one that does not exist.
       await expect(caller[accessor].create({ data: {
         workspaceId: b.id, name: 'x', slug: `x-${accessor}`, ...extras(accessor, theirs),
-      } })).rejects.toThrow(/Outside your workspaceId|denied by @@allow/)
+      } })).rejects.toThrow(/Outside your workspaceId|denied by @@allow|names no Environment/)
 
       // The post-update half: the row was the caller's when the UPDATE matched
       // it and would not be afterwards, so it rolls back.
@@ -2514,7 +2516,7 @@ describe('a protected environment — a developer deploys to it and does not res
 describe('App runtime columns', () => {
   // Every other scalar App column, each one a thing a release does not hand to `docker run`.
   const NOT_RUNTIME = [
-    'id', 'workspaceId', 'environmentId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort', 'swap',
+    'id', 'workspaceId', 'environmentId', 'projectId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort', 'swap',
     'isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
     'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
     'replicaSyncedAt', 'isIngressNamePublished', 'createdAt', 'updatedAt', 'deletedAt',
@@ -2542,6 +2544,82 @@ describe('App display label', () => {
   test('names the environment as well as the app', () => {
     const app   = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
     const label = app.attributes.find((a: any) => a.kind === 'labelField')
-    expect(label?.parts).toEqual([{ via: null, field: 'name' }, { via: 'environment', field: 'name' }])
+    expect(label?.parts).toEqual([{ via: null, field: 'name' }, { via: 'project', field: 'name' }, { via: 'environment', field: 'name' }])
+  })
+
+  // FJS-3639: two projects each holding a Production gave two 'worker · Production'
+  // rows; a label hop reaches one relation, so the project rides on App (FJS-D1662).
+  test('tells apart two projects that each hold an environment of one name', async () => {
+    const db    = await client()
+    const sys   = db.asSystem() as any
+    const ws    = await seedWorkspace(sys)
+    const parts = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
+      .attributes.find((a: any) => a.kind === 'labelField').parts as { via: string | null, field: string }[]
+    const ids: string[] = []
+    for (const name of ['Alpha', 'Beta']) {
+      const project = await sys.project.create({ data: { workspaceId: ws.id, name, slug: name.toLowerCase() } })
+      const env     = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'Production', slug: 'production' } })
+      const app     = await sys.app.create({ data: { workspaceId: ws.id, environmentId: env.id, name: 'worker', slug: `worker-${name.toLowerCase()}` } })
+      expect(app.projectId).toBe(project.id)
+      ids.push(app.id)
+    }
+    const include = Object.fromEntries(parts.filter(p => p.via).map(p => [p.via, true]))
+    const rows    = await sys.app.findMany({ where: { id: { in: ids } }, include })
+    const labels  = rows.map((r: any) => parts.map(p => p.via ? r[p.via]?.[p.field] : r[p.field]).filter((v: any) => v != null).join(' · '))
+    expect(new Set(labels).size).toBe(2)
+    db.$close()
+  })
+})
+
+// ─── developer manages Apps and Domains ──────────────────────────────────────
+// A developer creates and updates an App, so a delete gated one rung higher left
+// them an App they could make and not remove, and a Domain they could not point
+// at it at all (FJS-4024, FJS-D1971).
+
+describe('developer manages Apps and Domains in its own workspace', () => {
+  function as(db: any, ws: any, memberRole: string) {
+    return db.$setAuth({ id: `u-${memberRole}`, workspaceId: ws.id, memberRole })
+  }
+
+  async function anApp(sys: any, ws: any) {
+    const uniq = () => Math.random().toString(36).slice(2, 8)
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'P', slug: `p-${uniq()}` } })
+    const env  = await sys.environment.create({
+      data: { projectId: proj.id, workspaceId: ws.id, name: 'Prod', slug: 'prod', tier: 'production' },
+    })
+    return sys.app.create({
+      data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, kind: 'container' },
+    })
+  }
+
+  test('a developer deletes an App', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const app = await anApp(sys, ws)
+
+    await as(db, ws, 'developer').app.delete({ where: { id: app.id } })
+    expect(await sys.app.findFirst({ where: { id: app.id } })).toBeNull()
+
+    db.$close()
+  })
+
+  test('a developer creates, updates and deletes a Domain; a billing member does not', async () => {
+    const db  = await client()
+    const sys = db.asSystem() as any
+    const ws  = await seedWorkspace(sys)
+    const app = await anApp(sys, ws)
+    const dev = as(db, ws, 'developer')
+
+    const d = await dev.domain.create({ data: { workspaceId: ws.id, appId: app.id, hostname: 'dev.example.test' } })
+    expect((await dev.domain.update({ where: { id: d.id }, data: { isProxied: true, version: d.version } })).isProxied).toBe(true)
+    await dev.domain.delete({ where: { id: d.id } })
+    expect(await sys.domain.findFirst({ where: { id: d.id } })).toBeNull()
+
+    await expect(as(db, ws, 'billing').domain.create({
+      data: { workspaceId: ws.id, appId: app.id, hostname: 'billing.example.test' },
+    })).rejects.toThrow()
+
+    db.$close()
   })
 })

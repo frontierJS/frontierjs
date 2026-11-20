@@ -214,6 +214,16 @@ export const TRANSPORT_PARAMS = Object.freeze(['$first', '$wrap'])
  */
 export const COMBINATORS = Object.freeze(['$or', '$and', '$not'])
 
+/*
+ * The fourth class: a filter VALUE written with a `$`. `{ $auth: 'employeeId' }`
+ * stands for the caller's own claim (`FJS-D1730`), so a screen can ask for
+ * "not mine" without holding its own id. A structure and never a string: a
+ * string token is told apart by its text, and a user-typed value equal to it
+ * would be substituted. The boundary that holds the principal replaces it
+ * before the Data boundary sees the where.
+ */
+export const CALLER_TOKEN = '$auth'
+
 /** Every `$` key the wire understands. Neither kind is a filter. */
 export const RESERVED_PARAMS = new Set([...DIRECTIVE_PARAMS, ...TRANSPORT_PARAMS])
 
@@ -530,3 +540,49 @@ export function splitParams(params) {
 }
 
 const NONE = Object.freeze([])
+
+/**
+ * A filter bag with every `{ $auth: '<claim>' }` replaced by that claim's value.
+ *
+ * The kit reports and the boundary refuses (`FJS-D26`). `unknown` names a claim
+ * the caller does not hold, a null one included: substituting `null` would turn
+ * "my rows" into "rows nobody owns". `malformed` is a token that is not one
+ * name alone, which would otherwise reach the Data boundary as an operator. A
+ * claim holding an object is unknown too, since an object in a where is read
+ * as operators.
+ *
+ * @param {Record<string, unknown>} query
+ * @param {Record<string, unknown> | null | undefined} claims
+ * @returns {{ query: Record<string, unknown>, found: boolean, unknown: string[], malformed: string[] }}
+ */
+export function resolveCallerTokens(query, claims) {
+  const unknown = []
+  const malformed = []
+  let found = false
+
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.map(walk)
+    if (!v || typeof v !== 'object') return v
+    if (Object.prototype.hasOwnProperty.call(v, CALLER_TOKEN)) {
+      found = true
+      const name = v[CALLER_TOKEN]
+      if (Object.keys(v).length !== 1 || typeof name !== 'string' || name === '') {
+        malformed.push(JSON.stringify(v))
+        return v
+      }
+      const held = claims && Object.prototype.hasOwnProperty.call(claims, name) ? claims[name] : undefined
+      if (!isClaimValue(held)) { unknown.push(name); return v }
+      return held
+    }
+    const out = {}
+    for (const k of Object.keys(v))
+      Object.defineProperty(out, k, { value: walk(v[k]), writable: true, enumerable: true, configurable: true })
+    return out
+  }
+
+  const resolved = query && typeof query === 'object' ? walk(query) : query
+  return found ? { query: resolved, found, unknown, malformed } : { query, found, unknown: NONE, malformed: NONE }
+}
+
+const isClaimValue = (v) =>
+  v !== undefined && v !== null && (typeof v !== 'object' || Array.isArray(v) || v instanceof Date)

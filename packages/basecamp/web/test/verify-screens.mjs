@@ -2190,19 +2190,17 @@ try {
 
   // A path route is made and removed from the same screen (`FJS-3323`), not
   // only through /domain-routes. It needs an app other than the hostname's own.
-  // The picker labels an app "name · environment" (`FJS-3497`), so one app is
-  // picked by that whole label. Two projects can each hold a "Production", so the app chosen is one whose
-  // whole label no other app shares.
+  // The picker labels an app "name · project · environment" (`FJS-3497`,
+  // `FJS-3639`), so one app is picked by that whole label.
   const routeApps  = (await apiGet('/apps?$limit=100')).body?.data ?? []
-  const labelOf  = a => `${a.name} · ${a.environment?.name}`
-  const routeApp = routeApps.find(a => a.id !== dnsApp?.id && routeApps.filter(b => labelOf(b) === labelOf(a)).length === 1)
+  const routeApp = routeApps.find(a => a.id !== dnsApp?.id)
   const routeEnv = routeApp?.environment
   await goto('/dns/')
   await until(`!!document.getElementById('route-add')`, v => v, 'the DNS screen offers no way to add a path route')
   await click('#route-add')
   await until(`!!document.querySelector('#route-save')`, v => v, 'the route drawer never opened')
   await choose('dialog[open] [name=domainId]', 'dns-drive.example.test')
-  await choose('dialog[open] [name=appId]', `${routeApp?.name} · ${routeEnv?.name}`)
+  await choose('dialog[open] [name=appId]', `${routeApp?.name} · ${routeEnv?.project?.name} · ${routeEnv?.name}`)
   await typeIn('dialog[open] [name=pathPrefix]', '/api')
   await click('#route-save')
   const madeRoute = await eventually(async () => (await apiGet(`/domainRoutes?domainId=${dnsRow?.id}`)).body?.data?.[0], r => !!r)

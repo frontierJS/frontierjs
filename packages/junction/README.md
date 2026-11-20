@@ -269,6 +269,21 @@ ctx.directives  // { limit, offset, orderBy, select, … } — how to SHAPE the
                 //   this; no `$`-prefixed key survives it.
 ```
 
+A filter VALUE may name the caller: `{ $auth: 'employeeId' }` stands for that
+claim on the principal, so a screen asks for "not mine" without holding its own
+id (`FJS-D1730`). On the wire it is `?submittedById[not][$auth]=employeeId`. It
+is replaced from the caller's claims once the call is scoped to them, before a
+`before` hook or the method reads `ctx.query`. A claim the caller does not hold,
+one with no value, or a guest with no claims is a 400 naming it. Server code
+reads `ctx.user.<claim>` instead.
+
+```typescript fragment
+await app.service('expenses').find(
+  { status: 'submitted', submittedById: { not: { $auth: 'employeeId' } } },
+  { user },
+)
+```
+
 Internal callers pass directives under their own key — a flat `{ limit: 10 }`
 is not a directive and is ignored:
 

@@ -13,6 +13,7 @@ import {
   parseDirectives, directiveParams, splitParams, unknownDirectives, invalidDirectives, listedDirectives, transportFlags,
   orderByPair, orderByValue,
 } from '../../src/directives/directives.js'
+import * as directivesKit from '../../src/directives/directives.js'
 import { parseQueryString } from '../../src/query/query.js'
 
 /* ── The table ─────────────────────────────────────────────────────── */
@@ -505,4 +506,35 @@ test('directives: $count round-trips through the write half', function () {
   assert.equal(directiveParams({ count: ['surveys'] }).$count, 'surveys')
   const filtered = { surveys: { where }, notes: true }
   assert.deepEqual(parseDirectives(directiveParams({ count: filtered })).count, filtered)
+})
+
+/* ── The caller as a filter value (FJS-D1730) ──────────────────────── */
+
+test('directives: { $auth } is the claim, under an operator, in $or and in a list', function () {
+  const { resolveCallerTokens, CALLER_TOKEN } = directivesKit
+  assert.equal(CALLER_TOKEN, '$auth')
+  const q = parseQueryString('$or[0][status]=submitted&$or[0][submittedById][not][$auth]=employeeId&ownerId[in][0][$auth]=id')
+  const out = resolveCallerTokens(q, { id: 'u1', employeeId: 4 })
+  assert.deepEqual(out.query, { $or: [{ status: 'submitted', submittedById: { not: 4 } }], ownerId: { in: ['u1'] } })
+  assert.deepEqual([out.found, out.unknown, out.malformed], [true, [], []])
+  assert.ok(q.$or[0].submittedById.not.$auth, 'the bag handed in is not changed')
+})
+
+test('directives: { $auth } a caller does not hold, or not one name alone, is reported', function () {
+  const { resolveCallerTokens } = directivesKit
+  assert.deepEqual(resolveCallerTokens({ a: { $auth: 'siteId' } }, { id: 'u1' }).unknown, ['siteId'])
+  assert.deepEqual(resolveCallerTokens({ a: { $auth: 'employeeId' } }, { employeeId: null }).unknown, ['employeeId'])
+  assert.deepEqual(resolveCallerTokens({ a: { $auth: 'x' } }, { x: { gt: 1 } }).unknown, ['x'], 'an object claim would read as operators')
+  assert.deepEqual(resolveCallerTokens({ a: { $auth: 'id' } }, null).unknown, ['id'])
+  assert.equal(resolveCallerTokens({ a: { $auth: 'id', b: 1 } }, { id: 1 }).malformed.length, 1)
+  assert.equal(resolveCallerTokens({ a: { $auth: ['id'] } }, { id: 1 }).malformed.length, 1)
+  assert.equal(resolveCallerTokens({ a: { $auth: 'toString' } }, {}).unknown[0], 'toString', 'an inherited name is not a claim')
+})
+
+test('directives: a bag with no { $auth } comes back as itself', function () {
+  const { resolveCallerTokens } = directivesKit
+  const q = { status: 'auth', note: '$auth' }
+  const out = resolveCallerTokens(q, { id: 1 })
+  assert.equal(out.query, q)
+  assert.equal(out.found, false)
 })

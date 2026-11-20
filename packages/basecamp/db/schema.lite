@@ -739,9 +739,11 @@ enum TileKind {
 // a regex in the browser (`parseInt(generate.replace(/[^0-9]/g,''))`) — so a
 // typo produced a 32-character default and said nothing. The server owns what
 // each name means; the browser is told which one applies. The kind only: how
-// many characters is `BlueprintParam.generateLength` (`FJS-D2122`), and `uuid`
-// is the one kind whose length is its own.
-enum ParamGenerator { randomHex randomAlphanumeric randomBase64 uuid }
+// many characters is `BlueprintParam.generateLength` (`FJS-D2122`), except
+// `uuid` and `ntfyToken`, whose length is their own. `ntfyToken` is what
+// `ntfy token generate` prints, `tk_` and 29 lowercase letters or digits; ntfy
+// refuses any other length and the container restart-loops (`FJS-3657`).
+enum ParamGenerator { randomHex randomAlphanumeric randomBase64 uuid ntfyToken }
 
 // How an archive came to have a row: by hand, by the schedule, or `found` — a
 // rescan met it in the bucket with no row naming it (`FJS-D1493`), so nobody
@@ -1910,6 +1912,7 @@ model Project {
   deletedAt   DateTime?
 
   environments Environment[]
+  apps         App[]
   // A mirror the next push rebuilds, so archiving the project removes it
   // rather than keeping rows nothing can restore a reason for.
   dependencyUses DependencyUse[] @hardDelete
@@ -1980,6 +1983,11 @@ model App {
   // Moving an app between environments would orphan its deployment history.
   environmentId String      @immutable
   environment   Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  // The environment's project, so the label reaches it in one hop (FJS-D1662).
+  // Taken from the environment and never stated: both keys are immutable, so
+  // the copy cannot drift from environment.projectId.
+  projectId     String      @immutable @system @default(environment.projectId)
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   name          String      @trim @length(1, 80)
   slug          String      @trim @length(1, 64) @immutable
@@ -2118,10 +2126,11 @@ model App {
   // flag, so no column here says it.
   hub           HubConfig?  @relation("HubApp") @keep
 
-  // The seed holds one App per environment under one name, so `name` alone
-  // gives a picker identical rows.
-  @@label([name, environment.name])
-  @@gate(2.4.4.5)
+  // The seed holds one App per environment under one name, and two projects
+  // can each hold a Production, so a shorter label gives a picker identical rows.
+  @@label([name, project.name, environment.name])
+  // A developer removes the App they made; Servers stay admin's (FJS-D1971).
+  @@gate(2.4.4.4)
   // The deploy job writes App.status through asSystem(), which is how it
   // crosses the tenancy the block at the top of this file compiles in.
   @@softDelete(cascade)
@@ -2267,7 +2276,7 @@ model Domain {
   deletedAt     DateTime?
 
   @@label(hostname)
-  @@gate(2.5)
+  @@gate(2.4.4.4)
   @@softDelete
   @@trail(audit)
   @@unique([workspaceId, hostname])
@@ -3773,7 +3782,8 @@ model BlueprintParam {
   // value they can regenerate.
   generate     ParamGenerator?
   // How many CHARACTERS `generate` mints (`FJS-D2122`) — not bytes, which is
-  // what the retired `randomHex32` counted. Every kind but `uuid` needs one.
+  // what the retired `randomHex32` counted. Every kind but `uuid` and
+  // `ntfyToken` needs one.
   generateLength Int?          @gte(1) @lte(256)
 
   // What a supplied value must match, as a regex with no slashes. Checked by
@@ -3785,9 +3795,10 @@ model BlueprintParam {
   position     Int             @default(0)
 
   @@gate(1.7)
-  @@check("generate IS NULL OR generate = 'uuid' OR generateLength IS NOT NULL",
+  @@check("generate IS NULL OR generate IN ('uuid', 'ntfyToken') OR generateLength IS NOT NULL",
           "randomHex, randomAlphanumeric and randomBase64 need a generateLength")
-  @@check("generate IS NOT 'uuid' OR generateLength IS NULL", "a uuid generator takes no generateLength")
+  @@check("generate IS NULL OR generate NOT IN ('uuid', 'ntfyToken') OR generateLength IS NULL",
+          "uuid and ntfyToken take no generateLength")
   @@unique([blueprintId, key])
   @@index([blueprintId])
 

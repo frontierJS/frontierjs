@@ -103,6 +103,7 @@ Detail: `references/the-audit-trail-and-the-log.md`
 - **An effective-dated write BACKWARDS overwrites the prior belief, and only the log holds it.**
 - **`@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
 - **"Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`.**
+- **An entry names ONE row, so a read of a page files an entry per row** (`FJS-D1744`)
 
 ## Reads and windows
 Detail: `references/reads-and-windows.md`

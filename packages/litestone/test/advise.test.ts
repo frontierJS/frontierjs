@@ -202,6 +202,19 @@ describe('gate-over-own-standing', () => {
         }`, 'gate-over-own-standing')).toEqual([])
   })
 
+  // haven's Member.role (FJS-3816): no caller below asSystem() writes the column at all.
+  test('silent on a column only the system writes — @guarded or @secret', () => {
+    for (const attr of ['@guarded', '@secret'])
+      expect(findings(`
+        model User {
+          id   Int     @id
+          role String? ${attr}
+          @@auth
+          @@gate(3.8.3.8)
+          @@allow(update, id == auth().id)
+        }`, 'gate-over-own-standing')).toEqual([])
+  })
+
   // Both are writable while the row is a draft, so another draft row's column still moves.
   test('still fires on @immutable(after: …) and on bare @immutable on a sealing model', () => {
     const states = `enum DocState { draft  issued  paid }`

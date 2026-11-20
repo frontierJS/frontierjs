@@ -72,7 +72,7 @@ async function callTool(name: string, args: unknown, token: string) {
 }
 
 type Call = {
-  at: string; actorId: string | null; records: string[]; tool: string; outcome: string
+  at: string; actorId: string | null; recordId: string | null; tool: string; outcome: string
   fields?: string[]; count?: number; code?: number; message?: string
 }
 
@@ -95,12 +95,12 @@ describe('GET /mcp/calls — what each agent did, for an operator', () => {
     expect(status).toBe(200)
     expect(body.recorded).toBe(true)
     const [refund, patch, find] = body.calls
-    expect(refund).toMatchObject({ tool: 'orders_refund', actorId: 'staff', records: ['1'] })
+    expect(refund).toMatchObject({ tool: 'orders_refund', actorId: 'staff', recordId: '1' })
     expect(refund!.outcome).not.toBe('done')
     expect(refund!.code).toBeGreaterThanOrEqual(400)
     expect(refund!.message).toBeTruthy()
 
-    expect(patch).toMatchObject({ tool: 'orders_patch', actorId: 'shopper', records: ['1'], outcome: 'done', fields: ['reference'] })
+    expect(patch).toMatchObject({ tool: 'orders_patch', actorId: 'shopper', recordId: '1', outcome: 'done', fields: ['reference'] })
     expect(find).toMatchObject({ tool: 'orders_find', outcome: 'done', count: 1 })
   })
 
