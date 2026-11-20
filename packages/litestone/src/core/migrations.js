@@ -24,7 +24,7 @@ import {
 } from './migrate.js'
 import { quoteIdent } from './query.js'
 import { derivedOnce } from './schema-maps.js'
-import { resolveOperations, checkAgainstHistory, renameStatement, describeOperation, guessRenames } from './operations.js'
+import { resolveOperations, checkAgainstHistory, renameStatements, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -447,7 +447,7 @@ function planAgainstHistory(parseResult, dbName, dir, { pluralize = false, opera
   if (ops.length) {
     const refusal = checkAgainstHistory(ops, shadow.schema)
     if (refusal) return { created: false, blocked: true, message: refusal }
-    shadow = buildShadow(dir, null, ops.map(renameStatement))
+    shadow = buildShadow(dir, null, renameStatements(ops))
     if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
   }
 
@@ -499,7 +499,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
       : 'the schema declares nothing to build — no migration needed',
   }
 
-  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize, first: ops.map(renameStatement) })
+  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill') })
   const name    = nextMigrationName(dir, label)
   const diffSummary = diffResult.hasChanges ? summarizeDiff(diffResult) : ''
   const summary = [...ops.map(o => `  ~ ${o.table}  ${describeOperation(o)}`), diffSummary].filter(Boolean).join('\n')

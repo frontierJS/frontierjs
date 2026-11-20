@@ -93,7 +93,13 @@ export interface WaitSentinel {
   event:        string
   timeoutAt:    number | null
   into:         string
+  // What the deadline does, read back by `expire` off the checkpointed output
+  // because the node's config is not at hand there.
+  onTimeout:    "fail" | "continue"
 }
+
+/** What `expire` did: ended the run failed, or left a continue-wait for the caller to resume. */
+export type Expired = "failed" | "resume"
 
 export class LitestoneExecutionStore implements IExecutionStore {
   // The status this process last wrote per run, so a checkpoint that did not
@@ -248,13 +254,22 @@ export class LitestoneExecutionStore implements IExecutionStore {
     return ctx
   }
 
-  async expire(resumeKey: string, now: number): Promise<boolean> {
+  /**
+   * Ends the run failed and answers `"failed"`; false when the wait was already
+   * consumed. A wait that said `onTimeout: 'continue'` consumes nothing and
+   * answers `"resume"`: the caller dispatches the run job with the timeout as
+   * the payload, and the job's `resume` consumes the row, so a sweep that dies
+   * before it dispatches leaves the wait due for the next one.
+   */
+  async expire(resumeKey: string, now: number): Promise<Expired | false> {
     const wait = await this.db.wait.findFirst({ where: { resumeKey } })
     if (!wait) return false
     const ctx = await this.getContext(wait.runId)
     if (!ctx) return false
 
     const sentinel = ctx.nodeStates[wait.nodeId]?.output as WaitSentinel | undefined
+    if (sentinel?.onTimeout === "continue") return ctx.status === "waiting" && ctx.waitingOn === wait.nodeId ? "resume" : false
+
     ctx.status  = "failed"
     ctx.endedAt = now
     ctx.error   = `flow.wait "${sentinel?.event ?? wait.nodeId}" timed out`
@@ -267,7 +282,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
       return true
     })
     this.written.delete(ctx.executionId)
-    return expired
+    return expired ? "failed" : false
   }
 
   /**

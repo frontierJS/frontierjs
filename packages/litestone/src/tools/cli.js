@@ -28,10 +28,10 @@ import { create, apply, migrationStatus, verify,
          baseline, accept, historyGap, driftAgainstLive,
          unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
 import { parseRenameFlag, readOperations, askRenames, resolveOperations,
-         checkAgainstHistory, renameStatement, describeOperation } from '../core/operations.js'
+         checkAgainstHistory, renameStatements, describeOperation } from '../core/operations.js'
 import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
-import { resolveTenancy, placedTrails }                from '../core/tenancy.js'
+import { resolveTenancy, placedTrails, isUrl }         from '../core/tenancy.js'
 import { modelToAccessor, modelToTableName, fieldToColumnName } from '../core/ddl.js'
 import { quoteIdent }                from '../core/query.js'
 import { parseEnvelope, decryptField, normalizeKey } from '../core/encryption.js'
@@ -160,7 +160,7 @@ const HELP = `
     ${cyan('litestone init')}                      create schema.lite + litestone.config.js
     ${cyan('litestone migrate create')} [label]    diff schema → write migration file
                                      ${dim('--rename Model.oldColumn=newField   keep a renamed column\'s values (repeatable)')}
-                                     ${dim('--operations ops.json               the same, as a document')}
+                                     ${dim('--operations ops.json               the same, as a document; it also takes backfill')}
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
     ${dim('  --backup[=dir]')}                       copy every database first — there is no down
@@ -205,6 +205,7 @@ const HELP = `
     ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
     ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/trail)
     ${cyan('litestone replicate')} [config.js]       stream every SQLite db's WAL to S3/R2 via litestream
+    ${dim('  --place=<name>')}                          backup/replicate one tenancy place alone; by default a place goes only where its ${dim('backup')} clause says
     ${cyan('litestone restore')} [config.js]         bring every db back from its replica — all or nothing
     ${dim('  --at=<instant>')}                          one point in time for every file
     ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/trail only)')}
@@ -656,7 +657,7 @@ function liveAfterOperations(rawDb, parseResult, name, cfg, given) {
 
   rawDb.run('BEGIN')
   try {
-    for (const o of ops) rawDb.run(renameStatement(o))
+    for (const stmt of renameStatements(ops)) rawDb.run(stmt)
     return { live: introspect(rawDb), ops }
   } finally {
     rawDb.run('ROLLBACK')
@@ -698,7 +699,7 @@ async function cmdDryRun(label, cfg) {
       console.log()
       console.log(`  ${dim('─── SQL preview (not written) ' + '─'.repeat(33))}`)
       console.log()
-      console.log(generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize, first: ops.map(renameStatement) })
+      console.log(generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill') })
         .split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
     }
@@ -1379,7 +1380,7 @@ async function cmdExport(cfg) {
   // writing the empty file.
   const tenancy  = parseResult.schema.tenancy
   const tenantId = getFlag('tenant')
-  let base, tenants = null
+  let base, tenants = null, place = null
 
   if (tenancy?.strategy === 'database') {
     const { createTenantRegistry } = await import('../tenant.js')
@@ -1397,7 +1398,8 @@ async function cmdExport(cfg) {
             `     ${dim('Without one the extract would come from main, which holds the machinery and none of the rows.')}`)
     if (!tenants.exists(tenantId))
       fatal(`No tenant ${cyan(tenantId)}. ${ids.length ? `Known: ${ids.map(i => cyan(i)).join(', ')}` : dim('none exist yet')}`)
-    base = await tenants.get(tenantId)
+    base  = await tenants.get(tenantId)
+    place = tenants.meta.get(tenantId)?.place ?? null
   } else {
     if (tenantId) fatal(`${cyan('--tenant')} needs ${cyan('tenancy { strategy database }')} — this schema declares none.`)
     // `path` + `resolveFrom: 'schema'` is the house form and it is load-bearing
@@ -1456,6 +1458,7 @@ async function cmdExport(cfg) {
       withDeleted:      args.includes('--with-deleted'),
       write,
       tenant: tenantId ?? null,
+      place,
     })
   } catch (e) {
     if (stream) stream.destroy()
@@ -1471,6 +1474,8 @@ async function cmdExport(cfg) {
   console.log(`  ${green('✓')}  ${rel(manFile)}`)
   console.log(`\n  taken as   ${system ? cyan('--system') : cyan(String(manifest.takenAs.principal))}` +
               `${manifest.takenAs.declaredReadGate != null ? dim(`   read gate ${manifest.takenAs.declaredReadGate}`) : ''}`)
+  // Nothing checks where an extract goes, so it says whose jurisdiction it left.
+  if (place) console.log(`  tenant     ${cyan(tenantId)} ${yellow(`place ${place}`)} ${dim(`— these rows are now in ${rel(outDir)}, outside it`)}`)
   if (manifest.policiesApplied.length)
     console.log(`  bounded by ${dim(manifest.policiesApplied.map(r => `${r.kind} ${r.expr}`).join('  ·  '))}`)
   if (omittedProtected.length)
@@ -1755,7 +1760,7 @@ async function tenantStorage(parseResult, cfg) {
   const { dir, registry, declared } = await tenantOptions(cfg)
   const files  = { name: 'tenant-files', dir: resolve(dir), pattern: '*.db' }
   const places = Object.entries(declared?.places ?? {})
-    .map(([place, at]) => ({ name: `tenant-files-${place}`, dir: at, pattern: '*.db', place }))
+    .map(([place, at]) => ({ name: `tenant-files-${place}`, dir: at, pattern: '*.db', place, backupTo: declared.backups?.[place] ?? null }))
   const reg    = resolve(registry ?? join(dir, 'registry.db'))
   // A registry inside the tenant directory is already one of its `*.db` files.
   if (dirname(reg) === files.dir && reg.endsWith('.db')) return [files, ...places]
@@ -1817,6 +1822,7 @@ function layoutFiles(cfg, declared, dirs) {
   const skipDir     = new Set([
     ...declared.filter(d => d.driver !== 'sqlite' && d.path).map(d => resolve(d.path)),
     resolve(defaultBackupRoot(cfg)),
+    ...dirs.filter(d => d.backupTo && !isUrl(d.backupTo)).map(d => d.backupTo),
   ])
   const byTenancy = (dir, f) => dirs.some(t => t.dir === dir && (t.pattern === '*.db' ? f.endsWith('.db') : f === t.pattern))
 
@@ -1843,6 +1849,41 @@ function layoutFiles(cfg, declared, dirs) {
       fatal(`${same.map(t => cyan(`db/${t.rel}`)).join(' and ')} would both be copied as ${cyan(name)}.\n     Rename one of them.`)
 
   return { root, sqlite, files }
+}
+
+// A placed tenant's file and its place's trail leave the machine only for the
+// destination the place declares (`FJS-D1743`), so copyTargets' set is split:
+// `fleet` is what the default destination may hold, and each place carries its
+// own tenant directory, trail copies and declared `backupTo`.
+function byPlace({ sqlite, other, dirs, layout }) {
+  const places = dirs.filter(d => d.place != null).map(d => ({
+    place:    d.place,
+    backupTo: d.backupTo,
+    sqlite:   [],
+    other:    other.filter(o => o.place === d.place),
+    dirs:     [d],
+    layout:   null,
+  }))
+  return {
+    fleet:  { sqlite, other: other.filter(o => o.place == null), dirs: dirs.filter(d => d.place == null), layout },
+    places,
+  }
+}
+
+const placeUnknown = (name, places) =>
+  `No place ${cyan(name)} in this schema's ${cyan('tenancy { }')}. ` +
+  (places.length ? `Declared: ${places.map(p => cyan(p.place)).join(', ')}` : 'It declares none.')
+
+// Said for each place a run leaves out, because a copy that is silent about what
+// it skipped reads as a copy of everything.
+function printPlaceSkipped(p, verb) {
+  const carry = verb === 'backup' ? `litestone backup --place ${p.place} <dest>` : `litestone replicate --place ${p.place} --url <url>`
+  const why   = p.backupTo
+    ? `it declares ${p.backupTo}, which ${verb === 'backup' ? 'is a replica url, not a directory' : 'is a directory, not a replica url'}`
+    : `it declares no destination: place ${p.place} "…" backup "<dir or url>"`
+  console.log(`  ${yellow('·')}  ${cyan(`place ${p.place}`)} ${dim('not copied —')} ${dim(why)}`)
+  console.log(`     ${dim('carry it with')} ${cyan(carry)}`)
+  console.log()
 }
 
 // The files a directory target covers right now. The dot-prefixed entries are
@@ -4107,11 +4148,13 @@ async function cmdOptimize(targetTable, cfg) {
 //   litestone backup --vacuum          → compact SQLite files during backup
 //   litestone backup --zip             → zip the backup directory with timestamp
 //   litestone backup --db main         → only backup one database
+//   litestone backup --place eu ./eu/  → only that place's tenants and trail
+//
+// A place's files go only to the directory its `backup` clause names, each run
+// its own stamped copy (and its own zip), so no copy holds two places.
 
 async function cmdBackup(dest, cfg) {
   header('litestone backup')
-
-  const { mkdirSync, cpSync, readdirSync }  = await import('fs')
 
   const parseResult = loadSchema(cfg.schema)
   const vacuum      = flag('vacuum')
@@ -4121,12 +4164,66 @@ async function cmdBackup(dest, cfg) {
   // a name in the single-database case it matches nothing and reports
   // "No databases found matching --db=./app.db".
   const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
+  const onlyPlace   = getFlag('place') ?? null
 
-  // ── Destination: timestamped directory ─────────────────────────────────────
-  // When zipping, we still write to a temp dir first, then zip it
+  // Each file is opened on its own path, never through a client — see copyTargets.
+  const all = await copyTargets(parseResult, cfg, onlyDb)
+  if (!all.sqlite.length && !all.other.length && !all.dirs.length && !all.layout?.sqlite.length)
+    fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+  const { fleet, places } = byPlace(all)
+  const localRoot = p => p.backupTo && !isUrl(p.backupTo) ? p.backupTo : null
+
+  const runs = [], skipped = []
+  if (onlyPlace) {
+    const p = places.find(p => p.place === onlyPlace) ?? fatal(placeUnknown(onlyPlace, places))
+    if (!dest && !localRoot(p))
+      fatal(`Place ${cyan(onlyPlace)} declares no backup directory, so name where its files go: ${cyan(`litestone backup --place ${onlyPlace} <dest>`)}.`)
+    runs.push({ dest, root: localRoot(p), set: p })
+  } else {
+    runs.push({ dest, root: defaultBackupRoot(cfg), set: fleet })
+    for (const p of places) {
+      if (!p.dirs.length && !p.other.length) continue
+      if (localRoot(p)) runs.push({ dest: null, root: localRoot(p), set: p })
+      else skipped.push(p)
+    }
+  }
+
+  const t0 = performance.now()
+  let totalSize = 0, count = 0
+  const incomplete = []
+  for (const run of runs) {
+    const r = await writeBackup({ ...run, zip, vacuum })
+    totalSize += r.totalSize
+    count     += r.count
+    incomplete.push(...r.incomplete)
+  }
+  for (const p of skipped) printPlaceSkipped(p, 'backup')
+
+  const totalMs = (performance.now() - t0).toFixed(0)
+  const totalMb = (totalSize / 1024 / 1024).toFixed(2)
+
+  if (incomplete.length) {
+    console.log(`  ${red(bold('✗  backup INCOMPLETE'))}  ${dim(`${incomplete.length} of ${count} database(s) not backed up`)}`)
+    for (const line of incomplete) console.log(`     ${dim(line)}`)
+    console.log()
+    console.log(`  ${dim('Whatever was written is a PARTIAL copy. Do not treat it as a restore point.')}`)
+    console.log()
+    process.exit(1)
+  }
+
+  console.log(`  ${green(bold('✓  backup complete'))}  ${dim(`${totalMb} MB · ${totalMs}ms`)}`)
+  console.log()
+}
+
+// One copy of one set (copyTargets' shape) to one destination: `dest` when the
+// operator named it, else a new stamped directory under `root`.
+async function writeBackup({ dest, root, set, zip, vacuum }) {
+  const { mkdirSync, cpSync, readdirSync }  = await import('fs')
+
+  // When zipping, the copy is written to a directory first, then zipped.
   const resolvedDest = dest
     ? (zip ? resolve(dest.replace(/\.zip$/, '')) : resolve(dest))
-    : newBackupDir(defaultBackupRoot(cfg))
+    : newBackupDir(root)
   const zipPath      = zip
     ? (dest ? resolve(dest.endsWith('.zip') ? dest : dest + '.zip') : `${resolvedDest}.zip`)
     : null
@@ -4135,17 +4232,14 @@ async function cmdBackup(dest, cfg) {
   // a database since emptied comes back from it on restore.
   if (dest && existsSync(resolvedDest) && readdirSync(resolvedDest).length)
     fatal(`${cyan(rel(resolvedDest))} already holds files, and a backup written over another is neither.\n` +
-          `     Name a new directory, or leave the destination off for a new ${cyan(rel(defaultBackupRoot(cfg)) + '/<stamp>/')}.`)
+          `     Name a new directory, or leave the destination off for a new ${cyan(rel(root ?? './backups') + '/<stamp>/')}.`)
   if (zip && existsSync(zipPath))
     fatal(`${cyan(rel(zipPath))} already exists, and zip adds to an archive rather than replacing it.`)
 
   mkdirSync(resolvedDest, { recursive: true })
 
-  // Each file is opened on its own path, never through a client — see copyTargets.
-  const { sqlite, other, dirs: tenantDirs, layout } = await copyTargets(parseResult, cfg, onlyDb)
+  const { sqlite, other, dirs: tenantDirs, layout } = set
   const targets = [...sqlite, ...(layout?.sqlite ?? [])].map(t => ({ ...t, driver: 'sqlite' })).concat(other)
-
-  if (!targets.length && !tenantDirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
   console.log()
   console.log(`  ${dim('destination:')} ${cyan(zip ? rel(zipPath) : rel(resolvedDest))}`)
@@ -4155,13 +4249,11 @@ async function cmdBackup(dest, cfg) {
   console.log()
 
   let totalSize = 0
-  const t0 = performance.now()
 
-  // A backup that copied SOME of the declared databases is not a backup. Every
-  // arm below used to console.log its failure and carry on to `✓ backup
-  // complete` with exit 0 — so a caller running this before something
-  // irreversible (a deploy's pre-migration snapshot) read success and had no
-  // audit trail. Collect what did not make it and refuse at the end.
+  // A backup that copied SOME of the declared databases is not a backup: a
+  // caller running this before something irreversible (a deploy's
+  // pre-migration snapshot) would read success. Collect what did not make it,
+  // and cmdBackup refuses at the end.
   const incomplete = []
 
   for (const info of targets) {
@@ -4361,21 +4453,7 @@ async function cmdBackup(dest, cfg) {
     }
   }
 
-
-  const totalMs = (performance.now() - t0).toFixed(0)
-  const totalMb = (totalSize / 1024 / 1024).toFixed(2)
-
-  if (incomplete.length) {
-    console.log(`  ${red(bold('✗  backup INCOMPLETE'))}  ${dim(`${incomplete.length} of ${targets.length} database(s) not backed up`)}`)
-    for (const line of incomplete) console.log(`     ${dim(line)}`)
-    console.log()
-    console.log(`  ${dim('Whatever was written is a PARTIAL copy. Do not treat it as a restore point.')}`)
-    console.log()
-    process.exit(1)
-  }
-
-  console.log(`  ${green(bold('✓  backup complete'))}  ${dim(`${totalMb} MB · ${totalMs}ms`)}`)
-  console.log()
+  return { incomplete, totalSize, count: targets.length }
 }
 
 // ─── cmdReplicate ─────────────────────────────────────────────────────────────
@@ -4387,6 +4465,9 @@ async function cmdBackup(dest, cfg) {
 //   litestone replicate                              → every declared SQLite db
 //   litestone replicate --url s3://bucket/myapp      → no config file needed
 //   litestone replicate --db main                    → one database
+//   litestone replicate --place eu                   → one place, to the url it declares
+//
+// A place is streamed only to the url its `backup` clause declares (`FJS-D1743`).
 //   litestone replicate ./litestone.config.js        → config path positionally
 //
 // Litestream replicates SQLite. A jsonl or trail database is a directory of
@@ -4395,7 +4476,7 @@ async function cmdBackup(dest, cfg) {
 // it did reads as though it did everything.
 
 async function cmdReplicate(cfg) {
-  const { replicate }    = await import('./replicate.js')
+  const { replicate, replicaUrl } = await import('./replicate.js')
 
   const parseResult = loadSchema(cfg.schema)
   // --db is overloaded: a NAME filter when the schema declares databases, a
@@ -4403,14 +4484,23 @@ async function cmdReplicate(cfg) {
   // a name in the single-database case it matches nothing and reports
   // "No databases found matching --db=./app.db".
   const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
+  const onlyPlace   = getFlag('place') ?? null
+
+  const all = await copyTargets(parseResult, cfg, onlyDb)
+  const { fleet, places } = byPlace(all)
+  const urlOf = p => p.backupTo && isUrl(p.backupTo) ? p.backupTo : null
+  const place = onlyPlace ? places.find(p => p.place === onlyPlace) ?? fatal(placeUnknown(onlyPlace, places)) : null
 
   const options = {
-    url:             getFlag('url')       ?? cfg.replicate?.url,
+    // A place's replica is its own declaration, never the fleet's config.
+    url:             getFlag('url') ?? (place ? urlOf(place) : cfg.replicate?.url),
     syncInterval:    getFlag('interval')   ?? cfg.replicate?.syncInterval,
     retentionPeriod: getFlag('retention')  ?? cfg.replicate?.retentionPeriod,
     l0Retention:     getFlag('l0')         ?? cfg.replicate?.l0Retention,
   }
 
+  if (place && !options.url)
+    fatal(`Place ${cyan(onlyPlace)} declares no replica url, so name where its files go: ${cyan(`litestone replicate --place ${onlyPlace} --url <url>`)}.`)
   if (!options.url) {
     fatal(
       `No replica url.\n` +
@@ -4426,10 +4516,18 @@ async function cmdReplicate(cfg) {
 
   header('litestone replicate')
 
-  const { sqlite, other: unreplicable, dirs, layout } = await copyTargets(parseResult, cfg, onlyDb)
-  if (!sqlite.length && !unreplicable.length && !dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+  if (!all.sqlite.length && !all.other.length && !all.dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
+  const { sqlite, other: unreplicable, dirs, layout } = place ?? fleet
   const targets = [...sqlite, ...dirs, ...(layout?.sqlite ?? [])]
+  if (!place) {
+    for (const p of places) {
+      if (!p.dirs.length) continue
+      if (!urlOf(p)) { printPlaceSkipped(p, 'replicate'); continue }
+      targets.push(...p.dirs.map(d => ({ ...d, url: replicaUrl(urlOf(p), d.name) })))
+      unreplicable.push(...p.other)
+    }
+  }
 
   if (unreplicable.length || layout?.files.length) {
     console.log(`  ${yellow(bold('⚠  not replicated'))}  ${dim('litestream streams SQLite WAL only')}`)
@@ -4590,7 +4688,9 @@ async function cmdRestore(cfg) {
     for (const { id, place } of registryTenants(stage(regDest))) {
       const at = place == null ? files : dirs.find(d => d.place === place)
       if (!at) { discard(); fatal(`Tenant ${cyan(id)} was created in place ${cyan(place)}, which this schema's ${cyan('tenancy { }')} no longer declares — nothing was restored.`) }
-      jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: `${replicaUrl(url, at.name)}/${id}.db`, dest: join(at.dir, `${id}.db`) })
+      // A place that declares a replica url was streamed there and nowhere else.
+      const base = at.backupTo && isUrl(at.backupTo) ? at.backupTo : url
+      jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: `${replicaUrl(base, at.name)}/${id}.db`, dest: join(at.dir, `${id}.db`) })
     }
     jobs.push({ kind: 'registry', name: 'tenant-registry', url: regUrl, dest: regDest, staged: true })
   } else if (reg) {

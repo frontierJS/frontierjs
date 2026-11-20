@@ -161,6 +161,98 @@ describe("wait and resume", () => {
     expect(await runner.resume(key, {})).toBe(false)
     expect(ranIn(dir, runId)).toEqual({})
   })
+
+  test("onTimeout continue: the deadline resumes the run with timedOut, and the key resumes nothing after", async () => {
+    const flowId = await activeFlow(env.system, chain([wait("w", "approval", 1_000, "continue"), count("after", "approval")]))
+    const runId  = await runner.start(flowId, {})
+    const key    = (await settled(runId)).waits[0].resumeKey
+
+    const early = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), now: () => Date.now() })
+    expect((await early.sweep()).expired).toBe(0)
+
+    const late = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), now: () => Date.now() + 5_000 })
+    expect((await late.sweep()).expired).toBe(1)
+
+    const done = await settled(runId, ["completed", "failed"])
+    expect(done.status).toBe("completed")
+    expect(done.error).toBeNull()
+    expect(done.waits).toEqual([])
+    expect(done.steps.find((s: any) => s.nodeId === "after").output).toEqual({ read: { timedOut: true } })
+    expect(ranIn(dir, runId)).toEqual({ after: 1 })
+
+    // The Wait row is gone, so neither a late answer nor a second sweep runs it again.
+    expect(await runner.resume(key, { approvedBy: "sam" })).toBe(false)
+    expect((await late.sweep()).expired).toBe(0)
+    await Bun.sleep(100)
+    expect(ranIn(dir, runId)).toEqual({ after: 1 })
+  })
+
+  test("onTimeout continue: a resume that got there first wins, and the deadline then finds nothing", async () => {
+    const flowId = await activeFlow(env.system, chain([wait("w", "approval", 1_000, "continue"), count("after", "approval")]))
+    const runId  = await runner.start(flowId, {})
+    const key    = (await settled(runId)).waits[0].resumeKey
+
+    expect(await runner.resume(key, { approvedBy: "sam" })).toBe(true)
+    const done = await settled(runId, ["completed", "failed"])
+    expect(done.steps.find((s: any) => s.nodeId === "after").output).toEqual({ read: { approvedBy: "sam" } })
+
+    const late = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), now: () => Date.now() + 5_000 })
+    expect((await late.sweep()).expired).toBe(0)
+    await Bun.sleep(100)
+    expect(ranIn(dir, runId)).toEqual({ after: 1 })
+  })
+
+  test("onTimeout continue: a deadline and a resume racing for one wait have one winner", async () => {
+    const flowId = await activeFlow(env.system, chain([wait("w", "approval", 1_000, "continue"), count("after", "approval")]))
+    const runId  = await runner.start(flowId, {})
+    await settled(runId)
+
+    const late = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), now: () => Date.now() + 5_000 })
+    const key  = (await env.system.wait.findFirst({ where: { runId } })).resumeKey
+    const [swept, resumed] = await Promise.all([late.sweep(), runner.resume(key, { approvedBy: "sam" })])
+    expect(resumed).toBe(true)
+
+    const done = await settled(runId, ["completed", "failed"])
+    expect(done.status).toBe("completed")
+    await Bun.sleep(100)
+    // Whichever consumed the Wait row, the node after ran once.
+    expect(ranIn(dir, runId)).toEqual({ after: 1 })
+    expect(swept.expired).toBeLessThanOrEqual(1)
+  })
+
+  test("onTimeout continue: a sweep that dies before it dispatches consumes nothing, and the next one finishes the run once", async () => {
+    const flowId = await activeFlow(env.system, chain([wait("w", "approval", 1_000, "continue"), count("after", "approval")]))
+    const runId  = await runner.start(flowId, {})
+    await settled(runId)
+
+    const at = () => Date.now() + 5_000
+    const dying = new Proxy(jobs, { get: (target, key) => key === "dispatch"
+      ? async () => { throw new Error("sweep died before dispatching") }
+      : (target as any)[key].bind?.(target) ?? (target as any)[key] })
+    const crashed = createRunner({ host: litestoneHost({ db: env.db }), jobs: dying as typeof jobs, registry: registryFor(dir), now: at })
+    await expect(crashed.sweep()).rejects.toThrow(/died before dispatching/)
+
+    const stuck = await env.system.run.findFirst({ where: { id: runId }, include: { waits: true } })
+    expect(stuck.status).toBe("waiting")
+    expect(stuck.waits).toHaveLength(1)
+
+    const next = createRunner({ host: litestoneHost({ db: env.db }), jobs, registry: registryFor(dir), now: at })
+    expect((await next.sweep()).expired).toBe(1)
+    const done = await settled(runId, ["completed", "failed"])
+    expect(done.status).toBe("completed")
+    expect(done.steps.find((s: any) => s.nodeId === "after").output).toEqual({ read: { timedOut: true } })
+
+    // A third tick finds no due wait, and the one job id would run nothing twice.
+    expect((await next.sweep()).expired).toBe(0)
+    await Bun.sleep(100)
+    expect(ranIn(dir, runId)).toEqual({ after: 1 })
+  })
+
+  test("onTimeout that is neither fail nor continue fails the node", async () => {
+    const flowId = await activeFlow(env.system, chain([{ ...wait("w", "approval", 1_000), config: { ...wait("w", "approval", 1_000).config, onTimeout: { type: "literal", value: "carry on" } } }]))
+    const runId  = await runner.start(flowId, {})
+    expect((await settled(runId)).status).toBe("failed")
+  })
 })
 
 // ─── a lost dispatch ─────────────────────────────────────────────────────────

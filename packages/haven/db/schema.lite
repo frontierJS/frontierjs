@@ -86,6 +86,12 @@ model Member {
   @@trail(audit)
 }
 
+/// The room a socket named at the upgrade (`/ws?room=<slug>`), which
+/// `channels({ claims })` in `api/src/rooms.ts` resolves per frame. A door is a
+/// reconnect, so Room's read policy admits a socket to that room and no other;
+/// a call with no socket carries none and reads every room.
+claim room
+
 model Room {
   id       Int       @id
 
@@ -112,8 +118,9 @@ model Room {
   /// policy is the join: a banned member is refused the room and evicted from
   /// one they stand in on the next write. A booth is joined by its pair alone
   /// — to anyone else it is no row, and the socket joins it to nothing.
+  /// A socket stands only in the room its `room` claim names.
   @@gate(3.8)
-  @@allow(read, auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id))
+  @@allow(read, auth().bannedAt == null && (pairLoId == null || pairLoId == auth().id || pairHiId == auth().id) && (auth().room == null || auth().room == slug))
 }
 
 model Message {

@@ -596,6 +596,22 @@ connectteam and let an accepted offer create the `User` and `Employee` there.
 Then the exercise asks what one FrontierJS app should call to create a principal
 in another. No record owns that question yet.
 
+**The agency extension (WootRecruit).** *Added 2026-11-20, from
+wootrecruit.com/pricing.* WootRecruit sells the same pipeline as a managed
+service to service businesses: account managers run hiring for many client
+brands, ads feed a funnel, text and email draw down a prepaid balance, and
+each client gets a monthly leads → interviews → hires report per location.
+Each of those reopens a scope call the first run settled. **Erasure under
+tenancy** comes first: the same person applies to two clients and asks one
+of them to forget them, and each client sets its own retention period. Then
+comes **a report per tenant that outlives its sweep**, which is Q1 again with a
+tenant and a local month end. Then **a send that is paid for before its cost
+is known** (reserved at enqueue, settled on the vendor's receipt), and
+**a setup fee that depends on history**. Prepaid credit as a balance is
+already `ledger.md`'s Lago evidence. A STOP that outlives forgetting is #40.
+Indeed itself is integration work and stays out. The steps are jazzhr's
+`PLAN.md` Phases 7–11.
+
 ### 14. remnant — the half of a real app that maid.tech does not have
 
 *Added 2026-09-23, from a read of `remnant/remnant` (schema at

@@ -30,7 +30,7 @@ group('defineIsland validation')
   const { defineIsland } = await import('../src/define/island.js')
 
   // Valid: app only
-  try { defineIsland({ app: () => {} }); ok('app-only accepted') }
+  try { defineIsland({ app: { render() {} } }); ok('app-only accepted') }
   catch (e) { bad('app-only rejected', e.message) }
 
   // Valid: main only
@@ -38,7 +38,7 @@ group('defineIsland validation')
   catch (e) { bad('main-only rejected', e.message) }
 
   // Valid: hybrid
-  try { defineIsland({ app: () => {}, main: async () => {} }); ok('hybrid accepted') }
+  try { defineIsland({ app: { render() {} }, main: async () => {} }); ok('hybrid accepted') }
   catch (e) { bad('hybrid rejected', e.message) }
 
   // Reject: neither app nor main
@@ -51,7 +51,7 @@ group('defineIsland validation')
 
   // Reject: app + world MAIN
   try {
-    defineIsland({ app: () => {}, world: 'MAIN' })
+    defineIsland({ app: { render() {} }, world: 'MAIN' })
     bad('app + MAIN accepted — should reject')
   } catch (e) {
     if (/MAIN/.test(e.message)) ok('app + MAIN rejected')
@@ -62,11 +62,11 @@ group('defineIsland validation')
   catch (e) { bad('main + MAIN rejected', e.message) }
 
   // Reject: invalid matches
-  try { defineIsland({ app: () => {}, matches: [] }); bad('empty matches accepted') }
+  try { defineIsland({ app: { render() {} }, matches: [] }); bad('empty matches accepted') }
   catch (e) {
     if (/matches/.test(e.message)) ok('empty matches array rejected')
   }
-  try { defineIsland({ app: () => {}, matches: 'not-an-array' }); bad('string matches accepted') }
+  try { defineIsland({ app: { render() {} }, matches: 'not-an-array' }); bad('string matches accepted') }
   catch (_e) { ok('string matches rejected') }
 
   // Reject: injectPageScript with MAIN world
@@ -79,7 +79,7 @@ group('defineIsland validation')
 
   // Reject: bad position
   try {
-    defineIsland({ app: () => {}, position: 'top-half' })
+    defineIsland({ app: { render() {} }, position: 'top-half' })
     bad('bad position accepted')
   } catch (e) {
     if (/position/.test(e.message)) ok('bad position rejected')
@@ -87,13 +87,13 @@ group('defineIsland validation')
 
   // Reject: bad shadowMode
   try {
-    defineIsland({ app: () => {}, shadowMode: 'translucent' })
+    defineIsland({ app: { render() {} }, shadowMode: 'translucent' })
     bad('bad shadowMode accepted')
   } catch (_e) { ok('bad shadowMode rejected') }
 
   // Reject: mount integrated/iframe in v1
   try {
-    defineIsland({ app: () => {}, mount: 'iframe' })
+    defineIsland({ app: { render() {} }, mount: 'iframe' })
     bad('iframe mount accepted in v1')
   } catch (e) {
     if (/not supported in v1/.test(e.message)) ok('iframe mount rejected in v1')
@@ -101,7 +101,7 @@ group('defineIsland validation')
 
   // Reject: bad runAt
   try {
-    defineIsland({ app: () => {}, runAt: 'document_lazy' })
+    defineIsland({ app: { render() {} }, runAt: 'document_lazy' })
     bad('bad runAt accepted')
   } catch (_e) { ok('bad runAt rejected') }
 }
@@ -140,10 +140,23 @@ group('buildRegistration')
     if (reg.css?.[0] === 'islands/hubspot.css') ok('css preserved')
   }
 
+  // inject: 'gesture' is never registered
+  if (buildRegistration('clip', { inject: 'gesture' }) === null) ok("inject: 'gesture' builds no registration")
+  else bad("inject: 'gesture' built a registration")
+  if (buildRegistration('sa', { inject: 'matches', matches: ['*://*/*'] })?.id === 'sa') ok("inject: 'matches' registers")
+  else bad("inject: 'matches' built nothing")
+
+  try { buildRegistration('clip', { inject: 'bogus', matches: ['*://*/*'] }); bad('bogus inject accepted') }
+  catch (e) {
+    if (/island "clip"/.test(e.message) && /inject/.test(e.message) && /bogus/.test(e.message)) ok('bogus inject refused by island and value')
+    else bad('bogus inject message wrong', e.message)
+  }
+
   // No matches → throws
   try { buildRegistration('bad', {}); bad('missing matches accepted') }
   catch (e) {
-    if (/matches/.test(e.message)) ok('missing matches throws')
+    if (/matches/.test(e.message) && /inject: 'gesture'/.test(e.message)) ok('missing matches throws and names inject: gesture')
+    else bad('missing matches message wrong', e.message)
   }
 }
 
@@ -207,6 +220,29 @@ group('registerAllIslands')
     if (badResult?.ok === false && /bad id/.test(badResult.error ?? '')) ok('per-island retry: bad surfaces error')
   }
 
+  // A gesture island is skipped, never registered
+  {
+    const api = mockScripting()
+    const results = await registerAllIslands(api, {
+      clip: { inject: 'gesture' },
+      sa:   { matches: ['*://*/*'] },
+    })
+    if (results.length === 1 && results[0].id === 'sa' && api._registered().length === 1) ok('registerAll skips a gesture island')
+    else bad('registerAll registered a gesture island', JSON.stringify(api._registered()))
+
+    const { registerIsland, reloadIslandTabs } = await import('../src/island/registration.js')
+    try { await registerIsland(api, 'clip', { inject: 'gesture' }); bad('registerIsland accepted a gesture island') }
+    catch (e) {
+      if (/island "clip"/.test(e.message) && /gesture/.test(e.message)) ok('registerIsland refuses a gesture island by name')
+      else bad('registerIsland message wrong', e.message)
+    }
+
+    let queried = false
+    const n = await reloadIslandTabs({ query: async () => { queried = true; return [] } }, undefined)
+    if (n === 0 && !queried) ok('reloadIslandTabs is a no-op for a gesture island')
+    else bad('reloadIslandTabs touched tabs for a gesture island')
+  }
+
   // No islands → empty result, no API calls
   {
     const api = mockScripting()
@@ -252,7 +288,7 @@ group('island runtime — shadow DOM mount')
   {
     let appCalled = false
     const handle = await runIsland({
-      app: (root) => { appCalled = true; root.innerHTML = '<p>hi</p>' },
+      app: { render(root) { appCalled = true; root.innerHTML = '<p>hi</p>' } },
       shadowMode: 'open',
     }, { id: 'test-app', type: 'island' })
 
@@ -267,6 +303,42 @@ group('island runtime — shadow DOM mount')
     // destroy removes host
     handle.destroy()
     if (!document.body.querySelector('[data-jetty-island="test-app"]')) ok('destroy removes host element')
+  }
+
+  // A { render(root, props) } stub receives the real root and the props
+  {
+    let got = null
+    const handle = await runIsland({
+      app: { render(root, props) { got = { root, props }; root.innerHTML = '<i>stub</i>' } },
+      shadowMode: 'open',
+    }, { id: 'stub-shape', type: 'island' })
+    const host = document.body.querySelector('[data-jetty-island="stub-shape"]')
+    if (got && got.root === host?.shadowRoot) ok('render stub receives the island shadow root')
+    else bad('render stub did not receive the shadow root', String(got?.root))
+    if (got?.props?.id === 'stub-shape' && 'harbor' in (got?.props ?? {})) ok('render stub receives the props')
+    else bad('render stub props wrong', JSON.stringify(Object.keys(got?.props ?? {})))
+    handle.destroy()
+  }
+
+  // Re-injection: a second run of the same island id does nothing
+  {
+    let mains = 0, apps = 0
+    const cfg = {
+      main: async () => { mains++ },
+      app:  { render() { apps++ } },
+    }
+    const first  = await runIsland(cfg, { id: 'again', type: 'island' })
+    const second = await runIsland(cfg, { id: 'again', type: 'island' })
+    if (mains === 1 && apps === 1) ok('re-injected island runs main() and app once')
+    else bad('re-injected island ran twice', `mains=${mains} apps=${apps}`)
+    if (document.body.querySelectorAll('[data-jetty-island="again"]').length === 1) ok('re-injected island mounts one host')
+    else bad('re-injected island mounted two hosts')
+    second.destroy()
+    first.destroy()
+    await runIsland(cfg, { id: 'again', type: 'island' })
+    if (mains === 2) ok('a destroyed island can be injected again')
+    else bad('destroy did not release the island', `mains=${mains}`)
+    document.body.querySelector('[data-jetty-island="again"]')?.remove()
   }
 
   // Code-only island (main, no app)
@@ -285,7 +357,7 @@ group('island runtime — shadow DOM mount')
     const order = []
     await runIsland({
       main: async () => { order.push('main') },
-      app:  () => { order.push('app') },
+      app:  { render() { order.push('app') } },
     }, { id: 'hybrid', type: 'island' })
     if (JSON.stringify(order) === '["main","app"]') ok('hybrid: main runs before app')
     document.body.querySelector('[data-jetty-island="hybrid"]')?.remove()
@@ -296,7 +368,7 @@ group('island runtime — shadow DOM mount')
     let appRan = false
     await runIsland({
       main: async () => { throw new Error('oops') },
-      app:  () => { appRan = true },
+      app:  { render() { appRan = true } },
     }, { id: 'aborted', type: 'island' })
     if (!appRan) ok('main throw: app skipped')
   }
@@ -304,7 +376,7 @@ group('island runtime — shadow DOM mount')
   // Position: fixed-top-right
   {
     const handle = await runIsland({
-      app: (root) => { root.innerHTML = '<div>fixed</div>' },
+      app: { render(root) { root.innerHTML = '<div>fixed</div>' } },
       position: 'fixed-top-right',
     }, { id: 'fixed', type: 'island' })
 
@@ -324,7 +396,7 @@ group('island runtime — shadow DOM mount')
     document.body.appendChild(target)
 
     const handle = await runIsland({
-      app: (root) => { root.innerHTML = '<div>anchored</div>' },
+      app: { render(root) { root.innerHTML = '<div>anchored</div>' } },
       anchor: '#mount-target',
       position: 'append',
     }, { id: 'anchored', type: 'island' })
@@ -338,7 +410,7 @@ group('island runtime — shadow DOM mount')
   // Closed shadow mode
   {
     const handle = await runIsland({
-      app: (root) => { root.innerHTML = '<p>closed</p>' },
+      app: { render(root) { root.innerHTML = '<p>closed</p>' } },
       shadowMode: 'closed',
     }, { id: 'closed', type: 'island' })
 
@@ -358,7 +430,7 @@ group('island runtime — shadow DOM mount')
     delete globalThis.chrome
 
     const handle = await runIsland({
-      app: () => { /* should not run */ },
+      app: { render() { /* should not run */ } },
     }, { id: 'mainworld-app', type: 'island' })
 
     if (!document.body.querySelector('[data-jetty-island="mainworld-app"]')) {
@@ -486,6 +558,81 @@ group('manifest — islands')
       bad('host_permissions merge wrong', JSON.stringify(manifest.host_permissions))
     }
   }
+}
+
+// --- harbor islands.inject ---
+
+group('harbor — islands.inject')
+{
+  const savedChrome = globalThis.chrome
+  const calls = []
+  // No runtime.id: defineHarbor stays out of extension context, so no listener and no boot.
+  globalThis.chrome = {
+    scripting: {
+      async executeScript(opts) { calls.push(['executeScript', opts]) },
+      async insertCSS(opts)     { calls.push(['insertCSS', opts]) },
+    },
+  }
+  try {
+    const { defineHarbor } = await import('../src/define/harbor.js')
+    const harbor = defineHarbor({
+      islands: {
+        clip:  { inject: 'gesture', css: ['islands/clip.css'], world: 'MAIN', allFrames: true },
+        plain: { inject: 'gesture' },
+        sa:    { matches: ['*://*/*'] },
+      },
+    })
+
+    if (typeof harbor.islands?.inject === 'function') ok('defineHarbor returns islands synchronously')
+    else bad('handle has no islands.inject')
+
+    await harbor.islands.inject('clip', 7)
+    const [css, exec] = calls
+    if (css?.[0] === 'insertCSS' && css[1].target.tabId === 7 && css[1].target.allFrames === true &&
+        css[1].files[0] === 'islands/clip.css') ok('inject: insertCSS with target and css files')
+    else bad('inject: insertCSS wrong', JSON.stringify(css))
+    if (exec?.[0] === 'executeScript' && exec[1].target.tabId === 7 && exec[1].files[0] === 'islands/clip.js' &&
+        exec[1].world === 'MAIN') ok('inject: executeScript with target, files and world')
+    else bad('inject: executeScript wrong', JSON.stringify(exec))
+
+    calls.length = 0
+    await harbor.islands.inject('plain', 9)
+    if (calls.length === 1 && calls[0][1].world === 'ISOLATED' && calls[0][1].target.allFrames === false) ok('inject: world ISOLATED and allFrames false by default, no CSS call')
+    else bad('inject: defaults wrong', JSON.stringify(calls))
+
+    try { await harbor.islands.inject('sa', 1); bad('inject accepted a matches island') }
+    catch (e) { if (/"sa"/.test(e.message) && /gesture/.test(e.message)) ok('inject refuses a matches island by name'); else bad('inject message wrong', e.message) }
+    try { await harbor.islands.inject('nope', 1); bad('inject accepted an unknown id') }
+    catch (e) { if (/"nope"/.test(e.message)) ok('inject refuses an unknown id by name'); else bad('inject unknown message wrong', e.message) }
+  } finally {
+    globalThis.chrome = savedChrome
+  }
+}
+
+// --- manifest: gesture island ---
+
+group('manifest — gesture island')
+{
+  const { buildManifest } = await import('../src/build/manifest.js')
+  const manifest = buildManifest({
+    config: { name: 'X', version: '0.1.0', permissions: { declared: ['storage'] }, islands: { clip: { inject: 'gesture' } } },
+    found: { harbor: { path: '/x' }, dock: null, options: null, piers: [], islands: [{ id: 'clip', path: '/x' }] },
+    browser: 'chrome',
+  })
+  if (!manifest.host_permissions) ok('gesture island adds no host_permissions')
+  else bad('gesture island added host_permissions', JSON.stringify(manifest.host_permissions))
+  if (manifest.permissions.includes('activeTab') && manifest.permissions.includes('scripting')) ok('gesture island adds activeTab and scripting')
+  else bad('gesture island permissions wrong', JSON.stringify(manifest.permissions))
+  if (manifest.web_accessible_resources?.[0]?.resources?.[0] === 'islands/clip.js') ok('gesture island keeps its web_accessible_resources entry')
+  else bad('gesture island lost its WAR entry', JSON.stringify(manifest.web_accessible_resources))
+
+  const plain = buildManifest({
+    config: { name: 'X', version: '0.1.0', islands: { sa: { matches: ['https://a.test/*'] } } },
+    found: { harbor: { path: '/x' }, dock: null, options: null, piers: [], islands: [{ id: 'sa', path: '/x' }] },
+    browser: 'chrome',
+  })
+  if (!plain.permissions.includes('activeTab')) ok('a matches island does not add activeTab')
+  else bad('a matches island added activeTab')
 }
 
 // --- summary ---

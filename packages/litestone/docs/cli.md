@@ -50,12 +50,12 @@ litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path
 litestone mirror exit                                    # write each @@mirror out as what it derived, in place
 litestone mutate                                         # mutate the schema, report what the checks miss
 litestone mutate --suite "bun test api/test"           # ...and run the app's own tests on each survivor
-litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
+litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>] [--place=<name>]
 litestone restore [config.js] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]]
 litestone rekey [--orphan=Model.field,…]                 # every encrypted column from ENCRYPTION_KEY to NEW_ENCRYPTION_KEY
 litestone key-check --json                               # which columns need ENCRYPTION_KEY, which hold values, whether it opens them
 litestone rsync <dest>                                   # every SQLite db to a destination via sqlite3_rsync
-litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
+litestone backup [dest] [--vacuum] [--zip] [--db=<name>] [--place=<name>]
 litestone optimize [table]
 litestone tenant list|create|info|delete|migrate
 ```
@@ -299,9 +299,9 @@ litestone export <dataset> --as <who> | --system [--since=<cursor>] [--format=nd
 Take a bulk extract of a dataset that declares `@@export`, graded as the account `--as` names — the rows that leave are the rows that account can read. Writes `<dataset>.<format>` and `<dataset>.manifest.json` into `--out` (default: the working directory); `--stdout` streams the rows and prints the manifest to stderr. `--since` resumes from the cursor a previous manifest recorded. [export.md](export.md) is the full reference.
 
 ```bash
-litestone backup [dest] [--vacuum] [--zip] [--db=<name>]
+litestone backup [dest] [--vacuum] [--zip] [--db=<name>] [--place=<name>]
 ```
-Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db).
+Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db). A tenancy place is left out unless its `backup` clause names a directory, which then gets a stamped copy of that place alone; `--place <name> [dest]` copies one place by itself.
 
 ```bash
 litestone optimize [table]
@@ -311,9 +311,9 @@ Merge FTS5 index segments for optimal search performance. Omit `table` to optimi
 ## Infrastructure
 
 ```bash
-litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>]
+litestone replicate [config.js] [--url=<url>] [--interval=<s>] [--retention=<d>] [--db=<name>] [--place=<name>]
 ```
-Start Litestream WAL replication. Runs as a managed subprocess — signal-forwarded, YAML config auto-generated. Each flag overrides the same key under `replicate:` in the config.
+Start Litestream WAL replication. Runs as a managed subprocess — signal-forwarded, YAML config auto-generated. Each flag overrides the same key under `replicate:` in the config. A tenancy place streams only to the url its `backup` clause declares, and `--place` streams that place alone — [multi-tenancy.md § A place](multi-tenancy.md#a-place).
 
 ```bash
 litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]

@@ -4,6 +4,23 @@ The file-by-file map of `@frontierjs/toolbelt`, moved out of `CLAUDE.md` so a tu
 
 ```
 src/glow/glow.js     source code → highlighted HTML. The first kit.
+src/grammars/        a line-at-a-time tokenizer for an editor or viewer:
+                     `tokenizeLine` takes the state a line starts in and
+                     answers the state it ends in, so a block comment that
+                     spans lines is known without reading from the top (glow
+                     highlights a whole block and keeps nothing between calls).
+                     `tokenize.js` is the engine and the painter (`lineHTML`);
+                     `css.js`, `html.js`, `js.js` (also `ts`), `json.js`,
+                     `lite.js`, `markdown.js`, `mesa.js` and `yaml.js` are one
+                     grammar each, plain objects; `grammars.js` is the entry and
+                     owns `grammarFor(path)` and `plain`. A region that embeds
+                     another language holds its grammar OBJECT, so there is no
+                     registry; the imports form no cycle (markdown reads mesa
+                     and html, mesa reads html and js, html reads css, js and
+                     json). A state is an opaque `===` token interned in a
+                     module memo, as `datetime` keeps its formatters.
+                     `createLineStates`, the store over an editor's buffer,
+                     stays in the app (Lathe)
 src/inflect/         How a name is spelled — number, shape, and the reader.
                      One definition across litestone, junction and sierra, plus
                      `humanize` for the screen. The third axis is the one that
@@ -302,9 +319,12 @@ src/fill/            merge fields into text a user wrote -- `fill(source, ctx,
                      literal brace. `mode` is REQUIRED, `html` escaping a value
                      and `text` not, because a body's format is stated and never
                      sniffed from its tags. `segments(source)` is the scan both read, exported for a
-                     caller that hides holes from another reader (email-kit's markdown). orion's `data.template` and every
+                     caller that hides holes from another reader (email-kit's markdown). `unfilled(source, ctx)` is the
+                     holes `fill` leaves standing, for a renderer that refuses
+                     a gap (`FJS-D2281`). orion's `data.template` and every
                      app that stores a template are the callers. `mergeFields`
-                     is the catalog (`FJS-2683`): `{ key: 'owner.field', label,
+                     is the catalog (`FJS-2683`): `{ key: 'owner.field' (or
+                     'owner.path.to.field', graded whole), label,
                      example, default, type }` declared once, read as the
                      editor's `list`, the preview's `example`, the save-time
                      `check` and the render's `fill` (a `default` stands in for

@@ -35,6 +35,8 @@ const DEFAULTS = {
 // and the app grants a guest something narrower on purpose (`FJS-D1100`).
 export const tenantAdmission = (/** @type {any} */ claim) => `${claim}Admitted`
 
+export const isUrl = (/** @type {string} */ s) => /^[a-z][a-z0-9+.-]*:\/\//i.test(s)
+
 // { kind:'literal', value } | { kind:'env', var, default } → string | null
 function readValue(/** @type {any} */ def, /** @type {any} */ what) {
   if (def == null) return null
@@ -59,6 +61,7 @@ function readValue(/** @type {any} */ def, /** @type {any} */ what) {
  *
  * database → { strategy, dir, registry, maxOpen, key, resolve, places }
  *            places is { [name]: absolute dir }, empty when none is declared
+ *            backups is { [name]: absolute dir or url } for each place declaring one
  * row      → { strategy, column, claim, admission }
  */
 export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {}) {
@@ -95,6 +98,12 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
     key:      overrides.key ?? readValue(t.key, 'key'),
     resolve:  resolution,
     places:   Object.fromEntries((t.places ?? []).map((/** @type {any} */ p) => [p.name, at(readValue(p.dir, `place ${p.name}`))])),
+    // A url stays a url: resolving `s3://eu/app` as a path would back the place
+    // up into a local directory named `s3:`.
+    backups:  Object.fromEntries((t.places ?? []).filter((/** @type {any} */ p) => p.backup != null).map((/** @type {any} */ p) => {
+      const dest = String(readValue(p.backup, `place ${p.name} backup`))
+      return [p.name, isUrl(dest) ? dest : at(dest)]
+    })),
   }
 }
 

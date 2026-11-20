@@ -29,13 +29,18 @@ render: static
   </section>
   <section>
     <h2>Guides</h2>
-    <p>One page per job, grouped by realm: Data, API, UI, Ship and Test. Each one ends in code that runs. Every guide has a stub page today naming what it will cover and where the material is now; start with <a href="/docs/guides/schema/">A schema</a>.</p>
+    <p>One page per job, grouped by realm: Data, API, UI, Ship and Test. Each one ends in code that runs. The Data guides are pages of the <a href="/docs/litestone/">Litestone guide</a>; the rest are stub pages today naming what each will cover and where the material is now. Start with <a href="/docs/litestone/schema/models-and-fields/">Models and fields</a>.</p>
     <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a> and the package READMEs</p>
   </section>
   <section>
     <h2>Mesa guide</h2>
     <p>How to write Mesa, one short page per primitive: reactivity, template syntax, styling, the runtime and the reference. Built from the markdown in the package.</p>
     <p class="from">Page: <a href="/docs/mesa/">Mesa guide</a></p>
+  </section>
+  <section>
+    <h2>Litestone guide</h2>
+    <p>What a schema and its client can do, one quick page per idea: models, queries, access, protected data, migrations and more. Built from the markdown in the package.</p>
+    <p class="from">Page: <a href="/docs/litestone/">Litestone guide</a></p>
   </section>
   <section>
     <h2>Reference</h2>

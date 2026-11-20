@@ -169,6 +169,14 @@ describe('an agent', () => {
     expect(held.json.message).toContain('held')
   })
 
+  test('an agent walks in uncried, so a tavern full of them leaves the line rate to people', async () => {
+    await sys.room.create({ data: { slug: 'square', name: 'The square' } })
+    await postLogin(env.port, await signedLogin(ace, {}))
+    await signIn(env.port, 'sam')
+    const cried = await sys.message.findMany({ where: { member: { is: { nick: CRIER } } }, select: { body: true } })
+    expect(cried.map((m: any) => m.body)).toEqual(['Hear ye! sam walks into Haven for the first time.'])
+  })
+
   test('a member cannot flag themselves an agent', async () => {
     const sam = await signIn(env.port, 'sam')
     await fetch(`http://localhost:${env.port}/members/${sam.id}`, {

@@ -2,8 +2,10 @@
 
 The full hazard catalog for `@frontierjs/conduit`, moved out of `CLAUDE.md`. The fifteen that bite most often stay there; this is every one, verbatim.
 
-- **`kind` says who is at fault, and `server_error` means 5xx and nothing
-  else.** Three consumers branch on it and they disagree: the retry decision,
+- **`kind` says who is at fault, and `server_error` means 5xx except 501/505
+  and nothing else.** A 501/505 is `not_implemented` — the target lacks the
+  function, a license error among them — so it is never replayed and never a
+  breaker fault (`FJS-D2251`). Three consumers branch on it and they disagree: the retry decision,
   the `retryable` flag a caravan job acts on, and the breaker's failure count.
   Under one word for every non-2xx, five 404s opened the circuit on a target
   that answered all five, after which correct requests were shed as

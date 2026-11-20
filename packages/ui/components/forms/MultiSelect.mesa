@@ -19,7 +19,7 @@
 
   import Field from '../forms/Field.mesa'
   import { uid, resolveError, resolveRule, stated, truncationNote, withNote, optionsNote, lockedBy, fitDropdown } from '../../utils.js'
-  import { rank, segments } from '@frontierjs/toolbelt/search'
+  import { createRanker, segments } from '@frontierjs/toolbelt/search'
   import { parseCell }      from '@frontierjs/toolbelt/cells'
 
   // ── Props ───────────────────────────────────────────────────────────────────
@@ -240,10 +240,11 @@
   // because a match may have scored on `value`: those indexes point into the
   // value string, and marking the LABEL with them highlights whichever
   // characters happen to sit at those offsets.
+  const all = Object.values(optionsMap)
+  const ranker = createRanker(all, { keys: ['textContent', 'value'] })
   const ranked = (() => {
-    const all = Object.values(optionsMap)
     if (!inputValue?.trim()) return all.map(item => ({ item, marks: [] }))
-    return rank(all, inputValue, { keys: ['textContent', 'value'] })
+    return ranker.rank(inputValue)
       .map(r => ({ item: r.item, marks: r.byKey?.textContent ?? [] }))
   })()
 

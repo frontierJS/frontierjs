@@ -511,10 +511,10 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 | `timeout` | yes | exceeded `timeout_ms`, including during the response body read |
 | `connection_failed` | yes | could not reach the target, or the conduit has been destroyed |
 | `rate_limited` | yes | 429, or a 503 that named a `Retry-After`. Carries `retry_after_ms`, which the retry ladder waits instead of its own backoff, and **does not count toward the circuit breaker** — a rate limit says the target is healthy and we are asking too fast |
-| `server_error` | yes | 5xx **only**. The one response-shaped kind the breaker counts |
+| `server_error` | yes | 5xx **only**, except 501/505. The one response-shaped kind the breaker counts |
 | `client_error` | no | any other 4xx — the target understood and refused. `raw` carries the body, which on a 4xx is usually the half you can act on: a validation report, a decline code |
 | `invalid_response` | no | the target answered and the answer is unusable — HTML where a payload was expected, a body that did not parse as the JSON it claimed, a body past `max_response_bytes`, or a response that failed the `validate` you declared |
-| `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
+| `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`), or the target answered 501/505 — it lacks the function, and no replay grows one. `raw` carries the body. **Does not count toward the circuit breaker** |
 | `circuit_open` | yes | the target's breaker is open — nothing was sent, and the message names the seconds to wait |
 | `overloaded` | yes | the target's concurrency cap is full — nothing was sent |
 | `aborted` | yes | the caller's `signal` ended the call. **Does not count toward the circuit breaker** — the caller left, the target did not fail. On an unkeyed POST that was in flight it comes back `retryable: false, indeterminate: true`, like a timeout |
@@ -609,7 +609,7 @@ Open → requests fail immediately with `circuit_open` and **nothing leaves the 
 
 Only failures that implicate the target count — `connection_failed`, `timeout`, `server_error`. An unresolvable credential, an unserializable body or a typo'd method is your bug, and tripping a breaker on it would hide the real error behind `circuit_open` forever.
 
-**Which is why `server_error` is 5xx and nothing else.** It used to be every non-2xx and every unusable body as well, and one word fed three consumers that disagree about it: the retry decision, the `retryable` flag a background job acts on, and this count. Five 404s in a row opened the breaker on a target that had answered every one of them, after which correct requests were shed locally (`FJS-684`). A 404 is not evidence of an outage and neither is an error page; `client_error` and `invalid_response` say so and stay out of the count.
+**Which is why `server_error` is 5xx (less 501/505, which are `not_implemented`) and nothing else.** It used to be every non-2xx and every unusable body as well, and one word fed three consumers that disagree about it: the retry decision, the `retryable` flag a background job acts on, and this count. Five 404s in a row opened the breaker on a target that had answered every one of them, after which correct requests were shed locally (`FJS-684`). A 404 is not evidence of an outage and neither is an error page; `client_error` and `invalid_response` say so and stay out of the count.
 
 Beyond `max_concurrent`, requests fail fast with `overloaded` rather than queueing — a bounded queue just moves the pile-up somewhere less visible. **The default is 64 rather than unlimited**, because unlimited was not unbounded either: a burst queues inside the connection pool with the per-attempt timer already running, so the wait comes back as the target's own timeout. Measured at 5000 concurrent against a target that answered every request: 10s, 136 timeouts, 533 file descriptors, breaker open. Pass `Infinity` for the old behavior. Breaker state per target shows up in `stats().breakers`, and only for targets that are not healthy-and-idle.
 
@@ -744,7 +744,7 @@ conduit({
   // Can be overridden per-request via req.timeout_ms.
   timeout_ms?: number
 
-  // Retry limit on retryable errors (5xx, 429, timeout, connection failure).
+  // Retry limit on retryable errors (5xx but 501/505, 429, timeout, connection failure).
   // Default: 3. Set to 0 to disable retries.
   // Only applies to idempotent methods — see Retries below.
   retry_limit?: number

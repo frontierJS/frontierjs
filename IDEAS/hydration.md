@@ -201,6 +201,48 @@ shipping nothing for one. What Mesa would take from each:
 A keyed lookup makes a missing marker detectable per binding, which a cursor
 cannot. That makes the replaced range a choice Q6 did not face: § 6 Q7.
 
+### State and the flag, read 2026-11-19
+
+Read for Q8–Q10, from docs and from source at svelte@5.58.0, solid-js@2.0.0,
+nuxt@3.17.5, @marko/compiler@5.39.10 and vue@3.5.13.
+
+- **Isolation is built into each framework's own state channel, and module
+  state is covered by documentation alone.** SvelteKit tells authors not to
+  keep request data in shared variables and to use context instead
+  ([docs](https://svelte.dev/docs/kit/state-management)). Svelte 5's
+  `hydratable()` scopes its values to the render with `AsyncLocalStorage` and
+  throws outside one. Nuxt's `useState` lives on the per-request app, and a
+  module-level `ref` is a documented leak
+  ([docs](https://nuxt.com/docs/3.x/getting-started/state-management)).
+  Pinia makes an instance per app. Angular warns that a `useValue` provider
+  lasts across requests ([docs](https://angular.dev/guide/ssr)).
+- **One framework detects a write.** solid-js@2.0.0 `dist/server.dev.js`
+  warns `[SERVER_WRITE]` when any signal or store setter runs during a server
+  render. The write has no effect there, and its diagnostics entry says it
+  "will throw".
+- **What gets serialized is mostly opt-in per key.** Nuxt serializes only
+  `useState` and `useAsyncData` values, Svelte only `hydratable(key, fn)`, and
+  Angular only explicit `StateKey`s. Pinia and Qwik serialize automatically.
+  React's taint API inverts this: an author opts a value out, and the docs warn
+  that a clone escapes it. No framework refuses by a schema field annotation,
+  so refusing a store that holds a field like `@guarded` would be new.
+- **The flag is spelled `hydratable` where it exists.** Solid's compiler takes
+  `generate: 'dom' | 'ssr'` and `hydratable: boolean`, and Svelte 4 took
+  `hydratable: true`. Svelte 5 removed the option ("Svelte components are
+  always hydratable now") and chooses at the client entry, `hydrate()` beside
+  `mount()`, as Vue's `createSSRApp` and Preact's `hydrate()` do. Marko 5 makes
+  it an output target: `output: "hydrate"`.
+
+**What this means here.** Sierra renders at build time only (`spa`, `static`,
+`widget`), with pages one after another in one process (`prerender.js`). So a
+leak is between pages, not between users, and `FJS-1659` already records the
+shared module state as a hazard. More important, the route's own script runs
+on the client under one tree. A store the route writes, such as `cart.count = 3`
+in the 0.1 page, is written again in the browser, with no snapshot needed,
+**provided the route's `load()` data is in the page**. That data is what
+`FJS-081` already gate-checks as public, and Phase 2 had no step putting it
+there. Step 2.5a now does.
+
 ## 5. The cheaper fix, priced first
 
 Before hydration comes the option one level simpler: **keep islands-replace,
@@ -278,6 +320,51 @@ reads.
   - **Recommend A.** It guesses no more than Q6 allows, because it replaces a
     range known to be wrong. It keeps a phone's viewport mismatch to one block.
     C is an optimization to price once A exists.
+- **Q8 — Does a store's server value get its own snapshot?** `FJS-D2175`
+  ruled that snapshots exist. § 4 *State and the flag* finds that one tree
+  re-runs the route on the client, so a store the route writes from `load()`
+  data comes out the same with no snapshot.
+  - **A** — No snapshots. The client re-derives store values by running the
+    same scripts over the `load()` data step 2.5a writes into the page. A store
+    whose server value cannot be re-derived shows up as a mismatch, and
+    `FJS-D2260` re-renders that block. This amends `FJS-D2175`, keeping its
+    `{#await}` and `$async` half.
+  - **B** — Opt-in snapshots, as Nuxt, Svelte and Angular do: a store is
+    serialized only under a key its module declares. A store holding a
+    protected field (Invariants 6 and 7) is refused by name.
+  - **C** — Every watched module store is serialized automatically, as Pinia
+    does.
+  - **Recommend A.** It is one transport instead of two. The data it puts in
+    the page is the data `FJS-081` already checks. And no store identity has
+    to agree across the server and the bundle. B is the fallback if Phase 2
+    finds a store that real pages cannot re-derive. C publishes whatever a
+    store happens to hold.
+- **Q9 — What stops one page's store write leaking into the next page's
+  render?** Every page renders in one build process (`FJS-1659`).
+  - **A** — Documentation only, as `FJS-1659` already says, which is where
+    SvelteKit, Nuxt and Angular stop.
+  - **B** — Detection: in a flagged render, warn when a watched module store
+    starts a page holding a value that an earlier page wrote, naming the store
+    and both pages. Solid 2's `[SERVER_WRITE]` is the precedent, but Solid
+    warns on every server write, which would flag Q8 A's legitimate route
+    writes.
+  - **C** — Isolation: run each page render under an `AsyncLocalStorage`
+    scope and restore watched stores to their module values between pages.
+    Junction already scopes requests this way (`core/context.ts`).
+  - **Recommend B.** Under Q8 A a leaked value produces a mismatch rather than
+    a published snapshot, so the stakes are a wrong first paint. A warning that
+    names the store is the cheapest guard that says what happened. C restores
+    state no module asked to have restored.
+- **Q10 — What is the flag called?** Step 1.2.
+  - **A** — `hydratable: true`, a render option beside `islands: true`, and
+    the same key in Sierra's config. Solid and Svelte 4 spell it this way.
+  - **B** — A render target, as Marko's `output: "hydrate"` is.
+  - **C** — No flag on the server: always write markers and choose at the
+    client entry, as Svelte 5 does.
+  - **Recommend A.** `FJS-D2176` requires default output to stay
+    byte-identical, which rules out C until the default flips. A target would
+    make one output mode into two, and `FJS-D1634` calls the string mode the
+    server's one output mode.
 
 ## 7. What must stay true, and what proves it
 
@@ -350,8 +437,7 @@ parses (Invariant 15), and the unflagged output is byte-identical to before.
   equal, including a snippet rendered twice in one instance. It lands before
   any marker is written.
 - [ ] 1.2 The flag: a render option on `renderComponent` and `renderToHTML`,
-  and its Sierra config key. Name it through `decision-rules`, because it is a
-  new option. A corpus test pins the unflagged output byte-identical.
+  and its Sierra config key, named by Q10. A corpus test pins the unflagged output byte-identical.
 - [ ] 1.3 Binding markers: a comment after each live node, carrying the
   instance id and the binding key. Write `<!>` between adjacent text nodes, and
   an empty marker where a text binding rendered nothing, as Marko's `%` op
@@ -392,6 +478,10 @@ first bullet.
   the binding in the dev overlay. A test forces each kind.
 - [ ] 2.5 Sierra: a flagged static page hydrates from the route root instead
   of running the islands loader. Unflagged pages keep islands-replace.
+- [ ] 2.5a The route's `load()` data goes into the page, so the route component
+  can run on the client. It is the data `FJS-081` already checks against each
+  model's `@@gate`, so it adds no new path into public HTML. Found
+  2026-11-19 (§ 4 *State and the flag*).
 - [ ] 2.6 The drive: the 0.1 page committed under `packages/sierra/test/fixtures/`
   with its assertions inverted, run by Sierra's `verify` path.
 
@@ -409,13 +499,8 @@ before either is written.
 - [ ] 3.2 Store snapshots: a module object a component watches with `$:` is
   written under its path resolved from the app root and its export name, and
   restored before the first component runs. A specifier is spelled differently
-  on the server and in the bundle, so it is not the key. The owner rules two
-  things before this is built:
-  - **Per-request isolation.** A module store is process-global on the
-    server, so a snapshot can carry another request's write into this page.
-    `ui-hazards` records the same for `<script module>` state.
-  - **Which stores qualify.** A snapshot puts data in public HTML, which
-    Invariants 6 and 7 constrain.
+  on the server and in the bundle, so it is not the key. Q8 decides whether
+  this step exists at all, and Q9 decides what guards a leak between pages.
 - [ ] 3.3 The drive gains the `{#await}` case, counting requests the way 0.2
   did.
 

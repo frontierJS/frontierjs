@@ -106,6 +106,8 @@ export interface SessionContext {
   isOwner?:        boolean
   /** Global super-admin, a real revocable human → SYSADMIN (7). */
   isSystemAdmin?:  boolean
+  /** The app acting on its own behalf: set by `createApp({ system })` on that principal alone, read as `auth().isSystem` (`FJS-D1013`). */
+  isSystem?:       boolean
 }
 
 // ─── Full auth interface ──────────────────────────────────────────────────

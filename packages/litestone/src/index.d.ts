@@ -1665,6 +1665,8 @@ export interface DatabaseTenancy {
   resolve:  TenantResolution | null
   /** `place <name> "<dir>"` lines, each dir absolute. A tenant created with `meta.place` lives there. */
   places:   Record<string, string>
+  /** `place <name> "<dir>" backup "<dest>"`: where a place's files may be copied, an absolute dir or a url. A place absent here is left out of `backup` and `replicate`. */
+  backups:  Record<string, string>
 }
 
 export interface RowTenancy {

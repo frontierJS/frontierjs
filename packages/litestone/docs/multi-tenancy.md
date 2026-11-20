@@ -95,10 +95,20 @@ if (!tenants.pathOf('clinic').endsWith('data/eu/clinic.db')) throw new Error('ex
 
 The registry stores the NAME, so a moved directory is one edit of the schema.
 `backup`, `replicate`, `restore`, Studio and `migrate` read the places from the
-parse, and a backup holds each as `tenant-files-<place>/`. Refused by name: a
+parse. Refused by name: a
 place the block does not declare, a `meta.dir` or `meta.path` (neither places a
 file), and a change of `meta.place` after create, since moving a tenant is a file
 move. `default` names `dir` and cannot be a place.
+
+A place's files leave the machine only for the destination it declares
+(`FJS-D1743`): `place eu "./data/eu" backup "./backups/eu"` (a directory, which
+`backup` writes) or `backup "s3://eu-bucket/app"` (a url, which `replicate`
+streams to). Without one, the default `backup` and `replicate` leave the place
+out and print a line naming it; `--place eu` carries that place alone to a
+destination named in that run. Each copy holds one place, as
+`tenant-files-<place>/` and its trail, so `--zip` never archives two. `export`
+writes the tenant's place into its manifest, and Studio shows it beside the
+tenant. `strategy row` has no place: one file holds every tenant.
 
 ### The fleet
 

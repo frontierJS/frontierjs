@@ -2238,3 +2238,88 @@ describe('CLI smoke — migrate accept', () => {
     expect((await runCli(dir, ['migrate', 'accept', '20260101000000_other.sql'])).exit).toBe(1)
   })
 })
+
+// ─── A place's files go only where the place says (FJS-3723, FJS-D1743) ───────
+//
+// A placed tenant's file is a regulator's unit: a default backup or replica that
+// carries it to the fleet's one destination moves an EU clinic's rows out of its
+// jurisdiction, and `--zip` makes that one portable archive.
+describe('backup / replicate / export — a place is skipped unless it declares a destination', () => {
+  const fleet = (label: string, clause = '') => {
+    const dir = makeFixtureDir(label, {
+      schema: `tenancy { strategy database  dir "./fleet"  registry "./fleet/registry.db"  place eu "./data/eu"${clause} }\n` +
+              `model Post {\n  id    Int    @id @default(autoincrement())\n  title String\n  @@gate(5.8.9.9)\n  @@export(ndjson)\n}\n`,
+    })
+    return dir
+  }
+  const seed = async (dir: string) => {
+    expect((await runCli(dir, ['tenant', 'create', 'us1'])).exit).toBe(0)
+    const eu = await runCli(dir, ['tenant', 'create', 'eu1', '--meta', '{"place":"eu"}'])
+    expect(eu.exit).toBe(0)
+    expect(existsSync(join(dir, 'data', 'eu', 'eu1.db'))).toBe(true)
+    new Database(join(dir, 'test.db')).close()
+  }
+
+  test('a place with no destination is left out of the default backup, by name', async () => {
+    const dir = fleet('place-skip')
+    await seed(dir)
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(existsSync(join(dir, 'out', 'tenant-files', 'us1.db'))).toBe(true)
+    expect(existsSync(join(dir, 'out', 'tenant-files-eu'))).toBe(false)
+    expect(r.stdout).toContain('place eu')
+    expect(r.stdout).toContain('litestone backup --place eu')
+  })
+
+  test('backup --place carries that place alone', async () => {
+    const dir = fleet('place-only')
+    await seed(dir)
+    const r = await runCli(dir, ['backup', 'eu-out', '--place', 'eu'])
+    expect(r.exit).toBe(0)
+    expect(readdirSync(join(dir, 'eu-out'))).toEqual(['tenant-files-eu'])
+    expect(readdirSync(join(dir, 'eu-out', 'tenant-files-eu'))).toEqual(['eu1.db'])
+    expect((await runCli(dir, ['backup', 'x', '--place', 'mars'])).stderr + '').toContain('mars')
+  })
+
+  test('a declared destination receives its place, and nothing else does', async () => {
+    const dir = fleet('place-dest', ' backup "./eu-backups"')
+    await seed(dir)
+    const r = await runCli(dir, ['backup', 'out', '--zip'])
+    expect(r.exit).toBe(0)
+    expect(existsSync(join(dir, 'out.zip'))).toBe(true)
+    const listing = execFileSync('unzip', ['-l', join(dir, 'out.zip')], { encoding: 'utf8' })
+    expect(listing).toContain('tenant-files/us1.db')
+    expect(listing).not.toContain('eu1.db')
+    const stamps = readdirSync(join(dir, 'eu-backups'))
+    expect(stamps).toHaveLength(1)
+    expect(stamps[0]).toEndWith('.zip')
+    const eu = execFileSync('unzip', ['-l', join(dir, 'eu-backups', stamps[0])], { encoding: 'utf8' })
+    expect(eu).toContain('tenant-files-eu/eu1.db')
+    expect(eu).not.toContain('us1.db')
+  })
+
+  test('replicate streams a place only to the url it declares', async () => {
+    const dir  = fleet('place-replicate')
+    await seed(dir)
+    const fake = join(dir, 'fake-litestream')
+    writeFileSync(fake, `#!/bin/sh\nif [ "$1" = version ]; then echo v0.5.2; exit 0; fi\ncat "$3"\n`, { mode: 0o755 })
+    const skipped = await runCli(dir, ['replicate', '--url', `file://${join(dir, 'replica')}`], { env: { LITESTREAM_BIN: fake } })
+    expect(skipped.exit).toBe(0)
+    expect(skipped.stdout).not.toContain(join(dir, 'data', 'eu'))
+    expect(skipped.stdout).toContain('place eu')
+
+    writeFileSync(join(dir, 'schema.lite'), readFileSync(join(dir, 'schema.lite'), 'utf8')
+      .replace('place eu "./data/eu"', `place eu "./data/eu" backup "file://${join(dir, 'eu-replica')}"`))
+    const declared = await runCli(dir, ['replicate', '--url', `file://${join(dir, 'replica')}`], { env: { LITESTREAM_BIN: fake } })
+    expect(declared.exit).toBe(0)
+    expect(declared.stdout).toContain(`url: file://${join(dir, 'eu-replica')}/tenant-files-eu`)
+    expect(declared.stdout).not.toContain(`url: file://${join(dir, 'replica')}/tenant-files-eu`)
+  })
+
+  test('export names the place of the tenant whose rows leave', async () => {
+    const dir = fleet('place-export')
+    await seed(dir)
+    const r = await runCli(dir, ['export', 'post', '--tenant', 'eu1', '--system', '--out', join(dir, 'x')])
+    expect(r.stdout + r.stderr).toContain('place eu')
+  })
+})

@@ -2,7 +2,7 @@
 //
 // Mounts a small floating banner at the top-right of pages matching the
 // configured pattern. Demonstrates:
-//   - app function rendering inside a shadow root
+//   - app stub ({ render }) rendering inside a shadow root
 //   - host port connection to harbor
 //   - main() lifecycle running before app
 //   - position: fixed-top-right
@@ -13,7 +13,7 @@
 import { defineIsland } from '../../../../../src/index.js'
 
 export default defineIsland({
-  app(root, props) {
+  app: { render(root, props) {
     // root is the shadow root.
     const wrap = document.createElement('div')
     wrap.style.cssText = `
@@ -64,7 +64,7 @@ export default defineIsland({
     } else {
       status.textContent = 'No harbor (test env?)'
     }
-  },
+  } },
 
   async main(ctx) {
     // Code-side phase. Runs before app — useful for prefetching data.

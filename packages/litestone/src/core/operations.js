@@ -16,13 +16,21 @@
 //
 //   { operations: [ { op: 'rename', model: 'Issue', from: 'description', to: 'brief' } ] }
 //
-// `backfill` and `split` join `OPERATIONS` as entries of their own; the
-// document, the validation hook and the header line do not change shape.
+// `backfill` gives a column this migration adds a value for the rows already
+// there. Without one, a rebuild's copy names only the columns the old table
+// shares, so a new NOT NULL column has nothing to take and the file is written
+// BLOCKED (`FJS-D428`). Its source is a constant or the first row of a parent:
+//
+//   { op: 'backfill', model: 'Job', field: 'priority', value: 'normal' }
+//   { op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }
+//
+// `split` joins `OPERATIONS` as an entry of its own (`FJS-D683`); the document,
+// the validation hook and the header line do not change shape.
 //
 // The collective noun is provisional (`FJS-D603` rules none). *Move* belongs to
 // `@@transitions`, so it is not that.
 
-import { modelToTableName, fieldToColumnName, isStoredField } from './ddl.js'
+import { modelToTableName, fieldToColumnName, isStoredField, isSoftDelete } from './ddl.js'
 import { quoteIdent } from './query.js'
 
 /**
@@ -31,7 +39,8 @@ import { quoteIdent } from './query.js'
  * @type {Record<string, string>}
  */
 export const OPERATIONS = {
-  rename: 'a column keeps its values under a new name',
+  rename:   'a column keeps its values under a new name',
+  backfill: 'a column this migration adds takes a value for the rows already there',
 }
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -59,7 +68,7 @@ export function parseRenameFlag(text) {
  */
 export function readOperations(doc) {
   if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !Array.isArray(doc.operations))
-    throw new Error('the operations document is { "operations": [ { "op": "rename", "model", "from", "to" } ] }')
+    throw new Error('the operations document is { "operations": [ { "op": "rename", "model", "from", "to" } or { "op": "backfill", "model", "field", "value" or "first" } ] }')
   for (const [i, o] of doc.operations.entries()) {
     if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error(`operations[${i}] is not an object`)
     if (!OPERATIONS[o.op])
@@ -89,9 +98,9 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
   const refuse = (message) => ({ ok: false, message })
 
   for (const [i, o] of (operations ?? []).entries()) {
-    const at = `operations[${i}] (${o?.op ?? '?'} ${o?.model}.${o?.from} → ${o?.to})`
-    if (!o || o.op !== 'rename') return refuse(`${at}: '${o?.op}' is not an operation litestone writes. It writes: ${Object.keys(OPERATIONS).join(', ')}`)
-    for (const key of ['model', 'from', 'to'])
+    const at = `operations[${i}] (${o?.op === 'backfill' ? `backfill ${o?.model}.${o?.field}` : `${o?.op ?? '?'} ${o?.model}.${o?.from} → ${o?.to}`})`
+    if (!o || !Object.hasOwn(OPERATIONS, o.op)) return refuse(`${at}: '${o?.op}' is not an operation litestone writes. It writes: ${Object.keys(OPERATIONS).join(', ')}`)
+    for (const key of o.op === 'backfill' ? ['model', 'field'] : ['model', 'from', 'to'])
       if (typeof o[key] !== 'string' || !IDENT.test(o[key])) return refuse(`${at}: \`${key}\` is a name`)
 
     const model = models.find((/** @type {any} */ m) => m.name === o.model)
@@ -99,6 +108,16 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
     if (model.attributes?.some((/** @type {any} */ a) => a.kind === 'external')) return refuse(`${at}: ${o.model} is @@external, so no migration of its owns its columns`)
     const home = model.attributes?.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main'
     if (home !== dbName) continue
+
+    if (o.op === 'backfill') {
+      const b = resolveBackfill(o, model, models, home, at, pluralize)
+      if (typeof b === 'string') return refuse(b)
+      const key = `${b.table}.${b.column}`
+      if (seen.has(key)) return refuse(`${at}: ${key} is named by two operations`)
+      seen.add(key)
+      ops.push(b)
+      continue
+    }
 
     const field = model.fields.find((/** @type {any} */ f) => f.name === o.to)
     if (!field || !isStoredField(field)) return refuse(`${at}: ${o.model} declares no stored field \`${o.to}\`, so nothing holds the values. Its fields are ${model.fields.filter(isStoredField).map((/** @type {any} */ f) => f.name).join(', ')}`)
@@ -117,6 +136,64 @@ export function resolveOperations(parseResult, dbName, operations, { pluralize =
   return { ok: true, ops }
 }
 
+// A string is quoted with its quotes doubled; nothing else a caller hands in
+// reaches the file as SQL text.
+/** @param {any} v */
+function sqlLiteral(v) {
+  if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  if (typeof v === 'boolean') return v ? '1' : '0'
+  return null
+}
+
+/**
+ * One backfill entry against the schema: the column it fills and the source,
+ * or a refusal.
+ *
+ * @param {any} o
+ * @param {any} model
+ * @param {any[]} models
+ * @param {string} home
+ * @param {string} at
+ * @param {boolean} pluralize
+ * @returns {any} the resolved entry, or a refusal string
+ */
+function resolveBackfill(o, model, models, home, at, pluralize) {
+  const field = model.fields.find((/** @type {any} */ f) => f.name === o.field)
+  if (!field || !isStoredField(field))
+    return `${at}: ${o.model} declares no stored field \`${o.field}\` to fill. Its fields are ${model.fields.filter(isStoredField).map((/** @type {any} */ f) => f.name).join(', ')}`
+  if (field.attributes?.some((/** @type {any} */ a) => a.kind === 'generated' || a.kind === 'funcCall'))
+    return `${at}: ${o.model}.${o.field} is computed, so nothing fills it`
+  const hasValue = Object.hasOwn(o, 'value')
+  if (hasValue === Object.hasOwn(o, 'first'))
+    return `${at}: a backfill states one source — \`value\` (a constant) or \`first\` (the model whose first row every existing row takes)`
+  const base = { op: 'backfill', model: o.model, field: o.field, table: modelToTableName(model, pluralize), column: fieldToColumnName(field) }
+
+  if (hasValue) {
+    const literal = sqlLiteral(o.value)
+    if (literal === null) return `${at}: \`value\` is a string, a finite number or a boolean, got ${JSON.stringify(o.value)}`
+    return { ...base, value: o.value, literal }
+  }
+
+  if (typeof o.first !== 'string' || !IDENT.test(o.first)) return `${at}: \`first\` is the name of the model whose first row the existing rows take`
+  const parent = models.find((/** @type {any} */ m) => m.name === o.first)
+  if (!parent) return `${at}: the schema declares no model ${o.first}. Its models are ${models.map((/** @type {any} */ m) => m.name).join(', ')}`
+  const parentHome = parent.attributes?.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main'
+  if (parentHome !== home) return `${at}: ${o.first} lives in database ${parentHome} and ${o.model} in ${home}, so one statement cannot read both`
+  const link = model.fields.find((/** @type {any} */ f) => f.type?.kind === 'relation' &&
+    f.attributes?.some((/** @type {any} */ a) => a.kind === 'relation' && a.fields?.includes(o.field)))
+  if (link && link.type.name !== o.first) return `${at}: ${o.model}.${o.field} links to ${link.type.name}, not ${o.first}`
+  const rel = link?.attributes.find((/** @type {any} */ a) => a.kind === 'relation')
+  const keyName = rel?.references?.[rel.fields.indexOf(o.field)]
+    ?? parent.fields.find((/** @type {any} */ f) => f.attributes?.some((/** @type {any} */ a) => a.kind === 'id'))?.name
+  const key = parent.fields.find((/** @type {any} */ f) => f.name === keyName)
+  if (!key) return `${at}: ${o.first} has no @id field for the rows to take`
+  // A trashed parent is still a row, and every existing row would link to it.
+  const trashed = isSoftDelete(parent) ? parent.fields.find((/** @type {any} */ f) => f.name === 'deletedAt') : null
+  const live = trashed ? ` WHERE ${quoteIdent(fieldToColumnName(trashed))} IS NULL` : ''
+  return { ...base, first: o.first, parentTable: modelToTableName(parent, pluralize), parentKey: fieldToColumnName(key), live }
+}
+
 /**
  * Grade resolved operations against the schema the statements run on: the
  * migration HISTORY for `create`, the live database for `dry-run` (`what`).
@@ -132,6 +209,12 @@ export function checkAgainstHistory(ops, shadowSchema, what = 'the migration his
   for (const o of ops) {
     const t = shadowSchema?.[o.table]
     const cols = new Set((t?.columns ?? []).map((/** @type {any} */ c) => c.name))
+    if (o.op === 'backfill') {
+      const at = `backfill ${o.model}.${o.field}`
+      if (!t) return `${at}: ${what} builds no table ${o.table}, so there are no rows to fill — the table is new, and the backfill is not needed`
+      if (cols.has(o.column)) return `${at}: ${what} already has ${o.table}.${o.column}; a backfill fills only a column this migration adds`
+      continue
+    }
     const at = `${o.model}.${o.from} → ${o.to}`
     if (!t) return `${at}: ${what} builds no table ${o.table}, so there is nothing to rename in`
     if (!cols.has(o.from))
@@ -152,11 +235,61 @@ export function renameStatement(o) {
 }
 
 /**
+ * The statements that run before the diff's: a rename has happened by the time
+ * the rest of the file reads the table. A backfill has no statement of its own;
+ * it is a value expression in the copy (`backfillExpression`).
+ *
+ * @param {any[]} ops
+ */
+export function renameStatements(ops) {
+  return ops.filter(o => o.op === 'rename').map(renameStatement)
+}
+
+/**
+ * What a backfilled column takes for each existing row. Both names were read
+ * off the schema, not taken from the document (Invariant 8).
+ *
+ * @param {any} o
+ */
+export function backfillExpression(o) {
+  return o.first
+    ? `(SELECT ${quoteIdent(o.parentKey)} FROM ${quoteIdent(o.parentTable)}${o.live ?? ''} ORDER BY rowid LIMIT 1)`
+    : o.literal
+}
+
+/**
+ * Whether the parent is empty is known only where the file is APPLIED, and an
+ * empty parent turns the expression into NULL — refused by the column as a bare
+ * `NOT NULL constraint failed` that names no operation. The guard refuses first
+ * with the constraint name as the message, and passes on a table with no rows,
+ * which is every table the shadow replays.
+ *
+ * @param {any} o
+ * @param {string} table the table whose rows are filled, under the name it has where the guard runs
+ * @returns {string[]}
+ */
+export function backfillGuard(o, table = o.table) {
+  if (!o.first) return []
+  const name = `backfill ${o.model}.${o.field} first ${o.first}: ${o.first} has no rows, so the ${o.model} rows already ` +
+               `there have none to take — create one before this migration, or backfill a value`
+  return [
+    `CREATE TEMP TABLE "_litestone_backfill" (`,
+    `  ok INTEGER CONSTRAINT ${quoteIdent(name)} CHECK (ok = 1)`,
+    `);`,
+    `INSERT INTO "_litestone_backfill" (ok)`,
+    `  SELECT CASE WHEN EXISTS (SELECT 1 FROM ${quoteIdent(table)}) AND NOT EXISTS (SELECT 1 FROM ${quoteIdent(o.parentTable)}${o.live ?? ''}) THEN 0 ELSE 1 END;`,
+    `DROP TABLE "_litestone_backfill";`,
+  ]
+}
+
+/**
  * The line a header and a summary say it with.
  *
  * @param {any} o
  */
 export function describeOperation(o) {
+  if (o.op === 'backfill')
+    return `backfill ${o.model}.${o.field} ← ${o.first ? `the first ${o.first} row` : o.literal}  (the rows already there take it)`
   return `${o.op} ${o.model}.${o.from} → ${o.to}  (the values stay)`
 }
 

@@ -67,6 +67,29 @@ const SOURCES = [
   '$.a == 1 ? { a: 1 } : { a: 2 }',
   '$.a > 1 && `x` == `x`',
 
+  // array, pipe and let (`FJS-D1429`)
+  '[$.a, $.b + 1]',
+  "[$.a, 'x', [1, 2]]",
+  "['a', 2]",
+  '$.a in [$.b, $.c]',
+  "$.name |> lower |> split(',')",
+  '$.name |> lower()',
+  '$.items |> map(i => $.i.price) |> sum',
+  '$.items |> filter(i => $.i.qty > 0) |> reduce(0, (acc, i) => add($.acc, $.i.qty))',
+  '$.items |> map($.other, i => $.i.v)',
+  "$.a |> $ == 'x' ? 1 : 2",
+  '$.a ? $.b : $.c |> lower',
+  '($.a |> lower) == $.b',
+  'upper($.a |> lower)',
+  '$.a |> (let n = $; $.n)',
+  'let n = $.items.length; n * 2',
+  'let a = 1, b = a; [a, b]',
+  'let a = $.x |> lower, b = upper(a); { a: a, b: b }',
+  'let a = 1; let b = 2; add(a, b)',
+  'let a = (let b = 1; b); a',
+  '`${let a = 1; a}`',
+  'map($.items, i => let d = $.i.qty * 2; d + 1)',
+
   // ternaries, including the nesting the grammar's right-associativity buys
   "$.lead.data.tier == 'gold' ? 'vip' : 'standard'",
   "$.a > 3 ? 'high' : $.a > 1 ? 'mid' : 'low'",
@@ -158,12 +181,17 @@ describe('a dropped bracket changes the answer, which is what the trip is for', 
 describe('what has no text form says so rather than guessing', () => {
   const none = (expr: unknown) => expressionToText(expr as never)
 
-  test('the four shapes the shared grammar has no syntax for', () => {
+  test('an array, a pipeline and a let no text re-parses to', () => {
+    const one = { type: 'literal', value: 1 }
     for (const [expr, word] of [
-      [{ type: 'array',    items: [] },        'array'],
-      [{ type: 'pipe',     steps: [] },        'pipeline'],
-      [{ type: 'let',      bindings: {}, body: { type: 'literal', value: 1 } }, 'let'],
-      [{ type: 'match',    value: { type: 'literal', value: 1 }, cases: [] },   'match'],
+      [{ type: 'array', items: [] },                             'empty array'],
+      [{ type: 'array', items: [one, { type: 'literal', value: 'a' }] }, 'list'],
+      [{ type: 'pipe',  steps: [] },                             'pipeline'],
+      [{ type: 'pipe',  steps: [one] },                          'pipeline'],
+      [{ type: 'pipe',  steps: [one, { type: 'fn', name: 'now', args: [] }] }, 'now'],
+      [{ type: 'pipe',  steps: [one, { type: 'fn', name: 'null' }] }, 'null'],
+      [{ type: 'let',   bindings: {}, body: one },               'let'],
+      [{ type: 'let',   bindings: { 'a-b': one }, body: one },   'a-b'],
     ] as Array<[unknown, string]>) {
       const answered = none(expr)
       expect(answered.text).toBe(null)
@@ -198,6 +226,66 @@ describe('what has no text form says so rather than guessing', () => {
   test('a path that is not a path', () => {
     expect(none({ type: 'ref', path: '$.a-b' }).text).toBe(null)
     expect(none({ type: 'ref', path: 'trigger.id' }).text).toBe(null)
+  })
+})
+
+// The documents this repo's flows hold for the three forms (`FJS-2136`), as
+// `test/engine/expression/index.test.ts` and the compiler's test store them.
+// Each is emitted, re-parsed, and compared as a TREE.
+describe('the stored array, pipe and let documents round-trip (FJS-D1429)', () => {
+  const ref = (path: string) => ({ type: 'ref', path })
+  const lit = (value: unknown) => ({ type: 'literal', value })
+  const fn  = (name: string, args?: unknown[]) => (args ? { type: 'fn', name, args } : { type: 'fn', name })
+
+  const DOCS: Array<[string, unknown, string]> = [
+    ['array of mixed values', { type: 'array', items: [lit('static'), ref('$.parseLead.data.name'), ref('$.score.data.value')] },
+      "['static', $.parseLead.data.name, $.score.data.value]"],
+    ['array in a compiled config', { type: 'array', items: [ref('$.ghost.name'), lit('ok')] },
+      "[$.ghost.name, 'ok']"],
+    ['pipe of bare steps', { type: 'pipe', steps: [ref('$.trigger.body.email'), fn('lower'), fn('trim')] },
+      '$.trigger.body.email |> lower |> trim'],
+    ['pipe with an argument', { type: 'pipe', steps: [ref('$.trigger.body.email'), fn('split', [lit('@')]), fn('last')] },
+      "$.trigger.body.email |> split('@') |> last"],
+    ['pipe with a template step', { type: 'pipe', steps: [ref('$.parseLead.data.name'), fn('upper'),
+      { type: 'template', parts: [lit('LEAD: '), ref('$')] }] },
+      '$.parseLead.data.name |> upper |> `LEAD: ${$}`'],
+    ['pipe with a map step', { type: 'pipe', steps: [
+      ref('$.fetchProducts.data.Account.Order.Products'),
+      { type: 'map', as: 'p', body: fn('mul', [ref('$.p.Price'), ref('$.p.Quantity')]) },
+      fn('sum')] },
+      '$.fetchProducts.data.Account.Order.Products |> map(p => mul($.p.Price, $.p.Quantity)) |> sum'],
+    ['let over a pipe', { type: 'let',
+      bindings: {
+        domain: { type: 'pipe', steps: [ref('$.trigger.body.email'), fn('split', [lit('@')]), fn('last')] },
+        upper:  fn('upper', [ref('$.trigger.body.name')]),
+      },
+      body: { type: 'object', properties: { domain: ref('$.domain'), upper: ref('$.upper') } } },
+      "let domain = $.trigger.body.email |> split('@') |> last, upper = upper($.trigger.body.name); { domain: $.domain, upper: $.upper }"],
+    ['let whose bindings read earlier ones', { type: 'let',
+      bindings: { base: lit(10), double: fn('mul', [ref('$.base'), lit(2)]), quad: fn('mul', [ref('$.double'), lit(2)]) },
+      body: ref('$.quad') },
+      'let base = 10, double = mul($.base, 2), quad = mul($.double, 2); $.quad'],
+  ]
+
+  for (const [name, doc, text] of DOCS) {
+    test(name, () => {
+      expect(expressionToText(doc as never)).toEqual({ text })
+      expect(compileExpression(text)).toEqual(doc as never)
+    })
+  }
+
+  // Four stored documents have no text, and say why. `$.$` is the flowing value
+  // spelled as a path, which the grammar writes `$`; an object literal and an
+  // all-literal array have no spelling that re-parses to them.
+  test('and the ones that cannot say so', () => {
+    const nested = { type: 'array', items: [{ type: 'array', items: [lit(1), lit(2)] }, lit(3)] }
+    const shadow = { type: 'let', bindings: { parseLead: lit({ data: { name: 'Shadowed' } }) }, body: ref('$.parseLead.data.name') }
+    const dollar = { type: 'pipe', steps: [ref('$.a'), { type: 'template', parts: [lit('LEAD: '), ref('$.$')] }] }
+    for (const doc of [{ type: 'array', items: [] }, nested, shadow, dollar, { type: 'pipe', steps: [lit(42)] }]) {
+      const answered = expressionToText(doc as never)
+      expect(answered.text).toBe(null)
+      expect(answered.reason).toBeTruthy()
+    }
   })
 })
 

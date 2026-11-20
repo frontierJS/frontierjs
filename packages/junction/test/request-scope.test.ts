@@ -297,6 +297,14 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.user?.id).toBe('u-sys')
   })
 
+  // FJS-D1013: an emitted policy admits the app's principal by this claim, and
+  // an app that forgot to state it found no row, silently.
+  test('the system principal carries isSystem without the app stating it', async () => {
+    seen = undefined
+    await app.runAs(null, async () => { await app.service('probe').find() })
+    expect((seen!.user as { isSystem?: boolean })?.isSystem).toBe(true)
+  })
+
   test('an id the provider cannot resolve still throws by name', async () => {
     await expect(app.runAs('u-ghost', async () => {})).rejects.toThrow(/no such principal/)
   })

@@ -643,3 +643,42 @@ describe('the level', () => {
     expect(s2.session.level).toBe(0)
   })
 })
+
+describe('a token handed to the client after boot', () => {
+  // An app that signs in its own way — a terminal handed a token, Haven's
+  // walk-in — sets it on the client after the boot restore found none, so the
+  // session said STRANGER(0) to a caller holding a credential, and every
+  // tether over a gated model skipped its load in silence (FJS-4470).
+  function emitting(c) {
+    const on = {}
+    c.on = (event, fn) => { (on[event] ??= []).push(fn) }
+    c.setToken = (token) => { c.token = token; for (const fn of on.token ?? []) fn(token) }
+    return c
+  }
+
+  test('makes the level unknown, and taking it away is STRANGER again', async () => {
+    const s = await freshSession()
+    const client = emitting(fakeClient())
+    s.initSession(client)
+    await s.ready
+    expect(s.session.level).toBe(0)
+
+    client.setToken('t')
+    expect(s.session.level).toBeNull()
+    expect(client.calls).toEqual([])
+
+    client.setToken(null)
+    expect(s.session.level).toBe(0)
+  })
+
+  test('a sign-in still lands the level the server published', async () => {
+    const s = await freshSession()
+    const client = emitting(fakeClient({ me: { id: 'u1', email: 'a@b.c', level: 3 } }))
+    client.auth._c = { set token (t) { client.setToken(t) } }
+    s.initSession(client)
+    await s.ready
+
+    await s.signIn('a@b.c', 'pw')
+    expect(s.session.level).toBe(3)
+  })
+})

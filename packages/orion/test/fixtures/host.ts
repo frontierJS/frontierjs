@@ -102,8 +102,12 @@ export const count = (id: string, read?: string): NodeDefinition =>
 export const hang = (id: string): NodeDefinition =>
   ({ id, type: "test.hang", config: {} })
 
-export const wait = (id: string, into: string, timeoutMs?: number): NodeDefinition =>
-  ({ id, type: "flow.wait", config: { event: lit("approval"), resumeKey: lit(into), ...(timeoutMs ? { timeoutMs: lit(timeoutMs) } : {}) } })
+export const wait = (id: string, into: string, timeoutMs?: number, onTimeout?: "fail" | "continue"): NodeDefinition =>
+  ({ id, type: "flow.wait", config: {
+    event: lit("approval"), resumeKey: lit(into),
+    ...(timeoutMs ? { timeoutMs: lit(timeoutMs) } : {}),
+    ...(onTimeout ? { onTimeout: lit(onTimeout) } : {}),
+  } })
 
 export const cronTrigger = (expression: string): NodeDefinition =>
   ({ id: "t", type: "trigger.cron", config: { expression: lit(expression) } })

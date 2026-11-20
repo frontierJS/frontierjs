@@ -47,18 +47,18 @@ try {
 
   const ui = await bundle('badge', `
     import { defineIsland } from ${define}
-    export default defineIsland({ matches: ['<all_urls>'], app(root) { root.textContent = 'hi' } })
+    export default defineIsland({ matches: ['<all_urls>'], app: { render(root) { root.textContent = 'hi' } } })
   `)
-  if (/stub mount/.test(ui)) ok('an island with an app still carries mountInto()')
+  if (/compiled Mesa component/.test(ui)) ok('an island with an app still carries mountInto()')
   else bad('an island with an app lost mountInto()')
 
   // `app` the analysis cannot see (not an object literal) must keep the runtime.
   const opaque = await bundle('opaque', `
     import { defineIsland } from ${define}
-    const cfg = { matches: ['<all_urls>'], app(root) { root.textContent = 'hi' } }
+    const cfg = { matches: ['<all_urls>'], app: { render(root) { root.textContent = 'hi' } } }
     export default defineIsland(cfg)
   `)
-  if (/stub mount/.test(opaque)) ok('a config the build cannot read statically keeps mountInto()')
+  if (/compiled Mesa component/.test(opaque)) ok('a config the build cannot read statically keeps mountInto()')
   else bad('a config the build cannot read statically lost mountInto()')
 } finally {
   rmSync(root, { recursive: true, force: true })

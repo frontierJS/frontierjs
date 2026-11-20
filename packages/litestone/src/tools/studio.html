@@ -7409,7 +7409,7 @@ async function loadTenants() {
   list.innerHTML = '<table class="table striped hover compact"><thead><tr><th>tenant</th><th>meta</th><th>size</th><th></th></tr></thead><tbody>' +
     data.tenants.map(t => `
       <tr class="${t.active ? 'row-selected' : ''}">
-        <td><strong>${esc(t.id)}</strong>${t.active ? ' <span class="badge success">active</span>' : ''}</td>
+        <td><strong>${esc(t.id)}</strong>${t.place ? ` <span class="badge warning">place ${esc(t.place)}</span>` : ''}${t.active ? ' <span class="badge success">active</span>' : ''}</td>
         <td class="text-muted">${esc(JSON.stringify(t.meta ?? {}))}</td>
         <td>${fmtBytes(t.size)}</td>
         <td>${t.active
@@ -7468,7 +7468,8 @@ async function reopenDatabase(what) {
 
   const badge = document.getElementById('tenantBadge')
   badge.hidden = !activeTenantId
-  if (activeTenantId) badge.textContent = `🏢 ${activeTenantId}`
+  const place = _tenantSnapshot?.tenants?.find(t => t.id === activeTenantId)?.place
+  if (activeTenantId) badge.textContent = `🏢 ${activeTenantId}${place ? ` · place ${place}` : ''}`
 
   // A tenant can be behind on migrations while the base database is not, so the
   // badge is re-asked rather than left describing the file that was open before.

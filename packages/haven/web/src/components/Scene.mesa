@@ -99,7 +99,7 @@
   import { createStage, arrival, OUTDOORS, worn } from '@/lib/scene/stage.js'
   import { remember }    from '@/lib/scene/map.js'
   import { createCommands, complete, matches, partial, said } from '@/lib/hash/commands.js'
-  import { WIDE_LAYER, cellOf, covered, figures, inView, standsOn } from '@/lib/scene/crowd.js'
+  import { WIDE_LAYER, cellOf, covered, figures, inView, labels, standsOn } from '@/lib/scene/crowd.js'
   import { spanOf } from '#shared/shape.ts'
   import { facingOf, FIRST_FACING } from '#shared/facing.ts'
   import { FLY_MS, STUN_MS } from '#shared/bolt.ts'
@@ -177,6 +177,9 @@
   let emote  = null
   let pet    = worn.pet
   let nicks = {}
+  let agents = {}
+  // What a plate, a bubble and the history print; a whisper and the profile take the bare nick.
+  $: named = labels(nicks, agents)
   $: choice = commands.choices(draft, { x, y })
   $: hints = choice ? matches(draft, choice.words, choice.head) : []
 
@@ -258,7 +261,10 @@
       if (asked.has(id)) continue
       asked.add(id)
       members.service.get(id)
-        .then((row) => { nicks = { ...nicks, [id]: row.nick } })
+        .then((row) => {
+          if (row.agent) agents = { ...agents, [id]: true }
+          nicks = { ...nicks, [id]: row.nick }
+        })
         .catch(() => {})
     }
   }
@@ -540,16 +546,16 @@
     {#each figures(here.get(), view, stage, spawn).filter((f) => !covered(stage, cell(f.m), f.m.meta?.shape)) as f (f.m.connectionId)}
       <p {@attach at(f.x, f.y, spanOf(f.m.meta?.shape) > 1 ? WIDE_LAYER : 10)} {@attach tint(f.m.meta?.ink)}>{face(f.m.userId, f.m.meta?.shape ?? glyph(f.m, nicks), stun, flick)}</p>
     {/each}
-    <Nameplates {here} {nicks} {x} {y} {view} {stage} {spawn} />
+    <Nameplates {here} nicks={named} {x} {y} {view} {stage} {spawn} />
     {#if !covered(stage, { x, y }, shape)}
       <p {@attach at(x - view.x, y - view.y, spanOf(shape) > 1 ? WIDE_LAYER : 11)} {@attach tint(ink)}>{face(here.get().self?.userId, shape ?? '@', stun, flick)}</p>
     {/if}
     {#each flying(beam, view) as b (b.key)}
       <p {@attach at(b.x, b.y, 10)} {@attach tint(BEAM_INK)}>{b.ch}</p>
     {/each}
-    {#if !paned}<Bubbles {here} {x} {y} {view} {spawn} {hushed} {nicks} lines={roomLines?.rows ?? []} />{/if}
+    {#if !paned}<Bubbles {here} {x} {y} {view} {spawn} {hushed} nicks={named} lines={roomLines?.rows ?? []} />{/if}
     <WorldMap {stage} route={page.pathname} {x} {y} box={PANE} />
-    <History {room} {nicks} box={PANE} {askNicks} {roomLines} />
+    <History {room} nicks={named} box={PANE} {askNicks} {roomLines} />
     <Sitting {stage} {here} {x} {y} {spawn} {settle} tell={(text) => { note = text }} />
     <HomeRow {stage} {here} {spawn} {nicks} {draft} {where} {moveTo} {shapeTo} tell={(text) => { note = text }} keyed={(k) => { homeKeys = k }} />
     <Stops {stage} {view} {draft} {where} {stepTo} box={PANE} tell={(text) => { note = text }} />
@@ -568,7 +574,7 @@
 </div>
 {#if here}
   <div {@attach fill((rows) => { slack = rows })}></div>
-  <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {nicks[m.userId] ?? '…'}{/each}</p>
+  <p>{room.name} · {here.get().count} here{#each here.get().others as m (m.connectionId)} · {named[m.userId] ?? '…'}{/each}</p>
   {#if note}<p>{note}</p>{/if}
   {#if hints.length}<p>{hints.map((c) => choice.head === '/' ? `/${c}` : c).join('  ')} · {hints.length === 1 ? 'Tab completes, Enter runs' : 'Tab completes'}</p>{/if}
   <form {@attach keys(() => homeKeys?.() ?? NO_KEYS)}>

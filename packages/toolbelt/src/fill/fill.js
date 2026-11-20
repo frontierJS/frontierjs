@@ -9,6 +9,7 @@
  * a name holding `<b>` would then turn a plain reply into raw HTML.
  *
  *   fill(source, ctx, { mode: 'html' | 'text' })    the filled text
+ *   unfilled(source, ctx)                            the holes it leaves standing
  *   check(source, names)                             what to refuse at save
  *   mergeFields(declared)                            the names, declared once
  *
@@ -100,6 +101,13 @@ function render(value, mode) {
   return undefined
 }
 
+// A hole's text, or undefined where it stays as written. `fill` and `unfilled`
+// both read this, so the list of gaps is the gaps the output holds.
+function filled(seg, ctx, mode) {
+  const got = holeValue(seg.hole, ctx ?? {})
+  return got.found ? render(got.value, mode) : undefined
+}
+
 export function fill(source, ctx, { mode } = {}) {
   if (mode !== 'html' && mode !== 'text') {
     throw new Error(`fill: mode must be 'html' or 'text', got ${JSON.stringify(mode)} -- the caller states the format; it is never read off the tags`)
@@ -108,9 +116,21 @@ export function fill(source, ctx, { mode } = {}) {
   for (const seg of segments(String(source))) {
     if ('text' in seg) { out += seg.text; continue }
     if ('open' in seg) { out += seg.open; continue }
-    const got = holeValue(seg.hole, ctx ?? {})
-    const text = got.found ? render(got.value, mode) : undefined
-    out += text === undefined ? seg.raw : text
+    out += filled(seg, ctx, mode) ?? seg.raw
+  }
+  return out
+}
+
+/**
+ * The text of every hole `fill` would leave standing, in order: a brace pair
+ * as written, and an unclosed `{` with the rest of the source. Empty means the
+ * output holds no gap, which is what a renderer that must refuse one asks.
+ */
+export function unfilled(source, ctx) {
+  const out = []
+  for (const seg of segments(String(source))) {
+    if ('open' in seg) out.push(seg.open)
+    else if ('hole' in seg && filled(seg, ctx, 'text') === undefined) out.push(seg.raw)
   }
   return out
 }
@@ -120,7 +140,9 @@ export function fill(source, ctx, { mode } = {}) {
 /**
  * Every hole in `source` that could never fill, as `{ hole, message }`; an empty
  * list is a clean template. `names` is the closed list `{ owner: ['field', …] }`
- * a template may read. A `{` that closes nothing or holds nothing readable is
+ * a template may read; a field may be a dotted path (`{ trigger: ['body.amount'] }`),
+ * graded whole, since `fill` reads a name of any depth. An expression reads
+ * `owner.field` only. A `{` that closes nothing or holds nothing readable is
  * refused too, since a stray brace in a sentence is written `\{`.
  */
 export function check(source, names) {
@@ -133,7 +155,9 @@ export function check(source, names) {
     if (!('hole' in seg)) continue
     try {
       if (DOTTED.test(seg.hole)) {
-        const [rel, name] = seg.hole.split('.')
+        const dot = seg.hole.indexOf('.')
+        const rel = dot < 0 ? seg.hole : seg.hole.slice(0, dot)
+        const name = dot < 0 ? undefined : seg.hole.slice(dot + 1)
         if (name === undefined) throw new Error(`${rel} has no field -- write it as ${rel}.field`)
         assertValues({ type: 'path', rel, name }, names)
       } else {
@@ -154,8 +178,8 @@ const SEGMENT = /^[A-Za-z_][A-Za-z0-9_]*$/
 function declare(field) {
   const { key } = field ?? {}
   const parts = typeof key === 'string' ? key.split('.') : []
-  if (parts.length !== 2 || !parts.every((p) => SEGMENT.test(p))) {
-    throw new Error(`mergeFields: key ${JSON.stringify(key)} must be owner.field -- two dotted names, the pair \`check\` can grade`)
+  if (parts.length < 2 || !parts.every((p) => SEGMENT.test(p))) {
+    throw new Error(`mergeFields: key ${JSON.stringify(key)} must be owner.field -- an owner and a dotted path, which \`check\` grades whole`)
   }
   if (parts.includes('__proto__')) throw new Error(`mergeFields: ${key} -- __proto__ is not a name`)
   if (typeof field.label !== 'string' || !field.label) throw new Error(`mergeFields: ${key} declares no label`)
@@ -172,7 +196,19 @@ function declare(field) {
       throw new Error(`mergeFields: ${key} ${slot} is not a value a hole can fill -- a scalar or { html, text }`)
     }
   }
-  return Object.freeze({ ...field, owner: parts[0], name: parts[1] })
+  return Object.freeze({ ...field, owner: parts[0], name: parts.slice(1).join('.'), path: parts })
+}
+
+const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+// `o` with `value` at `path`, every object on the way copied rather than
+// written through: the caller's data is the app's. Undefined when a step is
+// already a scalar, which a default must not overwrite.
+function setIn(o, [k, ...rest], value) {
+  if (o !== undefined && !isObject(o)) return undefined
+  if (!rest.length) return { ...o, [k]: value }
+  const inner = setIn(own(o, k) ? o[k] : undefined, rest, value)
+  return inner === undefined ? undefined : { ...o, [k]: inner }
 }
 
 // `{ owner: { name: value } }` from the fields where `pick` yields a value.
@@ -180,7 +216,7 @@ function nest(fields, pick, into = {}) {
   for (const f of fields) {
     const v = pick(f)
     if (v === undefined) continue
-    into[f.owner] = { ...into[f.owner], [f.name]: v }
+    into = setIn(into, f.path, v) ?? into
   }
   return into
 }
@@ -218,7 +254,7 @@ export function mergeFields(declared = []) {
   }
   const pick = (filter) => (filter ? fields.filter((f) => filter(f)) : fields)
   const registry = {
-    list: (filter) => pick(filter).map(({ owner, name, ...f }) => f),
+    list: (filter) => pick(filter).map(({ owner, name, path, ...f }) => f),
     schema: (filter) => ({
       type: 'object',
       properties: Object.fromEntries(pick(filter).map((f) => [f.key, propertyOf(f)])),
@@ -231,17 +267,17 @@ export function mergeFields(declared = []) {
     },
     check: (source, filter) => check(source, registry.names(filter)),
     context(data = {}) {
-      const out = { ...data }
+      let out = { ...data }
       for (const f of fields) {
         if (f.default === undefined) continue
-        const owner = out[f.owner]
-        if (owner !== undefined && (owner === null || typeof owner !== 'object')) continue
-        if (absent(owner?.[f.name])) out[f.owner] = { ...owner, [f.name]: f.default }
+        const got = walk(out, f.key)
+        if (got.found && !absent(got.value)) continue
+        out = setIn(out, f.path, f.default) ?? out
       }
       return out
     },
     fill: (source, data, options) => fill(source, registry.context(data), options),
-    with: (more) => mergeFields([...fields.map(({ owner, name, ...f }) => f), ...more]),
+    with: (more) => mergeFields([...fields.map(({ owner, name, path, ...f }) => f), ...more]),
   }
   return Object.freeze(registry)
 }

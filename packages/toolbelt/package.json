@@ -70,6 +70,10 @@
       "types": "./src/glow/glow.d.ts",
       "default": "./src/glow/glow.js"
     },
+    "./grammars": {
+      "types": "./src/grammars/grammars.d.ts",
+      "default": "./src/grammars/grammars.js"
+    },
     "./history": {
       "types": "./src/history/history.d.ts",
       "default": "./src/history/history.js"

@@ -62,6 +62,7 @@ export function runExport(db: any, name: any, opts?: any): Promise<{
         reads: any;
     };
     tenant: any;
+    place: any;
     columns: {
         name: any;
         type: any;

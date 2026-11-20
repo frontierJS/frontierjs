@@ -385,6 +385,70 @@ describe('every component in the directory renders', () => {
   }
 })
 
+// ── every conditional comment is well formed (FJS-D1376) ─────────────────────
+//
+// Nothing here is opened in Outlook, so this is the guard on the shape Outlook
+// reads. A hidden block (`<!--[if mso]> … <![endif]-->`) is one HTML comment:
+// any `-->` inside it ends it early and shows the Outlook branch to everyone.
+// A revealed block (`<!--[if !mso]><!--> … <!--<![endif]-->`) is live markup
+// between two comments, and closing it with the hidden form leaves the opener
+// unmatched. Outlook does not nest them.
+
+const MSO_TOKEN = /<!--\[if [^\]]+\]><!-->|<!--\[if [^\]]+\]>|<!--\[if [^\]]+\]-->|<!--<!\[endif\]-->|<!\[endif\]-->|<!--|-->/g
+
+function lintMso(html) {
+  const problems = []
+  let open = null
+  let plain = false
+  for (const { 0: token, index } of html.matchAll(MSO_TOKEN)) {
+    const at = `${token} at ${index}`
+    if (plain) { if (token.endsWith('-->')) plain = false; continue }
+    if (token.startsWith('<!--[if')) {
+      if (token.endsWith(']-->'))    problems.push(`opener mangled into a closed comment: ${at}`)
+      else if (open)                 problems.push(`nested inside ${open.token}: ${at}`)
+      else open = { token, index, revealed: token.endsWith('<!-->') }
+    } else if (token === '<!--<![endif]-->') {
+      if (open?.revealed) open = null
+      else problems.push(`${open ? 'closes a hidden block with the revealed form' : 'no block to close'}: ${at}`)
+    } else if (token === '<![endif]-->') {
+      if (open && !open.revealed) open = null
+      else problems.push(`${open ? 'closes a revealed block with the hidden form' : 'no block to close'}: ${at}`)
+    } else if (token === '-->') {
+      problems.push(open && !open.revealed ? `ends the hidden block early: ${at}` : `stray: ${at}`)
+    } else if (open && !open.revealed) {
+      // `<!--` inside a comment is text; only a `-->` would end it.
+    } else {
+      plain = true
+    }
+  }
+  if (open) problems.push(`never closed: ${open.token} at ${open.index}`)
+  return problems
+}
+
+describe('every conditional comment is well formed (FJS-D1376)', () => {
+  it('the lint refuses each broken shape', () => {
+    expect(lintMso('<!--[if mso]>x<![endif]--><!--[if !mso]><!-->y<!--<![endif]--><!-- note -->')).toEqual([])
+    expect(lintMso('<!--[if mso]>x')).toEqual([expect.stringContaining('never closed')])
+    expect(lintMso('<!--[if mso]-->x<![endif]-->')[0]).toContain('mangled')
+    expect(lintMso('<!--[if mso]>a --> b<![endif]-->')[0]).toContain('ends the hidden block early')
+    expect(lintMso('<!--[if mso]><!--[if gte mso 9]>x<![endif]-->')[0]).toContain('nested')
+    expect(lintMso('<!--[if !mso]><!-->y<![endif]-->')[0]).toContain('revealed block with the hidden form')
+    expect(lintMso('<!--[if mso]>x<!--<![endif]-->')[0]).toContain('hidden block with the revealed form')
+    expect(lintMso('x<![endif]-->')[0]).toContain('no block to close')
+  })
+
+  for (const name of ALL) {
+    it(`${name}`, async () => {
+      expect(lintMso((await renderOne(name)).html)).toEqual([])
+    })
+  }
+
+  it('WelcomeEmail', async () => {
+    const { html } = await renderKit('templates/WelcomeEmail.mesa', { cwd: __dirname })
+    expect(lintMso(html)).toEqual([])
+  })
+})
+
 // ── a component that cannot take children is named by Mesa ──────────────────
 //
 // Fourteen of these take children and nine cannot. Every refusal is PAIRED with

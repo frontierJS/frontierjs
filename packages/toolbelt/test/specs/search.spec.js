@@ -11,7 +11,7 @@
  * Those are the cases that would catch a rewrite going wrong.
  */
 
-import { score, rank, mergeRanges, segments } from '../../src/search/search.js'
+import { score, rank, createRanker, mergeRanges, segments } from '../../src/search/search.js'
 
 /* ── score ─────────────────────────────────────────────────────────── */
 
@@ -277,4 +277,39 @@ test('search: a phrase with a trailing typo ranks 1000 items without the iterati
   assert.deepEqual(rank(items, q, { words: true }), [])
   const ms = performance.now() - t0
   assert.ok(ms < 400, `took ${Math.round(ms)} ms`)
+})
+
+/* ── createRanker ──────────────────────────────────────────────────── */
+
+test('search: a ranker answers as rank() does, and each query as a fresh rank() would', function () {
+  const names = ['Grace Hopper', 'Ada Lovelace', 'Lovelace Inc', 'Ada Byron']
+  const rows = [
+    { name: 'GitHub Issues', url: 'github.com/issues', n: { x: 'Zed' } },
+    { name: 'Rust Lang', url: 'rust-lang.org' },
+    { name: 'issues tracker', url: 'github.com' },
+    { name: null, url: 'github.com/lang' },
+  ]
+  const cases = [
+    [names, {}],
+    [names, { limit: 2 }],
+    [rows, { keys: ['name', 'url', ['n', 'x']] }],
+    [rows, { keys: ['name', 'url'], minimumScore: 0.2 }],
+    [rows, { keys: ['name', 'url'], words: true }],
+    [rows, { keys: ['name', 'url'], words: true, limit: 1, weights: { url: 0.5 } }],
+    [rows, { weights: { url: 0.5 } }],
+    [names, { words: true }],
+  ]
+
+  for (const [items, { keys, minimumScore, ...opts }] of cases) {
+    const ranker = createRanker(items, { keys, minimumScore })
+    // One ranker across every query, empty and untrimmed ones included.
+    for (const q of ['', ' ', 'ada', 'issues github', 'lang rust', 'zzz', 'ADA lov']) {
+      assert.deepEqual(ranker.rank(q, opts), rank(items, q, { keys, minimumScore, ...opts }), `${JSON.stringify(opts)} ${q}`)
+    }
+  }
+})
+
+test('search: a ranker over nothing answers nothing', function () {
+  assert.deepEqual(createRanker([]).rank('a'), [])
+  assert.deepEqual(createRanker(null).rank('a', { words: true }), [])
 })

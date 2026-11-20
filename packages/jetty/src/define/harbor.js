@@ -15,13 +15,22 @@ import { makeStorage }                           from '../runtime/storage.js'
 import { parsePortName, PROTOCOL_VERSION }       from '../runtime/protocol.js'
 import { makeHarborRegistry, makePagesApi }      from '../runtime/harbor-registry.js'
 import { makeChannelRegistry, makeChannelsApi }  from '../runtime/channel-registry.js'
-import { registerAllIslands, registerIsland,
+import { registerAllIslands, registerIsland, isGestureIsland,
          unregisterIsland, reloadIslandTabs }    from '../island/registration.js'
 import { validateAdapter, safeOn,
          createDefaultJunctionAdapter,
          makeSchemaCache,
          makeAuthFlow }                          from '../junction/index.js'
 
+/**
+ * Define the service worker. The port to pages is framework-only: it carries
+ * init, service:call and channel:*. An app message goes over runtime.sendMessage
+ * to a runtime.onMessage listener the harbor file registers at module top.
+ *
+ * The handle's `islands` is usable at once, so a top-level contextMenus, commands
+ * or action listener can call `harbor.islands.inject(id, tabId)` for an
+ * `inject: 'gesture'` island before run() has started.
+ */
 export function defineHarbor(config = {}) {
   const { plugins = [], run, junction: junctionConfig = {}, islands: islandsConfig = {} } = config
 
@@ -30,6 +39,12 @@ export function defineHarbor(config = {}) {
     (typeof globalThis !== 'undefined' && globalThis.browser?.runtime?.id)
 
   const registry = makeHarborRegistry()
+
+  // Built here, not in boot(): MV3 delivers a waking event only to a listener
+  // registered at module top, so an app's top-level contextMenus/commands/action
+  // listener must be able to reach islands.inject before boot() has run.
+  const scriptingApi = (globalThis.chrome ?? globalThis.browser)?.scripting
+  const islands = makeIslandsApi(scriptingApi, islandsConfig)
 
   // Lifecycle hooks for run() ctx — Phase 2.5 supports 'connection'.
   // Future events: 'disconnect', 'wake', 'sleep' (predicted SW termination).
@@ -114,11 +129,9 @@ export function defineHarbor(config = {}) {
     bootContext = { storage, pages, adapter, schemaCache, authFlow, channelRegistry, islandsConfig }
 
     // 9. Register islands. Idempotent across SW wakes (upsert-safe).
-    const scriptingApi = (globalThis.chrome ?? globalThis.browser)?.scripting
-    const islandsApi = makeIslandsApi(scriptingApi, islandsConfig)
     if (Object.keys(islandsConfig).length > 0) {
       try {
-        await islandsApi.registerAll()
+        await islands.registerAll()
       } catch (e) {
         console.warn('[harbor] island registration failed (non-fatal):', e.message)
       }
@@ -127,7 +140,7 @@ export function defineHarbor(config = {}) {
     const runCtx = {
       junction: adapter,
       channels: makeChannelsApi({ adapter, channelRegistry, lifecycleHooks }),
-      islands:  islandsApi,
+      islands,
       pages,
       storage,
     }
@@ -160,6 +173,7 @@ export function defineHarbor(config = {}) {
     _boot:     boot,
     _ready:    bootPromise,
     _registry: registry,
+    islands,
     config,
   }
 }
@@ -307,9 +321,13 @@ async function routeMessage(port, parsed, msg, ctx) {
     }
 
     default:
-      // Unknown framework type — log only. App-level types should arrive via
-      // service:call envelope, not bare top-level types.
-      console.log('[harbor] unhandled msg type:', msg.type, 'from', port.name)
+      // The port is framework-only: init, service:call and channel:*. An app
+      // message goes over runtime.sendMessage to a runtime.onMessage listener
+      // the harbor file registers at module top.
+      console.log(
+        `[harbor] unhandled port message "${msg.type}" from ${port.name} — the port carries init, service:call and channel:* only; ` +
+        'send an app message with runtime.sendMessage to a runtime.onMessage listener registered at the top of the harbor file'
+      )
   }
 }
 
@@ -418,6 +436,29 @@ function makeIslandsApi(scriptingApi, islandsConfig) {
     /** List currently-configured island ids. */
     list() {
       return Object.keys(islandsConfig)
+    },
+    /**
+     * Inject an `inject: 'gesture'` island into a tab, now. Call it from the
+     * user's gesture (a context-menu click, a command, the action), which is
+     * what grants activeTab. A second call re-runs the island file; the island
+     * runtime returns the second time without running main() or app again.
+     */
+    async inject(id, tabId) {
+      const cfg = islandsConfig[id]
+      if (!cfg) throw new Error(`islands.inject: unknown id "${id}"`)
+      if (!isGestureIsland(cfg)) {
+        throw new Error(`islands.inject: island "${id}" is injected by its matches — set inject: 'gesture' in jetty.config.js to inject it by hand`)
+      }
+      if (!scriptingApi) {
+        throw new Error('islands.inject: chrome.scripting unavailable (missing "scripting" permission?)')
+      }
+      const target = { tabId, allFrames: cfg.allFrames ?? false }
+      if (cfg.css?.length) await scriptingApi.insertCSS({ target, files: [...cfg.css] })
+      await scriptingApi.executeScript({
+        target,
+        files: [`islands/${id}.js`],
+        world: cfg.world ?? 'ISOLATED',
+      })
     },
     /** Reload all tabs matching this island's match patterns. */
     async reloadTabsFor(id) {

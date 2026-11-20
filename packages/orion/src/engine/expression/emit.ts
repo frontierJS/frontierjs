@@ -5,14 +5,14 @@
 // that node back into the line somebody wrote, so an editor can show a stored
 // expression as the language rather than as its tree.
 //
-// ── The grammar is a SUBSET of the Expression union, and that is the design ───
+// ── Every form has syntax; some VALUES do not ────────────────────────────────
 //
-// `array`, `pipe`, `let` and `match` are shapes the engine runs and the shared
-// text grammar has no syntax for, so this answers `{ text: null, reason }` for
-// them rather than inventing syntax. Widening the grammar is not this file's
-// to do: it is `@frontierjs/toolbelt/predicate`, which litestone parses `.lite`
-// policies with, and one language is the whole of `FJS-D271`. `template` and
-// `object` are in it (`FJS-D513`), and a policy refuses both by name.
+// `template` and `object` (`FJS-D513`) and `array`, `pipe` and `let`
+// (`FJS-D1429`) are in the shared grammar, `@frontierjs/toolbelt/predicate`, in
+// its flow dialect only, and a `.lite` policy refuses each by name. What still
+// answers `{ text: null, reason }` is a document no text re-parses to: an
+// object or an exponent as a literal, an array whose members are all literals
+// (the text reads back as a list), a pipeline of fewer than two steps.
 //
 // ── Precedence, which is the only way this can be quietly wrong ──────────────
 //
@@ -28,7 +28,7 @@
 // string, because a lost bracket changes the tree and may not change the
 // spelling of anything else.
 
-import type { Expression, PredicateNode } from "../types"
+import type { Expression, PipeStep, PredicateNode } from "../types"
 
 /** A line of the language, or the reason there is none. */
 export interface TextForm {
@@ -37,7 +37,11 @@ export interface TextForm {
 }
 
 // The parser's ladder. A child emitted below the tightness its position
-// demands is wrapped.
+// demands is wrapped. A let and a pipeline are looser than a ternary, and are
+// read wherever an expression starts — the whole line, a call argument, a
+// lambda body, a hole, an object value, an array member.
+const LET     = -2
+const PIPE    = -1
 const TERNARY = 0
 const OR      = 1
 const AND     = 2
@@ -70,7 +74,7 @@ const refuse = (reason: string): never => { throw new NoText(reason) }
  */
 export function expressionToText(expr: Expression): TextForm {
   try {
-    return { text: emit(expr, TERNARY) }
+    return { text: emit(expr, LET) }
   } catch (err) {
     if (err instanceof NoText) return { text: null, reason: err.message }
     throw err
@@ -101,7 +105,7 @@ function emit(expr: Expression, min: number): string {
       if (RESERVED_CALLS.has(expr.name)) {
         return refuse(`'${expr.name}' is a word the grammar reads as something else, so a call to it has no text form`)
       }
-      return wrap(`${expr.name}(${expr.args.map(a => emit(a, TERNARY)).join(", ")})`, VALUE, min)
+      return wrap(`${expr.name}(${expr.args.map(a => emit(a, LET)).join(", ")})`, VALUE, min)
     }
 
     // The condition is an `or` and both branches are full ternaries, which is
@@ -110,31 +114,91 @@ function emit(expr: Expression, min: number): string {
       return wrap(`${emit(expr.if, OR)} ? ${emit(expr.then, TERNARY)} : ${emit(expr.else, TERNARY)}`, TERNARY, min)
 
     case "map":
-      return wrap(`map(${emit(expr.over, TERNARY)}, ${param(expr.as)} => ${emit(expr.body, TERNARY)})`, VALUE, min)
-
     case "filter":
-      return wrap(`filter(${emit(expr.over, TERNARY)}, ${param(expr.as)} => ${emit(expr.where, TERNARY)})`, VALUE, min)
-
-    case "reduce":
-      return wrap(
-        `reduce(${emit(expr.over, TERNARY)}, ${emit(expr.init, TERNARY)}, ` +
-        `(${param(expr.acc)}, ${param(expr.as)}) => ${emit(expr.body, TERNARY)})`, VALUE, min)
+    case "reduce":   return wrap(iterator(expr), VALUE, min)
 
     case "predicate": return predicate(expr.ast, min)
 
     case "template": return wrap(template(expr.parts), VALUE, min)
     case "object":   return wrap(object(expr.properties), VALUE, min)
 
-    // The four the grammar has no syntax for. Named one at a time rather than
-    // as a default, so a form ADDED to the union arrives here as a TypeScript
-    // error instead of as a sentence about a shape nobody has considered.
-    case "array":    return refuse("an array of expressions has no text form yet — a list in the grammar holds literals")
-    case "pipe":    return refuse("a pipeline has no text form yet — it is edited as a document")
-    case "let":      return refuse("a let has no text form yet — it is edited as a document")
-    case "match":    return refuse("a match has no text form yet — it is edited as a document")
+    case "array":    return wrap(array(expr.items), VALUE, min)
+    case "pipe":     return wrap(pipe(expr.steps), PIPE, min)
+    case "let":      return wrap(letForm(expr.bindings, expr.body), LET, min)
   }
 
   return refuse(`there is no text form for a '${(expr as { type: string }).type}' expression`)
+}
+
+// `map(over, i => …)`, or with no `over` as a pipeline step, where the flowing
+// value is the collection.
+function iterator(expr: { type: "map" | "filter" | "reduce"; over?: Expression; as: string }): string {
+  const over = expr.over ? `${emit(expr.over, LET)}, ` : ""
+  if (expr.type === "map") {
+    const { body } = expr as Extract<Expression, { type: "map" }>
+    return `map(${over}${param(expr.as)} => ${emit(body, LET)})`
+  }
+  if (expr.type === "filter") {
+    const { where } = expr as Extract<Expression, { type: "filter" }>
+    return `filter(${over}${param(expr.as)} => ${emit(where, LET)})`
+  }
+  const { acc, init, body } = expr as Extract<Expression, { type: "reduce" }>
+  return `reduce(${over}${emit(init, LET)}, (${param(acc)}, ${param(expr.as)}) => ${emit(body, LET)})`
+}
+
+// A member list that is all strings, numbers and booleans reads back as a
+// `list`, which compiles to a literal — so such an array is a document the text
+// cannot return to, and is refused rather than written as something else.
+function array(items: Expression[]): string {
+  if (!items.length) return refuse("an empty array has no text form — the grammar refuses [] as a list that matches nothing")
+  const listLike = (e: Expression) =>
+    e.type === "literal" && ["string", "number", "boolean"].includes(typeof e.value)
+  if (items.every(listLike)) {
+    return refuse("an array whose members are all literals reads back as a list, so it is edited as a document")
+  }
+  return `[${items.map(i => emit(i, LET)).join(", ")}]`
+}
+
+// `head |> step |> step`. The head is a ternary at loosest, and a step a
+// ternary too, so a pipeline or a let in either is grouped.
+function pipe(steps: PipeStep[]): string {
+  if (steps.length < 2) {
+    return refuse("a pipeline of fewer than two steps has no text form — written out, it is its one step")
+  }
+  const [head, ...rest] = steps
+  return [emit(head as Expression, TERNARY), ...rest.map(step)].join(" |> ")
+}
+
+// A `fn` after the first step is handed the flowing value, so its text omits
+// that operand: no args is the bare name, `args: []` is `name()`. A name the
+// grammar reads as something else has no step form either.
+function step(s: PipeStep): string {
+  if (s.type === "fn") {
+    if (!IDENT.test(s.name) || ["null", "true", "false"].includes(s.name)) {
+      return refuse(`${JSON.stringify(s.name)} is not a name a pipeline step can be written with`)
+    }
+    if (!s.args) return s.name
+    if (RESERVED_CALLS.has(s.name)) {
+      return refuse(`'${s.name}' is a word the grammar reads as something else, so a call to it has no text form`)
+    }
+    return `${s.name}(${s.args.map(a => emit(a, LET)).join(", ")})`
+  }
+  if (s.type === "map" || s.type === "filter" || s.type === "reduce") return iterator(s)
+  return emit(s, TERNARY)
+}
+
+// `let a = e, b = e; body`. A binding's value is a pipeline at loosest, so a let
+// there is grouped; the body is a whole expression.
+function letForm(bindings: Record<string, Expression>, body: Expression): string {
+  const entries = Object.entries(bindings)
+  if (!entries.length) return refuse("a let with no bindings has no text form — written out, it is its body")
+  const written = entries.map(([name, value]) => {
+    if (!IDENT.test(name) || ["null", "true", "false"].includes(name)) {
+      refuse(`${JSON.stringify(name)} is not a name a let can bind`)
+    }
+    return `${name} = ${emit(value, PIPE)}`
+  })
+  return `let ${written.join(", ")}; ${emit(body, LET)}`
 }
 
 // The text between holes is a string literal part; anything else is a hole. A
@@ -148,7 +212,7 @@ function template(parts: Expression[]): string {
       out += part.value.replace(/[\\`]|\$(?=\{)/g, m => `\\${m}`)
       afterText = true
     } else {
-      out += `\${${emit(part, TERNARY)}}`
+      out += `\${${emit(part, LET)}}`
       afterText = false
     }
   }
@@ -160,7 +224,7 @@ function template(parts: Expression[]): string {
 function object(properties: Record<string, Expression>): string {
   const entries = Object.entries(properties).map(([key, value]) => {
     const name = IDENT.test(key) && key !== "true" && key !== "false" ? key : quote(key)
-    return `${name}: ${emit(value, TERNARY)}`
+    return `${name}: ${emit(value, LET)}`
   })
   return entries.length ? `{ ${entries.join(", ")} }` : "{}"
 }

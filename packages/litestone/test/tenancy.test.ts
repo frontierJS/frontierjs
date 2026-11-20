@@ -458,6 +458,15 @@ describe('createTenantRegistry reads the block', () => {
     expect(parse(`tenancy { strategy database  place default "a" }`).errors[0]).toContain(`'default' names the tenancy dir`)
   })
 
+  // A url resolved as a path would back an EU place up into a local `s3:` dir.
+  it('resolves a place\'s backup clause: a path against the schema, a url as written', () => {
+    const r = parse(`tenancy { strategy database  place eu "./data/eu" backup "s3://eu-bucket/app"  place us "./data/us" backup "./backups/us"  place ap "./data/ap" }`)
+    expect(r.errors).toEqual([])
+    const t = resolveTenancy(r.schema, { schemaPath: '/app/db/schema.lite' })
+    expect(t.backups).toEqual({ eu: 's3://eu-bucket/app', us: '/app/db/backups/us' })
+    expect(t.places.ap).toBe('/app/db/data/ap')
+  })
+
   it('refuses a row schema instead of writing files nobody reads', async () => {
     await expect(createTenantRegistry({ schema: ROW_SCHEMA })).rejects.toThrow('strategy row')
   })

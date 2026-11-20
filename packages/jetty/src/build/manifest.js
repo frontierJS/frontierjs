@@ -65,16 +65,21 @@ function baseManifest({ config, found }) {
   }
 
   // Permissions — declared list. Audit pass is Phase 7.
+  // A gesture island is injected by executeScript on the user's click, which
+  // activeTab covers, so it asks for no host permission.
   const perms = config.permissions?.declared ?? []
-  const needsScripting = found.islands.length > 0 && !perms.includes('scripting')
-  m.permissions = needsScripting ? [...perms, 'scripting'] : [...perms]
+  const islandsConfig = config.islands ?? {}
+  const hasGesture = found.islands.some((i) => islandsConfig[i.id]?.inject === 'gesture')
+  const extra = []
+  if (found.islands.length > 0 && !perms.includes('scripting')) extra.push('scripting')
+  if (hasGesture && !perms.includes('activeTab')) extra.push('activeTab')
+  m.permissions = [...perms, ...extra]
 
   // Host permissions — union of explicit hostPermissions and island matches.
   const hostPerms = new Set(config.hostPermissions ?? [])
-  const islandsConfig = config.islands ?? {}
   for (const island of found.islands) {
     const cfg = islandsConfig[island.id]
-    if (!cfg) continue
+    if (!cfg || cfg.inject === 'gesture') continue
     for (const pat of (cfg.matches ?? [])) hostPerms.add(pat)
   }
   if (hostPerms.size > 0) {

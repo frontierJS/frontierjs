@@ -295,9 +295,13 @@ check(blank(at(far.x, 0, 1, square, samEye.view)) === fogged(square) && at(sx + 
     ? 'the wall across is still blank, and the hedge he bumped is drawn from memory, out of sight'
     : 'the wall across and the hedge he bumped are drawn, the square lit whole', screen(out))
 // A shout, since a plain line is heard only within earshot and the spawn is
-// out of it (7.1).
+// out of it (7.1). Enter after /unban left the line in INSERT, where an `i`
+// is typed into the shout.
 const shout = '!over here'
-shell.stdin.write('i')
+if (screen(out).includes('-- NORMAL --')) {
+  shell.stdin.write('i')
+  await until(() => screen(out).includes('-- INSERT --'))
+}
 shell.stdin.write(`${shout}\r`)
 check(await until(() => at(far.x, far.y - 2, shout.length + 2, square, samEye.view) === `(${shout})`), 'Sam shouts a line there', screen(out))
 const marker = `(sam: ${shout})>`

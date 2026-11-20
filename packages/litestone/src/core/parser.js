@@ -370,6 +370,11 @@ class Parser {
   // (`create(id, { place: 'eu' })`). A name rather than a path so the registry
   // never holds a caller-supplied path, and so every copy path can enumerate the
   // places from a bare schema without opening the registry (`FJS-D1729`).
+  //
+  // `place eu "./data/eu" backup "s3://eu-bucket/app"` is where that place's
+  // files may be copied. Without it `backup` and `replicate` leave the place out:
+  // a copy to the fleet's one destination carries a resident tenant's rows out
+  // of its jurisdiction (`FJS-D1743`).
 
   parseTenancy() {
     const start = this.peek()
@@ -417,7 +422,11 @@ class Parser {
             throw new ParseError(`tenancy: 'default' names the tenancy dir and cannot be a place`, nameTok)
           if (places.some(p => p.name === nameTok.value))
             throw new ParseError(`tenancy: place '${nameTok.value}' is declared twice`, nameTok)
-          places.push({ name: nameTok.value, dir: this.parseEnvOrString() })
+          const dir = this.parseEnvOrString()
+          const backup = this.check(TK.IDENT) && this.peek().value === 'backup'
+            ? (this.eat(TK.IDENT), this.parseEnvOrString())
+            : null
+          places.push({ name: nameTok.value, dir, backup })
           break
         }
         default:

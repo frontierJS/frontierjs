@@ -541,6 +541,32 @@ The UI half is a resource file whose data half is `<script module>`, per Invaria
 
 Real-time needs no code, given two things on the server: the `channels()` plugin, and a connection joined to `notifications:user:<id>`. The inApp driver pushes `notifications created` there, and the client routes a frame to a tether only as `<service> <verb>` — which is why the app mounts the list as the `notifications` service.
 
+
+### The bell and the list
+
+The package ships both, so an app does not write them against the tether (`FJS-D1455`):
+
+```
+import NotificationBell from '@frontierjs/notifications/resource/NotificationBell.mesa'
+import NotificationList from '@frontierjs/notifications/resource/NotificationList.mesa'
+import { notifications } from '@/resources/Notification.mesa'
+
+{#if session.user}<NotificationBell {notifications} href="/notifications/" />{/if}
+<NotificationList {notifications} />
+```
+
+Each takes the **app's** `notifications` resource and holds none of its own, so every write is that resource's `mutate` (the rule above) and a row marked read in the list is read in the bell. It needs `@frontierjs/mesa` and `@frontierjs/ui` — both optional peers, since an API-only app never imports a `.mesa`.
+
+| Prop | On | What it does |
+| ---- | -- | ------------ |
+| `notifications` | both | the app's resource; required |
+| `directives` | both | what the list asks for; `{ orderBy: '-createdAt', limit: 50 }` |
+| `item` | both | snippet `(n) => …` — a row's content. **Choose a renderer by `n.type` here** |
+| `href`, `max`, `tone`, `icon` | bell | the "All notifications" link (`''` omits it), unread rows shown, the count's tone or `(unread) => tone`, the trigger's glyph |
+| `empty`, `onerror` | list | snippet `(only) => text` for the empty state; a handler for a failed write |
+
+Mount the bell only while someone is signed in — `tethered()` reads on creation. Restyle by wrapping: `item` is the row, and anything beyond it is a component you write over the same `notifications`. "Mark all read" is one `mutate` per unread row, not a bulk call, because an `updateMany` announces nothing.
+
 ---
 
 ## Querying

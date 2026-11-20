@@ -663,7 +663,7 @@ try {
   t('license.scheduledAndGroupsAreRefused', {
     scheduled: { status: sched.meta.status, kind: schedF.kind, code: schedF.code, message: schedF.message, retryable: schedF.retryable },
     groups: { status: groups.meta.status, kind: groupsF.kind, code: groupsF.code, message: groupsF.message, retryable: groupsF.retryable },
-    scheduledSentOnce: await reqsTo(`/api/v4/posts/scheduled/team/${ids.team}`), groupsRetried: (await reqsTo('/api/v4/groups')) > 1,
+    scheduledSentOnce: await reqsTo(`/api/v4/posts/scheduled/team/${ids.team}`), groupsSentOnce: await reqsTo('/api/v4/groups'),
   })
 
   // Pins: any member pins any post; `/patch` stays the author's.
@@ -964,8 +964,8 @@ process.exit(report(got, {
   'backfill.channelsIncludeDirectAndArchived': { direct: 'direct', directTeam: null, archived: true, archivedHiddenByDefault: true },
   'backfill.metadataAndProfiles':              { reaction: true, files: true, profiles: ['alice', 'bob'] },
   'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
-  'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsRetried:true},
-  'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2d00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
+  'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsSentOnce:1},
+  'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2b00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},
   'thread.followUnfollowReadAll': {followed:[true,true],unfollowed:[true,true],frames:[true,false],allRead:true,readNamesNoThread:true,notYours:'forbidden'},
   'channel.directGroupJoinLeave': {direct:['direct',null,true],group:['group',null,true,'alice, bob, bot'],pairIsADirectChannel:'mattermost: a group channel is three to eight people; two is a direct channel',groupPushed:[1,1],joined:[true,true],joinSeen:true,privateNeedsAMember:'forbidden',left:true,leftAgain:'forbidden'},

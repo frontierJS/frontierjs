@@ -1,0 +1,119 @@
+<script>
+  // NotificationList — everything this person has been told in-app, newest
+  // first. The bell is the last few unread; this is the whole list, read ones
+  // included.
+  //
+  //   <NotificationList {notifications} />
+  //
+  // `notifications` is the APP's resource for the Notification model; this
+  // component holds none of its own and every write goes through its `mutate`
+  // (see NotificationBell). It is not told "mine": the model's row policy is
+  // what scopes it, so a sign-in as somebody else is a different list.
+  //
+  // `item` is a snippet, `(n) => the first cell's content`: choose a renderer
+  // by `n.type` there. Unstated, a row is its title (a link when the
+  // notification carries an `action.url`) and its body. `empty` is a snippet
+  // for the empty state's text, `(only) => text`, where `only` is 'unread' or
+  // 'all' — an app knows what lands here, this package does not.
+  //
+  // `onerror(e)` hears a failed write. Unstated, the failure is shown in the
+  // list, because a write that fails quietly leaves a row looking unread for
+  // no reason anyone can see.
+
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Table      from '@frontierjs/ui/components/display/Table.mesa'
+  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markUnread, markAllRead } from './rows.js'
+
+  export let notifications = null // the app's Notification resource — required
+  export let directives = INBOX   // what the list asks for; newest first by default
+  export let item = null          // snippet — (n) => the first cell's content
+  export let empty = null         // snippet — (only) => the empty state's text
+  export let onerror = undefined  // (error) => void
+
+  var inbox = notifications.tethered({ state: 'local', directives })
+
+  const COLUMNS = [
+    { name: 'what',   label: 'Notification' },
+    { name: 'when',   label: 'When' },
+    { name: 'status', label: '' },
+  ]
+
+  let only = 'unread'
+  let failure = null
+
+  $: notes = inbox.rows
+  $: unread = notes.filter(isUnread)
+  $: visible = only === 'unread' ? unread : notes
+
+  async function attempt(write) {
+    failure = null
+    try { return await write() }
+    catch (e) { if (onerror) onerror(e); else failure = e }
+  }
+
+  const open = (n) => isUnread(n) && attempt(() => markRead(notifications, n))
+  const toggle = (n) => attempt(() => isUnread(n) ? markRead(notifications, n) : markUnread(notifications, n))
+  const readAll = () => attempt(() => markAllRead(notifications, notes))
+</script>
+
+{#if unread.length}
+  <p class="cluster">
+    <Button treatment="outlined" id="notifications-read-all" onclick={readAll}>Mark all read</Button>
+  </p>
+{/if}
+
+{#if inbox.error || failure}
+  <article class="alert danger">
+    <div class="alert-content">{(failure ?? inbox.error).message}</div>
+  </article>
+{/if}
+
+<div class="cluster" role="group" aria-label="Show" id="notifications-filter">
+  <Button treatment={only === 'unread' ? 'outlined' : 'ghost'} onclick={() => only = 'unread'}>Unread ({unread.length})</Button>
+  <Button treatment={only === 'all' ? 'outlined' : 'ghost'} onclick={() => only = 'all'}>All</Button>
+</div>
+
+{#if inbox.loading && !notes.length}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if !visible.length}
+  <EmptyState title={only === 'unread' ? 'All caught up' : 'Nothing yet'}>
+    {#if empty}{@render empty(only)}{:else}{only === 'unread' ? 'Nothing unread.' : 'Nothing yet.'}{/if}
+  </EmptyState>
+{:else}
+  {#if notes.length >= directives.limit}
+    <!-- A capped list that says nothing about the cap reads as a complete one. -->
+    <p class="text-sm text-muted">Showing the most recent {directives.limit}.</p>
+  {/if}
+
+  <Table id="notifications-rows" columns={COLUMNS} rows={visible}>
+    {#snippet row(n)}
+      <tr data-unread={isUnread(n) ? 'true' : null}>
+        <td>
+          {#if item}
+            {@render item(n)}
+          {:else}
+            {#if actionOf(n)?.url}
+              <a href={actionOf(n).url} onclick={() => open(n)}>
+                {#if isUnread(n)}<strong>{titleOf(n)}</strong>{:else}{titleOf(n)}{/if}
+              </a>
+            {:else if isUnread(n)}
+              <strong>{titleOf(n)}</strong>
+            {:else}
+              {titleOf(n)}
+            {/if}
+            {#if bodyOf(n)}<div class="text-sm text-muted">{bodyOf(n)}</div>{/if}
+          {/if}
+        </td>
+        <td class="text-sm text-muted"><time datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time></td>
+        <td>
+          {#if isUnread(n)}<Pill tone="primary">new</Pill>{/if}
+          <Button treatment="ghost" size="sm" onclick={() => toggle(n)}>
+            {isUnread(n) ? 'Mark read' : 'Mark unread'}
+          </Button>
+        </td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

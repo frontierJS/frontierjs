@@ -17,6 +17,9 @@ export const TOKEN: {
     ARROW: string;
     FATARROW: string;
     DOLLAR: string;
+    PIPE: string;
+    ASSIGN: string;
+    SEMI: string;
     LBRACE: string;
     RBRACE: string;
     LBRACKET: string;

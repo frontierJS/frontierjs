@@ -14,6 +14,7 @@
  *   dropOnto?: boolean | ((item: any) => boolean),
  *   accept?: (dragged: any) => {id: any} | null | undefined,
  *   dragSet?: () => Array<{id: any}>,
+ *   copy?: boolean,
  *   onconsider?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string}}) => void,
  *   onfinalize?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string, target?: any}}) => void,
  * }} getOptions
@@ -43,6 +44,7 @@ export function dndzone(getOptions: () => {
     dragSet?: () => Array<{
         id: any;
     }>;
+    copy?: boolean;
     onconsider?: (e: {
         items: any[];
         info: {
@@ -75,4 +77,5 @@ export namespace TRIGGERS {
     let DROPPED_INTO_ANOTHER: string;
     let DROPPED_OUTSIDE_OF_ANY: string;
     let DROPPED_ONTO_ITEM: string;
+    let COPIED_INTO_ANOTHER: string;
 }

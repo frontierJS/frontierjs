@@ -132,7 +132,7 @@ group('runIsland — what the host page can reach inside an island')
 
   let clicks = 0
   const handle = await runIsland({
-    app: (root) => {
+    app: { render(root) {
       const btn = document.createElement('button')
       btn.textContent = 'Pay invoice'
       btn.addEventListener('click', () => { clicks++ })
@@ -140,7 +140,7 @@ group('runIsland — what the host page can reach inside an island')
       const who = document.createElement('p')
       who.textContent = 'Signed in as bob@x.test'
       root.appendChild(who)
-    },
+    } },
   }, { id: 'pay', type: 'island' })
 
   // The host page, trying to read and drive the island through its root.
@@ -152,7 +152,7 @@ group('runIsland — what the host page can reach inside an island')
   if (clicks === 0) ok('the host page cannot click a control inside the island')
   handle.destroy()
 
-  const openHandle = await runIsland({ app: (r) => { r.textContent = 'x' }, shadowMode: 'open' }, { id: 'dbg', type: 'island' })
+  const openHandle = await runIsland({ app: { render(r) { r.textContent = 'x' } }, shadowMode: 'open' }, { id: 'dbg', type: 'island' })
   const openHost = document.querySelector('[data-jetty-island="dbg"]')
   if (openHost?.shadowRoot) ok('shadowMode: open still opts in')
   else bad('shadowMode: open was not honored')

@@ -88,6 +88,49 @@ imports nothing, and the two stay split by the dependency direction.
 
 The options are in § Open questions.
 
+## 5. A JSON Schema validator for a schema someone else wrote
+
+Folded from `FJS-4222` (2026-11-20). Swatchbook (#48, 3.1) checks its
+tokens.json against the DTCG 2025.10 draft-07 schema and adds ajv to do it.
+Nothing in the repo validates against a general JSON Schema: sierra's
+`validateAgainstFields` reads only the keywords Litestone's generator emits and
+says it should not grow, junction's `createSchema` takes its own field format,
+and `toolbelt/jsonschema` only reads Litestone's emitted schema.
+
+**The boundary is foreign schemas only.** The schemas Litestone emits keep
+their one validator, sierra's field rules, which junction's server rules are
+compared against. A `validate()` here must not become a second reader of those.
+
+**Sizing, unmeasured.** ajv is about 9,900 lines of TypeScript, most of it
+compiling a schema to JS. A draft-07 validator that walks the schema, with no
+remote `$ref` and `format` limited to the basics, is about 600 to 1,000 lines,
+the size of `@cfworker/json-schema`. The official JSON-Schema-Test-Suite is pure
+data (about 1,500 draft-07 cases), so it can serve as the grader. The hard parts
+are `$ref` and `$id` resolution, deep equality for `uniqueItems`, and the regex
+dialect. Drafts 2019-09 and 2020-12 (`unevaluatedProperties`, dynamic refs) would
+roughly double it.
+
+**Admit when a second app needs it.** Today ajv works for the one caller.
+
+## 6. Prose that moved: a quote anchor and a three-way merge
+
+Folded from `FJS-4172` and `FJS-4173` (2026-11-20). Both came from Chronicle
+(#45), the writing assistant, and both sit beside `toolbelt/textedit`, which has
+`locateText` (a locator for source code, not prose) and nothing past it.
+
+- **Quote anchor.** `fjs-prototypes/chronicle/shared/quotes.js`
+  (`checkQuotes`, `recheckQuotes`, `reanchor`) stores a quoted passage's exact
+  text with a prefix and suffix, and after an edit reports it as held, moved or
+  lost. This is the W3C Web Annotation TextQuoteSelector shape.
+- **Three-way merge for prose.** `fjs-prototypes/chronicle/shared/merge.js`
+  (`diffHunks`, `applyHunks`) applies a model's edit, made against one revision,
+  to text that has moved on. It applies a hunk where its base words are untouched
+  and refuses it by name otherwise.
+
+Each is working code with one caller. **Admit when a second app checks a
+model's quotes or merges a model's edit**, and port Chronicle's version rather
+than starting over.
+
 ## What is deliberately NOT admitted, and who already owns it
 
 Both were in the legacy package and both have an owner here. Adding either would

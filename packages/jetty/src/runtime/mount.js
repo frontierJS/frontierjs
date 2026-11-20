@@ -5,8 +5,8 @@
 // and let Mesa handle block creation, anchor placement, and delegation.
 //
 // Resolution: Mesa is an optional peer dep. The dynamic import below lets
-// Vite bundle Mesa into consumer chunks when it's installed, and fall back
-// to the stub mount when it's not (e.g. jetty's own fixture tests).
+// Vite bundle Mesa into consumer chunks when it's installed. Without it a
+// function app is refused by name; a { render } stub or a string never needs it.
 //
 // IMPORTANT — no /* @vite-ignore */ comment here. With @vite-ignore, Vite
 // leaves the import as-is for runtime resolution; in a browser/extension
@@ -18,8 +18,7 @@
 // When Mesa isn't installed, the build fails at this line with a clear
 // "could not resolve" error. To prevent that for jetty's own dev/test
 // where Mesa isn't installed, jetty's mesa-plugin.js detects Mesa absence
-// and the test fixtures use stub-shape apps that never call mountInto() with
-// a real Mesa component.
+// and the test fixtures use { render } stubs that never need Mesa.
 //
 // Mesa's compiled component shape:
 //   export default function Component(__anchor, __props) { ... }
@@ -39,8 +38,8 @@ async function loadRuntime() {
     _runtime = false
     if (!_runtimeWarned) {
       console.warn(
-        '[jetty] @frontierjs/mesa/runtime not available — using stub mount. ' +
-        'Install @frontierjs/mesa for real reactive components. ' +
+        '[jetty] @frontierjs/mesa/runtime not available — a function app cannot mount. ' +
+        'Install @frontierjs/mesa for compiled components. ' +
         '(error: ' + (err?.message ?? 'unknown') + ')'
       )
       _runtimeWarned = true
@@ -50,12 +49,17 @@ async function loadRuntime() {
 }
 
 /**
- * Mount an app into a DOM root. Auto-detects shape:
- *   - Real Mesa component (length === 2, takes anchor/props) → use Mesa mount
- *   - Stub function (length < 2, takes root) → call directly
+ * Mount an app into a DOM root. The shape decides the mounter, never the arity:
+ *   - a function is ALWAYS a compiled Mesa component, mounted by Mesa
+ *   - `{ render(root, props) }` is a stub and receives the real root
+ *   - a string is set as the root's HTML
+ *
+ * A function when Mesa's runtime is missing is refused by name. Calling it with
+ * the root instead would hand a compiled component the wrong first argument
+ * and fail somewhere that names neither.
  *
  * @param {Element|ShadowRoot} root — DOM container receiving the component
- * @param {Function|Object|string} app — compiled Mesa component or stub-shape app
+ * @param {Function|{ render: Function }|string} app — compiled Mesa component or stub
  * @param {object} [props] — props passed to the component
  * @returns {Promise<{ destroy?: () => void }>}
  */
@@ -65,15 +69,18 @@ export async function mountInto(root, app, props = {}) {
     return {}
   }
 
-  const runtime = await loadRuntime()
-
-  // A compiled component is fn(anchor, props). A stub takes the root alone, so
-  // a stub that also reads props is mistaken for a component here.
-  if (runtime && typeof app === 'function' && app.length === 2 && typeof runtime.mount === 'function') {
-    return mountWithMesa(root, app, props, runtime)
+  if (typeof app === 'function') {
+    const runtime = await loadRuntime()
+    if (runtime && typeof runtime.mount === 'function') {
+      return mountWithMesa(root, app, props, runtime)
+    }
+    const msg = '[jetty] a function `app` is a compiled Mesa component and needs @frontierjs/mesa; ' +
+                'a stub is `{ render(root, props) }`'
+    console.error(msg)
+    root.textContent = msg
+    return {}
   }
 
-  // Stub fallback — function(root) shape, or .render method.
   return mountStub(root, app, props)
 }
 
@@ -106,15 +113,11 @@ function mountWithMesa(root, Component, props, runtime) {
   }
 }
 
-// --- stub mount (fallback when Mesa not installed) ---
+// --- stub mount: a string or { render(root, props) } ---
 
 function mountStub(root, app, props) {
   if (typeof app === 'string') {
     root.innerHTML = app
-    return { destroy: () => { root.innerHTML = '' } }
-  }
-  if (typeof app === 'function') {
-    app(root, props)
     return { destroy: () => { root.innerHTML = '' } }
   }
   if (typeof app?.render === 'function') {

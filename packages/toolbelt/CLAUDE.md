@@ -7,9 +7,9 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/aria`, `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`,
+**One kit per subpath.** `/aria`, `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/grammars`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
-`/predicate`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/share`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty`, `/typo` and `/units` today; a caller
+`/predicate`, `/qr`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/share`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty`, `/typo` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -72,5 +72,5 @@ touching datetime, json, units, sigv4, inflect or glow.
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-glow.js package.json parse.js qr.js seeded.js template.js tokenize.js values.js 
+css.js glow.js grammars.js html.js js.js json.js lite.js markdown.js mesa.js package.json parse.js qr.js seeded.js template.js tokenize.js values.js yaml.js 
 -->

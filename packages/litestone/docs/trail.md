@@ -1,5 +1,4 @@
-const entries = await sys.auditTrail.findMany({ where: { model: 'Widget', operation: 'update' } })// three entries, each { operation: 'update', model: 'Widget', recordId: '1' | '2' | '3', before: null, after: null, ... }
-if (entries.length !== 3 || entries.some(e => e.before !== null || e.after !== null) || entries.map(e => e.recordId).sort().join() !== '1,2,3') throw new Error('a bulk write logs ids and no images')# Audit Trail
+# Audit Trail
 
 Litestone provides a field-level and model-level audit trail via the `trail` database driver. Every write produces a structured log entry with before/after images, actor attribution, and optional custom metadata.
 

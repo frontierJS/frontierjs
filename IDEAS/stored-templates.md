@@ -32,6 +32,19 @@ string, and `target: 'email' | 'fragment' | 'html'` covers every surface named
 above. **What is missing is not a way to compile a row. It is a reason to trust
 one.**
 
+**A second consumer: a structured file, not markup** (folded from `FJS-4219`,
+2026-11-20). Swatchbook (stressor #48, PLAN.md 3.1) stores four export
+templates per studio (theme.css, DESIGN.md, tokens.json, theme.scss) and fills
+them with `toolbelt/fill` in text mode. `fill` has no `each`, no `if`, and no
+value escaping for JSON, YAML or CSS, so every list of unknown length, every
+line that must vanish when a token is absent, and every quoted JSON or YAML
+value arrives pre-rendered in the context. The css template is three lines
+around one hole, and every opening brace is written `\{`. Design C's `{#if}`
+and `{#each}` over the `.lite` grammar already answer the list and the
+vanishing line. What it would add is a target: a text file whose escaping is
+the format's own, not HTML's. See `fjs-prototypes/swatchbook/fixtures/templates` and
+`shared/export.js`.
+
 ---
 
 ## The measurement that removes the easy answer

@@ -23,7 +23,7 @@
 - **A quiet socket and a dead one look the same.** Mattermost pushes nothing to an idle person, so the framing's `keepalive` sends the `ping` action (answered `seq_reply` + `text: 'pong'`) and conduit cuts a connection silent for 60 s. A reply has no `event`; without `pong` naming it, every ping counts as `dropped`. The sink's `{ silenceSocket: id }` is that dead link.
 - **A skip in `seq` is lost frames, not a new connection.** The framing's `sequence` answers each frame's `seq` and conduit calls the receiver's `gap` when one connection's jumps; a new connection starts afresh. The sink's `{ skipSeq: n }` makes the jump.
 - **`data.post` and `data.channel` are JSON strings inside the frame**, not objects. So are `data.draft`, `data.preferences` and `data.updatedCategories`.
-- **A code ending `license_error` is `unlicensed`**, never retried; Team Edition 400s scheduled posts and 501s groups, and the sink does too. Conduit still retries a replayable 501.
+- **A code ending `license_error` is `unlicensed`**, never retried; Team Edition 400s scheduled posts and 501s groups, and the sink does too. Conduit grades the 501 `not_implemented` and never replays it (`FJS-D2251`).
 - **The sink's `emit` with `channel_id` reaches every member**; a user-only event (`status_change`, drafts, preferences, categories) broadcasts to `{ user_id, team_id }` and carries the channel in `data`.
 
 ## Proving a change

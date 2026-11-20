@@ -592,6 +592,16 @@ export class HttpTransport extends BaseTransport {
         }, meta)
       }
 
+      // The target lacks this function — a feature its license omits, an HTTP
+      // version it never speaks. No replay grows it one, and a breaker opened on
+      // it would shed the calls the target does serve (`FJS-D2251`).
+      if (res.status === 501 || res.status === 505) {
+        return this.fail('not_implemented', `Target does not implement this: ${res.status}`, {
+          retryable: false,
+          raw: await readBody(res, maxBytes),
+        }, meta)
+      }
+
       if (res.status >= 500) {
         return this.fail('server_error', `Server error: ${res.status}`, {
           retryable: true,

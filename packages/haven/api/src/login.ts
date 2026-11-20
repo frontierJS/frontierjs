@@ -32,7 +32,7 @@ export interface LoginOptions {
   now?:  () => number
   /** The nicks that are mods. Applied at every login, both ways. */
   mods?: string[]
-  /** Observer: told a member's nick once, at the login that made them, and
+  /** Observer: told a person's nick once, at the login that made them (never an agent's), and
    *  awaited, so the line is in the room before the member's client loads it. */
   welcome?: (nick: string) => Promise<void> | void
   /** The Frontier post's public signing key, which a chain login's row must be
@@ -122,7 +122,9 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
 
   const made = async (sys: any, nick: string, root: string, agent = false): Promise<Member> => {
     const member = await sys.member.create({ data: { nick, root, agent }, select: MEMBER })
-    await opts.welcome?.(member.nick)
+    // An agent is uncried: the crier's lines share one member's rate, so a
+    // tavern of agents starting together would spend it and drop people's.
+    if (!agent) await opts.welcome?.(member.nick)
     return member
   }
 

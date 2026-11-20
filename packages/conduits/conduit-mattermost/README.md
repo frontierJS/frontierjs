@@ -32,7 +32,7 @@ without one.
 A GET-only probe of a real Team Edition server (no write sent).
 
 - **Answers:** `/users/me`, teams, channels, members, posts, threads, preferences, status, drafts and sidebar categories.
-- **Refused for want of a license:** `GET /posts/scheduled/team/{id}` is 400 `api.scheduled_posts.license_error` ("Scheduled posts feature requires a license"); `GET /groups` is 501 `api.license_error` ("api endpoint requires a license"). `translate` reads any code ending `license_error` as kind `unlicensed`, not retryable, because the 501 would otherwise grade `server_error`. Conduit's own retry grading still sends a replayable GET to `/groups` more than once (the drive row records it); an app that wants one send asks without `replayable`.
+- **Refused for want of a license:** `GET /posts/scheduled/team/{id}` is 400 `api.scheduled_posts.license_error` ("Scheduled posts feature requires a license"); `GET /groups` is 501 `api.license_error` ("api endpoint requires a license"). `translate` reads any code ending `license_error` as kind `unlicensed`, not retryable; conduit grades the 400 `client_error` and the 501 `not_implemented` (`FJS-D2251`), so neither is replayed and a replayable GET to `/groups` is sent once (the drive row records it).
 - **Unprobed:** every write, so the scheduled-posts writes under `/posts/schedule` are assumed to share the 400, and the `/teams/{id}/groups` and `/channels/{id}/groups` paths to share the 501. The sink answers all of them that way.
 
 ## The claim

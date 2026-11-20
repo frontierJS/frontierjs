@@ -69,7 +69,12 @@ const SOFT_DELETE = 'deletedAt'
 const CUSTOM = 'customFields'
 const CURRENCY = 'currency'
 
+// The ops `shared.ops` may hand every signed-in user.
+const SHARED_OPS = ['read', 'create', 'update', 'delete']
+
 const IDENT = /^[a-z][a-zA-Z0-9]*$/
+// `Page.body`: a column of another entity, which is a move, not a rename.
+const MOVED = /^[A-Z][A-Za-z0-9]*\.[a-z][a-zA-Z0-9]*$/
 export const an = (name) => `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`
 // FJS-D1748: an enum value is camelCase, the spelling fli check's
 // enum-value-case grades the emitted schema by -- two spellings never settle.
@@ -101,11 +106,12 @@ export const RULES = {
   document:    'A required json field states the document a new row starts with as `default`, `{}` or `[]`, unless it is `system`: no form a person fills can type JSON, so without one nobody can create the row.',
   link:        'A link names an entity in the answer or User; a link to User names the actor reaching the row through it, and a link to anything else names none.',
   lifecycle:   `A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase, unique, and none of ${MOVE_RESERVED.join(', ')}.`,
-  access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason.',
+  access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason. `shared` is a reason, or `{ reason, ops }` to hand every signed-in user those ops (always including `read`); a write op is refused on an entity under a tenant container.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
   roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container, decide who is in it and change the rows under it, and the person whose sign-up creates it holds the first. A container without it leaves its membership to the application, and that person holds the role column\'s default.',
   pattern:     'A cited pattern is one the catalog lists.',
-  rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field.',
+  rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field. Content moving from one entity into another is not carried yet: the answer says `risk: migration` with an `escape`, and asks in `open` whether the old values may go.',
+  backfill:    'A field or link you add to an entity whose rows already exist says `backfill` with the value those rows take: a field `{ value }`, a constant of its type, and a link `{ first: true }`, the first row of the entity it links to. Never on a catalog field, beside `was`, or on a link to User.',
   currency:    '`currency` is one ISO 4217 code, or a list of them when each row with money names its own; the first is the default.',
   fts:         '`fts` lists fields of the entity a person types text into: text, longtext, markdown, email, url, phone or slug.',
   extensible:  '`extensible` names the entity of this answer whose rows declare the fields: required `model` and `key` text fields and a required `type` enum, and not extensible itself.',
@@ -211,6 +217,8 @@ export function checkAnswer(answer) {
     const fields = []
     /** @type {{ op: 'rename', model: string, from: string, to: string }[]} */
     const renames = []
+    /** @type {Operation[]} */
+    const backfills = []
     for (const [j, f] of [...kept, ...added].entries()) {
       const fat = `${at}.${f?.name ?? `fields[${j - kept.length}]`}`
       if (!f || typeof f.name !== 'string' || !IDENT.test(f.name)) { refuse('field', fat, 'A field has a camelCase name.'); continue }
@@ -224,10 +232,21 @@ export function checkAnswer(answer) {
       if (typeof f.why === 'string' && GUESS.test(f.why)) refuse('inferred', fat, `This field's reason reads as a guess. Ask it in \`open\` instead.`)
       if (f.was != null) {
         if (j < kept.length) refuse('rename', fat, 'A catalog field has no former name; `was` belongs on a field you added.')
+        else if (typeof f.was === 'string' && MOVED.test(f.was)) refuse('rename', fat, `\`was: ${f.was}\` moves a column from another entity, and no migration carries a move yet. Leave \`was\` off, say \`risk: migration\` on ${e.name} with an \`escape\` naming what the old values become, and ask in \`open\` whether they may go.`)
         else if (typeof f.was !== 'string' || !IDENT.test(f.was)) refuse('rename', fat, '`was` is the camelCase name the column has in the app now.')
         else if (f.was === f.name) refuse('rename', fat, '`was` is the field\'s own name, which is not a rename.')
         else if (renames.some(r => r.from === f.was)) refuse('rename', fat, `\`was: ${f.was}\` is claimed by two fields; one column becomes one field.`)
         else renames.push({ op: 'rename', model: e.name, from: f.was, to: f.name })
+      }
+      if (f.backfill != null) {
+        const b = f.backfill
+        if (j < kept.length) refuse('backfill', fat, 'A catalog field takes its rows\' values from the catalog; `backfill` belongs on a field you added.')
+        else if (f.was != null) refuse('backfill', fat, 'A renamed field keeps the values it had; `was` and `backfill` are never both said.')
+        else if (!b || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).join() !== 'value') refuse('backfill', fat, 'A field\'s `backfill` is `{ value }`: the constant every row already there takes.')
+        else if (!['string', 'number', 'boolean'].includes(typeof b.value) || (typeof b.value === 'number' && !Number.isFinite(b.value))) refuse('backfill', fat, '`backfill.value` is a string, a number or a boolean.')
+        else if (f.type === 'json') refuse('backfill', fat, 'A json field\'s rows take its `default`, not a backfill.')
+        else if (f.type === 'enum' && !f.values?.includes(b.value)) refuse('backfill', fat, `\`backfill.value\` \`${b.value}\` is not one of the values.`)
+        else backfills.push({ op: 'backfill', model: e.name, field: f.name, value: b.value })
       }
       if (f.type === 'json') {
         const doc = jsonDefault(f.default)
@@ -251,6 +270,13 @@ export function checkAnswer(answer) {
       } else if (l.actor != null) { refuse('link', lat, `Only a link to User names an actor; \`${l.name}\` reaches ${l.to}, whose own rows name theirs.`); continue }
       if (l.to === e.name && l.required) { refuse('link', lat, 'A required link to the entity itself can never be satisfied by the first row. Make it optional.'); continue }
       if (typeof l.why === 'string' && GUESS.test(l.why)) refuse('inferred', lat, 'This link\'s reason reads as a guess. Ask it in `open` instead.')
+      if (l.backfill != null) {
+        // The first User would reach every existing row through an actor link.
+        if (l.to === 'User') { refuse('backfill', lat, 'A link to User is never backfilled: the first User would reach every row already there. Make the link optional, or ask in `open` who those rows belong to.'); continue }
+        const b = l.backfill
+        if (!b || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).join() !== 'first' || b.first !== true) { refuse('backfill', lat, 'A link\'s `backfill` is `{ first: true }`: every row already there links to the first row of the entity it names.'); continue }
+        backfills.push({ op: 'backfill', model: e.name, field: `${l.name}Id`, first: l.to })
+      }
       links.push({ name: l.name, to: l.to, actor: l.actor, required: !!l.required, why: l.why })
     }
 
@@ -303,7 +329,7 @@ export function checkAnswer(answer) {
       fields, links, lifecycle: life, access: e.access ?? {}, patterns: e.patterns ?? [],
       softDelete: e.softDelete === true, fts: Array.isArray(fts) ? fts : [],
       extensible: typeof e.extensible === 'string' ? e.extensible : null, currency: money ? CURRENCY : null,
-      renames, members: null, container: null,
+      renames, backfills, members: null, container: null,
     })
   }
 
@@ -346,8 +372,21 @@ export function checkAnswer(answer) {
     } else if (a.roles != null) refuse('roles', at, '`roles` names the membership roles that administer a container, so it sits beside `members`.')
     const pub = a.public == null ? [] : a.public
     if (!Array.isArray(pub) || pub.some(op => !['read', 'create'].includes(op))) refuse('access', at, '`public` is a list of `read` and `create`.')
-    if (a.shared != null && (typeof a.shared !== 'string' || !a.shared.trim())) refuse('access', at, '`shared` is the reason every signed-in user reads every row.')
+    if (a.shared != null) {
+      const sh = a.shared
+      const reason = typeof sh === 'string' ? sh : sh && typeof sh === 'object' && !Array.isArray(sh) ? sh.reason : null
+      const ops = typeof sh === 'string' ? ['read'] : sh?.ops
+      if (typeof reason !== 'string' || !reason.trim()) refuse('access', at, '`shared` is the reason every signed-in user reads every row, or `{ reason, ops }`.')
+      else if (typeof sh === 'object' && (Object.keys(sh).some(k => !['reason', 'ops'].includes(k)) || !Array.isArray(ops) || !ops.length || ops.some(op => !SHARED_OPS.includes(op)) || new Set(ops).size !== ops.length)) refuse('access', at, `\`shared\` is \`{ reason, ops }\` with \`ops\` a list of ${SHARED_OPS.join(', ')}, each once.`)
+      else if (!ops.includes('read')) refuse('access', at, '`shared.ops` names `read`: a write every signed-in user holds on rows they cannot all read would let them change rows they cannot see. List `read` beside the writes.')
+      else {
+        // One spelling below this line: the reason as text, the ops as a list.
+        m.access = { ...a, shared: reason, sharedOps: ops }
+      }
+    }
     if (a.shared && pub.includes('read')) refuse('access', at, 'A public read already covers every signed-in user; `shared` adds nothing. A visitor who files a row every signed-in user reads is `public: ["create"]` with `shared`.')
+    const sharedWrites = (m.access.sharedOps ?? []).filter(op => op !== 'read')
+    for (const op of sharedWrites) if (pub.includes(op)) refuse('access', at, `\`public\` already lets anyone ${op}; naming ${op} in \`shared.ops\` adds nothing.`)
     if (pub.length && !(typeof a.why === 'string' && a.why.trim())) refuse('access', at, 'Public access says `why` — it is the fact most likely to be wrong.')
     if (a.publicWhen != null) {
       if (!pub.includes('read')) refuse('access', at, '`publicWhen` narrows a public read; declare `public: ["read"]`.')
@@ -367,6 +406,9 @@ export function checkAnswer(answer) {
     const reachers = m.links.filter(l => l.to === 'User')
     const reads = reachers.length || a.via || m.members || m.container || (a.public ?? []).includes('read') || a.shared
     const open = (x) => x && (x.access.shared || ((x.access.public ?? []).includes('read') && !x.access.publicWhen))
+    // @@allow(op, true) has no tenant test: a write every signed-in user holds
+    // reaches every tenant's rows under a container.
+    if (a.sharedOps?.length > 1 && tenanted(m, byName)) refuse('access', m.name, `\`shared.ops\` hands every signed-in user ${a.sharedOps.filter(op => op !== 'read').join(' and ')} on ${m.name}, which sits under a tenant container; the rule has no tenant test, so one tenant changes another's rows. Keep \`shared\` read-only and let the actor links or \`via\` hold the writes.`)
     if (a.via) {
       const parent = byName.get(m.links.find(l => l.name === a.via)?.to)
       if (open(parent)) refuse('access', m.name, `\`via: ${a.via}\` delegates to ${parent.name}, which every caller reads, so a delegation to it admits everybody. Say \`shared\` or \`public\` on ${m.name} itself if that is meant, or reach the row another way.`)
@@ -392,15 +434,19 @@ export function checkAnswer(answer) {
     if (a.shared) {
       // emit gives a write a link holds to gate 4 under an @@allow naming only
       // that link, and no gate level is exempt from a row policy: the
-      // administrator holds the ops no link does, and no others.
+      // administrator holds the ops no link, and no `shared.ops`, names.
+      const held = a.sharedOps ?? ['read']
       const who = new Map()
       for (const op of ['create', 'update', 'delete']) {
+        if (held.includes(op)) continue
         const holders = m.links.filter(l => l.to === 'User' && ACTORS[l.actor]?.may.includes(op)).map(l => `its ${l.name}`)
         const key = pub.includes(op) ? 'anyone' : holders.length ? holders.join(' or ') : 'an administrator'
         who.set(key, [...(who.get(key) ?? []), op])
       }
-      const clauses = [...who].map(([key, ops]) => who.size === 1 ? `${key} writes one` : `${key} ${ops.map(op => `${op}s`).join(' or ')} one`)
-      find('access', m.name, `Every signed-in user reads every ${m.name}, and ${who.size === 1 && who.has('an administrator') ? 'only ' : ''}${clauses.join(', and ')}: ${a.shared}`)
+      const clauses = [...who].map(([key, ops]) => ops.length === 3 ? `${key} writes one` : `${key} ${ops.map(op => `${op}s`).join(' or ')} one`)
+      const verbs = held.map(op => `${op}s`)
+      const everyone = `Every signed-in user ${verbs.length > 1 ? `${verbs.slice(0, -1).join(', ')} and ${verbs.at(-1)}` : verbs[0]} every ${m.name}`
+      find('access', m.name, `${everyone}${clauses.length ? `, and ${who.size === 1 && who.has('an administrator') && held.length === 1 ? 'only ' : ''}${clauses.join(', and ')}` : ''}: ${a.shared}`)
     }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
     if (m.members && !m.members.admins) find('access', m.name, `No member administers ${an(m.name)}: only the application adds, removes or re-roles ${m.members.model} rows${a.system ? ', and the person whose sign-up creates it holds the role column\'s default' : ''}. Say \`roles: { update: [...] }\` to name the roles that do.`)
@@ -413,7 +459,7 @@ export function checkAnswer(answer) {
     actors: Array.isArray(answer.actors) ? answer.actors : [],
     open: Array.isArray(answer.open) ? answer.open.filter(q => typeof q === 'string') : [],
     models,
-    operations: models.flatMap(m => m.renames),
+    operations: models.flatMap(m => [...m.renames, ...m.backfills]),
     findings,
   } : null
   return { ok, refusals, findings, plan }
@@ -426,18 +472,31 @@ export function checkAnswer(answer) {
  *   fields: import('./catalog.js').Field[],
  *   links: { name: string, to: string, actor?: string, required: boolean, why?: string }[],
  *   lifecycle: import('./catalog.js').Lifecycle|null,
- *   access: { via?: string, members?: string, roles?: { update: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string, system?: boolean, why?: string },
+ *   access: { via?: string, members?: string, roles?: { update: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string|{ reason: string, ops: string[] }, sharedOps?: string[], system?: boolean, why?: string },
  *   patterns: string[],
  *   softDelete: boolean, fts: string[], extensible: string|null, currency: string|null,
- *   renames: Operation[],
+ *   renames: Operation[], backfills: Operation[],
  *   members: { model: string, link: string, user: string, admins: string[]|null }|null,
  *   container: { model: string, link: string, user: string, admins: string[]|null }|null,
  * }} Model
- * A row-keeping operation `litestone migrate create` takes (`FJS-D603`). Only
- * `rename` is written so far; `backfill` and `split` join this union.
- * @typedef {{ op: 'rename', model: string, from: string, to: string }} Operation
+ * A row-keeping operation `litestone migrate create` takes (`FJS-D603`).
+ * `split` joins this union in the second pass (`FJS-D683`).
+ * @typedef {{ op: 'rename', model: string, from: string, to: string }
+ *   | { op: 'backfill', model: string, field: string, value: string|number|boolean }
+ *   | { op: 'backfill', model: string, field: string, first: string }} Operation
  * @typedef {{ summary: string, currency: string[], actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
  */
+
+// Whether a row sits under a container whose members are its tenants: it is
+// the container, its membership, or reaches one through `via`.
+function tenanted(m, byName) {
+  for (let cur = m, seen = new Set(); cur && !seen.has(cur.name); cur = byName.get(cur.links.find(l => l.name === cur.access.via)?.to)) {
+    if (cur.members || cur.container) return true
+    seen.add(cur.name)
+    if (!cur.access.via) break
+  }
+  return false
+}
 
 // The roles whose members administer a container, or null when the answer
 // names none. Null leaves every membership write to the application: a member

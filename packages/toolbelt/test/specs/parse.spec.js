@@ -230,7 +230,7 @@ test('values: a template may hold a sum, over the names it was handed', function
 // can write the text a flow author writes.
 
 function flow(src) {
-  const all = tokenize(src)
+  const all = tokenize(src, { flow: true })
   let pos = 0
   const p = {
     peek:     (n = 0) => all[pos + n],
@@ -317,4 +317,56 @@ test('tokenize: an unterminated string, a trailing backslash and an unclosed blo
   assert.throws(() => tokenize('a /* never closed\nb'), /Unterminated block comment/)
   assert.equal(tokenize(`'a\\'b'`)[0].value, `a'b`)
   assert.equal(tokenize('a /* x */ b').length, 3)
+})
+
+// ── array, pipe and let (FJS-D1429) ──────────────────────────────────────────
+
+const json = (v) => JSON.stringify(v)
+
+test('parse: a bracket with any non-literal member is an array, and an all-literal one is still a list', function () {
+  assert.equal(json(flow('[$.a, 1]')), json({ type: 'array', items: [{ type: 'ref', path: '$.a' }, { type: 'literal', value: 1 }] }))
+  assert.equal(json(flow("['a', 2, true]")), json({ type: 'list', items: ['a', 2, true] }))
+  assert.equal(flow('[[1, 2], 3]').type, 'array')
+  assert.throws(() => flow('[]'), /empty list/)
+})
+
+test('parse: a pipeline step that is a bare name is a function, and a call keeps its own arguments', function () {
+  assert.equal(json(flow("$.n |> lower |> split(',')")), json({ type: 'pipe', steps: [
+    { type: 'ref', path: '$.n' },
+    { type: 'function', name: 'lower' },
+    { type: 'call', name: 'split', args: [{ type: 'literal', value: ',' }] },
+  ] }))
+  // `null` is the literal, and a name followed by `.` is a path, in a step too.
+  assert.equal(flow('$.n |> null').steps[1].type, 'literal')
+  assert.equal(flow('map($.xs, i => $.n |> i.v)').args[1].body.steps[1].type, 'ref')
+})
+
+test('parse: a pipeline is looser than a ternary, so a branch holds one only in a group', function () {
+  assert.equal(flow('$.a ? $.b : $.c |> lower').type, 'pipe')
+  assert.equal(flow('$.a ? ($.b |> lower) : $.c').type, 'ternary')
+})
+
+test('parse: a let binds names in order, for the later bindings and the body', function () {
+  assert.equal(json(flow('let a = 1, b = a; b')), json({ type: 'let',
+    bindings: [{ name: 'a', value: { type: 'literal', value: 1 } }, { name: 'b', value: { type: 'ref', path: '$.a' } }],
+    body: { type: 'ref', path: '$.b' } }))
+  assert.throws(() => flow('let a = b, b = 1; a'), /'b' is not defined here/)
+  assert.throws(() => flow('let a = 1, a = 2; a'), /bound twice/)
+  assert.throws(() => flow('let a = 1'), /ends its bindings with ';'/)
+})
+
+test('tokenize: `;` is a token in a flow and whitespace in a schema; `|>` and `=` lex in both', function () {
+  assert.equal(tokenize('a; b').length, 3)
+  assert.equal(tokenize('a; b', { flow: true })[1].type, T.SEMI)
+  assert.equal(tokenize('a |> b')[1].type, T.PIPE)
+  assert.equal(tokenize('a = b')[1].type, T.ASSIGN)
+})
+
+test('parse: a policy refuses an array, a pipeline and a let by name', function () {
+  const policy = (src) => parseExpression(cursor(tokenize(src).slice(0, -1)))
+  assert.throws(() => policy("status in [status, 'x']"), /array of expressions builds a value/)
+  assert.throws(() => policy("status |> lower == 'x'"), /pipeline builds a value/)
+  assert.throws(() => policy("let s = status; s == 'x'"), /let binds names/)
+  // A column named `let` is still a column.
+  assert.equal(policy("let == 'x'").left.name, 'let')
 })

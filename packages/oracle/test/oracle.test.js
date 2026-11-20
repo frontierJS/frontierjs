@@ -101,6 +101,21 @@ const BOOKING = { entities: [{
   access: { public: ['create'], shared: 'every staff member sees every request', why: 'the salon\'s booking page' },
 }] }
 
+// FJS-D1013: a move the application makes ran as createApp({ system }), and
+// an owner-only update policy found no row for it.
+const BOOKING_MOVES = {
+  entities: [{
+    name: 'Booking', rung: 'novel', why: 'a stay',
+    fields: [{ name: 'guest', type: 'text', required: true }],
+    links: [{ name: 'host', to: 'User', actor: 'owner', required: true }],
+    lifecycle: {
+      field: 'status', states: ['pending', 'done', 'cancelled'],
+      moves: [{ name: 'complete', from: 'pending', to: 'done', by: 'system' }, { name: 'cancel', from: 'pending', to: 'cancelled' }],
+    },
+    access: {},
+  }],
+}
+
 describe('emit', () => {
   test('the hiring answer emits a schema that parses', () => {
     const out = emit(hiring, { scaffold: SCAFFOLD })
@@ -244,6 +259,46 @@ describe('emit', () => {
     expect(checkAnswer(bareFinding).findings.map(f => f.message)).toEqual(['Every signed-in user reads every YogaClass, and only an administrator writes one: the timetable every member books from'])
   })
 
+  // FJS-D1007: `shared` names the ops it covers, and a bare string is the read.
+  test('shared.ops hands every signed-in user the writes it names, and a bare string stays read-only', () => {
+    const shared = clone(TIMETABLE)
+    shared.entities[0].access = { shared: { reason: 'every member edits the timetable', ops: ['read', 'update'] } }
+    const out = emit(shared, { scaffold: SCAFFOLD })
+    const text = flat(out.text)
+    expect(parses(text)).toBe(true)
+    expect(text).toContain('@@gate(4.4.4.5)')
+    expect(text).toContain('@@allow(read, true)')
+    expect(text).toContain('@@allow(update, true)')
+    expect(text).not.toContain('@@allow(update, instructorId == auth().id)')
+    expect(text).toContain('@@allow(create, instructorId == auth().id)')
+    expect(checkAnswer(shared).findings.map(f => f.message)).toEqual(['Every signed-in user reads and updates every YogaClass, and its instructor creates one, and an administrator deletes one: every member edits the timetable'])
+    // The object form with the read alone is the bare string.
+    const readOnly = clone(TIMETABLE)
+    readOnly.entities[0].access = { shared: { reason: TIMETABLE.entities[0].access.shared, ops: ['read'] } }
+    expect(emit(readOnly, { scaffold: SCAFFOLD }).text).toBe(emit(TIMETABLE, { scaffold: SCAFFOLD }).text)
+    expect(flat(emit(TIMETABLE, { scaffold: SCAFFOLD }).text)).toContain('@@allow(update, instructorId == auth().id)')
+  })
+
+  test('shared.ops is refused without read, with an op that is not one, and under a tenant container', () => {
+    const refused = (access, answer = TIMETABLE) => {
+      const a = clone(answer)
+      a.entities[answer === TIMETABLE ? 0 : 3].access = access
+      return checkAnswer(a).refusals.map(x => x.message).join('\n')
+    }
+    expect(refused({ shared: { reason: 'x', ops: ['update'] } })).toContain('names `read`')
+    expect(refused({ shared: { reason: 'x', ops: ['read', 'rename'] } })).toContain('`ops` a list of')
+    expect(refused({ shared: { reason: 'x', ops: [] } })).toContain('`ops` a list of')
+    expect(refused({ shared: { reason: ' ', ops: ['read'] } })).toContain('`shared` is the reason')
+    expect(refused({ shared: { ops: ['read'] } })).toContain('`shared` is the reason')
+    expect(refused({ public: ['create'], why: 'y', shared: { reason: 'x', ops: ['read', 'create'] } })).toContain('already lets anyone create')
+    // Candidate sits under Company, whose members are the tenants.
+    const under = { via: 'company', shared: { reason: 'x', ops: ['read', 'update'] } }
+    expect(refused(under, hiring)).toContain('tenant container')
+    under.shared.ops = ['read']
+    expect(refused(under, hiring)).not.toContain('tenant container')
+    expect(refused({ via: 'company', shared: 'x' }, hiring)).not.toContain('tenant container')
+  })
+
   // FJS-2550: a public create and a shared read were refused as "public or
   // shared, not both", so the staff never saw a visitor's request.
   test('a public create may sit beside a shared read; a public read may not', () => {
@@ -258,6 +313,43 @@ describe('emit', () => {
     const both = clone(BOOKING)
     both.entities[0].access.public = ['read']
     expect(checkAnswer(both).refusals.map(x => x.message).join('\n')).toContain('already covers every signed-in user')
+  })
+
+  test('a model with a system move admits the system principal beside its owner', () => {
+    const out = emit(BOOKING_MOVES, { scaffold: SCAFFOLD })
+    expect(parses(out.text)).toBe(true)
+    const text = flat(out.text)
+    expect(text).toContain('@@allow(update, hostId == auth().id || auth().isSystem)')
+    expect(text).toContain('@@allow(read, hostId == auth().id || auth().isSystem)')
+    // No system move, no claim.
+    const plain = clone(BOOKING_MOVES)
+    delete plain.entities[0].lifecycle.moves[0].by
+    expect(emit(plain, { scaffold: SCAFFOLD }).text).not.toContain('isSystem')
+  })
+
+  test('the claim stands alone where nobody else holds the update, and a child never delegates to it', () => {
+    const a = clone(BOOKING_MOVES)
+    a.entities[0].access = { system: true }
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
+    expect(parses(text)).toBe(true)
+    expect(text).toMatch(/@@gate\(4\.\d\.4\.\d\)/)
+    expect(text).toContain('@@allow(update, auth().isSystem)')
+    // A child naming no actor of its own reaches the row through its parent's read.
+    a.entities.push({ name: 'StayMemo', rung: 'novel', why: 'a memo on a stay', fields: [{ name: 'body', type: 'text', required: true }], links: [{ name: 'booking', to: 'Booking', required: true }], access: { via: 'booking' } })
+    const both = flat(emit(a, { scaffold: SCAFFOLD }).text)
+    expect(parses(both)).toBe(true)
+    expect(both).toContain("@@allow(update, check(booking, 'read'))")
+  })
+
+  test('the claim is not asked to read the parent a moved row lands under', () => {
+    const a = clone(BOOKING_MOVES)
+    a.entities[0].access = { via: 'stay' }
+    a.entities[0].links = [{ name: 'stay', to: 'Stay', required: true }, { name: 'host', to: 'User', actor: 'owner', required: true }]
+    a.entities.unshift({ name: 'Stay', rung: 'novel', why: 'a place', fields: [{ name: 'title', type: 'text', required: true }], links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }], access: {} })
+    const text = flat(emit(a, { scaffold: SCAFFOLD }).text)
+    expect(parses(text)).toBe(true)
+    expect(text).toMatch(/@@allow\(update, [^\n]*auth\(\)\.isSystem\)/)
+    expect(text).toMatch(/@@allow\(postUpdate, [^\n]*\|\| auth\(\)\.isSystem\)/)
   })
 
   test('public is the gate at 0, and a condition narrows it', () => {
@@ -424,6 +516,39 @@ describe('emitted access, on a real client', () => {
     }
   })
 
+  test('the system principal makes a system move on an owner-only row, and a stranger does not (FJS-D1013)', async () => {
+    const env = await createTestEnv({ schema: emit(BOOKING_MOVES, { scaffold: SCAFFOLD }).text })
+    try {
+      const host = await env.system.user.create({ data: { email: 'h@example.com' } })
+      const other = await env.system.user.create({ data: { email: 'o@example.com' } })
+      const row = await env.actingAs(host).booking.create({ data: { guest: 'Ada' } })
+      const app = env.actingAs({ id: 'system', isSystemAdmin: true, isSystem: true })
+      await app.booking.transition(row.id, 'complete', { system: true })
+      expect((await env.system.booking.findUnique({ where: { id: row.id } })).status).toBe('done')
+      const second = await env.actingAs(host).booking.create({ data: { guest: 'Bo' } })
+      await env.actingAs(other).booking.update({ where: { id: second.id }, data: { status: 'done' } }).catch(() => null)
+      expect((await env.system.booking.findUnique({ where: { id: second.id } })).status).toBe('pending')
+    } finally {
+      env.close()
+    }
+  })
+
+  test('a system-only row takes its system move from the system principal and from nobody else', async () => {
+    const only = clone(BOOKING_MOVES)
+    only.entities[0].access = { system: true }
+    const env = await createTestEnv({ schema: emit(only, { scaffold: SCAFFOLD }).text })
+    try {
+      const host = await env.system.user.create({ data: { email: 'h@example.com' } })
+      const row = await env.system.booking.create({ data: { guest: 'Ada', hostId: host.id } })
+      await env.actingAs(host).booking.update({ where: { id: row.id }, data: { guest: 'Mine' } }).catch(() => null)
+      expect((await env.system.booking.findUnique({ where: { id: row.id } })).guest).toBe('Ada')
+      await env.actingAs({ id: 'system', isSystemAdmin: true, isSystem: true }).booking.transition(row.id, 'complete', { system: true })
+      expect((await env.system.booking.findUnique({ where: { id: row.id } })).status).toBe('done')
+    } finally {
+      env.close()
+    }
+  })
+
   // A visitor's create reached the INSERT with ownerId NULL and answered 500.
   test('a visitor\'s create of an owned row is refused by name, never by SQLite (FJS-1793)', async () => {
     const env = await createTestEnv({ schema: emit(PUBLIC_OWNED, { scaffold: SCAFFOLD }).text })
@@ -534,6 +659,7 @@ describe('checkAnswer refuses', () => {
     roles:     a => { a.entities[0].access.roles.update = ['owner'] },
     pattern:   a => { a.entities[4].patterns = ['approvals'] },
     rename:    a => { a.entities[2].fields[1].was = 'title' },
+    backfill:  a => { a.entities[2].fields[1].backfill = { value: null } },
     currency:  a => { a.currency = 'usd' },
     fts:       a => { a.entities[5].fts = ['rating'] },
     extensible: a => { a.entities[3].extensible = 'Job' },
@@ -800,6 +926,90 @@ describe('a renamed field', () => {
       await apply(db, dir)
       expect(db.query('SELECT name, brief FROM project ORDER BY id').all()).toEqual([
         { name: 'p0', brief: 'first' }, { name: 'p1', brief: 'second' }, { name: 'p2', brief: 'third' },
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+// A required link added to an entity that already holds rows has no value for
+// them, and migrate create writes it BLOCKED (`FJS-D428`). The answer's word is
+// `backfill`, and it rides in the same document a rename does (`FJS-D683`).
+describe('a backfilled link', () => {
+  const owner = () => ({ name: 'owner', to: 'User', actor: 'owner', required: true })
+  const hiringApp = (jobLinks) => ({
+    summary: 'jobs at companies',
+    entities: [
+      { name: 'Company', rung: 'novel', why: 'who is hiring', fields: [{ name: 'name', type: 'text', required: true }], links: [owner()] },
+      { name: 'Job', rung: 'novel', why: 'an opening', fields: [{ name: 'title', type: 'text', required: true }], links: [owner(), ...jobLinks] },
+    ],
+  })
+  const v1 = () => hiringApp([])
+  const v2 = () => hiringApp([{ name: 'company', to: 'Company', required: true, backfill: { first: true } }])
+
+  test('emits the document and writes no trace of the backfill into the schema', () => {
+    const out = emit(v2(), { scaffold: SCAFFOLD })
+    expect(out.ok).toBe(true)
+    expect(out.document).toEqual({ operations: [{ op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }] })
+    expect(parses(out.text)).toBe(true)
+    expect(out.text).not.toContain('backfill')
+  })
+
+  test('a field takes a constant', () => {
+    const a = v1()
+    a.entities[1].fields.push({ name: 'stage', type: 'enum', values: ['open', 'closed'], required: true, backfill: { value: 'open' } })
+    expect(emit(a, { scaffold: SCAFFOLD }).document).toEqual({ operations: [{ op: 'backfill', model: 'Job', field: 'stage', value: 'open' }] })
+  })
+
+  test('is refused where it cannot say what the rows take', () => {
+    const refuse = (mutate) => {
+      const a = v2()
+      mutate(a)
+      return checkAnswer(a).refusals.filter(r => r.rule === 'backfill').map(r => r.message)
+    }
+    expect(refuse(a => { a.entities[1].links[1].backfill = { first: 'Company' } })[0]).toContain('{ first: true }')
+    expect(refuse(a => { a.entities[1].links[0].backfill = { first: true } })[0]).toContain('never backfilled')
+    expect(refuse(a => { a.entities[1].fields.push({ name: 'stage', type: 'enum', values: ['open', 'closed'], backfill: { value: 'done' } }) })[0]).toContain('not one of the values')
+    expect(refuse(a => { a.entities[1].fields.push({ name: 'brief', type: 'text', was: 'title', backfill: { value: 'x' } }) })[0]).toContain('never both')
+    expect(refuse(a => { a.entities[1].fields.push({ name: 'note', type: 'text', backfill: 'x' }) })[0]).toContain('{ value }')
+  })
+
+  test('a move into another entity is refused until a migration can carry it', () => {
+    const a = v1()
+    a.entities[1].fields.push({ name: 'body', type: 'longtext', was: 'Company.name' })
+    const msg = checkAnswer(a).refusals.filter(r => r.rule === 'rename').map(r => r.message)[0]
+    expect(msg).toContain('no migration carries a move yet')
+    expect(msg).toContain('`risk: migration`')
+    expect(msg).toContain('`escape`')
+  })
+
+  // The whole path: the answer, the document, `migrate create`, `apply`, and the
+  // link read back from the rows that were there before it existed.
+  test('reaches a populated database, and every existing row links to the first parent', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oracle-backfill-'))
+    try {
+      const db = new Database(':memory:')
+      create(db, parse(emit(v1(), { scaffold: SCAFFOLD }).text), 'init', dir)
+      await apply(db, dir)
+      db.run(`INSERT INTO user (id, email) VALUES ('u1', 'a@example.com')`)
+      for (const c of ['Acme', 'Globex']) db.run(`INSERT INTO company (name, ownerId) VALUES ('${c}', 'u1')`)
+      for (const t of ['j1', 'j2', 'j3']) db.run(`INSERT INTO job (title, ownerId) VALUES ('${t}', 'u1')`)
+
+      const out = emit(v2(), { scaffold: SCAFFOLD })
+      const made = create(db, parse(out.text), 'company', dir, { operations: out.document.operations })
+      expect(made.created).toBe(true)
+      expect(made.loss).toEqual([])
+
+      const file = readFileSync(join(dir, readdirSync(dir).sort().at(-1)), 'utf8')
+      expect(file).toContain('backfill Job.companyId ← the first Company row')
+      expect(file).not.toContain('BLOCKED')
+
+      const res = await apply(db, dir)
+      expect(res.applied.at(-1).ok).toBe(true)
+      const first = db.query('SELECT id FROM company ORDER BY rowid LIMIT 1').get().id
+      expect(db.query('SELECT title, companyId FROM job ORDER BY rowid').all()).toEqual([
+        { title: 'j1', companyId: first }, { title: 'j2', companyId: first }, { title: 'j3', companyId: first },
       ])
     } finally {
       rmSync(dir, { recursive: true, force: true })

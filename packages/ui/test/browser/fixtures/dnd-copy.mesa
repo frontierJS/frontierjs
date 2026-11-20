@@ -1,0 +1,51 @@
+<script>
+  // dnd-copy.mesa — a palette roster (FJS-D1166): a person dragged onto a
+  // shift is copied there and stays in the roster.
+  //
+  // The roster keeps the contract, writing back whatever `onconsider` hands
+  // it, so a drag that took the chip out of the roster would show in `#state`.
+  // The shift re-ids what lands, since the copy carries the roster row's id.
+  import { dndzone } from '@frontierjs/ui/dnd'
+
+  let roster = [{ id: 'p1', t: 'Ann' }, { id: 'p2', t: 'Bo' }, { id: 'p3', t: 'Cy' }]
+  let shift  = [{ id: 's1', t: 'Dee' }]
+  let log    = []
+
+  const record = (list, info) => log = [...log, `${list}:${info.trigger}:${info.items.map((it) => it.id).join('+')}`]
+</script>
+
+<div class="board">
+  <ul id="roster" {@attach dndzone(() => ({
+    items: roster,
+    type: 'staff',
+    copy: true,
+    onconsider: ({ items, info }) => { record('roster', info); roster = items },
+    onfinalize: ({ items, info }) => { record('roster', info); roster = items },
+  }))}>
+    {#each roster as p (p.id)}
+      <li data-id={p.id}>{p.t}</li>
+    {/each}
+  </ul>
+  <ul id="shift" {@attach dndzone(() => ({
+    items: shift,
+    type: 'staff',
+    onconsider: ({ items }) => shift = items,
+    onfinalize: ({ items, info }) => {
+      record('shift', info)
+      shift = items.map((it) => (it.id.startsWith('p') ? { id: `a-${it.id}`, t: it.t } : it))
+    },
+  }))}>
+    {#each shift as a (a.id)}
+      <li data-id={a.id}>{a.t}</li>
+    {/each}
+  </ul>
+</div>
+
+<output id="state">{roster.map((p) => p.id).join(',')}|{shift.map((a) => a.id).join(',')}</output>
+<output id="log">{log.join(' ')}</output>
+
+<style>
+  .board { display: flex; gap: 2rem; align-items: flex-start; }
+  ul { list-style: none; margin: 0; padding: 0.5rem 0.5rem 4rem; width: 10rem; }
+  li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); background: var(--surface, white); }
+</style>

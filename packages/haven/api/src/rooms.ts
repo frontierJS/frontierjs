@@ -179,8 +179,10 @@ export function roomChannels (db: { asSystem: () => any }, memory: RoomMemory, i
       presenceUpdatesPerSecond: 10,
       presenceMetaBytes:        128,
       // The connection's principal was built at the upgrade, so a ban written
-      // since would not reach it; every frame reads the column again.
-      claims: async (_name, conn) => conn.user ? await standingOf(db, conn.user.id) : null,
+      // since would not reach it; every frame reads the column again. `room`
+      // is what Room's read policy holds a join to: a subscribe toward any
+      // other room is graded as a stranger's (FJS-D974 lets it ask).
+      claims: async (_name, conn) => conn.user ? { ...await standingOf(db, conn.user.id), room: slugOf(conn) } : null,
     },
   }
 }

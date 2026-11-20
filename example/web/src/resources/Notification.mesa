@@ -11,12 +11,12 @@
   // (`@@allow(read, userId == auth().id)`), and the server is what enforces
   // it — which is why signing out and back in as somebody else needs no code on
   // this side at all.
+  //
+  // The bell is `@frontierjs/notifications/resource/NotificationBell.mesa`,
+  // handed this resource; it writes through this resource's `mutate`.
   import { createResource } from '@frontierjs/sierra/resource'
 
   export const notifications = createResource('notifications', {
     model: 'Notification',
   })
-
-  /** Unread first-class: the header counts these, the list styles them. */
-  export const isUnread = (n) => !n.readAt
 </script>

@@ -104,7 +104,16 @@ export function durationOffset(p, base) {
 //              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
 //              | 'this' '.' ident   (inside some(…) only: the declaring row's column — FJS-D2239)
 //              | template | '{' [key ':' expr (',' key ':' expr)*] '}'   (a flow only — FJS-D513)
+//              | '[' expr (',' expr)* ']'   (a flow only: an array when any member is not a literal — FJS-D1429)
 //   compOp   ::= '==' | '!=' | '<' | '>' | '<=' | '>=' | 'in'
+//
+// A flow reads two more forms, looser than everything above (`FJS-D1429`):
+//
+//   flow     ::= let | pipeline
+//   let      ::= 'let' ident '=' pipeline (',' ident '=' pipeline)* ';' flow
+//   pipeline ::= ternary ('|>' step)*
+//   step     ::= ident                     (a function given the flowing value: `lower` is lower($))
+//              | ternary                   (a call there omits its first operand; anything else reads $)
 
 // Every way back into the grammar (a group, a list, a call, a negation, a
 // ternary branch) passes through `ternary` or `not`, so counting those bounds
@@ -123,7 +132,7 @@ function nested(p, fn) {
 const POLICY = Object.freeze({ flow: false, scope: null })
 
 export function parseExpression(p, ctx = POLICY) {
-  return ternary(p, ctx)
+  return ctx.flow ? flow(p, ctx) : ternary(p, ctx)
 }
 
 // The flow dialect (`FJS-D271`). Everything above, plus what a run needs: `$.a.b`
@@ -132,7 +141,70 @@ export function parseExpression(p, ctx = POLICY) {
 // column, because a flow has no record — the only names in scope are a lambda's
 // own parameters.
 export function parseFlowExpression(p) {
-  return ternary(p, { flow: true, scope: new Set() })
+  return parseExpression(p, { flow: true, scope: new Set() })
+}
+
+// ─── let and the pipeline (a flow only — FJS-D1429) ──────────────────────────
+//
+// Both bind looser than a ternary, so they sit where an expression starts — the
+// whole flow, a group, a call argument, a lambda body, a hole, an object value,
+// an array member — and a ternary's branch holds neither without a group.
+
+function flow(p, ctx) {
+  return isLet(p) ? letForm(p, ctx) : pipeline(p, ctx)
+}
+
+// `let` is not reserved: a name `let` is still a lambda parameter. The form is
+// `let`, a name and `=`, which nothing else spells.
+const isLet = (p) =>
+  p.check(TK.IDENT) && p.peek().value === 'let' && p.peek(1)?.type === TK.IDENT && p.peek(2)?.type === TK.ASSIGN
+
+// `let a = $.x, b = a * 2; b + 1`. Each name is in scope for the bindings after
+// it and for the body, as a lambda's parameter is — written bare, it reads as
+// `$.a`, which is where the resolver puts a binding. A binding's value is a
+// pipeline and not a let, so the `,` and `;` that close it are never a nested
+// let's. `in` is not the separator because `in` is already membership.
+function letForm(p, ctx) {
+  const at = p.eat(TK.IDENT)
+  const scope = new Set(ctx.scope)
+  const bindings = []
+  do {
+    const name = p.eat(TK.IDENT)
+    if (bindings.some(b => b.name === name.value))
+      throw p.fail(`'${name.value}' is bound twice in one let — the second would replace the first`, name)
+    p.eat(TK.ASSIGN)
+    bindings.push({ name: name.value, value: pipeline(p, { ...ctx, scope: new Set(scope) }) })
+    scope.add(name.value)
+  } while (p.maybeEat(TK.COMMA))
+  if (!p.check(TK.SEMI))
+    throw p.fail(`a let ends its bindings with ';' and then the body — let n = $.items.length; n * 2`, p.peek() ?? at)
+  p.eat(TK.SEMI)
+  return { type: 'let', bindings, body: nested(p, () => flow(p, { ...ctx, scope })) }
+}
+
+// `$.name |> lower |> split(',')`. A step after the first is handed the value
+// flowing in, so it omits the operand that value fills: a bare name is a
+// function called on it, and a call — `split(',')`, `map(x => …)` — is missing
+// its first argument. A step that is neither is an expression reading the
+// flowing value as `$`.
+function pipeline(p, ctx) {
+  const head = ternary(p, ctx)
+  if (!p.check(TK.PIPE)) return head
+  const steps = [head]
+  while (p.maybeEat(TK.PIPE)) steps.push(step(p, ctx))
+  return { type: 'pipe', steps }
+}
+
+// A name followed by `(` is a call and by `.` a path under a bound name, so only
+// a name standing alone is a function. `null` is the literal.
+function step(p, ctx) {
+  const t = p.peek()
+  const next = p.peek(1)?.type
+  if (t.type === TK.IDENT && t.value !== 'null' && next !== TK.LPAREN && next !== TK.DOT) {
+    p.advance()
+    return { type: 'function', name: t.value }
+  }
+  return ternary(p, ctx)
 }
 
 // `cond ? a : b`, binding looser than `||` and RIGHT-associative, so
@@ -150,6 +222,8 @@ function ternary(p, ctx) {
 
 function ternaryAt(p, ctx) {
   const cond = or(p, ctx)
+  if (!ctx.flow && p.check(TK.PIPE))
+    throw p.fail(`A pipeline builds a value, and a policy asks a question — '|>' is written in a flow expression only.`, p.peek())
   if (!p.check(TK.QUESTION)) return cond
   p.eat(TK.QUESTION)
   const then = ternary(p, ctx)
@@ -254,6 +328,7 @@ const NEVER_NUMERIC = {
   now:     'now() is an instant',
   shift:   'now() moved by a duration is an instant',
   list:    'a list is not a number',
+  array:   'an array is not a number',
   compare: 'a comparison is a truth value',
   and:     'a && is a truth value',
   or:      'a || is a truth value',
@@ -399,6 +474,7 @@ function value(p, ctx) {
 
     if (t.type === TK.TEMPLATE) { p.eat(TK.TEMPLATE); return template(p, ctx, t) }
     if (t.type === TK.LBRACE)   return object(p, ctx)
+    if (t.type === TK.LBRACKET) return bracket(p, ctx)
 
     // A lambda's own parameter, and anything under it.
     if (t.type === TK.IDENT && ctx.scope.has(t.value)) {
@@ -450,6 +526,10 @@ function value(p, ctx) {
     return { type: 'literal', value: null }
   }
 
+  // A column may be named `let`; `let`, a name and `=` is the flow's binding form.
+  if (t.type === TK.IDENT && t.value === 'let' && p.peek(1)?.type === TK.IDENT && p.peek(2)?.type === TK.ASSIGN)
+    throw p.fail(`A let binds names to build a value, and a policy asks a question — it is written in a flow expression only.`, t)
+
   if (t.type === TK.BOOL) {
     p.eat(TK.BOOL)
     return { type: 'literal', value: t.value }
@@ -477,7 +557,8 @@ function value(p, ctx) {
       if (v.type !== TK.STRING && v.type !== TK.NUMBER && v.type !== TK.BOOL)
         throw p.fail(
           `A list in a policy expression holds literals — got '${v.value ?? v.type}'. ` +
-          `Write ['draft', 'review'], not a column or an expression.`, v)
+          `Write ['draft', 'review'], not a column or an expression; an array of expressions builds a ` +
+          `value, and is written in a flow expression only.`, v)
       p.advance()
       items.push(v.value)
       if (!p.maybeEat(TK.COMMA)) break
@@ -535,9 +616,9 @@ function value(p, ctx) {
     return { type: 'path', rel: t.value, name: field }
   }
 
-  // The two forms a flow assembles a value with (`FJS-D513`). A policy asks a
-  // question of a record, so a template or an object there would parse and have
-  // no meaning in the SQL half.
+  // The forms a flow assembles a value with (`FJS-D513`, `FJS-D1429`). A policy
+  // asks a question of a record, so any of them there would parse and have no
+  // meaning in the SQL half.
   if (t.type === TK.TEMPLATE || t.type === TK.LBRACE)
     throw p.fail(
       `${t.type === TK.TEMPLATE ? 'A template literal' : 'An object'} builds a value, and a policy ` +
@@ -577,7 +658,7 @@ function template(p, ctx, t) {
 function hole(p, ctx, src, at) {
   const fail = (msg) => p.fail(`${msg.replace(/ \(line \d+, col \d+\)$/, '')} (inside \${…} of a template)`, at)
   let tokens
-  try { tokens = tokenize(src) } catch (err) { throw fail(err.message) }
+  try { tokens = tokenize(src, { flow: true }) } catch (err) { throw fail(err.message) }
   let pos = 0
   const sub = {
     peek:     (n = 0) => tokens[pos + n],
@@ -593,13 +674,34 @@ function hole(p, ctx, src, at) {
   }
   if (sub.check(TK.EOF)) throw fail('a hole holds an expression — it is empty')
   try {
-    const node = ternary(sub, ctx)
+    const node = parseExpression(sub, ctx)
     if (!sub.check(TK.EOF)) throw sub.fail(`Unexpected '${sub.peek().value}' after the expression`, sub.peek())
     return node
   } catch (err) {
     if (err instanceof ParseError) throw fail(err.message)
     throw err
   }
+}
+
+// `[$.a, $.b + 1]` in a flow. A bracket whose members are all strings, numbers
+// and booleans is a `list` exactly as a policy reads one — the right side of
+// `in` means the same thing in both dialects — and any other member makes it
+// an `array` of expressions. An empty bracket is refused either way, as a list
+// always was.
+function bracket(p, ctx) {
+  const t = p.eat(TK.LBRACKET)
+  const items = []
+  while (!p.check(TK.RBRACKET)) {
+    items.push(parseExpression(p, ctx))
+    if (!p.maybeEat(TK.COMMA)) break
+  }
+  p.eat(TK.RBRACKET)
+  if (!items.length)
+    throw p.fail(`An empty list in a policy expression matches nothing — say so with a literal instead`, t)
+  const literal = (n) => n.type === 'literal' && ['string', 'number', 'boolean'].includes(typeof n.value)
+  return items.every(literal)
+    ? { type: 'list', items: items.map(n => n.value) }
+    : { type: 'array', items }
 }
 
 // `{ title: `Lead ${$.name}`, n: $.count }` — keys are names or quoted strings,
@@ -620,7 +722,7 @@ function object(p, ctx) {
     if (seen.has(k.value))
       throw p.fail(`The key '${k.value}' is written twice in one object`, k)
     seen.add(k.value)
-    properties.push({ key: k.value, value: ternary(p, ctx) })
+    properties.push({ key: k.value, value: parseExpression(p, ctx) })
     if (!p.maybeEat(TK.COMMA)) break
   }
   p.eat(TK.RBRACE)

@@ -9,7 +9,7 @@
  * every other rule is the part of the ruling that makes the output predictable.
  */
 
-import { fill, check, mergeFields, segments } from '../../src/fill/fill.js'
+import { fill, unfilled, check, mergeFields, segments } from '../../src/fill/fill.js'
 
 const CTX = {
   contact: { name: 'Ann', first: null, visits: 0, active: false, evil: '<img src=x onerror=alert(1)>' },
@@ -161,12 +161,46 @@ test('mergeFields: the example data is escaped like any other value', function (
 
 test('mergeFields: a malformed declaration is refused when declared, by name', function () {
   assert.throws(() => mergeFields([{ key: 'name', label: 'x', type: 'text' }]), /owner\.field/)
-  assert.throws(() => mergeFields([{ key: 'a.b.c', label: 'x', type: 'text' }]), /owner\.field/)
   assert.throws(() => mergeFields([{ key: '__proto__.x', label: 'x', type: 'text' }]), /__proto__/)
   assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'color' }]), /color/)
   assert.throws(() => mergeFields([{ key: 'a.b', type: 'text' }]), /label/)
   assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text', example: {} }]), /a\.b/)
   assert.throws(() => mergeFields([{ key: 'a.b', label: 'x', type: 'text' }, { key: 'a.b', label: 'y', type: 'text' }]), /a\.b/)
+})
+
+test('unfilled: the holes fill leaves standing, and only those', function () {
+  const ctx = { contact: { name: 'Ann', zero: 0, none: null, obj: { a: 1 } }, trigger: { body: { amount: 5 } } }
+  const source = `{contact.name} {contact.zero} {contact.none} {trigger.body.amount} {contact.nope} {contact.obj} {now()} \\{x} {tail`
+  assert.deepEqual(unfilled(source, ctx), ['{contact.nope}', '{contact.obj}', '{now()}', '{tail'])
+  const out = fill(source, ctx, { mode: 'text' })
+  for (const hole of unfilled(source, ctx)) assert.ok(out.includes(hole), hole)
+  // A value that renders as its own hole is filled, not a gap.
+  assert.deepEqual(unfilled('{a.b}', { a: { b: '{a.b}' } }), [])
+  assert.deepEqual(unfilled('plain', {}), [])
+})
+
+test('check: a dotted path of any depth is graded whole, as fill reads it', function () {
+  assert.equal(fill('{trigger.body.amount}', { trigger: { body: { amount: 5 } } }, { mode: 'text' }), '5')
+  assert.deepEqual(check('{trigger.body.amount}', { trigger: ['body.amount'] }), [])
+  assert.equal(check('{trigger.body.amount}', { trigger: ['body'] }).length, 1)
+  assert.equal(check('{trigger.body}', { trigger: ['body.amount'] }).length, 1)
+})
+
+test('mergeFields: a key of any depth declares, names, nests and defaults deep', function () {
+  const reg = mergeFields([
+    { key: 'trigger.body.amount', label: 'Amount', type: 'number', example: 5, default: 0 },
+    { key: 'trigger.id', label: 'Id', type: 'text', example: 't1' },
+  ])
+  assert.deepEqual(reg.names(), { trigger: ['body.amount', 'id'] })
+  assert.deepEqual(reg.example(), { trigger: { body: { amount: 5 }, id: 't1' } })
+  assert.deepEqual(reg.check('{trigger.body.amount} {trigger.id}'), [])
+  assert.deepEqual(reg.list().map((f) => Object.keys(f).sort()), [['default', 'example', 'key', 'label', 'type'], ['example', 'key', 'label', 'type']])
+  const data = { trigger: { id: 't2', body: { other: 1 } } }
+  assert.deepEqual(reg.context(data), { trigger: { id: 't2', body: { other: 1, amount: 0 } } })
+  assert.deepEqual(data, { trigger: { id: 't2', body: { other: 1 } } }, 'the caller\'s data is not written through')
+  assert.deepEqual(reg.context({ trigger: { body: 'text' } }), { trigger: { body: 'text' } }, 'a scalar on the way is not overwritten')
+  assert.equal(reg.fill('{trigger.body.amount}', { trigger: { body: { amount: 7 } } }, { mode: 'text' }), '7')
+  assert.throws(() => mergeFields([{ key: 'a.__proto__.b', label: 'x', type: 'text' }]), /__proto__/)
 })
 
 test('segments: the scan fill reads -- text, a hole with its raw, an unclosed brace', function () {

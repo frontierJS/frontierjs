@@ -57,7 +57,7 @@ The fifteen that bite most; the full catalog is `docs/hazards.md`, read it befor
 touching an error kind, the retry ladder, a credential, a signer, a receiver or
 a transport.
 
-- **`kind` says who is at fault, and `server_error` means 5xx and nothing else.** Retry, caravan's `retryable` and the breaker all branch on it; under one word for every non-2xx, five 404s opened a circuit (`FJS-684`). Adding a kind means deciding all three columns, and `CONDUIT_ERROR_KINDS` is the array the union derives from.
+- **`kind` says who is at fault, and `server_error` means 5xx except 501/505 and nothing else.** A 501/505 is `not_implemented`, never replayed and no breaker fault (`FJS-D2251`). Retry, caravan's `retryable` and the breaker all branch on it; under one word for every non-2xx, five 404s opened a circuit (`FJS-684`). Adding a kind means deciding all three columns, and `CONDUIT_ERROR_KINDS` is the array the union derives from.
 - **`retryable` is a statement about THIS request, and `indeterminate` decides it** — false only where the request may already have been applied; never set where nothing left the process. `declineReplay` owns the judgement (`FJS-733`, `FJS-739`, `FJS-D194`).
 - **A caller's patience is never the target's fault.** `signal` ends as `aborted`, outside `TARGET_FAULTS`; a per-send deadline is `AbortSignal.timeout`, never `deadline_ms` (`FJS-1408`, `FJS-1409`).
 - **`replayable` and `idempotency_key` are two different claims**, and the header name belongs to the target — a wrong name is a key sent, ignored, and a second charge. `idempotency.auto` mints per `send()`, never per attempt; a body-field key is `idempotency.field` (`FJS-1877`).

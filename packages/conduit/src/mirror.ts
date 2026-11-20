@@ -119,6 +119,7 @@ function statusOf(error: ConduitError, status: number | undefined): number | und
     case 'invalid_response':
     case 'redirected':
     case 'stream_error':      return 502
+    case 'not_implemented':   return status === undefined ? undefined : 502
     default:                  return undefined
   }
 }

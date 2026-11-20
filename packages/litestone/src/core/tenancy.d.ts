@@ -12,6 +12,7 @@
  *
  * database → { strategy, dir, registry, maxOpen, key, resolve, places }
  *            places is { [name]: absolute dir }, empty when none is declared
+ *            backups is { [name]: absolute dir or url } for each place declaring one
  * row      → { strategy, column, claim, admission }
  */
 export function resolveTenancy(schema: any, { schemaPath, overrides }?: {
@@ -52,3 +53,4 @@ export function placedTrails(schema: any, places: Record<string, string>): Array
  */
 export function tenantFrom(resolution: any, { host, headers, principal }?: any): string | null;
 export function tenantAdmission(claim?: any): string;
+export function isUrl(s?: string): boolean;

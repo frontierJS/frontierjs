@@ -22,6 +22,9 @@ export const TK = {
   ARROW:    'ARROW',    // ->
   FATARROW: 'FATARROW', // => — a lambda, in a flow expression
   DOLLAR:   'DOLLAR',   // $  — the run, in a flow expression
+  PIPE:     'PIPE',     // |> — a pipeline, in a flow expression
+  ASSIGN:   'ASSIGN',   // =  — a let's binding, in a flow expression
+  SEMI:     'SEMI',     // ;  — ends a let's bindings; lexed only in a flow (see tokenize)
   LBRACE:   'LBRACE',   // {
   RBRACE:   'RBRACE',   // }
   LBRACKET: 'LBRACKET', // [
@@ -65,7 +68,11 @@ export const STRING_ESCAPES ={ n: '\n', t: '\t', r: '\r' }
 // moves `col` by its length rather than one step at a time. The lexer is a
 // third of a schema's parse time, so a per-character closure call or an object
 // literal built per token shows in `bench/cases.mjs`.
-export function tokenize(src) {
+// `{ flow: true }` lexes `;` as SEMI, which ends a let's bindings in a flow
+// expression. A `.lite` file uses `;` as a field separator in a compact inline
+// schema and treats it as whitespace, so lexing it there would hand every
+// schema parser a token it has no rule for.
+export function tokenize(src, { flow = false } = {}) {
   // Strip leading UTF-8 BOM if present — editors sometimes write ﻿ at the
   // start of files and the rest of the parser treats it as garbage.
   if (src.charCodeAt(0) === 0xFEFF) src = src.slice(1)
@@ -205,12 +212,16 @@ export function tokenize(src) {
       // `=>` and `$` are a flow expression's (`FJS-D284`, `FJS-D286`). They lex in a
       // schema too and no schema grammar accepts one, so `$` there is now `Expected
       // …, got '$'` from whoever was parsing rather than an unknown character.
+      // A lone `=` is a let's binding; it lexes in a schema too, so a policy can
+      // refuse `let n = …` by name rather than as an unknown character.
       case 61: // '='
         if (next === 62)      { tokens.push({ type: TK.FATARROW, value: '=>', ...pos }); i += 2; col += 2; continue }
         if (next === 61)      { tokens.push({ type: TK.EQ,       value: '==', ...pos }); i += 2; col += 2; continue }
-        break
+        tokens.push({ type: TK.ASSIGN, value: '=', ...pos }); i++; col++
+        continue
       case 124: // '|'
-        if (next === 124) { tokens.push({ type: TK.OR,  value: '||', ...pos }); i += 2; col += 2; continue }
+        if (next === 124) { tokens.push({ type: TK.OR,   value: '||', ...pos }); i += 2; col += 2; continue }
+        if (next === 62)  { tokens.push({ type: TK.PIPE, value: '|>', ...pos }); i += 2; col += 2; continue }
         break
       case 38: // '&'
         if (next === 38)  { tokens.push({ type: TK.AND, value: '&&', ...pos }); i += 2; col += 2; continue }
@@ -227,8 +238,12 @@ export function tokenize(src) {
         if (next === 61) { tokens.push({ type: TK.GTE, value: '>=', ...pos }); i += 2; col += 2 }
         else             { tokens.push({ type: TK.GT,  value: '>',  ...pos }); i++;   col++ }
         continue
-      // Semicolon — field separator in compact inline schemas, treated as whitespace
-      case 59: i++; col++; continue
+      // Semicolon — field separator in compact inline schemas, treated as
+      // whitespace there; in a flow it ends a let's bindings.
+      case 59:
+        if (flow) tokens.push({ type: TK.SEMI, value: ';', ...pos })
+        i++; col++
+        continue
       case 96: { // '`'
         // Template literal — backticks. A separate token kind from a quoted string
         // because the two are different LANGUAGES at the one place that takes both:

@@ -12,17 +12,13 @@ siteName: Kitchen sink
   import Badge          from '@frontierjs/ui/components/display/Badge.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
-  import Dot            from '@frontierjs/ui/components/display/Dot.mesa'
   import Field          from '@frontierjs/ui/components/forms/Field.mesa'
   import Input          from '@frontierjs/ui/components/forms/Input.mesa'
   import Kbd            from '@frontierjs/ui/components/display/Kbd.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Shell          from '@frontierjs/ui/components/layout/Shell.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
-  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
-  import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
-  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
-  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import NotificationBell from '@frontierjs/notifications/resource/NotificationBell.mesa'
   import { alert }          from '@frontierjs/ui/stores/alertStore'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
   import { toasts }         from '@frontierjs/ui/stores/toastStore'
@@ -30,30 +26,9 @@ siteName: Kitchen sink
 
   import { groups } from '@/lib/nav.js'
 
-  import { notifications, isUnread } from '@/resources/Notification.mesa'
+  import { notifications } from '@/resources/Notification.mesa'
 
   $: (session.oauthError, session.oauthMessage)
-
-  // The bell. `notifications` is a resource like any other, and its rows are
-  // fed by the same WS events every other table uses — the inApp driver
-  // publishes to `notifications:user:<id>`, api/src/app.ts joins a signed-in
-  // connection to it, and nothing here polls.
-  const bell  = notifications.tethered({ state: 'local' })
-  const notes = () => bell.rows
-
-  // Reload on sign-in and sign-out, not once at mount: the list is scoped to
-  // the caller by the model's own row policy, so a session change is a
-  // different list. Signed out it is empty and the bell does not render.
-  $: session.user, () => { if (session.user) bell.reload() }
-
-  $: unread = notes().filter(isUnread).length
-
-  // The bell groups rather than sorts: an unread row and a read one are two
-  // different things to a reader, so the menu says so with a label over each
-  // and a rule between them, instead of relying on a tone the eye has to
-  // decode. Both lists come off the same tether.
-  $: fresh  = notes().filter(isUnread)
-  $: seen   = notes().filter(n => !isUnread(n))
 
   // The socket dropping is app-wide system feedback with nowhere to land — no
   // screen owns it, and a toast for it would queue behind whatever the page is
@@ -66,15 +41,6 @@ siteName: Kitchen sink
     if (was && !now) {
       alert.warning('The live connection dropped. Changes made elsewhere will not appear until it is back.')
     }
-  }
-
-  async function openNote(note) {
-    // Marking read is a patch of one field — `readAt` is the only thing the
-    // service accepts, and the model's @@allow(update) is what stops it being
-    // somebody else's row.
-    if (isUnread(note)) await notifications.service.patch(note.id, {}).catch(() => {})
-    const url = note.data?.action?.url
-    if (url) goto(url)
   }
 
   // The basket is restored once, here, rather than on the basket screen — a
@@ -200,43 +166,12 @@ siteName: Kitchen sink
     </Button>
 
     {#if session.user}
-      <DropdownMenu>
-        {#snippet trigger()}
-          <Button treatment="ghost" id="bell" aria-label="Notifications">
-            🔔{#if unread}<Badge tone="danger" id="bell-count">{unread}</Badge>{/if}
-          </Button>
-        {/snippet}
-
-        {#if fresh.length}
-          <DropdownGroup heading="Unread">
-            {#each fresh as note}
-              <DropdownItem tone="info" onclick={() => openNote(note)}>
-                <!-- A pulsing dot is the unread marker rather than a word: the
-                     row already carries the notification's own words, and the
-                     dot names itself for a screen reader. -->
-                <Dot tone="info" pulse label="unread" />
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
-          </DropdownGroup>
-        {/if}
-
-        {#if fresh.length && seen.length}<DropdownSeparator />{/if}
-
-        {#if seen.length}
-          <DropdownGroup heading="Earlier">
-            {#each seen as note}
-              <DropdownItem onclick={() => openNote(note)}>
-                {note.data?.title ?? note.type} — {note.data?.body ?? ''}
-              </DropdownItem>
-            {/each}
-          </DropdownGroup>
-        {/if}
-
-        {#if !notes().length}
-          <DropdownItem disabled>Nothing yet</DropdownItem>
-        {/if}
-      </DropdownMenu>
+      <!-- Mounted only while someone is signed in, so the list is read for that
+           person and released with them. The model's own row policy scopes it,
+           and the inApp driver's `notifications:user:<id>` channel feeds it;
+           nothing here polls. This app has no /notifications/ screen, so the
+           menu carries no link to one. -->
+      <NotificationBell {notifications} href="" />
 
       <!--
         The badge is the identity; the status is the STANDING, and they are

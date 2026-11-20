@@ -59,6 +59,30 @@ export function rank(items: unknown[], query: string, { keys, minimumScore, limi
     byKey?: Record<string, MatchRange[]>;
 }>;
 /**
+ * Index a corpus once and rank it against many queries — what a picker that
+ * ranks per keystroke holds, where `rank()` re-folds the whole corpus each call.
+ *
+ * The index belongs to the ranker and reads `items` as they were handed in: an
+ * edited list is a new ranker, and nothing is cached by identity. Answers are
+ * those of `rank(items, query, { keys, minimumScore, ...opts })`.
+ *
+ * @param {unknown[]} items   As `rank()` takes them.
+ * @param {object}   [opts]
+ * @param {Array<string|string[]>} [opts.keys]  As `rank()`.
+ * @param {number}   [opts.minimumScore=0]  As `rank()`.
+ * @returns {{ rank: (query: string, opts?: { limit?: number, words?: boolean, weights?: Record<string, number> }) => ReturnType<typeof rank> }}
+ */
+export function createRanker(items: unknown[], { keys, minimumScore }?: {
+    keys?: Array<string | string[]>;
+    minimumScore?: number;
+}): {
+    rank: (query: string, opts?: {
+        limit?: number;
+        words?: boolean;
+        weights?: Record<string, number>;
+    }) => ReturnType<typeof rank>;
+};
+/**
  * Merge overlapping or touching ranges into a minimal ascending set.
  *
  * Needed whenever ranges from two searches describe one string — a query

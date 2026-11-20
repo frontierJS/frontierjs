@@ -30,7 +30,7 @@ manual run         previous step        notify via app.notify
                                         run another flow
 ```
 
-**"On steroids"** is the deliberate part — the ambition is past the hosted tools, not level with them: real branching and fan-out, loops over collections, durable multi-day waits, typed step I/O checked against the schema at author time rather than at 3am, versioned flows with replay, and a run history you can actually debug.
+**"On steroids"** is the deliberate part — the ambition is past the hosted tools, not level with them: real branching and fan-out, loops over collections, durable multi-day waits (a `flow.wait` with `timeoutMs` ends the run failed at its deadline, or with `onTimeout: 'continue'` resumes it with `{ timedOut: true }` under the wait's `resumeKey`, so a `flow.if` after it can act on an absence), typed step I/O checked against the schema at author time rather than at 3am, versioned flows with replay, and a run history you can actually debug.
 
 ---
 

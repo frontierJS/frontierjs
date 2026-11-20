@@ -254,6 +254,7 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
         event:      { type: "string", description: "Event name to wait for" },
         timeoutMs:  { description: "Maximum wait time in milliseconds" },
         resumeKey:  { type: "string", description: "Context key to write the resume payload to" },
+        onTimeout:  { type: "string", enum: ["fail", "continue"], description: "What the deadline does. 'fail' (default) ends the run failed; 'continue' resumes it with { timedOut: true } as the payload, so a flow.if after it can branch on the absence" },
       },
       required: ["event"],
     },

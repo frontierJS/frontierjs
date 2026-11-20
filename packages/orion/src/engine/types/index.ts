@@ -21,8 +21,6 @@ export type Expression =
   | { type: "reduce";   over: Expression; as: string; acc: string; init: Expression; body: Expression }
   // Bind local variables scoped to the body expression
   | { type: "let";      bindings: Record<string, Expression>; body: Expression }
-  // Pattern matching — first matching case wins, $ = tested value inside when/then
-  | { type: "match";    value: Expression; cases: Array<{ when: Expression; then: Expression }>; default?: Expression }
   // A CONDITION, parsed from text and answered by @frontierjs/toolbelt/predicate
   // in SQLite's three-valued logic, so an edge condition and a row policy
   // written the same way agree (`FJS-D271`). Every value inside it is a hole the

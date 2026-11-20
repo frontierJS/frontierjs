@@ -681,7 +681,13 @@
       },
       "peerDependencies": {
         "@frontierjs/junction": "^0.1.0",
+        "@frontierjs/mesa": "^0.1.0",
+        "@frontierjs/ui": "^0.1.0",
       },
+      "optionalPeers": [
+        "@frontierjs/mesa",
+        "@frontierjs/ui",
+      ],
     },
     "packages/oracle": {
       "name": "@frontierjs/oracle",

@@ -57,6 +57,15 @@ describe('a stranger', () => {
   })
 })
 
+describe('a socket', () => {
+  test('reads only the room its upgrade named, and a call with no socket reads every room', async () => {
+    await sys.room.create({ data: { slug: 'tavern', name: 'The tavern' } })
+    expect((await as({ ...sam, room: 'tavern' }).room.findMany()).map(r => r.slug)).toEqual(['tavern'])
+    expect(await as({ ...sam, room: 'cellar' }).room.findMany()).toEqual([])
+    expect((await as(sam).room.findMany()).map(r => r.slug).sort()).toEqual(['square', 'tavern'])
+  })
+})
+
 describe('a member', () => {
   test('says a line, stamped as themselves whatever the payload names', async () => {
     const line = await as(sam).message.create({ data: { roomId: square.id, memberId: ana.id, body: '  hi all  ' } })

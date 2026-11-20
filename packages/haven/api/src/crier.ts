@@ -41,7 +41,7 @@ export function createCrier (app: App, db: Db, room: string) {
   }
 
   return {
-    /** A member's first walk-in. A cry the rate limit refuses is dropped. */
+    /** A person's first walk-in; an agent's is never cried (`login.ts`). A cry the rate limit refuses is dropped. */
     async welcome (nick: string): Promise<void> {
       try { await cry(welcomeLine(nick)) }
       catch (e) { console.warn(`[haven] crier: no welcome for ${nick}: ${(e as Error).message}`) }

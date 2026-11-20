@@ -41,8 +41,8 @@ export function translate(error: ConduitError, status?: number, headers?: Record
     ...(code ? { code } : {}),
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
   }
-  // Team Edition answers 400 for scheduled posts and 501 for groups; a 501 grades
-  // as a server fault conduit may replay, and no replay licenses the server.
+  // Team Edition answers 400 for scheduled posts and 501 for groups, which conduit
+  // grades two kinds apart; the code is the one word both carry.
   if (code?.endsWith('license_error')) return { ...base, kind: 'unlicensed', retryable: false }
   if (status === 403 || (error.kind === 'auth_failed' && status === 403)) return { ...base, kind: 'forbidden', retryable: false }
   if (status === 404) return { ...base, kind: 'gone', retryable: false }

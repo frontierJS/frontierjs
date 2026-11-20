@@ -156,7 +156,7 @@ export async function runExport(db, name, opts = {}) {
     since = null, format: formatOverride = null,
     includeProtected = false, withDeleted = false,
     batch = 1000, write, now = () => new Date(),
-    audit = true, tenant = null, where: filter = null,
+    audit = true, tenant = null, place = null, where: filter = null,
   } = opts
 
   if (typeof write !== 'function')
@@ -268,6 +268,8 @@ export async function runExport(db, name, opts = {}) {
       : { principal: as?.id ?? null, system: false, declaredReadGate: declaredReadGate(dataset),
           reads: safeReadGrading(db, dataset.accessor) },
     tenant,
+    // The tenant's declared place: the file says whose jurisdiction it left.
+    place,
     columns,
     rows,
     cursor: cursorColumn ? { column: cursorColumn, after: last ?? null } : null,

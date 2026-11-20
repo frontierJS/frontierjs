@@ -157,8 +157,8 @@ describe('rename — refused by name before a file is written', () => {
   })
 
   it('an operation litestone does not write', async () => {
-    const r = await refuse({ op: 'backfill', model: 'Post', from: 'title', to: 'heading' })
-    expect(r.message).toContain("'backfill' is not an operation litestone writes. It writes: rename")
+    const r = await refuse({ op: 'split', model: 'Post', from: 'title', to: 'heading' })
+    expect(r.message).toContain("'split' is not an operation litestone writes. It writes: rename, backfill")
   })
 
   it('a column named by two operations', () => {
@@ -361,5 +361,151 @@ describe('the file replays', () => {
       for (const stmt of migrationStatements(join(p.migrations, f))) fresh.run(stmt + ';')
     expect(fresh.query(`PRAGMA table_info(post)`).all().map((c: any) => c.name)).toEqual(['id', 'heading', 'views'])
     p.cleanup()
+  })
+})
+
+// A new required column has no value for the rows already there: a rebuild's
+// copy names only the columns the old table shares, and the file is written
+// BLOCKED (`FJS-D428`). A backfill is the value (`FJS-D683`), and every test
+// reads the rows after apply.
+describe('backfill — the rows already there take a value', () => {
+  const COMPANY = `model Company { id Int @id  name String }`
+  const JOB_V1 = `${COMPANY}\nmodel Job { id Int @id  title String }`
+  const JOB_V2 = `${COMPANY}\nmodel Job { id Int @id  title String  companyId Int  company Company @relation(fields: [companyId], references: [id]) }`
+  const JOB_STATUS = `${COMPANY}\nmodel Job { id Int @id  title String  status String }`
+
+  async function jobs(companies: string[] = ['Acme', 'Globex']) {
+    const l = lab()
+    const db = new Database(':memory:')
+    create(db, parse(JOB_V1), 'init', l.migrations)
+    await apply(db, l.migrations)
+    for (const c of companies) db.run(`INSERT INTO company (name) VALUES ('${c}')`)
+    for (let i = 1; i <= 3; i++) db.run(`INSERT INTO job (title) VALUES ('j${i}')`)
+    return { ...l, db }
+  }
+
+  it('without one, the required link is written BLOCKED and apply refuses it', async () => {
+    const p = await jobs()
+    create(p.db, parse(JOB_V2), 'link', p.migrations)
+    expect(latest(p.migrations)).toContain('rebuild BLOCKED')
+    const res = await apply(p.db, p.migrations)
+    expect(res.refused).toBe(true)
+    p.cleanup()
+  })
+
+  it('`first` links every existing row to the first parent row, through the rebuild', async () => {
+    const p = await jobs()
+    const op = { op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }
+    const r = create(p.db, parse(JOB_V2), 'link', p.migrations, { operations: [op] })
+    expect(r.created).toBe(true)
+    const sql = latest(p.migrations)
+    expect(sql).not.toContain('BLOCKED')
+    expect(sql).toContain('backfill Job.companyId ← the first Company row')
+    expect(sql).toContain('(SELECT "id" FROM "company" ORDER BY rowid LIMIT 1)')
+
+    const res = await apply(p.db, p.migrations)
+    expect(res.applied.at(-1)!.ok).toBe(true)
+    expect(p.db.query('SELECT id, title, companyId FROM job ORDER BY id').all()).toEqual([
+      { id: 1, title: 'j1', companyId: 1 }, { id: 2, title: 'j2', companyId: 1 }, { id: 3, title: 'j3', companyId: 1 },
+    ])
+    expect(create(p.db, parse(JOB_V2), 'again', p.migrations).created).toBe(false)
+    p.cleanup()
+  })
+
+  it('`first` skips a trashed parent row', async () => {
+    const SOFT = `model Company { id Int @id  name String  deletedAt DateTime?  @@softDelete }`
+    const l = lab()
+    const db = new Database(':memory:')
+    create(db, parse(`${SOFT}\nmodel Job { id Int @id  title String }`), 'init', l.migrations)
+    await apply(db, l.migrations)
+    db.run(`INSERT INTO company (name, deletedAt) VALUES ('Gone', '2026-01-01T00:00:00.000Z')`)
+    db.run(`INSERT INTO company (name) VALUES ('Live')`)
+    for (let i = 1; i <= 3; i++) db.run(`INSERT INTO job (title) VALUES ('j${i}')`)
+    const op = { op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }
+    create(db, parse(`${SOFT}\nmodel Job { id Int @id  title String  companyId Int  company Company @relation(fields: [companyId], references: [id]) }`), 'link', l.migrations, { operations: [op] })
+    expect((await apply(db, l.migrations)).applied.at(-1)!.ok).toBe(true)
+    expect(db.query('SELECT DISTINCT companyId FROM job').all()).toEqual([{ companyId: 2 }])
+    l.cleanup()
+  })
+
+  it('`value` gives every existing row the constant', async () => {
+    const p = await jobs()
+    const op = { op: 'backfill', model: 'Job', field: 'companyId', value: 2 }
+    expect(create(p.db, parse(JOB_V2), 'link', p.migrations, { operations: [op] }).created).toBe(true)
+    expect(latest(p.migrations)).toContain('backfill Job.companyId ← 2')
+    await apply(p.db, p.migrations)
+    expect(p.db.query('SELECT companyId FROM job ORDER BY id').all()).toEqual([{ companyId: 2 }, { companyId: 2 }, { companyId: 2 }])
+    p.cleanup()
+  })
+
+  it('a column ADD COLUMN cannot take becomes the rebuild that copies the value in', async () => {
+    const p = await jobs()
+    const op = { op: 'backfill', model: 'Job', field: 'status', value: "it's open" }
+    expect(create(p.db, parse(JOB_STATUS), 'status', p.migrations, { operations: [op] }).created).toBe(true)
+    const sql = latest(p.migrations)
+    expect(sql).not.toContain('BLOCKED')
+    expect(sql).toContain(`'it''s open'`)
+    expect((await apply(p.db, p.migrations)).applied.at(-1)!.ok).toBe(true)
+    expect(p.db.query('SELECT status FROM job').all().map((r: any) => r.status)).toEqual(["it's open", "it's open", "it's open"])
+    expect(p.db.query(`SELECT "notnull" FROM pragma_table_info('job') WHERE name = 'status'`).get()).toEqual({ notnull: 1 })
+    p.cleanup()
+  })
+
+  it('an optional column added by ALTER is filled by an UPDATE after it', async () => {
+    const p = await jobs()
+    const src = `${COMPANY}\nmodel Job { id Int @id  title String  note String? }`
+    const op = { op: 'backfill', model: 'Job', field: 'note', value: 'imported' }
+    create(p.db, parse(src), 'note', p.migrations, { operations: [op] })
+    expect(latest(p.migrations)).toContain(`UPDATE "job" SET "note" = 'imported';`)
+    await apply(p.db, p.migrations)
+    expect(p.db.query('SELECT note FROM job').all().map((r: any) => r.note)).toEqual(['imported', 'imported', 'imported'])
+    p.cleanup()
+  })
+
+  it('`first` over an empty parent refuses at apply, naming the operation, and the rows stay', async () => {
+    const p = await jobs([])
+    const op = { op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }
+    expect(create(p.db, parse(JOB_V2), 'link', p.migrations, { operations: [op] }).created).toBe(true)
+    const res = await apply(p.db, p.migrations)
+    const last = res.applied.at(-1) as any
+    expect(last?.ok ?? false).toBe(false)
+    expect(JSON.stringify(res)).toContain('backfill Job.companyId first Company: Company has no rows')
+    expect(p.db.query('SELECT title FROM job ORDER BY id').all()).toEqual([{ title: 'j1' }, { title: 'j2' }, { title: 'j3' }])
+    p.cleanup()
+  })
+
+  it('`first` over an empty parent and an empty table applies — nothing needed a value', async () => {
+    const l = lab()
+    const db = new Database(':memory:')
+    create(db, parse(JOB_V1), 'init', l.migrations)
+    create(db, parse(JOB_V2), 'link', l.migrations, { operations: [{ op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }] })
+    const res = await apply(db, l.migrations)
+    expect(res.applied.every((a: any) => a.ok)).toBe(true)
+    l.cleanup()
+  })
+
+  it('is refused by name before a file is written', async () => {
+    const p = await jobs()
+    const msg = (op: any, src = JOB_V2) => {
+      const r = create(p.db, parse(src), 'x', p.migrations, { operations: [op] })
+      expect(r.created).toBeFalsy()
+      return r.message
+    }
+    const B = { op: 'backfill', model: 'Job', field: 'companyId' }
+    expect(msg(B)).toContain('states one source')
+    expect(msg({ ...B, value: 1, first: 'Company' })).toContain('states one source')
+    expect(msg({ ...B, value: null })).toContain('a string, a finite number or a boolean')
+    expect(msg({ ...B, first: 'Nope' })).toContain('no model Nope')
+    expect(msg({ ...B, first: 'Job' })).toContain('links to Company, not Job')
+    expect(msg({ ...B, field: 'ghost', value: 1 })).toContain('no stored field `ghost`')
+    expect(msg({ ...B, field: 'title', value: 'x' })).toContain('already has job.title')
+    expect(msg({ ...B, first: 'Company" ; DROP TABLE job; --' })).toContain('`first` is the name')
+    expect(listMigrationFiles(p.migrations)).toHaveLength(1)
+    p.cleanup()
+  })
+
+  it('the document carries it, and --operations writes it', () => {
+    const doc = { operations: [{ op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }] }
+    expect(readOperations(doc)).toEqual(doc.operations)
   })
 })

@@ -1607,8 +1607,8 @@ export async function cmdStudio(cfg) {
             const tenants = ids.map(id => {
               const meta = (() => { try { return reg.meta.get(id) } catch { return {} } })()
               let size = 0
-              try { const p = join(_tenantDirOpt, `${id}.db`); if (existsSync(p)) size = statSync(p).size } catch {}
-              return { id, meta, size, active: id === activeTenant }
+              try { const p = reg.pathOf(id); if (existsSync(p)) size = statSync(p).size } catch {}
+              return { id, meta, place: meta?.place ?? null, size, active: id === activeTenant }
             })
             return json({ enabled: true, tenants, openCount: reg.openCount, dir: _tenantDirOpt, activeTenant })
           } catch (e) { return json({ enabled: true, tenants: [], error: e.message }) }
@@ -1630,7 +1630,11 @@ export async function cmdStudio(cfg) {
             activeDb     = tdb
             activeRawDb  = tdb.$db
             activeRawDbs = tdb.$rawDbs
-            return json({ ok: true, activeTenant: id })
+            // A browser beyond loopback is a copy path too: the operator's terminal
+            // says whose jurisdiction's rows it is now showing.
+            const place = reg.meta.get(id)?.place ?? null
+            if (place) console.log(`  tenant ${id} (place ${place}) opened in Studio`)
+            return json({ ok: true, activeTenant: id, place })
           } catch (e) { return json({ error: e.message }, 400) }
         }
 

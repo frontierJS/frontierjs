@@ -20,6 +20,53 @@ const resolver = new ExpressionResolver()
 const run = (src: string, ctx: { trigger?: unknown; nodes?: Record<string, unknown> } = {}) =>
   resolver.resolve(compileExpression(src), { trigger: ctx.trigger ?? null, nodes: ctx.nodes ?? {} })
 
+// `FJS-D1429`: an array, a pipeline and a let, answered by the resolver.
+describe('array, pipe and let', () => {
+  const NODES = { nodes: { a: 2, b: 5, name: '  A,B ', items: [{ v: 1 }, { v: 2 }, { v: 3 }] } }
+
+  test('an array of expressions', () => {
+    expect(run('[$.a, $.b + 1]', NODES)).toEqual([2, 6])
+    expect(compileExpression('[$.a, 1]').type).toBe('array')
+  })
+
+  test('an all-literal bracket is still a list, which compiles to a literal', () => {
+    expect(compileExpression("['a', 2]")).toEqual({ type: 'literal', value: ['a', 2] })
+    expect(run('$.a in [1, 2]', NODES)).toBe(true)
+  })
+
+  test('an empty bracket is still refused', () => {
+    expect(() => compileExpression('[]')).toThrow(/empty list/)
+  })
+
+  test('a pipeline hands each step the value flowing in', () => {
+    expect(run("$.name |> trim |> lower |> split(',')", NODES)).toEqual(['a', 'b'])
+    expect(run('$.items |> map(i => i.v * 2) |> sum', NODES)).toBe(12)
+    expect(run('$.items |> filter(i => i.v > 1) |> reduce(0, (acc, i) => add(acc, i.v))', NODES)).toBe(5)
+    expect(run("$.a |> $ == 2 ? 'two' : 'other'", NODES)).toBe('two')
+  })
+
+  test('a bare name outside a pipeline step is not a call', () => {
+    expect(() => compileExpression('lower')).toThrow(/not defined/)
+  })
+
+  test('a let binds names for the bindings after it and the body', () => {
+    expect(run('let n = $.items.length; n * 2', NODES)).toBe(6)
+    expect(run('let a = $.a, b = a * 10; [a, b]', NODES)).toEqual([2, 20])
+    expect(compileExpression('let n = 1; n')).toEqual({
+      type: 'let', bindings: { n: { type: 'literal', value: 1 } }, body: { type: 'ref', path: '$.n' },
+    })
+  })
+
+  test('a let needs its semicolon, and names a binding once', () => {
+    expect(() => compileExpression('let n = 1 n')).toThrow()
+    expect(() => compileExpression('let n = 1, n = 2; n')).toThrow(/bound twice/)
+  })
+
+  test('a binding is not in scope before it is bound', () => {
+    expect(() => compileExpression('let a = b, b = 1; a')).toThrow(/not defined/)
+  })
+})
+
 const CART = {
   trigger: { body: { amount: 120, email: '  Ada@Example.COM ' } },
   nodes: {

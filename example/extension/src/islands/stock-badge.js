@@ -30,7 +30,8 @@ export default defineIsland({
   // Open only because verify.mjs reads the badge from the page's own world; the default is closed.
   shadowMode: 'open',
 
-  app(root, props) {
+  // A stub, not a compiled component: jetty mounts any function app with Mesa.
+  app: { render(root, props) {
     const box = document.createElement('div')
     box.setAttribute('data-shop-desk', 'stock')
     box.style.cssText = `
@@ -77,5 +78,5 @@ export default defineIsland({
         value.textContent = `error: ${e?.message ?? e}`
       }
     })()
-  },
+  } },
 })

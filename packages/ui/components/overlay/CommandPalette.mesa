@@ -61,7 +61,7 @@
   // without an `input` event, and breaks on any rename of the palette's classes.
 
   import { uid, overlayHost, tone as toTone, cx } from '../../utils.js'
-  import { rank, segments } from '@frontierjs/toolbelt/search'
+  import { createRanker, segments } from '@frontierjs/toolbelt/search'
 
   export let items        = []      // Item[]
   export let placeholder  = 'Search commands…'
@@ -151,8 +151,9 @@
   // with a Bookmarks group lists every bookmark it holds.
   // `keywords` is text a row does not show: "colors extract" on Go to Palette.
   const keys = searchGroups ? ['label', 'group', 'sub', 'keywords'] : ['label', 'sub', 'keywords']
+  const ranker = createRanker(items, { keys, minimumScore })
   const ranked = query.trim()
-    ? rank(items, query, { keys, words: true, minimumScore })
+    ? ranker.rank(query, { words: true })
     : null
 
   const filtered = [...hits, ...(ranked ? ranked.map(r => r.item) : items)]

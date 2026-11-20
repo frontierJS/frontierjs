@@ -21,6 +21,7 @@ import { SEARCH_TABLE, createSearchIndex, searchBackfillSql,
 import { createHash } from '#host'
 import { SEQUENCE_TABLE } from './stamps.js'
 import { quoteIdent } from './query.js'
+import { backfillExpression, backfillGuard } from './operations.js'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).
@@ -1448,17 +1449,24 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
   // person finishing a BLOCKED rebuild edits a slot instead of inventing a
   // column list, and the table keeps the schema's own DEFAULTs (none) instead
   // of a stand-in the schema never declared.
+  //
+  // A backfill (`FJS-D683`) is that slot filled: the added column is copied
+  // from its value expression, whatever its nullability.
+  const fill = diff?.fill ?? new Map()
   const blockedNames = new Set(
     (diff?.cols?.added ?? [])
-      .filter(c => c.notnull && c.default == null && !generatedNames.has(c.name))
+      .filter(c => c.notnull && c.default == null && !generatedNames.has(c.name) && !fill.has(c.name))
       .map(c => c.name),
   )
 
-  const copyNames = targetColNames.filter(n => (!addedNames.has(n) || blockedNames.has(n)) && !generatedNames.has(n))
+  const copyNames = targetColNames.filter(n => (!addedNames.has(n) || blockedNames.has(n) || fill.has(n)) && !generatedNames.has(n))
   const copyCols   = copyNames.map(n => `"${n}"`).join(', ')
   const selectCols = copyNames
-    .map(n => blockedNames.has(n) ? `NULL /* ${quoteIdent(n)}: a value for the existing rows */` : quoteIdent(n))
+    .map(n => fill.has(n) && addedNames.has(n) ? backfillExpression(fill.get(n))
+      : blockedNames.has(n) ? `NULL /* ${quoteIdent(n)}: a value for the existing rows */`
+      : quoteIdent(n))
     .join(', ')
+  const guards = copyNames.flatMap(n => fill.has(n) && addedNames.has(n) ? backfillGuard(fill.get(n), tableName) : [])
 
   const fullDDL   = generateTableDDL(model, parseResult.schema, { pluralize })
   const isStrict  = fullDDL.trimEnd().endsWith('STRICT;')
@@ -1467,6 +1475,7 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 
   const lines = []
   lines.push(`-- rebuild "${tableName}" — full table reconstruction required`)
+  if (guards.length) lines.push(...guards, ``)
   lines.push(`CREATE TABLE "${tmp}" (`)
   lines.push(body)
   lines.push(isStrict ? `) STRICT;` : `);`)
@@ -1487,7 +1496,10 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 // `first` is statements that run inside the transaction before anything the diff
 // asks for: an operation has already happened in the history the diff was read
 // from, and the file has to do it before the rest of its statements assume so.
-export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [] } = {}) {
+//
+// `backfills` are resolved backfill operations: each gives a column the diff
+// adds a value expression for the rows already there (`FJS-D683`).
+export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [], backfills = [] } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
           changedTriggers, droppedTriggers, changedFts, droppedFts,
           changedSearch, droppedSearch, searchBackfills } = diffResult
@@ -1568,11 +1580,18 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     lines.push(``)
   }
 
+  const fills = new Map()
+  for (const o of backfills) {
+    if (!fills.has(o.table)) fills.set(o.table, new Map())
+    fills.get(o.table).set(o.column, o)
+  }
+
   if (tableDiffs.length) {
     lines.push(`-- ─── modified tables ${'─'.repeat(47)}`)
     lines.push(``)
 
-    for (const d of tableDiffs) {
+    for (const diff of tableDiffs) {
+      const d = fills.has(diff.name) ? { ...diff, fill: fills.get(diff.name) } : diff
       // d.name is a SQL table name (snake_case). Match against the pristine
       // model's derived table name — m.name is PascalCase and won't equal d.name
       // under the PascalCase model convention.
@@ -1583,7 +1602,7 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
         // to give existing rows — same rule as blockedAdds on the ALTER path.
         // Emit the whole rebuild commented out with the fix options instead
         // of generating SQL that destroys or corrupts the table.
-        const blocked = (d.cols?.added ?? []).filter(c => c.notnull && c.default == null)
+        const blocked = (d.cols?.added ?? []).filter(c => c.notnull && c.default == null && !d.fill?.has(c.name))
         if (blocked.length) {
           lines.push(...blockedRebuildHint(d.name, blocked))
           lines.push(...sequenceRecipe(model, d.name, blocked))
@@ -1627,6 +1646,15 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
         continue
       }
 
+      // SQLite cannot ADD a NOT NULL column with no DEFAULT, so a blocked add
+      // whose every column carries a backfill becomes the rebuild that copies
+      // the values in — and it builds the simple adds too, which an ALTER ahead
+      // of it would have filled only for the copy to drop.
+      if (d.blockedAdds.length && d.blockedAdds.every(c => d.fill?.has(c.name))) {
+        lines.push(...rebuildStatements(model, parseResult, pluralize, d))
+        continue
+      }
+
       if (d.simpleAdds.length) {
         lines.push(`-- "${d.name}": add columns`)
         for (const col of d.simpleAdds) {
@@ -1639,6 +1667,11 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
           const notNull = col.notnull && col.default !== null ? ` NOT NULL` : ``
           const def     = col.default !== null ? ` DEFAULT ${col.default}` : ``
           lines.push(`ALTER TABLE "${d.name}" ADD COLUMN "${col.name}" ${col.type}${notNull}${def};`)
+          const o = d.fill?.get(col.name)
+          if (o) {
+            lines.push(...backfillGuard(o, d.name))
+            lines.push(`UPDATE ${quoteIdent(d.name)} SET ${quoteIdent(col.name)} = ${backfillExpression(o)};`)
+          }
         }
         lines.push(``)
       }
@@ -1647,8 +1680,9 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
         // The advice is a rebuild and not ADD COLUMN ... DEFAULT then a backfill:
         // the DEFAULT stays on the column, the schema does not declare it, and
         // the next migrate apply refuses the history it left behind.
-        lines.push(...blockedRebuildHint(d.name, d.blockedAdds))
-        lines.push(...sequenceRecipe(model, d.name, d.blockedAdds))
+        const open = d.blockedAdds.filter(c => !d.fill?.has(c.name))
+        lines.push(...blockedRebuildHint(d.name, open))
+        lines.push(...sequenceRecipe(model, d.name, open))
         lines.push(commentedOut(rebuildStatements(model, parseResult, pluralize, d)))
         lines.push(``)
       }

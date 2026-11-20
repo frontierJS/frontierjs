@@ -125,7 +125,7 @@ try {
   defineDock(() => {}); ok('defineDock(fn) accepted')
 } catch (e) { bad('defineDock(fn) threw', e.message) }
 try {
-  defineDock({ app: () => {} }); ok('defineDock({app}) accepted')
+  defineDock({ app: { render() {} } }); ok('defineDock({app}) accepted')
 } catch (e) { bad('defineDock({app}) threw', e.message) }
 try {
   defineDock({ render: () => {} }); ok('defineDock({render}) accepted as app shorthand')
@@ -142,7 +142,7 @@ try {
   bad('defineIsland({}) accepted — should require app or main')
 } catch (_e) { ok('defineIsland({}) rejected (need app or main)') }
 try {
-  defineIsland({ app: () => {}, world: 'MAIN' })
+  defineIsland({ app: { render() {} }, world: 'MAIN' })
   bad('defineIsland({app, world: MAIN}) accepted — should reject')
 } catch (_e) { ok('defineIsland({app, world: MAIN}) rejected') }
 try {

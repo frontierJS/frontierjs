@@ -79,7 +79,7 @@ export const KNOWN_FLAGS = new Set([
   'from-backup', 'gate', 'help', 'host', 'include-deleted-at',
   'include-protected', 'include-timestamps', 'insecure', 'interval', 'json',
   'kinds', 'l0', 'level', 'meta', 'migrations', 'mode', 'no-camel', 'no-env',
-  'no-open', 'only', 'operations', 'orphan', 'out', 'params', 'pluralize', 'port',
+  'no-open', 'only', 'operations', 'orphan', 'out', 'params', 'place', 'pluralize', 'port',
   'preview', 'purpose', 'readonly', 'reference', 'registry', 'rename', 'report',
   'retention', 'schema', 'since', 'skip-existing', 'snapshot', 'stdout',
   'strict', 'suite', 'system', 'tenant', 'token', 'url', 'v', 'vacuum', 'verbose',

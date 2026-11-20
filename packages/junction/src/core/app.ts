@@ -1053,6 +1053,11 @@ export function createApp(opts: AppOptions = {}): App {
       "STRANGER(0) and refuses every job. Give it one: system: { id: 'system', … }."
     )
 
+  // A policy admits the app's own principal by `auth().isSystem` (FJS-D1013).
+  // Left to each app, a principal that forgot it finds no row and the move it
+  // was making answers null with nothing said.
+  if (opts.system) opts = { ...opts, system: { ...opts.system, isSystem: true } }
+
   const tenantConfigStore: TenantConfigStore | null = opts.tenantConfig
     ? createTenantConfigStore(() => config, opts.tenantConfig)
     : null

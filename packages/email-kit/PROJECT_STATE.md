@@ -57,9 +57,9 @@ the traps behind them, and the one consequence to know (render through
 
 ## Open — see `ISSUES.md`
 
-**`FJS-053`** never opened in a real mail client. `FJS-051` (package name vs
-directory, ruled `FJS-D15`) and `FJS-052` (`import.meta.url.pathname` on
-Windows, `autoImport`) are both closed now.
+None. Never opening a real mail client is the standing caveat above, not a row
+(`FJS-D1376`): the guard is `lintMso` in `email-kit.test.js`, which checks every
+conditional comment each component and template renders.
 
 No integration with `@frontierjs/ui` or `@frontierjs/css`, and there should not
 be: email needs inlined table markup and the css package ships a stylesheet. The

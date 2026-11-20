@@ -88,6 +88,14 @@
  * Only the origin's list is searched for the dragged ids, so a foreign record
  * sharing an id with a row of the target never hides that row.
  *
+ * `copy: true` on a zone makes it a palette (`FJS-D1166`): an item dragged out
+ * of it is copied and the zone is never handed a list without it, so its rows
+ * stay on screen for the whole drag. It takes no drop of its own — a drop back
+ * into it, pointer or Space, is a cancel — and a drop into another zone
+ * finalizes it with trigger `copiedIntoAnother` and its rows unchanged. The
+ * copy keeps the original's `id`: a target keyed on it re-ids it in
+ * `onfinalize`.
+ *
  * Not built: nested zones of one type, and a
  * grid whose cells span tracks (a flow list or a wrap is detected per zone from
  * its children's rects).
@@ -110,6 +118,7 @@ export const TRIGGERS = {
   DROPPED_INTO_ANOTHER:  'droppedIntoAnother',
   DROPPED_OUTSIDE_OF_ANY: 'droppedOutsideOfAny',
   DROPPED_ONTO_ITEM:     'droppedOntoItem',
+  COPIED_INTO_ANOTHER:   'copiedIntoAnother',
 }
 
 const ITEM_ID_KEY            = 'id'
@@ -143,6 +152,7 @@ const DEFAULTS = {
   dropOnto:                undefined,
   accept:                  undefined,
   dragSet:                 undefined,
+  copy:                    false,
   onconsider:              undefined,
   onfinalize:              undefined,
 }
@@ -473,7 +483,17 @@ function restored(origin) {
   return items
 }
 
+/** The origin of a copy, which is never handed a list without the dragged
+ *  items: it stands at the index they left from and takes no drop. */
+function isPalette(meta) {
+  return session.copy && meta.node === session.originNode
+}
+
 function considerWithShadowAt(meta, idx, trigger) {
+  if (isPalette(meta)) {
+    meta.placeholderIndex = session.originIndex
+    return
+  }
   const items = itemsWithoutShadow(meta)
   items.splice(idx, 0, meta.shadow ?? session.shadowItem)
   meta.placeholderIndex = idx
@@ -589,6 +609,7 @@ function openSession(zoneNode, itemEl, itemIdx, fields) {
     travel,
     grabbedAt:   travel.findIndex((t) => t.item === grabbed),
     shadowItem:  { ...grabbed, [ITEM_ID_KEY]: SHADOW_PLACEHOLDER_ITEM_ID, [SHADOW_ITEM_MARKER]: true },
+    copy:        !!cfg.copy,
     grabbedEl:   itemEl,
     grabbedRect: rect,
     dragW:       rect.width,
@@ -607,9 +628,11 @@ function openSession(zoneNode, itemEl, itemIdx, fields) {
   return true
 }
 
-/** Hand the origin its placeholder. The rest of a stack leaves the origin's
- *  DOM in the render this causes, so every measure taken is stale after it. */
+/** Mark the zones that take the drop and hand the origin its placeholder. The
+ *  rest of a stack leaves the origin's DOM in the render this causes, so every
+ *  measure taken is stale after it. */
 function lift() {
+  for (const z of session.zones) if (!isPalette(z)) z.node.setAttribute(TARGET_ATTR, '')
   considerWithShadowAt(session.current, session.originIndex, TRIGGERS.DRAG_STARTED)
   if (session.items.length > 1) scheduleRemeasure()
 }
@@ -633,8 +656,6 @@ function startDrag(arm, e) {
   session.ghostBase   = { left: baseLeft, top: baseTop }
   session.startClient = { x: e.clientX, y: e.clientY }
   cfg.transformDraggedElement?.(ghost, session.itemData, itemIdx)
-
-  for (const z of session.zones) z.node.setAttribute(TARGET_ATTR, '')
 
   lift()
 
@@ -731,7 +752,6 @@ function startKeyboardDrag(zoneNode, itemEl, liftEvent) {
   if (!openSession(zoneNode, itemEl, itemIdx, fields)) return
   const meta = session.current
   session.label = session.items.length > 1 ? `${session.items.length} items` : labelOf(itemEl)
-  for (const z of session.zones) z.node.setAttribute(TARGET_ATTR, '')
 
   lift()
 
@@ -754,7 +774,7 @@ function keyboardKey(e) {
   if (e.key === ' ') {
     e.preventDefault()
     if (e.repeat) return
-    say('dropped', meta)
+    say(isPalette(meta) ? 'cancelled' : 'dropped', meta)
     finishDrag(true)
     return
   }
@@ -775,6 +795,7 @@ function keyboardKey(e) {
     return
   }
   e.preventDefault()
+  if (isPalette(meta)) return
   if (meta.neg) step = -step
   const idx = Math.min(itemsWithoutShadow(meta).length, Math.max(0, meta.placeholderIndex + step))
   if (idx === meta.placeholderIndex) return
@@ -880,6 +901,7 @@ function tick() {
 
 function leave(meta) {
   meta.placeholderIndex = null
+  if (isPalette(meta)) return
   notify(meta.node, 'onconsider', itemsWithoutShadow(meta), TRIGGERS.DRAGGED_LEFT)
 }
 
@@ -903,7 +925,7 @@ function hitTest() {
   let target = null
   let cx = 0, cy = 0
   for (const meta of session.zones) {
-    if (clippedAt(meta, session.pointer.clientX, session.pointer.clientY)) continue
+    if (isPalette(meta) || clippedAt(meta, session.pointer.clientX, session.pointer.clientY)) continue
     const { dx, dy } = ancestorDelta(meta)
     // An ancestor's scroll moves the zone on screen; moving the pointer by the
     // same delta and testing the old snapshot is the same question.
@@ -1028,6 +1050,7 @@ function finishDrag(skipAnimation) {
   const cfg    = target.config
   const animMs = skipAnimation ? 0 : cfg.dropAnimationMs
   const onto   = session.onto?.item ? session.onto : null
+  if (isPalette(target)) session.outside = true
 
   const settle = () => {
     if (!session) return
@@ -1057,8 +1080,11 @@ function finishDrag(skipAnimation) {
     // a drop to and nobody released anything.
     if (!session.quiet) {
       notify(target.node, 'onfinalize', finalItems, trigger, extra)
-      if (target !== origin && origin)
-        notify(origin.node, 'onfinalize', onto ? restored(origin) : itemsWithoutShadow(origin), TRIGGERS.DROPPED_INTO_ANOTHER, extra)
+      if (target !== origin && origin) {
+        const kept = onto || session.copy
+        notify(origin.node, 'onfinalize', kept ? restored(origin) : itemsWithoutShadow(origin),
+          session.copy ? TRIGGERS.COPIED_INTO_ANOTHER : TRIGGERS.DROPPED_INTO_ANOTHER, extra)
+      }
     }
 
     session.ghost?.remove()
@@ -1104,6 +1130,7 @@ function finishDrag(skipAnimation) {
  *   dropOnto?: boolean | ((item: any) => boolean),
  *   accept?: (dragged: any) => {id: any} | null | undefined,
  *   dragSet?: () => Array<{id: any}>,
+ *   copy?: boolean,
  *   onconsider?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string}}) => void,
  *   onfinalize?: (e: {items: any[], info: {trigger: string, id: any, items: any[], source: string, target?: any}}) => void,
  * }} getOptions

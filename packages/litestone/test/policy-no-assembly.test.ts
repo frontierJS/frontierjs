@@ -25,4 +25,20 @@ describe('a policy refuses the flow-only value forms', () => {
     await expect(createClient({ schema: schema('{ a: 1 } == status') } as never))
       .rejects.toThrow(/object builds a value/)
   })
+
+  // FJS-D1429 grew three more in the flow dialect.
+  test('an array of expressions', async () => {
+    await expect(createClient({ schema: schema("status in [status, 'x']") } as never))
+      .rejects.toThrow(/array of expressions builds a value/)
+  })
+
+  test('a pipeline', async () => {
+    await expect(createClient({ schema: schema("status |> lower == 'x'") } as never))
+      .rejects.toThrow(/pipeline builds a value/)
+  })
+
+  test('a let', async () => {
+    await expect(createClient({ schema: schema("let s = status; s == 'x'") } as never))
+      .rejects.toThrow(/let binds names/)
+  })
 })

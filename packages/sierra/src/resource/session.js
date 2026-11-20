@@ -121,6 +121,13 @@ export function initSession(client, { relayed = false } = {}) {
     return
   }
 
+  // STRANGER(0) is true only with no credential. A token an app sets on the
+  // client itself (a terminal handed one, Haven's walk-in) is a caller nobody
+  // has graded yet: left at 0, every tether over a gated model skipped its
+  // load with no error (FJS-4470). A sign-in adopts after the token lands, so
+  // its level replaces this one.
+  client.on?.('token', (token) => { _w.level = token ? null : 0 })
+
   // No credential means no question to ask — and asking anyway would answer 401
   // on every cold visit to a public page, filling the console for anonymous
   // traffic that is behaving correctly.

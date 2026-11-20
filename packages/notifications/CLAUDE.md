@@ -31,6 +31,8 @@ drivers/
   webpush.ts      `webPush()` — a driver the app REGISTERS (RFC 8291/8188/8292); the subscription is the app's row
   ntfy.ts         `ntfy()` — the other `push` driver; POSTs to `recipient.pushTopic`, refuses an absent one
 examples/         wiring.ts + two notifications + Notification.mesa + PushToggle.mesa (copy-in)
+resource/         `./resource/*.mesa` — NotificationBell, NotificationList (take the APP's `notifications`
+                  resource as a prop) + rows.js, the one place a row is read and written
 test/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
                   define.test.ts, schema-fragment.test.ts + fixtures/notifications/
 ```
@@ -58,8 +60,9 @@ the transport that needs no account.
 - **An email body may be a rendered template**, not just builder lines — the
   order confirmation in `example/` is a `.mesa` file in the *app*, which is what
   proved a consumer outside email-kit could import its components at all.
-- **Fan-out runs on the queue, after the response.** A test that asserts
-  immediately after the call asserts on nothing.
+- **`app.notify` resolves after every transport has.** The in-app row commits
+  first and the rest run in parallel after it, so a test reads the row on the
+  next line with no wait.
 - **Formatting happens once.** `notify()` builds each transport's message during
   validation and delivers that one; a second call would run a template render
   twice.
@@ -97,6 +100,11 @@ the transport that needs no account.
   finds that row and writes none; the driver writes the column only when a key
   is declared, so an app copy without it keeps working until something keys.
   An unkeyed send writes a row every time, by design.
+- **A formatter is its payload's grader** (`FJS-D861`). An activated orion flow
+  sends any declared notification with any payload to any user (`FJS-D291`),
+  and the in-app driver writes `data` as the system — so an `inApp` formatter
+  that spreads `payload` into `data` puts a flow's numbers in someone's bell.
+  Check or pick the fields; nothing downstream will.
 - **`app.notify` reads three members and never asks which shape produced them** —
   `notificationType`, `via(recipient)`, `getMessageFor(transport, recipient)`,
   plus the optional `key(recipient)`.
@@ -106,6 +114,14 @@ the transport that needs no account.
 - **A wrong `webPush` build answers `201`.** The push service cannot read the body, so no status or length check can fail; `test/webpush.test.ts` holds RFC 8291 Appendix A byte for byte and decrypts from the device's private key. A change to `drivers/webpush.ts` keeps both. The driver prunes on 404/410 only and collects every other refusal until each device was tried.
 
 - **One `PushMessage` for two `push` drivers** (`types.ts`). `webPush()` strips `priority`/`tags`/`actions`/`always` before the payload and `ntfy()` drops `data`/`ttl`/`urgency`/`topic`/`always`; a field added to the shape is placed in one of those two lists or it leaks onto the other wire.
+
+- **`resource/` is Mesa source in a `.ts` package.** tsconfig includes only `*.ts`, so its
+  typecheck never sees it; `test/resource-components.test.ts` compiles both and parses the
+  output (Invariant 15). Every write is `notifications.mutate(id, intent, run)` in `rows.js`
+  (`FJS-2111`) — a bare `service.patch` leaves the row unread in every list. The components
+  read the unread count off their own `tethered()` over the prop, so they are mounted only
+  while someone is signed in, and a snippet prop is never named `row` inside a `Table` that
+  declares its own `{#snippet row}`.
 
 ## Proving a change
 

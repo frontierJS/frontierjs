@@ -2,11 +2,11 @@
 // from data/docs-guides.js. `head()` titles each page: frontmatter is static
 // text, and every guide would otherwise share one title.
 
-import { loadGuides, loadGuidePage } from '../../../data/docs-guides.js'
-import { docsNav }                    from '../../../data/docs-nav.js'
+import { stubs, loadGuidePage } from '../../../data/docs-guides.js'
+import { docsNav }               from '../../../data/docs-nav.js'
 
 export async function getStaticPaths() {
-  return loadGuides().flatMap((s) => s.guides.map((g) => ({ slug: g.slug })))
+  return stubs().map((g) => ({ slug: g.slug }))
 }
 
 export async function load({ params }) {

@@ -27,6 +27,7 @@ import {
 } from './src/credentials.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './src/trace.ts'
 import { ConduitStreamError, CONDUIT_ERROR_KINDS } from './src/types.ts'
+import { countsAsTargetFault } from './src/resilience.ts'
 import type {
   TargetDescriptor,
   ConduitRequest,
@@ -2146,6 +2147,28 @@ describe('retries', () => {
       expect(hits).toBe(2)          // initial + 1 retry
     } finally { s.stop() }
   })
+
+  // FJS-4397 / FJS-D2251: Mattermost Team Edition answers groups with a 501
+  // license_error, and no replay licenses the server.
+  for (const status of [501, 505]) {
+    it(`grades a ${status} not_implemented and never replays it`, async () => {
+      let hits = 0
+      const s = recorder(() => { hits++; return Response.json({ id: 'api.license_error' }, { status }) })
+      try {
+        const target = providerTarget({ address: s.url })
+        const t = new HttpTransport(target, secrets(), { retry_limit: 3 })
+
+        const result = await t.send({ target: target.id, method: 'GET', path: '/groups' })
+
+        expect(result.error!.kind).toBe('not_implemented')
+        expect(result.error!.retryable).toBe(false)
+        expect(JSON.parse(result.error!.raw as string)).toEqual({ id: 'api.license_error' })
+        expect(result.meta.status).toBe(status)
+        expect(hits).toBe(1)
+        expect(countsAsTargetFault(result.error!.kind)).toBe(false)
+      } finally { s.stop() }
+    })
+  }
 
   it('forwards the idempotency key as a header', async () => {
     const s = recorder(() => Response.json({ ok: true }))

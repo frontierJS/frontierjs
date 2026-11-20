@@ -107,9 +107,12 @@ export function runAudit({ distDir, manifest }) {
   // 'scripting' is auto-added when islands exist — exclude from unused even
   // if no chrome.scripting.* call is in code (Harbor uses it via the framework's
   // own indirection, not via direct chrome.scripting calls in user code).
+  // 'activeTab' is auto-added for an `inject: 'gesture'` island, and the grant is
+  // exercised by Harbor's executeScript, so no call in user code names it.
+  const hasIslands = manifest.web_accessible_resources?.some((r) => r.resources?.some((res) => res.startsWith('islands/')))
   const unused = [...declaredPerms].filter((p) => {
     if (requiredPermSet.has(p)) return false
-    if (p === 'scripting' && (manifest.web_accessible_resources?.some((r) => r.resources?.some((res) => res.startsWith('islands/'))))) return false
+    if ((p === 'scripting' || p === 'activeTab') && hasIslands) return false
     return true
   })
 

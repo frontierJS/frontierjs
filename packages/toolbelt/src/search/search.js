@@ -90,33 +90,84 @@ export function score(text, query) {
  *   those of every word that matched in it.
  */
 export function rank(items, query, { keys, minimumScore = 0, limit, words = false, weights } = {}) {
-  if (!Array.isArray(items) || items.length === 0) return []
+  return createRanker(items, { keys, minimumScore }).rank(query, { limit, words, weights })
+}
 
-  const q  = query == null ? '' : String(query)
+/**
+ * Index a corpus once and rank it against many queries — what a picker that
+ * ranks per keystroke holds, where `rank()` re-folds the whole corpus each call.
+ *
+ * The index belongs to the ranker and reads `items` as they were handed in: an
+ * edited list is a new ranker, and nothing is cached by identity. Answers are
+ * those of `rank(items, query, { keys, minimumScore, ...opts })`.
+ *
+ * @param {unknown[]} items   As `rank()` takes them.
+ * @param {object}   [opts]
+ * @param {Array<string|string[]>} [opts.keys]  As `rank()`.
+ * @param {number}   [opts.minimumScore=0]  As `rank()`.
+ * @returns {{ rank: (query: string, opts?: { limit?: number, words?: boolean, weights?: Record<string, number> }) => ReturnType<typeof rank> }}
+ */
+export function createRanker(items, { keys, minimumScore = 0 } = {}) {
+  const empty = !Array.isArray(items) || items.length === 0
+  // Each half is built on first use, so a ranker only ever asked for `words`
+  // never builds a QuickScore and one never asked for it never folds fields.
+  let qs, prepared
 
-  // An empty query takes the plain path, so a list that opts into `words`
-  // opens in the same order as one that does not.
-  if ((words || weights) && q.trim()) {
-    const out = rankWords(items, q, { keys, minimumScore, words, weights })
-    return typeof limit === 'number' ? out.slice(0, limit) : out
+  return {
+    rank(query, { limit, words = false, weights } = {}) {
+      if (empty) return []
+
+      const q = query == null ? '' : String(query)
+
+      // An empty query takes the plain path, so a list that opts into `words`
+      // opens in the same order as one that does not.
+      if ((words || weights) && q.trim()) {
+        prepared ??= prepare(items, keys)
+        const out = rankWords(prepared, q, { minimumScore, words, weights })
+        return typeof limit === 'number' ? out.slice(0, limit) : out
+      }
+
+      qs ??= new QuickScore(items, { ...(keys ? { keys } : {}), minimumScore })
+
+      const out = qs.search(q).map((r) => {
+        // A string list answers a flat array of ranges; a keyed list answers a map,
+        // and `scoreKey` names the field that won. Normalizing to one array here is
+        // what keeps the common case — highlight the label — a single read.
+        const keyed  = r.matches && !Array.isArray(r.matches)
+        const key    = keyed ? (r.scoreKey || null) : null
+        const ranges = keyed ? (r.matches[key] ?? []) : (r.matches ?? [])
+
+        return keyed
+          ? { item: r.item, score: r.score, key, ranges, byKey: r.matches }
+          : { item: r.item, score: r.score, key, ranges }
+      })
+
+      return typeof limit === 'number' ? out.slice(0, limit) : out
+    },
   }
+}
 
-  const qs = new QuickScore(items, { ...(keys ? { keys } : {}), minimumScore })
+/*
+ * What `words` and `weights` read from each item, computed once per ranker:
+ * its fields with their text folded, and the sort key ties fall back on.
+ * Without `keys`, every string field of the item is scored, as QuickScore does.
+ */
+function prepare(items, keys) {
+  const strings = typeof items[0] === 'string'
+  const shared  = strings ? null : keys?.length ? keys.map(keyOf) : null
+  const sortKey = shared?.[0]?.name
 
-  const out = qs.search(q).map((r) => {
-    // A string list answers a flat array of ranges; a keyed list answers a map,
-    // and `scoreKey` names the field that won. Normalizing to one array here is
-    // what keeps the common case — highlight the label — a single read.
-    const keyed  = r.matches && !Array.isArray(r.matches)
-    const key    = keyed ? (r.scoreKey || null) : null
-    const ranges = keyed ? (r.matches[key] ?? []) : (r.matches ?? [])
+  const rows = items.map((item) => {
+    const fields = (strings
+      ? [{ name: null, text: item == null ? '' : String(item) }]
+      : (shared ?? Object.keys(item ?? {}).map(keyOf)).map((k) => ({ name: k.name, text: valueAt(item, k.path) }))
+    ).map((f) => ({ ...f, folded: f.text && typeof f.text === 'string' ? f.text.toLocaleLowerCase() : undefined }))
 
-    return keyed
-      ? { item: r.item, score: r.score, key, ranges, byKey: r.matches }
-      : { item: r.item, score: r.score, key, ranges }
+    const sort = strings ? fields[0].folded ?? '' : sortKey ? valueAt(item, shared[0].path)?.toLocaleLowerCase?.() : undefined
+    return { item, fields, sort }
   })
 
-  return typeof limit === 'number' ? out.slice(0, limit) : out
+  return { strings, rows }
 }
 
 /*
@@ -126,30 +177,22 @@ export function rank(items, query, { keys, minimumScore = 0, limit, words = fals
  * scorer itself, once per word per field. Ties sort as QuickScore sorts them:
  * the first key's text, case-insensitively, a missing one last.
  */
-function rankWords(items, q, { keys, minimumScore, words, weights }) {
+function rankWords({ strings, rows }, q, { minimumScore, words, weights }) {
   const phrase = q.trim()
   const parts  = words ? phrase.split(/\s+/) : [phrase]
   const lower  = parts.map((p) => p.toLocaleLowerCase())
-  const strings = typeof items[0] === 'string'
-  const shared  = strings ? null : keys?.length ? keys.map(keyOf) : null
-  const sortKey = shared?.[0]?.name
+  const phraseLower = phrase.toLocaleLowerCase()
   const scored  = []
 
-  for (const item of items) {
-    // Without `keys`, every string field of the item is scored, as QuickScore does.
-    const fields = strings
-      ? [{ name: null, text: item == null ? '' : String(item) }]
-      : (shared ?? Object.keys(item ?? {}).map(keyOf)).map((k) => ({ name: k.name, text: valueAt(item, k.path) }))
-
+  for (const { item, fields, sort } of rows) {
     const best   = parts.map(() => ({ score: 0, name: null }))
     const byWord = Object.create(null)
     let whole    = { score: 0, name: null }
     const byWhole = Object.create(null)
 
-    for (const { name, text } of fields) {
+    for (const { name, text, folded } of fields) {
       if (!text || typeof text !== 'string') continue
       const weight = weights?.[name] ?? 1
-      const folded = text.toLocaleLowerCase()
 
       parts.forEach((part, i) => {
         const ranges = []
@@ -162,7 +205,7 @@ function rankWords(items, q, { keys, minimumScore, words, weights }) {
 
       if (parts.length > 1) {
         const ranges = []
-        const s = quickScore(text, phrase, ranges, folded, phrase.toLocaleLowerCase()) * weight
+        const s = quickScore(text, phrase, ranges, folded, phraseLower) * weight
         if (s > whole.score) whole = { score: s, name }
         if (s > minimumScore) byWhole[name] = ranges
       }
@@ -188,8 +231,6 @@ function rankWords(items, q, { keys, minimumScore, words, weights }) {
       if (key === 'null') key = null
       byKey = Object.fromEntries(Object.entries(byWord).map(([k, r]) => [k, mergeRanges(r)]))
     }
-
-    const sort = strings ? fields[0].text.toLocaleLowerCase() : sortKey ? valueAt(item, shared[0].path)?.toLocaleLowerCase?.() : undefined
 
     scored.push(strings
       ? { item, score, key: null, ranges: byKey.null ?? [], sort }

@@ -14,6 +14,12 @@ export interface Markup { html: string; text: string }
  */
 export function fill(source: string, ctx: Record<string, unknown>, options: { mode: FillMode }): string
 
+/**
+ * The text of every hole `fill` leaves standing in `source`, in order -- a brace
+ * pair as written, an unclosed `{` with the rest of the source. Empty is no gap.
+ */
+export function unfilled(source: string, ctx: Record<string, unknown>): string[]
+
 /** One piece of `source`: literal text (`\{` already `{`), a brace pair, or a `{` that never closes. */
 export type Segment = { text: string } | { hole: string; raw: string } | { open: string }
 
@@ -23,7 +29,7 @@ export function segments(source: string): Generator<Segment>
 /** A hole in `source` that could never fill. */
 export interface FillProblem { hole: string; message: string }
 
-/** Every refusal for `source` against the closed list `{ owner: ['field', …] }`; empty is clean. */
+/** Every refusal for `source` against the closed list `{ owner: ['field', 'path.to.field', …] }`; empty is clean. */
 export function check(source: string, names: Record<string, string[]>): FillProblem[]
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'money'

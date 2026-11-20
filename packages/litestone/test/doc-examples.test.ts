@@ -54,7 +54,10 @@ const TIMEOUT = 15_000
 
 function corpus() {
   const md = d => readdirSync(join(PKG, d)).filter(f => f.endsWith('.md') && !f.includes('.snapshot.')).map(f => `${d}/${f}`)
-  return ['README.md', 'AGENTS.md', 'CLAUDE.md', ...md('docs'), ...md('docs/guides')]
+  // The guide is a folder per section, and a page a reader copies from is the
+  // last place an unrun example may hide.
+  const guide = readdirSync(join(PKG, 'docs/guide'), { withFileTypes: true }).filter(e => e.isDirectory()).flatMap(e => md(`docs/guide/${e.name}`))
+  return ['README.md', 'AGENTS.md', 'CLAUDE.md', ...md('docs'), ...md('docs/guides'), ...md('docs/guide'), ...guide]
 }
 
 type Block = { file: string, line: number, lang: string, words: Set<string>, body: string, schema: string | null }

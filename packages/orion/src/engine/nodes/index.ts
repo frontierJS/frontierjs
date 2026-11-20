@@ -208,9 +208,14 @@ const flowEach: INodeImplementation = {
 const flowWait: INodeImplementation = {
   type: "flow.wait",
   async execute(ctx: NodeContext) {
-    const { event, timeoutMs, resumeKey: into = "resumePayload" } = ctx.config
+    const { event, timeoutMs, resumeKey: into = "resumePayload", onTimeout = "fail" } = ctx.config
     if (typeof event !== "string") {
       return { ok: false, error: "flow.wait: config.event must be a string" }
+    }
+    // Anything else would read as `fail` in the store, so a misspelling would
+    // fail the run at its deadline instead of continuing it.
+    if (onTimeout !== "fail" && onTimeout !== "continue") {
+      return { ok: false, error: "flow.wait: config.onTimeout must be 'fail' or 'continue'" }
     }
     return {
       ok:   true,
@@ -222,6 +227,7 @@ const flowWait: INodeImplementation = {
         event,
         timeoutAt:    timeoutMs != null ? Date.now() + Number(timeoutMs) : null,
         into:         String(into),
+        onTimeout,
       },
     }
   },

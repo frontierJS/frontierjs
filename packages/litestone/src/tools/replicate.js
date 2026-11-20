@@ -347,7 +347,8 @@ export function requireLitestream() {
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
-// targets: [{ name, path } | { name, dir, pattern }] — SQLite only, already filtered by the caller
+// targets: [{ name, path } | { name, dir, pattern }] — SQLite only, already filtered by the caller;
+//          a target's own `url` (a place's declared replica) beats `<options.url>/<name>`
 // options: { url, syncInterval, retentionPeriod, l0Retention }
 // dir:     where .litestone/litestream.yml is written (the schema's directory)
 
@@ -362,7 +363,7 @@ export async function replicate({ targets, options, dir, verbose = true }) {
   const resolved = targets.map(t => ({
     ...t,
     ...(t.dir ? { dir: resolve(t.dir) } : { path: resolve(t.path) }),
-    url:  replicaUrl(options.url, t.name),
+    url:  t.url ?? replicaUrl(options.url, t.name),
   }))
 
   // ── Guard: every database file must exist ────────────────────────────────

@@ -3,7 +3,7 @@
 // over a real stage and a presence snapshot of the shape `here.get()` hands.
 import { test, expect } from 'bun:test'
 import { createStage } from '../src/lib/scene/stage.js'
-import { BUBBLE, bubbles, cellOf, figures, inView, NEAR, plates } from '../src/lib/scene/crowd.js'
+import { AGENT_TAG, BUBBLE, bubbles, cellOf, figures, inView, labels, NEAR, plates } from '../src/lib/scene/crowd.js'
 
 const spawn = { x: 5, y: 5 }
 const stage = createStage({ slug: 'crowd', palette: {}, spawn, manual: true })
@@ -67,4 +67,14 @@ test('a speaker past the view is a marker on the edge facing them', () => {
   const [b] = bubbles(h, [said(1, 2, '!yo')], 5, 5, view, spawn)
   expect(b.rows).toEqual(['(!yo)>'])
   expect(b.x + b.rows[0].length).toBe(view.w)
+})
+
+// FJS-D1651: a room shows which member is an agent, wherever a nick is printed.
+test("an agent's nick carries its tag on the plate and the bubble, and a member's does not", () => {
+  const names = labels({ 2: 'ace', 3: 'sam' }, { 2: true })
+  expect(names).toEqual({ 2: `ace${AGENT_TAG}`, 3: 'sam' })
+  const h = here([member(2, 8, 6), member(3, 6, 6)])
+  expect(plates(h, view, names, 5, 5, stage, spawn).map((p) => p.text).sort()).toEqual([`ace${AGENT_TAG}`, 'sam'])
+  const [b] = bubbles(h, [said(1, 2, 'hello')], 5, 5, view, spawn, { names })
+  expect(b.name.text).toBe(`ace${AGENT_TAG}:`)
 })

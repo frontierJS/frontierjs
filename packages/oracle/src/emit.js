@@ -30,8 +30,9 @@
 // An op nobody holds is raised to gate 8 rather than left at a signed-in
 // level with no policy, which is the shape that read every tenant's rows in
 // the freehand run. `shared` and `public` are the two ways to say otherwise,
-// and `checkAnswer` lists each as a finding. `shared` says it of the read
-// alone: the writes follow the links above, and one nobody holds is level 5's.
+// and `checkAnswer` lists each as a finding. `shared` says it of the ops it
+// names, the read at least: the writes it leaves follow the links above, and
+// one nobody holds is level 5's.
 //
 // The first owner/author/coordinator column is stamped `@default(auth().id)`,
 // so a create through the API names its caller without being told — except
@@ -103,6 +104,10 @@ function emitPlan(plan) {
     out.push('// Open — asked, not answered, and so not in the schema:')
     for (const q of plan.open) out.push(...comment(`  ${q}`))
   }
+
+  // litestone refuses a policy reading a claim the schema never declared, and
+  // the app's system principal is the one that states it.
+  if (plan.models.some(movesBySystem)) out.push('', 'claim isSystem')
 
   for (const m of plan.models) {
     out.push('')
@@ -324,6 +329,8 @@ function transitions(life) {
 // ─── access ───────────────────────────────────────────────────────────────────
 
 const OPS = ['read', 'create', 'update', 'delete']
+const SYSTEM_CLAIM = 'auth().isSystem'
+const movesBySystem = (m) => !!m.lifecycle?.moves.some(mv => mv.by === 'system')
 
 /**
  * Every model's gate and policies, keyed by name. Memoized and computed
@@ -421,6 +428,11 @@ function accessFor(m, of, backs) {
     }
   }
 
+  // The app's system principal makes a `@system` move through the same client
+  // an owner uses, so an owner-only update policy finds no row for it and the
+  // move answers null. Only that principal carries this claim.
+  const systemMove = movesBySystem(m)
+
   const gate = []
   const policies = []
   // An op the gate alone decides is said with @@allow(op, true): silent, advise
@@ -428,12 +440,13 @@ function accessFor(m, of, backs) {
   // has no other way to say it is meant. Kept apart from `policies`, which
   // changeOp reads to pick what a child delegates to.
   const gateOnly = []
+  let updateBase = null
   for (const op of OPS) {
-    // `shared` opens the read to every signed-in caller and nothing else: a
-    // write stays with the actor links that hold it, and one no link holds is
-    // an administrator's. It once returned before the links were read, so an
-    // instructor could not post the class every member reads.
-    if (a.shared && op === 'read') { gate.push(4); gateOnly.push(['read', 'true']); continue }
+    // `shared` hands every signed-in caller the ops it names, the read always,
+    // and no other: a write stays with the actor links that hold it, and one no
+    // link holds is an administrator's. It once returned before the links were
+    // read, so an instructor could not post the class every member reads.
+    if (a.shared && (a.sharedOps ?? ['read']).includes(op)) { gate.push(4); gateOnly.push([op, 'true']); continue }
     // On a container, `system` is the onboarding that creates it and the
     // teardown that deletes it; renaming it stays with its members.
     const system = a.system && op !== 'read' && !(m.members && op === 'update')
@@ -444,6 +457,16 @@ function accessFor(m, of, backs) {
       if (op === 'create' && createParent) expr = or ? `${createParent} && (${or})` : createParent
       else expr = or
     }
+    // A move reads the row as the caller first, so a read policy that omits the
+    // principal answers the move with no row at all.
+    if (op === 'read' && systemMove && expr) expr = `${expr} || ${SYSTEM_CLAIM}`
+    if (op === 'update' && systemMove && !open) {
+      // With nobody else holding the update, the claim stands alone and is not
+      // a policy a child may delegate to: changeOp would send its writes to
+      // the system principal in place of whoever reads the parent.
+      if (expr) { updateBase = expr; expr = `${expr} || ${SYSTEM_CLAIM}` }
+      else { gate.push(4); gateOnly.push([op, SYSTEM_CLAIM]); continue }
+    }
     gate.push(system ? 8 : pub.includes(op) ? 0 : expr ? 4 : a.shared ? 5 : 8)
     if (expr) policies.push([op, expr])
     else if (!system && gate.at(-1) < 8) gateOnly.push([op, 'true'])
@@ -452,10 +475,11 @@ function accessFor(m, of, backs) {
   // into somebody else's parent is admitted by the parent it is leaving.
   // postUpdate grades where it lands: the create's parent rule there, and the
   // update's own.
-  const update = policies.find(([op]) => op === 'update')?.[1]
+  const update = updateBase ?? policies.find(([op]) => op === 'update')?.[1]
   if (update && (a.via || m.container) && (createParent || update.includes('check('))) {
     const lands = createParent && !update.includes(`check(${a.via},`) ? `${createParent} && (${update})` : update
-    policies.push(['postUpdate', lands])
+    // The system principal is not asked to read the parent it moves a row under.
+    policies.push(['postUpdate', updateBase ? `${lands} || ${SYSTEM_CLAIM}` : lands])
   }
   return { gate, policies, gateOnly }
 }

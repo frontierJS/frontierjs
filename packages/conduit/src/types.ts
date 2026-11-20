@@ -662,8 +662,11 @@ export const CONDUIT_ERROR_KINDS = [
   'connection_failed',
   'timeout',
   'auth_failed',
+  // The transport or the target lacks this function: a protocol with no
+  // transport, or a 501/505. Never retryable and not a target fault, since no
+  // replay grows the function (`FJS-D2251`).
   'not_implemented',
-  // 5xx ONLY. The target is broken, this is retryable, and it is the one
+  // 5xx except 501/505. The target is broken, this is retryable, and it is the one
   // response-shaped kind the breaker counts. It used to be every non-2xx and
   // every unusable body as well, which put three unrelated things behind one
   // word that three consumers branch on (`FJS-684`).

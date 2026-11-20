@@ -22,7 +22,7 @@
 // A `null` answer is falsy, so an edge whose condition is unknown does not fire.
 
 import { tokenize, TK, ParseError, parseFlowExpression, evaluate } from '@frontierjs/toolbelt/predicate'
-import type { Expression, PredicateNode } from "../types"
+import type { Expression, PipeStep, PredicateNode } from "../types"
 
 // ─── the cursor the grammar walks ─────────────────────────────────────────────
 
@@ -49,7 +49,7 @@ function cursor(tokens: Token[]) {
 
 /** Parse one flow expression and compile it to what the resolver runs. */
 export function compileExpression(src: string): Expression {
-  const p = cursor(tokenize(src) as Token[])
+  const p = cursor(tokenize(src, { flow: true }) as Token[])
   const ast = parseFlowExpression(p)
   // Trailing tokens mean the expression ended earlier than the author thought —
   // `$.a $.b` parses as `$.a` and would otherwise run, silently, as half of it.
@@ -87,6 +87,21 @@ function compile(ast: Ast): Expression {
         type: 'object',
         properties: Object.fromEntries(ast.properties.map((e: Ast) => [e.key, compile(e.value)])),
       }
+    case 'array':    return { type: 'array', items: ast.items.map(compile) }
+    // A bound name reads as `$.name` in the body, which is where the resolver
+    // puts it (`FJS-D1429`).
+    case 'let':
+      return {
+        type: 'let',
+        bindings: Object.fromEntries(ast.bindings.map((b: Ast) => [b.name, compile(b.value)])),
+        body: compile(ast.body),
+      }
+    case 'pipe': {
+      const [head, ...rest] = ast.steps
+      return { type: 'pipe', steps: [compile(head), ...rest.map(step)] }
+    }
+    case 'function':
+      throw new Error(`orion: '${ast.name}' names a function, which only a pipeline step can — write ${ast.name}(…)`)
     default:
       throw new Error(`orion: cannot compile expression node "${ast.type}"`)
   }
@@ -97,6 +112,20 @@ function call(ast: Ast): Expression {
   if (ast.args.some((a: Ast) => a.type === 'lambda'))
     throw new Error(`orion: '${ast.name}' does not take a lambda — map, filter and reduce do`)
   return { type: 'fn', name: ast.name, args: ast.args.map(compile) }
+}
+
+// A step after a pipeline's first is handed the flowing value, so a call there
+// omits the operand that value fills: `lower` and `lower()` are lower($), and
+// `map(i => …)` has no collection (`resolvePipeStep`). A call that DOES name its
+// collection is an ordinary iterator, which is what the resolver reads either way.
+function step(ast: Ast): PipeStep {
+  if (ast.type === 'function') return { type: 'fn', name: ast.name }
+  if (ast.type !== 'call') return compile(ast)
+  if (!ITERATORS.has(ast.name)) return call(ast)
+  const takesOver = ast.args.length === (ast.name === 'reduce' ? 3 : 2)
+  if (takesOver) return iterator(ast)
+  const { over: _over, ...rest } = iterator({ ...ast, args: [{ type: 'literal', value: null }, ...ast.args] }) as Ast
+  return rest as PipeStep
 }
 
 function iterator(ast: Ast): Expression {

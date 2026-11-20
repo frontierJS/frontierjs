@@ -46,6 +46,15 @@ export const plates = (h, v, names, sx, sy, stage, spawn) => figures(h, v, stage
     return { key: f.m.connectionId, text, x: Math.max(0, Math.min(f.x, v.w - cells(text))), y: Math.min(f.y + 1, v.h - 1) }
   })
 
+// An agent is tagged as one beside its nick wherever the nick is printed
+// (`FJS-D1651`: a room shows its bots, as Matrix, Mattermost and Discord do).
+// Only the printed nick wears it: a whisper is still addressed by the bare one.
+export const AGENT_TAG = ' (agent)'
+
+/** The nicks as a plate, a bubble or the history prints them: each member id in `agents` tagged. */
+export const labels = (nicks, agents) => Object.fromEntries(Object.entries(nicks)
+  .map(([id, nick]) => [id, agents[id] ? `${nick}${AGENT_TAG}` : nick]))
+
 // What hangs over a figure while its next line is coming: a member's while
 // their line has words, an agent's while its model answers (`thinking`).
 export const TYPING   = '…'

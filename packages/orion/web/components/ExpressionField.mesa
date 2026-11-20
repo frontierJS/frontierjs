@@ -16,10 +16,10 @@
   //
   // ─── What it does when there is no text ───────────────────────────────────
   //
-  // The grammar is a SUBSET of what the engine runs — an array, a pipeline, a
-  // let and a match have no syntax (`FJS-1209`) — so `expressionToText`
-  // answers text or a reason, and a shape with no text form is edited as the
-  // document it already was. Nothing is hidden and nothing is guessed at.
+  // Some stored documents have no text that re-parses to them — an
+  // all-literal array, a one-step pipe, an object literal — so
+  // `expressionToText` answers text or a reason, and a shape with no text form
+  // is edited as the document it already was.
 
   import Input     from '@frontierjs/ui/components/forms/Input.mesa'
   import JsonInput from '@frontierjs/ui/components/forms/JsonInput.mesa'

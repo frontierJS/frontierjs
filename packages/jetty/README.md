@@ -67,9 +67,10 @@ After `build:fixture:firefox`, load `dist/firefox/` via `about:debugging`
 This package lives at `packages/jetty/` in the FrontierJS monorepo. Siblings it
 reaches for (when present):
 
-- `packages/mesa/` — reactive runtime + compiler. Optional — jetty falls back to
-  stub mount if missing, which **passes a `.mesa` file through as JavaScript**
-  and fails later at Vite with a parse error inside the component. If a build
+- `packages/mesa/` — reactive runtime + compiler. Optional — but a function `app`
+  is a compiled Mesa component, so without the runtime it is refused by name,
+  and without the compiler a `.mesa` file **passes through as JavaScript** and
+  fails later at Vite with a parse error inside the component. If a build
   reports `Unexpected JSX expression` at line 1, the compiler was not found.
 - `packages/junction/` — WebSocket service client. Optional — jetty falls back
   to its built-in default WS adapter if missing.
@@ -199,6 +200,47 @@ come back over the port. So the tether, query matching, `stale` and
 HTTP can carry (a file upload, a filtered bulk write, a findFirst) is refused by
 name. Sign-in is `signIn(email, password)` / `completeSignIn(code)` / `signOut()` from the same import,
 because Harbor holds the token.
+
+### What an `app` is
+
+A function `app` is **always** a compiled Mesa component, and Mesa mounts it with
+an anchor, not the root. A stub that wants the real root is `{ render(root, props) }`;
+a string is set as the root's HTML. Jetty does not guess from `app.length`.
+
+### Harbor's port is framework-only
+
+The port between a page and Harbor carries `init`, `service:call` and `channel:*`,
+and nothing else; any other type is logged by name and dropped. An app message
+(a context-menu click told to the dock, a page asking the worker for a count) goes
+over `runtime.sendMessage` to a `runtime.onMessage` listener the harbor file
+registers at module top, beside `defineHarbor`.
+
+### Injecting an island on a gesture
+
+```js fragment
+// jetty.config.js
+islands: { clip: { inject: 'gesture' } }
+
+// src/harbor/index.js
+const harbor = defineHarbor({ /* … */ })
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  await harbor.islands.inject('clip', tab.id)
+  await chrome.tabs.sendMessage(tab.id, { type: 'clip', text: info.selectionText })
+})
+export default harbor
+```
+
+`inject: 'matches'` (the default) registers the island as a content script for
+its `matches`, and the manifest asks for those hosts. `inject: 'gesture'` is never
+registered: no `matches`, no host permission, only `activeTab` (and `scripting`),
+which the user's click grants for that tab. `harbor.islands.inject(id, tabId)`
+runs the island file there, with the island's `css`, `world` and `allFrames`.
+
+`defineHarbor` returns `islands` at once, not only inside `run()`, because MV3
+delivers the waking event to a listener registered at module top, and that
+listener must be able to inject before `run()` has started. A second gesture
+runs the file again; the island runtime returns the second time without running
+`main()` or mounting `app` twice, until the first handle is destroyed.
 
 ## What's not yet done
 

@@ -3,11 +3,14 @@
 // `covers` is the brief, `from` the repo files that hold the material today,
 // and `tutor` the fli lesson that already walks it, where one does.
 //
-// A `from` path that no longer exists fails the build rather than publishing
-// a link that 404s on GitHub, which links.internal cannot see.
+// An entry with a `page` ('schema/models-and-fields') is written: it names a
+// page of the Litestone guide, links there, and has no stub. A `page` the guide
+// README does not list, or a `from` path that no longer exists, fails the build
+// rather than publishing a link that 404s.
 
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { litestoneGuide } from './package-guide.js'
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const BLOB = 'https://github.com/frontierjs/frontierjs/blob/main'
@@ -16,58 +19,18 @@ export const BASE = '/docs/guides/'
 
 const SECTIONS = [
   { section: 'Data', lede: 'The Model realm: what db/schema.lite declares and Litestone enforces.', guides: [
-    { slug: 'schema', title: 'A schema',
-      lede: 'Models, fields, relations and enums in db/schema.lite, and what each line turns into.',
-      covers: ['A model and its fields, with the attributes that validate them', 'Relations: one-to-many, many-to-many, and the foreign key each writes', 'Enums, defaults and computed fields', 'Pushing the schema into a database with fli db:push'],
-      from: ['packages/litestone/docs/schema.md', 'packages/litestone/docs/modeling.md', 'packages/litestone/docs/relations.md'],
-      tutor: 'app' },
-    { slug: 'querying', title: 'Querying',
-      lede: 'Reading rows back: filters, sorting, paging, aggregates and relations in one call.',
-      covers: ['findMany and findFirst, with where, orderBy and paging', 'Filter operators and the $or, $and and $not combinators', 'Aggregates and group-by', 'Loading related rows'],
-      from: ['packages/litestone/docs/querying.md', 'packages/litestone/docs/filtering.md', 'packages/litestone/docs/sorting.md', 'packages/litestone/docs/aggregation.md'] },
-    { slug: 'access', title: 'Access rules',
-      lede: 'Who may read and write what, declared in the schema and enforced at the Data boundary.',
-      covers: ['The gate ladder and @@gate', 'Row policies with @@allow and @@deny', 'Field policies: @guarded and friends', 'Why x-gate in the browser is an affordance and never the check'],
-      from: ['packages/litestone/docs/access-control.md', 'packages/litestone/docs/guides/row-level-security.md'],
-      tutor: 'access' },
-    { slug: 'validation', title: 'Validation',
-      lede: 'The rules a value must meet before it is written, and the same rules in the form.',
-      covers: ['Field attributes that validate: @email, @length, @min and the rest', 'Model-level checks', 'The JSON Schema the browser validates against'],
-      from: ['packages/litestone/docs/validate.md', 'packages/litestone/docs/jsonschema.md'] },
-    { slug: 'state-machines', title: 'State machines',
-      lede: 'A status field that only moves along declared transitions.',
-      covers: ['@@transitions and the named transitions it defines', 'Calling a transition, and the refusal for one that is not allowed', 'Gating a transition'],
-      from: ['packages/litestone/docs/schema.md'] },
-    { slug: 'protected-fields', title: 'Protected fields',
-      lede: 'Encrypted, hashed, secret and personal data, and what each one costs to query.',
-      covers: ['@encrypted, @hashed, @secret, @personal and @opaque', 'Keys and rotation', 'How each shows in the audit trail'],
-      from: ['packages/litestone/docs/encryption.md'] },
-    { slug: 'audit-trail', title: 'The audit trail',
-      lede: 'Every write recorded with who made it, and protected fields redacted.',
-      covers: ['Turning the trail on for a model', 'Reading the history of a row', 'Redaction of protected fields'],
-      from: ['packages/litestone/docs/trail.md', 'packages/litestone/docs/guides/audit-trail.md'] },
-    { slug: 'changing-a-schema', title: 'Changing a schema',
-      lede: 'Changing a schema that is already deployed without losing data or downtime.',
-      covers: ['Migrations and what fli db:push writes', 'Expand and contract', 'Splitting a breaking change across three deploys'],
-      from: ['packages/litestone/docs/migrations.md'],
-      tutor: 'change' },
-    { slug: 'tenancy', title: 'Multi-tenancy',
-      lede: 'One app serving many customers, each seeing only their own rows.',
-      covers: ['Row tenancy and database tenancy, and when to choose each', 'How the tenant reaches a query', 'A worked SaaS example'],
-      from: ['packages/litestone/docs/multi-tenancy.md', 'packages/litestone/docs/guides/multi-tenant-saas.md'] },
-    { slug: 'search', title: 'Search',
-      lede: 'Finding rows by text and by meaning: full-text search, ranking and vectors.',
-      covers: ['Full-text search on a model', 'Ranking results', 'Vector columns and similarity search'],
-      from: ['packages/litestone/docs/full-text-search.md', 'packages/litestone/docs/rank.md', 'packages/litestone/docs/vectors.md'] },
-    { slug: 'files', title: 'Files',
-      lede: 'Uploads stored beside the row that owns them.',
-      covers: ['A file field in the schema', 'Uploading through a service', 'Where the bytes live'],
-      from: ['packages/litestone/docs/file-storage.md', 'packages/litestone/docs/guides/file-uploads.md'] },
-    { slug: 'adopting-a-database', title: 'Adopting a database',
-      lede: 'A SQLite database that predates the framework, read into a schema and served.',
-      covers: ['Introspecting an existing database into db/schema.lite', 'Checking the schema against the data', 'Recording findings in check-baseline.json rather than fixing them first'],
-      from: ['packages/litestone/docs/import.md'],
-      tutor: 'adopt' },
+    { slug: 'schema', title: 'A schema', page: 'schema/models-and-fields' },
+    { slug: 'querying', title: 'Querying', page: 'querying/reading' },
+    { slug: 'access', title: 'Access rules', page: 'access/gates' },
+    { slug: 'validation', title: 'Validation', page: 'validation/validators' },
+    { slug: 'state-machines', title: 'State machines', page: 'validation/state-machines' },
+    { slug: 'protected-fields', title: 'Protected fields', page: 'protected/encryption' },
+    { slug: 'audit-trail', title: 'The audit trail', page: 'protected/audit-trail' },
+    { slug: 'changing-a-schema', title: 'Changing a schema', page: 'migrations/migrations' },
+    { slug: 'tenancy', title: 'Multi-tenancy', page: 'advanced/multi-tenancy' },
+    { slug: 'search', title: 'Search', page: 'built-in/full-text-search' },
+    { slug: 'files', title: 'Files', page: 'built-in/files' },
+    { slug: 'adopting-a-database', title: 'Adopting a database', page: 'migrations/adopting' },
   ] },
 
   { section: 'API', lede: 'The Service realm: what Junction serves for each model, and how to add to it.', guides: [
@@ -188,18 +151,27 @@ const linkOf = (path) => {
   return { label: path, href: `${BLOB}/${path}` }
 }
 
-/** [{ section, lede, guides: [{ slug, title, lede, covers, from: [{label, href}], tutor, href }] }] */
-export function loadGuides() {
-  return SECTIONS.map((s) => ({
-    ...s,
-    guides: s.guides.map((g) => ({ ...g, href: `${BASE}${g.slug}/`, from: g.from.map(linkOf), tutor: g.tutor ?? null })),
-  }))
+const guidePages = () => new Map(litestoneGuide.loadGuide().flatMap((s) => s.pages.map((p) => [`${p.dir}/${p.slug}`, p.href])))
+
+const resolve = (g, pages) => {
+  if (!g.page) return { ...g, href: `${BASE}${g.slug}/`, from: g.from.map(linkOf), tutor: g.tutor ?? null }
+  if (!pages.has(g.page)) throw new Error(`docs-guides: ${g.slug} names ${g.page}, which the Litestone guide README does not list`)
+  return { ...g, href: pages.get(g.page) }
 }
+
+/** [{ section, lede, guides: [{ slug, title, href, page? } | stub: { lede, covers, from: [{label, href}], tutor }] }] */
+export function loadGuides() {
+  const pages = guidePages()
+  return SECTIONS.map((s) => ({ ...s, guides: s.guides.map((g) => resolve(g, pages)) }))
+}
+
+/** The stub guides: those not yet written as a guide page. */
+export const stubs = () => loadGuides().flatMap((s) => s.guides.filter((g) => !g.page))
 
 export function loadGuidePage(slug) {
   for (const s of loadGuides()) {
-    const g = s.guides.find((x) => x.slug === slug)
+    const g = s.guides.find((x) => x.slug === slug && !x.page)
     if (g) return { ...g, section: s.section }
   }
-  throw new Error(`docs-guides: no guide ${slug}`)
+  throw new Error(`docs-guides: no stub guide ${slug}`)
 }

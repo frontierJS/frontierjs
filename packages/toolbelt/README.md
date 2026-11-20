@@ -11,6 +11,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | Subpath | Kit | State |
 | --- | --- | --- |
 | `/glow` | source code → highlighted HTML | shipping |
+| `/grammars` | a line-at-a-time tokenizer whose state carries across lines, and eight grammars, for an editor or viewer (glow highlights a whole block) | shipping |
 | `/cron` | what a five-field cron expression admits | shipping |
 | `/datetime` | an instant read as a place's wall clock, formatted, and written back | shipping |
 | `/inflect` | how a name is spelled — number and shape | shipping |
@@ -25,9 +26,10 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/match` | does this record belong in that query's results | shipping |
 | `/predicate` | does this record satisfy a declared `.lite` expression | shipping |
 | `/query` | what a query string MEANS — types, structure, both directions | shipping |
+| `/qr` | a QR code for a text — `qrMatrix`, `qrSvg`, `qrTerminal` | shipping |
 | `/redact` | is this key a credential, and redacting a value by that answer | shipping |
 | `/seal` | a value only one key can open — HPKE base mode over X25519, in WebCrypto | shipping |
-| `/search` | ranking a corpus nobody indexed | shipping |
+| `/search` | ranking a corpus nobody indexed — `rank` once, `createRanker` held across keystrokes | shipping |
 | `/signature` | what a signed machine-to-machine request is, and a short signed token for an address | shipping |
 | `/typo` | the name a person most likely meant — "did you mean" | shipping |
 | `/tty` | `@frontierjs/css`'s tones as a terminal's own 16 colors | shipping |
@@ -376,6 +378,10 @@ glow('.btn { color: red }', { language: 'css', prefix: false })
 With `prefix` on, a line beginning `+`, `-` or `>` is a marker and **the character is removed from the output**. In CSS all three are legal first characters — `--custom-prop`, `> .child`, `+ .sibling` — so highlighting a stylesheet with prefixes on silently eats one character per line.
 
 `--` is handled for you: two dashes are never a diff marker. The combinators are not, and cannot be — `+ .sibling` and a diff-added line are the same three characters. **A caller highlighting CSS wants `prefix: false`.**
+
+### A viewer that paints one line at a time
+
+A file viewer that renders a window of lines — a virtual list, an editor gutter — calls `glowLine(line, opts, open)` per line and carries `open`, the answer to *is a block comment still open after this line*, into the next call. `glowLanguage(source)` makes the document-level guess once. **A viewer passes `prefix: false, mark: false`**: with either on, a line's leading `+`, `-`, `>` or `\` or a pair of bullets is read as markup and removed, so the painted text is no longer the file's bytes.
 
 ---
 

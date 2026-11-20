@@ -100,7 +100,7 @@ export async function makeApp(opts: {
   if (!opts.noMailer) {
     // `mail` takes the whole IMail — a `send` answering void satisfied
     // `app.mail = …` by assignment and fails the interface by name.
-    const send = async (m: OutgoingMail) => { sent.push(m); return { id: String(sent.length), message: 'captured' } }
+    const send = async (m: OutgoingMail) => { sent.push(m); return { id: String(sent.length), messageId: `<${sent.length}@captured>`, message: 'captured' } }
     app.configure(mail({ mailer: { send, batch: (ms: OutgoingMail[]) => Promise.all(ms.map(send)) } }))
   }
   app.configure(notifications({

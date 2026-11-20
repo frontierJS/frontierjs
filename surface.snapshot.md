@@ -26,16 +26,16 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4716 source file(s) read
+27 package(s) · 4719 source file(s) read
 366 entry point(s), 34 imported by nothing outside their package, 14 emitted
-1811 value export(s), 662 reached by nothing outside, 186 emitted
+1812 value export(s), 662 reached by nothing outside, 186 emitted
 472 type export(s), 343 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 41 | 5 | 277 | 130 | 43 | 1 | 1 |
-| `junction` | 28 | 3 | 286 | 123 | 14 | 278 | 213 |
+| `junction` | 28 | 3 | 287 | 123 | 14 | 278 | 213 |
 | `mesa` | 34 | 4 | 327 | 111 | 76 | 0 | 0 |
 | `sierra` | 49 | 6 | 206 | 87 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
@@ -170,7 +170,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/junction`
 
-`packages/junction` · 28 entry point(s) · 286 value, 278 type export(s)
+`packages/junction` · 28 entry point(s) · 287 value, 278 type export(s)
 
 **Entries imported by nothing outside (3):** `./cache` `./otlp` `./webhooks`
 

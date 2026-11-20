@@ -1,0 +1,102 @@
+<script>
+  // NotificationBell — the topbar's notifications menu.
+  //
+  //   <NotificationBell {notifications} href="/notifications/" />
+  //
+  // `notifications` is the APP's resource for the Notification model
+  // (`createResource('notifications', { model: 'Notification' })`). This
+  // component holds none of its own, so a write is the app's `mutate` and an
+  // app that restyles it by wrapping keeps one row store.
+  //
+  // Mount it only while someone is signed in — `{#if session.user}` around it.
+  // `tethered()` reads on creation, so a shell that built it on /login/ asked
+  // the server for a stranger's notifications and got a 401 every visit, and
+  // unmounting on sign-out is what releases the list with the person. New rows
+  // arrive as pushed frames on the person's own channel; nothing polls.
+  //
+  // `item` is a snippet, `(n) => the row's content`: choose a renderer by
+  // `n.type` there. Unstated, a row is its title, its body and when it came.
+  // `icon` is a snippet for the trigger's glyph.
+  //
+  // `tone` is the count's tone, or `(unread) => tone` when the answer depends
+  // on the rows — red only while something unread is a failure. Good news
+  // counted in red teaches the reader to ignore red.
+  //
+  // Clicking a row marks it read and follows its `action.url` through the
+  // link, so the app's router takes it as it takes any other link.
+
+  import Badge             from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button            from '@frontierjs/ui/components/forms/Button.mesa'
+  import DropdownMenu      from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
+  import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
+  import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
+  import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
+  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead } from './rows.js'
+
+  export let notifications = null     // the app's Notification resource — required
+  export let directives = INBOX       // what the list asks for; newest first by default
+  export let href = '/notifications/' // "All notifications"; '' leaves the link out
+  export let max = 6                  // unread rows the menu shows
+  export let tone = 'danger'          // a tone, or (unread) => tone
+  export let item = null              // snippet — (n) => a row's content
+  export let icon = null              // snippet — the trigger's glyph
+
+  var inbox = notifications.tethered({ state: 'local', directives })
+
+  $: unread = inbox.rows.filter(isUnread)
+  $: countTone = typeof tone === 'function' ? tone(unread) : tone
+
+  function open(n) { markRead(notifications, n).catch(() => {}) }
+  function readAll() { markAllRead(notifications, inbox.rows).catch(() => {}) }
+</script>
+
+<!-- The count is a Badge inside the trigger, so the unread number is part of
+     the button's name to a screen reader as well as its look. -->
+<DropdownMenu placement="bottom-end">
+  {#snippet trigger()}
+    <Button treatment="ghost" id="bell"
+            aria-label={unread.length ? `Notifications, ${unread.length} unread` : 'Notifications'}
+    >{#if icon}{@render icon()}{:else}🔔{/if}{#if unread.length} <Badge tone={countTone} id="bell-count">{unread.length}</Badge>{/if}</Button>
+  {/snippet}
+  {#if unread.length}
+    <DropdownGroup heading="Unread">
+      {#each unread.slice(0, max) as n (n.id)}
+        <DropdownItem href={actionOf(n)?.url} onclick={() => open(n)}>
+          <span class="stack bell-note" title={bodyOf(n) ? `${titleOf(n)} — ${bodyOf(n)}` : titleOf(n)}>
+            {#if item}
+              {@render item(n)}
+            {:else}
+              <span class="bell-head">
+                <strong>{titleOf(n)}</strong>
+                <time class="bell-when text-sm text-muted" datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time>
+              </span>
+              {#if bodyOf(n)}<span class="bell-body text-sm text-muted">{bodyOf(n)}</span>{/if}
+            {/if}
+          </span>
+        </DropdownItem>
+      {/each}
+    </DropdownGroup>
+    <DropdownSeparator />
+    <DropdownItem onclick={readAll}>Mark all read</DropdownItem>
+  {:else}
+    <DropdownItem disabled>Nothing unread</DropdownItem>
+    <DropdownSeparator />
+  {/if}
+  {#if href}<DropdownItem {href}>All notifications</DropdownItem>{/if}
+</DropdownMenu>
+
+<style>
+  /* A posture failure's body is every failing control joined; unclamped it
+     fills the screen. The row's title attribute carries the whole text. */
+  .bell-note { min-width: 0; }
+  .bell-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-lg); }
+  .bell-when { flex: none; white-space: nowrap; }
+  .bell-body {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+</style>

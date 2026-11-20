@@ -40,6 +40,28 @@ import { injectPageScript }   from './page-script.js'
  * @returns {Promise<{ destroy: () => void }>}
  */
 export async function runIsland(islandModule, meta) {
+  // A gesture island is injected again on every gesture, and executeScript runs
+  // the file each time in the same isolated world, so without this a second
+  // click mounts a second app and runs main() twice.
+  const ranKey = `__jettyIsland:${meta.id}`
+  if (globalThis[ranKey]) return inertHandle()
+  globalThis[ranKey] = true
+  let handle
+  try {
+    handle = await startIsland(islandModule, meta)
+  } catch (e) {
+    delete globalThis[ranKey]
+    throw e
+  }
+  return {
+    destroy() {
+      delete globalThis[ranKey]
+      handle.destroy()
+    },
+  }
+}
+
+async function startIsland(islandModule, meta) {
   const cfg = islandModule
   const id  = meta.id
 

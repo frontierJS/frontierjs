@@ -7,6 +7,10 @@
 // Spec invariant: islands.registerAll(), islands.register(id), islands.unregister(id)
 // are all idempotent. Harbor calls registerAll() during boot every wake.
 //
+// `inject: 'gesture'` islands are never registered: harbor injects them with
+// chrome.scripting.executeScript on a user gesture (islands.inject), where
+// activeTab grants the page, so no host permission is asked for.
+//
 // What gets registered:
 //   - id           — the island id (filename stem)
 //   - js           — `["islands/<id>.js"]`
@@ -21,13 +25,26 @@
 // defineIsland (validated there) — UI mounting requires shadow DOM access
 // which is cleaner from ISOLATED world.
 
+const VALID_INJECT = ['matches', 'gesture']
+
+/** An island injected on a gesture is never registered, so it never matches a page by itself. */
+export function isGestureIsland(islandConfig) {
+  return islandConfig?.inject === 'gesture'
+}
+
 /**
  * Build a content-script registration entry from an island config object.
  * Pure transform — no side effects. Caller passes results to the API.
+ * Answers null for an `inject: 'gesture'` island, which has nothing to register.
  */
 export function buildRegistration(islandId, islandConfig) {
+  const inject = islandConfig?.inject ?? 'matches'
+  if (!VALID_INJECT.includes(inject)) {
+    throw new Error(`island "${islandId}": inject must be one of ${VALID_INJECT.join(', ')} (got "${inject}")`)
+  }
+  if (inject === 'gesture') return null
   if (!islandConfig?.matches?.length) {
-    throw new Error(`island "${islandId}": matches[] is required`)
+    throw new Error(`island "${islandId}": matches[] is required (or inject: 'gesture')`)
   }
 
   const reg = {
@@ -67,7 +84,8 @@ export async function registerAllIslands(scriptingApi, islandsConfig) {
   // Spec: insertion order = config-key order (deterministic but undocumented in v1).
   for (const id of Object.keys(islandsConfig ?? {})) {
     try {
-      entries.push(buildRegistration(id, islandsConfig[id]))
+      const entry = buildRegistration(id, islandsConfig[id])
+      if (entry) entries.push(entry)
     } catch (e) {
       console.error(`[harbor] island "${id}" config error:`, e.message)
     }
@@ -119,6 +137,9 @@ export async function registerAllIslands(scriptingApi, islandsConfig) {
 /** Register a single island (or replace existing registration). */
 export async function registerIsland(scriptingApi, islandId, islandConfig) {
   const entry = buildRegistration(islandId, islandConfig)
+  if (!entry) {
+    throw new Error(`island "${islandId}": inject: 'gesture' is never registered — call islands.inject(id, tabId)`)
+  }
   try {
     const existing = await scriptingApi.getRegisteredContentScripts({ ids: [islandId] })
     if (existing?.length) {
@@ -149,6 +170,7 @@ export async function unregisterIsland(scriptingApi, islandId) {
  * @param {string[]} matches  — match patterns from island config
  */
 export async function reloadIslandTabs(tabsApi, matches) {
+  // A gesture island has no matches, so there is no set of tabs that carries it.
   if (!tabsApi || !matches?.length) return 0
   let reloaded = 0
   try {

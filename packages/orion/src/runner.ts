@@ -773,8 +773,25 @@ export function createRunner(opts: RunnerOptions) {
   async function sweepTenant(db: OrionSystemClient, tenant: string | null) {
     const store = new LitestoneExecutionStore(db, { tenant })
     let expired = 0
-    const due = await db.wait.findMany({ where: { timeoutAt: { lt: new Date(now()).toISOString() } } })
-    for (const wait of due) if (await store.expire(wait.resumeKey, now())) expired++
+    const due = await db.wait.findMany({
+      where:   { timeoutAt: { lt: new Date(now()).toISOString() } },
+      include: { run: { select: { actorId: true, flowVersion: { select: { flow: { select: { status: true } } } } } } },
+    })
+    for (const wait of due) {
+      const ended = await store.expire(wait.resumeKey, now())
+      if (!ended) continue
+      if (ended === "resume") {
+        // Under the id a person's resume uses, so a deadline and an answer are one
+        // job and the run job's `resume` is the one transaction that lets one win.
+        // A paused flow's wait stays, as it does for a resume, and is due again
+        // when the flow is.
+        if (wait.run.flowVersion.flow.status !== "active") continue
+        await jobs.dispatch(RUN_JOB, { runId: wait.runId, resumeKey: wait.resumeKey, payload: { timedOut: true } }, {
+          id: `resume:${wait.resumeKey}`, actor: wait.run.actorId, tenant, queue,
+        })
+      }
+      expired++
+    }
 
     // A queued run in flight is Caravan's to reclaim, so `running` is ours only
     // when it carries a heartbeat: an inline run whose process stopped beating.

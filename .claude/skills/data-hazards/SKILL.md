@@ -78,6 +78,7 @@ Detail: `references/tenancy.md`
 - **Tenancy is declared in the schema and there are two strategies.**
 - **A row scoped through a parent that names NO parent is `asSystem()`'s alone** (`FJS-D481`)
 - **A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only** (`FJS-D1149`)
+- **A default `backup` or `replicate` leaves out every place that declares no destination** (`FJS-D1743`)
 
 ## Migrations and release
 Detail: `references/migrations-and-release.md`
