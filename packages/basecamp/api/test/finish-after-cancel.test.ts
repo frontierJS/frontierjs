@@ -12,7 +12,7 @@
 
 import { test, expect, describe, beforeAll } from 'bun:test'
 import { join }              from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -39,7 +39,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: a.id, role: 'admin',
     capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
-  admin = session({ id: a.id, workspaceId: ws.id })
+  admin = sessionContext({ id: a.id, workspaceId: ws.id })
 
   const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Shop', slug: `p-${uniq()}` } })
   const environment = await sys.environment.create({ data: {

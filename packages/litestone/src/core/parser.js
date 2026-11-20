@@ -2566,6 +2566,30 @@ class Parser {
           this.peek())
         return { kind: 'effective', from, to }
       }
+      case 'retention': {
+        // @@retention(90d) · @@retention(90d, from: capturedAt) — this model's
+        // own window, read before its database's (FJS-D1059). Without it a
+        // window is a database's alone, and a table that wants one beneath
+        // tables kept for ever had to move to a file of its own, losing every
+        // relation across it (FJS-2289). `from:` is the clock, createdAt unless
+        // said (FJS-2285).
+        this.eat(TK.LPAREN)
+        const at     = this.peek()
+        const window = this.parseDurationOrSize()
+        if (!/^\d+(?:\.\d+)?(ms|s|m|h|d|w|y)$/.test(window))
+          throw new ParseError(`@@retention(${window}) — the window is a duration: 30d, 24h, 1y, 60m`, at)
+        let from = 'createdAt'
+        while (this.maybeEat(TK.COMMA)) {
+          if (this.check(TK.RPAREN)) break
+          const argAt = this.peek()
+          const key   = this.eat(TK.IDENT).value
+          if (key !== 'from') throw new ParseError(`@@retention takes a window and 'from:' — got '${key}'`, argAt)
+          this.eat(TK.COLON)
+          from = this.eat(TK.IDENT).value
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'retention', window, from }
+      }
       case 'commitment': {
         // @@commitment(abandon, on: createdAt + 14d)
         // @@commitment(lapse,   on: dueOn + graceDays, while: status == issued)
@@ -3088,10 +3112,18 @@ class Parser {
     if (!this.check(TK.LPAREN))
       throw new ParseError('@zoned names the zone column — @zoned(timeZone), @zoned(customer.timeZone)', { line: t.line, col: t.col })
     this.eat(TK.LPAREN)
-    const path = [this.eat(TK.IDENT).value]
-    while (this.check(TK.DOT)) { this.eat(TK.DOT); path.push(this.eat(TK.IDENT).value) }
+    // The LAST argument is the zone path in both forms (`FJS-D1434`); the ones
+    // before it are the wall-clock sources a DateTime is derived from.
+    const args = []
+    do {
+      if (args.length) this.eat(TK.COMMA)
+      const path = [this.eat(TK.IDENT).value]
+      while (this.check(TK.DOT)) { this.eat(TK.DOT); path.push(this.eat(TK.IDENT).value) }
+      args.push(path)
+    } while (this.check(TK.COMMA))
     this.eat(TK.RPAREN)
-    return { kind: 'zoned', path }
+    const path = args.pop()
+    return { kind: 'zoned', path, sources: args.map(p => p.join('.')) }
   }
 
   // ── @@commitment's `on:` ────────────────────────────────────────────────────
@@ -3791,7 +3823,7 @@ function attrAnswer(attr, at = '@@', ordinal = 'the first') {
 const MODEL_ATTRIBUTE_WORDS = [
   'index', 'id', 'unique', 'arc', 'relator', 'noStrict', 'fts', 'map', 'label',
   'external', 'extensible', 'softDelete', 'capabilities', 'hasTemplates',
-  'expires', 'effective', 'commitment', 'createdBy', 'updatedBy', 'allow',
+  'expires', 'effective', 'retention', 'commitment', 'createdBy', 'updatedBy', 'allow',
   'deny', 'require', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
   'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
   'validate',
@@ -5282,20 +5314,22 @@ function expandRelator(schema) {
 // keep whichever came first. It replaces the attribute rather than marking it,
 // and is idempotent, because `placeModels` runs it again over a copy whose
 // attribute objects the parse it was handed still holds.
+// A model's own @@retention earns the index on its own clock, in any database.
 function expandRetentionIndex(schema) {
-  const windowed = new Set((schema.databases ?? [])
-    .filter(d => d.retention && (d.driver ?? 'sqlite') === 'sqlite')
-    .map(d => d.name))
-  if (!windowed.size) return
+  const dbs      = schema.databases ?? []
+  const windowed = new Set(dbs.filter(d => d.retention && (d.driver ?? 'sqlite') === 'sqlite').map(d => d.name))
 
   for (const model of schema.models) {
-    if (!windowed.has(model.attributes.find(a => a.kind === 'db')?.name ?? 'main')) continue
-    const f = model.fields.find(x => x.name === 'createdAt' && x.type?.name === 'DateTime')
+    const dbName = model.attributes.find(a => a.kind === 'db')?.name ?? 'main'
+    const ret    = model.attributes.find(a => a.kind === 'retention')
+    if (ret ? (dbs.find(d => d.name === dbName)?.driver ?? 'sqlite') !== 'sqlite' : !windowed.has(dbName)) continue
+    const clock = ret?.from ?? 'createdAt'
+    const f = model.fields.find(x => x.name === clock && x.type?.name === 'DateTime')
     if (!f || f.attributes.some(a => a.kind === 'unique' || a.kind === 'id')) continue
     const soft = model.attributes.some(a => a.kind === 'softDelete')
 
     const own = model.attributes.findIndex(a =>
-      a.kind === 'index' && !a.where && a.fields.length === 1 && a.fields[0] === 'createdAt')
+      a.kind === 'index' && !a.where && a.fields.length === 1 && a.fields[0] === clock)
     if (own >= 0) {
       if (soft && model.attributes[own].generated !== 'retention')
         model.attributes[own] = { ...model.attributes[own], generated: 'retention' }
@@ -5303,10 +5337,10 @@ function expandRetentionIndex(schema) {
     }
 
     const serves = model.attributes.some(a =>
-      !a.where && a.fields?.[0] === 'createdAt' &&
+      !a.where && a.fields?.[0] === clock &&
       (a.kind === 'uniqueIndex' || (a.kind === 'index' && (!soft || a.generated === 'retention'))))
     if (!serves)
-      model.attributes.push({ kind: 'index', fields: ['createdAt'], sorts: null, where: null, generated: 'retention' })
+      model.attributes.push({ kind: 'index', fields: [clock], sorts: null, where: null, generated: 'retention' })
   }
 }
 
@@ -8255,9 +8289,28 @@ function validate(schema) {
       }
       const zoned = field.attributes.find(a => a.kind === 'zoned')
       if (!zoned) continue
-      const label = `@zoned(${zoned.path.join('.')})`
+      const label = `@zoned(${[...zoned.sources, zoned.path.join('.')].join(', ')})`
       const isWall = field.attributes.some(a => a.kind === 'date' || a.kind === 'time')
-      if (field.type.name !== 'String' || field.type.array || !isWall) {
+      // On a DateTime the form is the derived instant (`FJS-D963`, `FJS-D1434`):
+      // a day, a time of day on this row, and the zone they are read in.
+      if (field.type.name === 'DateTime' && !field.type.array) {
+        if (zoned.sources.length !== 2) {
+          errors.push(`${at}: ${label} on a DateTime names its wall clock — @zoned(date, time, ${zoned.path.join('.')}), a String @date and a String @time on this model and the zone they are read in`)
+          continue
+        }
+        const bad = zoned.sources.map((name, i) => {
+          const kind = i === 0 ? 'date' : 'time'
+          const src = model.fields.find(f => f.name === name)
+          if (!src) return `no field '${name}' on this model`
+          if (src.type.name !== 'String' || src.type.array || !src.attributes.some(a => a.kind === kind))
+            return `'${name}' must be a String @${kind}`
+          return null
+        }).filter(Boolean)
+        if (bad.length) { errors.push(`${at}: ${label} — ${bad.join('; ')}`); continue }
+      } else if (zoned.sources.length) {
+        errors.push(`${at}: ${label} — a String @date or @time takes one argument, the zone it is read in; the three-argument form derives a DateTime`)
+        continue
+      } else if (field.type.name !== 'String' || field.type.array || !isWall) {
         errors.push(`${at}: @zoned requires a String @date or @time — an instant already names its moment, and only a wall clock needs a zone to`)
         continue
       }
@@ -9172,6 +9225,26 @@ function validate(schema) {
       `Model '${model.name}': @@effective mixes kinds — '${kinds[0][2]}' is ${kinds[0][0] === 'day' ? 'a day' : 'an instant'} ` +
       `and '${kinds[1][2]}' is ${kinds[1][0] === 'day' ? 'a day' : 'an instant'}. Both edges of one window are read at ` +
       `the same moment, so they must be the same kind`)
+  }
+
+  // ── @@retention's clock ───────────────────────────────────────────────────
+  // The sweep compares the clock to an ISO instant, so anything but a DateTime
+  // column of this model would keep every row with nothing said (FJS-2285).
+  // Only SQLite is swept per model: a jsonl file compacts as one window.
+  for (const model of schema.models) {
+    const ret = model.attributes.find(a => a.kind === 'retention')
+    if (!ret) continue
+    const field = model.fields.find(f => f.name === ret.from)
+    const tname = typeof field?.type === 'object' ? field.type.name : field?.type
+    if (!field) errors.push(ret.from === 'createdAt'
+      ? `Model '${model.name}': @@retention(${ret.window}) clocks from 'createdAt' and this model has none — name its time column with from: <column>`
+      : `Model '${model.name}': @@retention(${ret.window}, from: ${ret.from}) — '${ret.from}' names no field of this model`)
+    else if (tname !== 'DateTime' || field.type?.array || field.array)
+      errors.push(`Model '${model.name}': @@retention from '${ret.from}' must be a DateTime column — the sweep compares it to an instant (got ${tname}${field.type?.array || field.array ? '[]' : ''})`)
+    const dbName = model.attributes.find(a => a.kind === 'db')?.name ?? 'main'
+    const driver = (schema.databases ?? []).find(d => d.name === dbName)?.driver ?? 'sqlite'
+    if (driver !== 'sqlite')
+      errors.push(`Model '${model.name}': @@retention is per model on SQLite only — '${dbName}' is 'driver ${driver}', which compacts as one file; give the database block its retention`)
   }
 
   // ── @from over an @@expires model ─────────────────────────────────────────

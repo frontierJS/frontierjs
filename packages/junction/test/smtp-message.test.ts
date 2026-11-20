@@ -339,3 +339,54 @@ describe('a help-desk reply on the wire', () => {
     expect(lines.filter(l => /^message-id:/i.test(l))).toEqual(['Message-Id: <m1@acme.test>'])
   })
 })
+
+// FJS-2125 / FJS-D684: `id` is each provider's own handle and `messageId` the
+// Message-ID a reply's In-Reply-To names. Resend's `id` is on no header, so an
+// app threading off it under Resend named nothing.
+describe('SendResult.messageId names the Message-ID under either adapter', () => {
+
+  /** Runs `fn` with fetch answering Resend-shaped ids; answers the bodies posted. */
+  async function resend<T>(fn: () => Promise<T>): Promise<{ bodies: any[], out: T }> {
+    const real = globalThis.fetch
+    const bodies: any[] = []
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body))
+      bodies.push(body)
+      return Response.json(Array.isArray(body) ? { data: body.map((_: unknown, i: number) => ({ id: `r${i}` })) } : { id: 'r1' })
+    }) as never
+    try { return { bodies, out: await fn() } }
+    finally { globalThis.fetch = real }
+  }
+
+  it('over SMTP it is the Message-ID written', async () => {
+    const s = await sink()
+    try {
+      const r = await mailer(s.port).send({ from: 'Support <support@acme.test>', to: 'a@b.test', subject: 's', text: 't' } as never)
+      expect(r.messageId).toMatch(/^<[^<>@\s]+@acme\.test>$/)
+      expect(s.log).toContain(`Message-ID: ${r.messageId}`)
+    } finally { s.close() }
+  })
+
+  it('over Resend one is minted on the From domain, sent as a header, and answered beside Resend\'s id', async () => {
+    const m = createResendMailer({ apiKey: 'k', from: 'Support <support@acme.test>' })
+    const { bodies, out } = await resend(() => m.send({ to: 'a@b.test', subject: 's', text: 't' }))
+    expect(out.id).toBe('r1')
+    expect(out.messageId).toMatch(/^<[^<>@\s]+@acme\.test>$/)
+    expect(bodies[0].headers).toEqual({ 'Message-ID': out.messageId })
+  })
+
+  it('over Resend a stated Message-ID is the one sent, once, and the one answered', async () => {
+    const m = createResendMailer({ apiKey: 'k', from: 'shop@acme.test' })
+    const { bodies, out } = await resend(() => m.send({ to: 'a@b.test', subject: 's', text: 't', headers: { 'Message-Id': '<m1@acme.test>', 'X-A': '1' } }))
+    expect(out.messageId).toBe('<m1@acme.test>')
+    expect(bodies[0].headers).toEqual({ 'Message-Id': '<m1@acme.test>', 'X-A': '1' })
+  })
+
+  it('over a Resend batch each message gets its own', async () => {
+    const m = createResendMailer({ apiKey: 'k', from: 'shop@acme.test' })
+    const { bodies, out } = await resend(() => m.batch([{ to: 'a@b.test', subject: 's', text: 't' }, { to: 'c@d.test', subject: 's', text: 't' }]))
+    expect(out.map(r => r.id)).toEqual(['r0', 'r1'])
+    expect(out.map(r => r.messageId)).toEqual(bodies[0].map((b: any) => b.headers['Message-ID']))
+    expect(new Set(out.map(r => r.messageId)).size).toBe(2)
+  })
+})

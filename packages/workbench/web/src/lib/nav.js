@@ -31,6 +31,7 @@ export const groups = [
     { href: '/charter/',            label: 'Charter',         icon: 'workbench',     sub: 'run Charter\'s cases on its Basecamp and watch each stage — Reinstall its box' },
     { href: '/servers/',            label: 'Servers',         icon: 'workbench',     sub: 'the machines and IPs this laptop\'s accounts reach' },
     { href: '/capture/',            label: 'Capture',         icon: 'workbench',     sub: 'the screenshot tool\'s settings — folder, file name, format, delay, share server' },
+    { href: '/prototypes/',         label: 'Prototypes',      icon: 'workbench',     sub: 'every fjs-prototypes repo — grouped by owner, favorites first, each record edited in place' },
     { href: '/laptop/',             label: 'Laptop',         icon: 'workbench',     sub: 'fli\'s files on this machine — disk, keys, what is running' },
   ] },
 ]

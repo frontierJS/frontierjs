@@ -894,7 +894,7 @@ function fieldCreateSpec(field, schema, audience, modelNames, model) {
   if (type.kind === 'relation') return null
 
   // Skip computed / generated — db handles these
-  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from')) return null
+  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
 
   // Skip @guarded / @secret for client audience
   const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
@@ -937,7 +937,7 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
   const { name, type, attributes } = field
 
   if (type.kind === 'relation') return null
-  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from')) return null
+  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
   if (name === 'createdAt' || name === 'updatedAt' || name === 'deletedAt') return null
 
   const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')

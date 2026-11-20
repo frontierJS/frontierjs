@@ -73,8 +73,8 @@ describe('normalizeOrderBy', () => {
     // parseSort in core/litestone.ts IS this — one reading of `-createdAt`, or
     // the browser sorts a list differently from the query that filled it.
     const mod = await import('../src/core/litestone.ts')
-    expect(typeof mod.parseQuery).toBe('function')
-    expect(mod.parseQuery({}, 20, 100, { orderBy: '-createdAt' }).orderBy)
+    expect(typeof mod.parseListQuery).toBe('function')
+    expect(mod.parseListQuery({}, 20, 100, { orderBy: '-createdAt' }).orderBy)
       .toEqual(normalizeOrderBy('-createdAt'))
   })
 })

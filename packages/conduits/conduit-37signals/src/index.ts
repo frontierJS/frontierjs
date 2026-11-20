@@ -27,9 +27,9 @@
 // unkeyed and unreplayable, and a lost answer is resolved by a read (C6):
 // `findCreated`, below the writes.
 
-import { MintError, type ConduitRequest, type ConduitResult, type CredentialCaller, type CredentialResolver, type FrameDialect, type Material, type ReceivedEvent, type TargetDescriptor } from '@frontierjs/conduit'
-import { bodyOf, translate, type BasecampFailure } from './errors.ts'
-import type { ChatLine, Comment, FeedEvent, FeedPage, Message, Person, Project, Recording, Todo, Todolist } from './types.ts'
+import { MintError, errorBody, type ConduitRequest, type ConduitResult, type CredentialCaller, type CredentialResolver, type FrameDialect, type Material, type ReceivedEvent, type TargetDescriptor } from '@frontierjs/conduit'
+import { translate, type BasecampFailure } from './errors.ts'
+import type { BasecampErrorBody, ChatLine, Comment, FeedEvent, FeedPage, Message, Person, Project, Recording, Todo, Todolist } from './types.ts'
 
 export * from './types.ts'
 export * from './errors.ts'
@@ -157,7 +157,7 @@ export function basecampTokenResolver(bc: BasecampSend, opts: { clientId: string
       body: { grant_type: 'refresh_token', refresh_token: current, client_id: opts.clientId },
     })
     if (r.error) {
-      if (bodyOf(r.error.raw)?.error === 'invalid_grant') await grants.onLost?.(ref, { ...failure(r), code: 'invalid_grant' })
+      if (errorBody<BasecampErrorBody>(r.error.raw)?.error === 'invalid_grant') await grants.onLost?.(ref, { ...failure(r), code: 'invalid_grant' })
       throw new MintError(r.error)
     }
     const t = r.data

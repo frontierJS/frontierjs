@@ -13,7 +13,7 @@
 // invoice. EUR, the first currency here that is not USD.
 
 import type { ConduitError, ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
-import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
+import { toMinor as minorOf } from '@frontierjs/toolbelt/units'
 
 export const HETZNER_ADDRESS = 'https://api.hetzner.cloud'
 /** Hetzner's maximum, a quarter of DO's. A larger value is accepted and clamped in silence. */
@@ -75,8 +75,7 @@ export const STATES: Record<string, MachineState> = { initializing: 'starting', 
  *  unparseable price is null and the size loses that location. */
 export function toMinor(value: unknown): number | null {
   if (typeof value !== 'string' && typeof value !== 'number') return null
-  const n = Number(value)
-  return Number.isFinite(n) ? roundMinor(n * 10 ** minorUnits(CURRENCY)) : null
+  try { return minorOf(value, CURRENCY) } catch { return null }
 }
 export function toSize(t: Row): Size {
   const prices: Record<string, number> = {}

@@ -169,7 +169,7 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           domain/backup/archive-manifest.ts is an archive's `manifest.json` —
           the key fingerprint and each file's sha256 — and `archiveRefusals`, the
           check a restore runs on the staged directory, schema graded by litestone's
-          `status()` over each staged database's own migration history
+          `migrationStatus()` over each staged database's own migration history
           domain/backup/hub-restore.ts is `/setup`'s *Restore a hub*: the bucket
           listed and fetched over pre-signed URLs (no row exists to be a target),
           an upload received, `restore-staged/` written only after `archiveRefusals`

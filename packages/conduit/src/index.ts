@@ -121,4 +121,4 @@ export { assertClaim } from './mirror.ts'
 export type { MirrorClaim, MirrorModel, MirrorVerb, MirrorRow, MirrorForward, ClaimedModel } from './mirror.ts'
 
 // Exported as values (classes, not just types)
-export { ConduitStreamError, CredentialError, MintError, CONDUIT_ERROR_KINDS } from './types.ts'
+export { ConduitStreamError, CredentialError, MintError, CONDUIT_ERROR_KINDS, errorBody } from './types.ts'

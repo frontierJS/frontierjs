@@ -38,8 +38,13 @@ export interface MailAttachment {
 }
 
 export interface SendResult {
-  id:      string
-  message: string
+  /** The provider's own handle — what its delivery webhooks and support name
+   *  the email by. Its shape is the adapter's; never a header (`FJS-D684`). */
+  id:        string
+  /** The Message-ID the message went out under, stated or minted: what a
+   *  reply's In-Reply-To and References name. */
+  messageId: string
+  message:   string
 }
 
 export interface IMail {
@@ -50,7 +55,7 @@ export interface IMail {
 // ─── Mail builder ─────────────────────────────────────────────────────────
 // Fluent API — same feel as Total.js mail builder.
 
-import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId } from './smtp.ts'
+import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId, messageIdFor } from './smtp.ts'
 
 // Re-exported because a test double implementing `IMail` has to accept exactly
 // what the real mailer accepts. A double that took a message SMTP would refuse
@@ -61,6 +66,10 @@ export { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertCont
 // The message as one RFC 5322 text, for a mailer whose transport takes a whole
 // message (Graph's sendMail, SES's SendRawEmail) rather than an SMTP session.
 export { toMime } from './smtp.ts'
+
+// Minted in one place, so every `IMail` answers `SendResult.messageId` the
+// same way and a stated Message-ID wins under each.
+export { messageIdFor } from './smtp.ts'
 
 // The receiving half: the shape a mail vendor's dialect parses to, and the
 // reply-tag kit an app's `apply` reads it with (`FJS-D1091`). `assertMailbox`
@@ -230,12 +239,18 @@ export function createResendMailer(opts: ResendOptions): IMail {
     return res.json()
   }
 
-  function toResendPayload(msg: MailMessage): Record<string, unknown> {
+  function toResendPayload(msg: MailMessage): { payload: Record<string, unknown>, messageId: string } {
 
+    const from = msg.from ?? defaultFrom
+    // Resend's own id is on no header, so a reply could not name it; the
+    // Message-ID is minted here and sent. Whether Resend keeps a stated one is
+    // unproven against the live API (`FJS-4481`).
+    const { header, id: messageId } = messageIdFor({ from, headers: msg.headers })
     const payload: Record<string, unknown> = {
-      from:    msg.from    ?? defaultFrom,
+      from,
       to:      Array.isArray(msg.to) ? msg.to : [msg.to],
       subject: msg.subject,
+      headers: header ? { ...msg.headers, [header]: messageId } : msg.headers,
     }
 
     if (msg.html)    payload.html    = msg.html
@@ -243,7 +258,6 @@ export function createResendMailer(opts: ResendOptions): IMail {
     if (msg.replyTo ?? defaultReplyTo) payload.reply_to = msg.replyTo ?? defaultReplyTo
     if (msg.cc)      payload.cc      = Array.isArray(msg.cc)  ? msg.cc  : [msg.cc]
     if (msg.bcc)     payload.bcc     = Array.isArray(msg.bcc) ? msg.bcc : [msg.bcc]
-    if (msg.headers) payload.headers = msg.headers
 
     if (msg.attachments?.length) {
       payload.attachments = msg.attachments.map(a => ({
@@ -260,19 +274,22 @@ export function createResendMailer(opts: ResendOptions): IMail {
       payload.tags = Object.entries(msg.tags).map(([name, value]) => ({ name, value }))
     }
 
-    return payload
+    return { payload, messageId }
   }
 
   return {
 
     async send(message: MailMessage): Promise<SendResult> {
-      const result = await post('/emails', toResendPayload(message)) as { id: string }
-      return { id: result.id, message: 'sent' }
+      const { payload, messageId } = toResendPayload(message)
+      const result = await post('/emails', payload) as { id: string }
+      return { id: result.id, messageId, message: 'sent' }
     },
 
     async batch(messages: MailMessage[]): Promise<SendResult[]> {
-      const results = await post('/emails/batch', messages.map(toResendPayload)) as { id: string }[]
-      return results.map(r => ({ id: r.id, message: 'sent' }))
+      const built = messages.map(toResendPayload)
+      // Answered in order, one per message, under `data`.
+      const { data } = await post('/emails/batch', built.map(b => b.payload)) as { data: { id: string }[] }
+      return data.map((r, i) => ({ id: r.id, messageId: built[i].messageId, message: 'sent' }))
     }
   }
 }
@@ -352,7 +369,8 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
           attachments: message.attachments,
         }
       )
-      return { id, message: 'sent' }
+      // The Message-ID is the only handle an SMTP send has.
+      return { id, messageId: id, message: 'sent' }
     },
 
     async batch(messages: MailMessage[]): Promise<SendResult[]> {
@@ -380,8 +398,8 @@ export function createSmtpMailer(opts: SmtpMailerOptions): IMail {
         })
       )
       return results.map(r => r.ok
-        ? { id: r.id!, message: 'sent' }
-        : { id: '', message: `failed: ${r.error}` })
+        ? { id: r.id!, messageId: r.id!, message: 'sent' }
+        : { id: '', messageId: '', message: `failed: ${r.error}` })
     }
   }
 }

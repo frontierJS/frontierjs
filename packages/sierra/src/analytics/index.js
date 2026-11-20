@@ -3,8 +3,8 @@
  *
  * Initialized by virtual:sierra at boot. A static page never loads that, so
  * the build writes the vendor tag into its <head> (`postbuild/inject-analytics.js`)
- * and the island entry calls `configureAnalytics` so `track()` reaches it.
- * App code uses track() to fire events.
+ * and the island entry calls `configureAnalytics` so `trackEvent()` reaches it.
+ * App code uses trackEvent() to fire events.
  *
  * Providers:
  *   'plausible' — Plausible Analytics
@@ -18,7 +18,7 @@ import { vendorTag } from './tag.js'
 let _provider = null
 
 /**
- * Resolve the provider `track()` calls, and load nothing. For a page whose
+ * Resolve the provider `trackEvent()` calls, and load nothing. For a page whose
  * vendor tag is already in the HTML.
  * @param {object} config — analytics config from sierra.config.js
  * @returns {boolean} whether a provider was resolved
@@ -135,7 +135,7 @@ function isLocalHost(hostname) {
  * @param {string} event
  * @param {Record<string, unknown>} [props={}]
  */
-export function track(event, props = {}) {
+export function trackEvent(event, props = {}) {
   _provider?.track?.(event, props)
 }
 

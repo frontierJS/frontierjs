@@ -166,7 +166,7 @@ describe('the template and soft-delete directives reach a real client', () => {
   test('the same names travel as `$` params, which is what a browser sends', async () => {
     const db = await tmplDb()
     // What the bridge produces from `?$onlyTemplates=true`: the parse is
-    // toolbelt's, and parseQuery reads only its directives half.
+    // toolbelt's, and parseListQuery reads only its directives half.
     const out = await quotes().find(
       ctx(db, { service: 'quotes', ...splitParams({ $onlyTemplates: 'true' }) })) as { data: { id: number }[] }
     expect(out.data.map(r => r.id)).toEqual([2])

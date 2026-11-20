@@ -5,7 +5,7 @@ realms — a migrated database, factories, a principal, a mounted Junction app, 
 the announcements a mutation made.
 
 ```js fragment
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 
 const env = await createTestEnv({
   schema:     'db/schema.lite',
@@ -14,7 +14,7 @@ const env = await createTestEnv({
   api:        ({ db }) => buildApp(db),
 })
 
-const developer = session({ id: 'u1', role: 'developer' })
+const developer = sessionContext({ id: 'u1', role: 'developer' })
 
 test('a developer archives a lead', async () => {
   const t = env.phases({ as: developer })
@@ -188,7 +188,7 @@ Which also makes the cost of arranging below the boundary visible: `arrange`
 writes through `asSystem()`, no service runs, and nothing announces. That is
 correct and it is worth a test saying so.
 
-## `session()`
+## `sessionContext()`
 
 Fills the three required `SessionContext` fields and **invents nothing else**.
 The standing fields grade a caller through `sessionGateLevel()`, where absent

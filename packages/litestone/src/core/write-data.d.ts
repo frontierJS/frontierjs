@@ -10,7 +10,7 @@ export function writeKeySets(shape?: any): {
     _grantColumns: Set<any>;
     _edgeNamespaces: Set<any>;
 };
-export function makeWriteData(shape?: any, ctx?: any, { writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields, _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull, allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores, parentRefusal, keys, }?: {
+export function makeWriteData(shape?: any, ctx?: any, { writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields, _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull, allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores, parentRefusal, keys, refuseZonedWrite, deriveZoned, }?: {
     writeDb: any;
     T: any;
     col: any;
@@ -32,6 +32,8 @@ export function makeWriteData(shape?: any, ctx?: any, { writeDb, T, col, plugins
     storesWhatOmissionStores: any;
     parentRefusal: any;
     keys: any;
+    refuseZonedWrite: any;
+    deriveZoned: any;
 }): {
     writeData: (data: any, { requireAll, system, fieldWrite, stamped, creating, where }?: {
         requireAll?: boolean;

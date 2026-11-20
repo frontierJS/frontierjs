@@ -3,7 +3,7 @@
 // Commands:
 //   create(db, parseResult, label, dir)  → generate + write migrations/TIMESTAMP_label.sql
 //   apply(db, dir)                       → apply all pending migration files in order
-//   status(db, dir)                      → show applied + pending migrations
+//   migrationStatus(db, dir)             → show applied + pending migrations
 //   verify(db, parseResult, dir)         → check live db against pristine schema
 
 // `#host` and not `fs`, which is the seam `FJS-D305` rests on: this module is
@@ -935,8 +935,8 @@ export async function apply(db, dir = './migrations') {
 // ─── STATUS ───────────────────────────────────────────────────────────────────
 // Returns a row per migration file showing applied/pending/orphaned state.
 
-export function status(db, dir = './migrations') {
-  requireRawHandle(db, 'status')
+export function migrationStatus(db, dir = './migrations') {
+  requireRawHandle(db, 'migrationStatus')
   const absDir     = resolve(dir)
   const files      = listMigrationFiles(absDir)
   const applied    = appliedMigrations(db)
@@ -963,7 +963,7 @@ export function status(db, dir = './migrations') {
     }
   }
 
-  // A .sql/.js the name pattern rejected. status(), apply() and verify() read
+  // A .sql/.js the name pattern rejected. migrationStatus(), apply() and verify() read
   // one list, so a file invisible to one is invisible to none of the others.
   for (const file of unmatchedMigrationFiles(absDir)) {
     rows.push({ file, state: 'skipped', applied_at: null, tampered: false, sql: null })
@@ -993,7 +993,7 @@ export function verify(db, parseResult, dir = './migrations', { pluralize = fals
     : { state: 'in-sync', message: '✓ schema is in sync' }
 
   // Check if there are pending migrations that would explain the diff
-  const rows    = status(db, dir)
+  const rows    = migrationStatus(db, dir)
   const pending = rows.filter(r => r.state === 'pending')
 
   if (pending.length > 0) {

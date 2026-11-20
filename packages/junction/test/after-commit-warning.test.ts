@@ -28,7 +28,7 @@ function appWithMail() {
   const sent: unknown[] = []
   const app: any = {}
   mail({ mailer: {
-    async send(m) { sent.push(m); return { id: '1', message: 'sent' } },
+    async send(m) { sent.push(m); return { id: '1', messageId: '<1@test>', message: 'sent' } },
     async batch(ms) { sent.push(...ms); return [] },
   } }).register!(app)
   return { app, sent }

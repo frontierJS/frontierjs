@@ -18,7 +18,7 @@
 // arrives is `retryable` as conduit graded it. A lost answer to a write is
 // `indeterminate`, and § C6 in the README names the read that resolves each.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { GraphErrorBody, TokenRefusal } from './types.ts'
 
 export type MicrosoftFailureKind =
@@ -44,12 +44,6 @@ export interface MicrosoftFailure {
   indeterminate?: true
 }
 
-export function parseBody<T>(raw: unknown): T | null {
-  if (raw && typeof raw === 'object') return raw as T
-  if (typeof raw !== 'string') return null
-  try { return JSON.parse(raw) as T } catch { return null }
-}
-
 const AADSTS = /AADSTS(\d+)/
 
 export function translate(error: ConduitError, status?: number, headers?: Record<string, string>): MicrosoftFailure {
@@ -61,7 +55,7 @@ export function translate(error: ConduitError, status?: number, headers?: Record
     ...(error.retry_after_ms !== undefined ? { retryAfterMs: error.retry_after_ms } : {}),
     ...(error.indeterminate ? { indeterminate: true as const } : {}),
   }
-  const body = parseBody<GraphErrorBody & TokenRefusal>(error.raw)
+  const body = errorBody<GraphErrorBody & TokenRefusal>(error.raw)
 
   // The token endpoint: a flat `error` word.
   if (typeof body?.error === 'string') {

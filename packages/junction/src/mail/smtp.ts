@@ -484,7 +484,7 @@ async function openSession(config: SmtpConfig): Promise<{
     // Every address that must RECEIVE this, which is not the same set as the
     // addresses that appear in the headers: a bcc is here and nowhere else.
     const recipients = envelopeRecipients(msg)
-    const { header: idHeader, id } = messageIdOf(msg)
+    const { header: idHeader, id } = messageIdFor(msg)
     // Built before MAIL FROM, so a refusal while writing it leaves no
     // transaction open behind it.
     const raw = buildMimeMessage(idHeader ? { ...msg, headers: { ...msg.headers, [idHeader]: id } } : msg)
@@ -572,7 +572,7 @@ export function envelopeRecipients(msg: SmtpMessage): string[] {
  * domain. Minted HERE because a reply's In-Reply-To must name an id the app
  * learned from `send()`; an id a relay assigns is one it never sees.
  */
-export function messageIdOf(msg: SmtpMessage): { header: string | null, id: string } {
+export function messageIdFor(msg: Pick<SmtpMessage, 'from' | 'headers'>): { header: string | null, id: string } {
   const stated = Object.keys(msg.headers ?? {}).find(k => k.toLowerCase() === 'message-id')
   if (stated) return { header: null, id: msg.headers![stated] }
   const domain = assertMailbox(msg.from, 'from').address.split('@').pop()!
@@ -623,7 +623,7 @@ export function assertContentId(cid: string): string {
  */
 export function toMime(msg: SmtpMessage): { raw: string; messageId: string } {
   assertMessageAddresses(msg)
-  const { header, id } = messageIdOf(msg)
+  const { header, id } = messageIdFor(msg)
   return { raw: buildMimeMessage(header ? { ...msg, headers: { ...msg.headers, [header]: id } } : msg), messageId: id }
 }
 

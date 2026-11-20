@@ -1,0 +1,584 @@
+---
+title: Prototypes
+---
+<script>
+  // Every fjs-prototypes repo on one screen (IDEAS/prototypes-catalog.md, Phase 2):
+  // the record for each from catalog/CATALOG.json, its git state from the scan,
+  // and the owner's view (favorites, hand order, folded groups) from
+  // ~/.config/workbench/prototypes.json. A record edit writes CATALOG.json, which
+  // Claude also reads, so the file is the truth and this page re-reads it.
+  import { goto }   from '@frontierjs/sierra/router'
+  import { ago }    from '../../lib/datetime.js'
+  import { prototypes, STATUS_TONES } from '../../resources/Prototype.mesa'
+  import { workbench } from '../../resources/Workbench.mesa'
+
+  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
+
+  const GROUP_KEY = 'workbench.prototypes.groupBy'
+  const groupRemembered = () => { try { return localStorage.getItem(GROUP_KEY) } catch { return null } }
+  const rememberGroup   = (v) => { try { localStorage.setItem(GROUP_KEY, v) } catch {} }
+  const GROUP_BY = [
+    { value: 'owner',  label: 'Owner' },
+    { value: 'kind',   label: 'Kind' },
+    { value: 'status', label: 'Status' },
+  ]
+
+  let answer  = null
+  let error   = null
+  let loading = false
+  let groupBy = GROUP_BY.some(g => g.value === groupRemembered()) ? groupRemembered() : 'owner'
+  let search  = ''
+  // The row whose record form is open, by `<section>/<name>`, so an unsorted
+  // repo and a record that share a name never open together.
+  let editing = null
+  let formError = null
+  let saving  = false
+
+  async function load() {
+    loading = true
+    try {
+      answer = await prototypes.service.invoke('list', null)
+      error = null
+    } catch (err) {
+      error = err.message
+    } finally {
+      loading = false
+    }
+  }
+  load()
+
+  // Pinned to the workbench, by path: Open in Workbench reuses a pin and makes one otherwise.
+  let pinned = {}
+  async function loadPins() {
+    try {
+      const out = await workbench.service.invoke('pins', null)
+      pinned = Object.fromEntries(out.pins.map(p => [p.path, p.id]))
+    } catch {}
+  }
+  loadPins()
+
+  const tilde = (path) => path.replace(/^\/(home|Users)\/[^/]+/, '~')
+
+  // ─── the groups ──────────────────────────────────────────────────────
+
+  function matches(row, q) {
+    if (!q) return true
+    const s = q.toLowerCase()
+    return [row.name, row.record?.purpose ?? '', row.path].some(v => v.toLowerCase().includes(s))
+  }
+
+  /** Favorites first, then the hand order, then the newest commit, then the name. */
+  function ranked(view) {
+    const fav = new Set(view.favorites)
+    const at  = new Map(view.order.map((n, i) => [n, i]))
+    return (a, b) =>
+      (fav.has(b.name) - fav.has(a.name))
+      || ((at.get(a.name) ?? Infinity) - (at.get(b.name) ?? Infinity))
+      || (b.git?.lastCommitAt ?? '').localeCompare(a.git?.lastCommitAt ?? '')
+      || a.name.localeCompare(b.name)
+  }
+
+  function grouped(answer, by, q) {
+    if (!answer) return []
+    const order = ranked(answer.view)
+    const out = answer.choices[by].map(value => ({
+      key: `${by}:${value}`, label: value, section: 'recorded', draggable: true,
+      rows: answer.recorded.filter(r => r.record[by] === value && matches(r, q)).sort(order),
+    }))
+    out.push({
+      key: 'missing', label: 'Missing', section: 'missing', hint: 'recorded, and the folder is gone',
+      rows: answer.missing.filter(r => matches(r, q)).sort(order),
+    })
+    out.push({
+      key: 'unsorted', label: 'Unsorted', section: 'unsorted', hint: 'a repo here with no record',
+      rows: answer.unsorted.map(g => ({ name: g.name, path: g.path, git: g, record: null })).filter(r => matches(r, q)),
+    })
+    return out.filter(g => g.rows.length)
+  }
+
+  $: groups    = grouped(answer, groupBy, search)
+  $: view      = answer?.view ?? { favorites: [], order: [], folded: [] }
+  $: readOnly  = !!answer?.error
+  $: favorites = new Set(view.favorites)
+  $: folded    = new Set(view.folded)
+
+  function chooseGroup(next) { groupBy = next; rememberGroup(next) }
+
+  // ─── the view ────────────────────────────────────────────────────────
+
+  // Shown at once and written behind; a refused write reads the file back.
+  async function saveView(next) {
+    answer = { ...answer, view: next }
+    try {
+      await prototypes.service.invoke('saveView', null, next)
+    } catch (err) {
+      error = err.message
+      await load()
+    }
+  }
+
+  function toggleFavorite(name) {
+    const on = view.favorites.includes(name)
+    saveView({ ...view, favorites: on ? view.favorites.filter(n => n !== name) : [...view.favorites, name] })
+  }
+
+  function toggleFold(key) {
+    const on = view.folded.includes(key)
+    saveView({ ...view, folded: on ? view.folded.filter(k => k !== key) : [...view.folded, key] })
+  }
+
+  // The group's rows are written in their new order after every name outside
+  // the group, which keeps every other group's hand order as it was.
+  function move(group, name, to) {
+    const names = group.rows.map(r => r.name).filter(n => n !== name)
+    names.splice(Math.max(0, Math.min(to, names.length)), 0, name)
+    const inGroup = new Set(names)
+    saveView({ ...view, order: [...view.order.filter(n => !inGroup.has(n)), ...names] })
+  }
+
+  // A filtered group holds only some of its rows, so a drop there would push the hidden ones to the end.
+  $: canReorder = !search && !readOnly
+
+  let dragging = null
+  let over     = null
+  function dragStart(e, group, name) {
+    dragging = { group: group.key, name }
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', name)
+  }
+  function dragOver(e, group, name) {
+    if (!dragging || dragging.group !== group.key) return
+    e.preventDefault()
+    over = name
+  }
+  function drop(e, group, name) {
+    if (!dragging || dragging.group !== group.key) return
+    e.preventDefault()
+    if (dragging.name !== name) move(group, dragging.name, group.rows.findIndex(r => r.name === name))
+    dragging = null; over = null
+  }
+  function handleKey(e, group, index) {
+    const step = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
+    if (!step) return
+    e.preventDefault()
+    const name = group.rows[index].name
+    move(group, name, index + step)
+    // The handle is remade in its new place, so focus follows it there.
+    requestAnimationFrame(() => document.getElementById(`prototype-move-${name}`)?.focus())
+  }
+
+  // ─── a record ────────────────────────────────────────────────────────
+
+  const editKey = (group, row) => `${group.section}/${row.name}`
+
+  function open(group, row) {
+    formError = null
+    editing = editing === editKey(group, row) ? null : editKey(group, row)
+  }
+
+  const relatedText = (rec) => (rec?.related ?? []).map(r => `${r.to}: ${r.why}`).join('\n')
+
+  /** `name: why`, one per line, or the line that is not. */
+  function parseRelated(text) {
+    const out = []
+    for (const line of text.split('\n').map(l => l.trim()).filter(Boolean)) {
+      const at = line.indexOf(':')
+      if (at < 1) return { bad: line }
+      out.push({ to: line.slice(0, at).trim(), why: line.slice(at + 1).trim() })
+    }
+    return { related: out }
+  }
+
+  async function saveRecord(e, group, row) {
+    e.preventDefault()
+    const f = new FormData(e.target)
+    const related = parseRelated(String(f.get('related') ?? ''))
+    if (related.bad) { formError = `"${related.bad}" is not "repo-name: why"`; return }
+    const purpose = String(f.get('purpose') ?? '').trim()
+    const record = {
+      owner: f.get('owner'), kind: f.get('kind'), status: f.get('status'),
+      purpose: purpose || null,
+      related: related.related.length ? related.related : null,
+    }
+    if (group.section === 'unsorted') record.path = tilde(row.path)
+    if (group.section === 'missing')  record.path = String(f.get('path') ?? '').trim()
+    saving = true; formError = null
+    try {
+      const out = await prototypes.service.invoke('saveRecord', null, { name: row.name, record })
+      editing = null
+      // A new or moved record changes which list it is in; only the scan knows where it landed.
+      if (group.section !== 'recorded') await load()
+      else answer = { ...answer, recorded: answer.recorded.map(r => r.name === row.name ? { ...r, record: out.record } : r) }
+      // A related link or a kind is one of the panel's two signals.
+      if (showCandidates) loadCandidates()
+    } catch (err) {
+      formError = err.message
+    } finally {
+      saving = false
+    }
+  }
+
+  // ─── row actions ─────────────────────────────────────────────────────
+
+  async function openInWorkbench(row) {
+    error = null
+    try {
+      let id = pinned[row.path]
+      if (!id) {
+        id = (await workbench.service.invoke('pin', null, { path: row.path })).id
+        pinned = { ...pinned, [row.path]: id }
+      }
+      goto(`/workbench/#workbench-${encodeURIComponent(id)}`)
+    } catch (err) { error = err.message }
+  }
+
+  async function openInLathe(row) {
+    error = null
+    try { await prototypes.service.invoke('open', null, { name: row.name }) } catch (err) { error = err.message }
+  }
+
+  // ─── moving a repo to another folder ─────────────────────────────────
+
+  // The record whose Move form is open, by name: only a recorded row has one.
+  let relocating = null
+  let moveError  = null
+  let moveBusy   = false
+  let moved      = null
+
+  function toggleRelocate(row) {
+    moveError = null
+    relocating = relocating === row.name ? null : row.name
+  }
+
+  async function relocate(e, row) {
+    e.preventDefault()
+    const into = String(new FormData(e.target).get('into') ?? '').trim()
+    if (!into) { moveError = 'Name the folder to move it into.'; return }
+    moveBusy = true; moveError = null
+    try {
+      moved = await prototypes.service.invoke('move', null, { name: row.name, into })
+      relocating = null
+      // Its parent folder is a new one to scan; only the server knows the new git state.
+      await load()
+    } catch (err) {
+      moveError = err.message
+    } finally {
+      moveBusy = false
+    }
+  }
+
+  const transcriptCount = (m) => m.histories.reduce((n, h) => n + h.transcripts, 0)
+
+  // ─── merge candidates ────────────────────────────────────────────────
+
+  // Read when the panel opens, not with the listing: it reads every schema, and most visits never ask.
+  let showCandidates = false
+  let candidates     = null
+  let candidatesError = null
+  async function loadCandidates() {
+    try {
+      candidates = await prototypes.service.invoke('candidates', null)
+      candidatesError = null
+    } catch (err) { candidatesError = err.message }
+  }
+  function toggleCandidates() {
+    showCandidates = !showCandidates
+    if (showCandidates) loadCandidates()
+  }
+  async function reload() {
+    await load()
+    if (showCandidates) await loadCandidates()
+  }
+  $: counts = answer && {
+    recorded: answer.recorded.length, missing: answer.missing.length,
+    unsorted: answer.unsorted.length, favorites: view.favorites.length,
+  }
+</script>
+
+<div class="section-header">
+  <h1>Prototypes</h1>
+  <span class="cluster">
+    <Button treatment="ghost" id="prototypes-candidates-toggle" aria-expanded={showCandidates ? 'true' : 'false'}
+            onclick={toggleCandidates}>Merge candidates</Button>
+    <Button treatment="ghost" disabled={loading} onclick={reload}>{loading ? 'Reading…' : 'Reload'}</Button>
+    <Button treatment="ghost" href="/git-activity/local/">Local repos</Button>
+  </span>
+</div>
+
+{#if error}
+  <article class="alert danger" id="prototypes-error">
+    <div class="alert-content prototypes-error">{error}</div>
+  </article>
+{/if}
+
+{#if !answer}
+  {#if !error}<p class="text-muted">Reading the catalog…</p>{/if}
+{:else}
+  {#if answer.error}
+    <Callout tone="danger" title="CATALOG.json does not read">
+      <p class="text-body">{answer.error}</p>
+      <p class="text-sm text-muted">Fix <code>{tilde(answer.file)}</code> by hand; nothing here saves until it reads.</p>
+    </Callout>
+  {/if}
+  {#if answer.problems.length}
+    <Callout tone="warning" title="Records left out of the listing">
+      <ul class="prototypes-problems">
+        {#each answer.problems as p (p.name)}<li><code>{p.name}</code> — {p.error}</li>{/each}
+      </ul>
+      <p class="text-sm text-muted">They stay in <code>{tilde(answer.file)}</code> as written.</p>
+    </Callout>
+  {/if}
+
+  <div class="cluster" id="prototypes-totals">
+    <Badge tone="muted">{counts.recorded} recorded</Badge>
+    {#if counts.favorites}<Badge tone="info">{counts.favorites} favorites</Badge>{/if}
+    {#if counts.unsorted}<Badge tone="warning">{counts.unsorted} unsorted</Badge>{/if}
+    {#if counts.missing}<Badge tone="danger">{counts.missing} missing</Badge>{/if}
+    {#if answer.truncated}<Badge tone="danger">the scan stopped early</Badge>{/if}
+  </div>
+
+  {#if moved}
+    <Callout tone="success" title={`Moved ${moved.name}`} id="prototypes-moved">
+      <p class="text-body"><code>{tilde(moved.from)}</code> → <code>{tilde(moved.to)}</code>. Its record says so.</p>
+      <p class="text-sm text-muted">
+        {#if moved.histories.length}
+          Claude Code history: {moved.histories.length} {moved.histories.length === 1 ? 'folder' : 'folders'} renamed,
+          {transcriptCount(moved)} {transcriptCount(moved) === 1 ? 'transcript' : 'transcripts'} pointed at the new path.
+        {:else}
+          It had no Claude Code history to carry.
+        {/if}
+        {#if moved.links}{moved.links} {moved.links === 1 ? 'link' : 'links'} out of the repo re-pointed.{/if}
+        {#if moved.worktrees}Its linked worktrees were repaired.{/if}
+      </p>
+      <Button size="xs" treatment="ghost" onclick={() => moved = null}>Dismiss</Button>
+    </Callout>
+  {/if}
+
+  {#if showCandidates}
+    <section class="card prototypes-candidates" id="prototypes-candidates" aria-labelledby="prototypes-candidates-head">
+      <h2 id="prototypes-candidates-head" class="prototypes-group-head">Merge candidates</h2>
+      {#if candidatesError}
+        <p class="text-sm prototypes-form-error" role="alert">{candidatesError}</p>
+      {:else if !candidates}
+        <p class="text-sm text-muted">Reading the schemas…</p>
+      {:else}
+        <p class="text-sm text-muted">
+          Pairs a record links with <code>related</code>, and pairs of one kind whose <code>db/schema.lite</code>
+          declare {candidates.minShared} or more of the same models. Read {candidates.schemas} schemas; models
+          {#if candidates.common.length}{candidates.common.join(', ')}{:else}none{/if} are in a quarter or more of
+          them and not counted. A candidate is for you to judge; record the answer in either repo's Related.
+        </p>
+        {#if !candidates.candidates.length}
+          <p class="text-sm">No pair qualifies.</p>
+        {:else}
+          <ul class="prototypes-candidate-list">
+            {#each candidates.candidates as c (`${c.a}/${c.b}`)}
+              <li class="prototypes-candidate" id={`prototypes-candidate-${c.a}-${c.b}`}>
+                <span class="cluster">
+                  <button type="button" class="prototypes-name" title={`Filter to ${c.a}`} onclick={() => search = c.a}>{c.a}</button>
+                  <span aria-hidden="true">↔</span>
+                  <button type="button" class="prototypes-name" title={`Filter to ${c.b}`} onclick={() => search = c.b}>{c.b}</button>
+                  {#if c.kind}<Pill tone="info">{c.kind}</Pill>{/if}
+                  {#if c.related.length}<Pill tone="success">linked</Pill>{/if}
+                </span>
+                {#each c.related as r}
+                  <span class="text-sm">{r.from} → {r.to}: {r.why}</span>
+                {/each}
+                {#if c.shared.length}
+                  <span class="text-sm text-muted">shares {c.shared.length} models: {c.shared.join(', ')}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
+    </section>
+  {/if}
+
+  <div class="cluster prototypes-tools">
+    <Select id="prototypes-group-by" name="group-by" label="" placeholder="" aria-label="Group by"
+            options={GROUP_BY} value={groupBy} onchange={(e) => chooseGroup(e.target.value)} />
+    <label class="visually-hidden" for="prototypes-search">Filter prototypes</label>
+    <Input id="prototypes-search" placeholder="Filter by name, purpose or path…" value={search}
+           oninput={(e) => search = e.target.value} />
+  </div>
+
+  {#if !groups.length}
+    <EmptyState title={search ? 'Nothing matches the filter' : 'No prototypes'}>
+      {#if !search}Nothing is recorded in <code>{tilde(answer.file)}</code> and no repo was found in <code>{tilde(answer.dir)}</code>.{/if}
+    </EmptyState>
+  {/if}
+
+  {#each groups as group (group.key)}
+    <section class="prototypes-group" id={`prototypes-group-${group.key.replace(':', '-')}`}>
+      <h2 class="prototypes-group-head">
+        <button type="button" class="prototypes-fold" aria-expanded={folded.has(group.key) ? 'false' : 'true'}
+                onclick={() => toggleFold(group.key)}>
+          <span aria-hidden="true">{folded.has(group.key) ? '▸' : '▾'}</span>
+          <span class="prototypes-group-label">{group.label}</span>
+          <span class="text-sm text-muted">{group.rows.length}{group.hint ? ` · ${group.hint}` : ''}</span>
+        </button>
+      </h2>
+
+      {#if !folded.has(group.key)}
+        <ul class="prototypes-rows">
+          {#each group.rows as row, i (row.name)}
+            <li class="card prototypes-row" id={`prototype-${row.name}`}
+                class:prototypes-over={over === row.name} class:prototypes-dragging={dragging?.name === row.name}
+                draggable={group.draggable && canReorder ? 'true' : 'false'}
+                ondragstart={(e) => dragStart(e, group, row.name)}
+                ondragend={() => { dragging = null; over = null }}
+                ondragover={(e) => dragOver(e, group, row.name)}
+                ondragleave={() => { if (over === row.name) over = null }}
+                ondrop={(e) => drop(e, group, row.name)}>
+              <div class="prototypes-row-main">
+                {#if group.draggable && canReorder}
+                  <button type="button" class="prototypes-handle" id={`prototype-move-${row.name}`}
+                          aria-label={`Move ${row.name} — drag, or the up and down arrows`}
+                          onkeydown={(e) => handleKey(e, group, i)}>⠿</button>
+                {/if}
+                {#if row.record && group.section === 'recorded'}
+                  <Button treatment="ghost" size="xs" square
+                          aria-label={favorites.has(row.name) ? `Unfavorite ${row.name}` : `Favorite ${row.name}`}
+                          aria-pressed={favorites.has(row.name) ? 'true' : 'false'}
+                          disabled={readOnly}
+                          onclick={() => toggleFavorite(row.name)}>{favorites.has(row.name) ? '★' : '☆'}</Button>
+                {/if}
+                <div class="prototypes-row-what">
+                  <span class="cluster">
+                    <strong>{row.name}</strong>
+                    {#if row.record}
+                      {#if groupBy !== 'owner' || group.section !== 'recorded'}<Pill tone="muted">{row.record.owner}</Pill>{/if}
+                      {#if groupBy !== 'kind' || group.section !== 'recorded'}<Pill tone="info">{row.record.kind}</Pill>{/if}
+                      {#if groupBy !== 'status' || group.section !== 'recorded'}<Pill tone={STATUS_TONES[row.record.status]}>{row.record.status}</Pill>{/if}
+                    {/if}
+                  </span>
+                  {#if row.record?.purpose}<span class="text-sm">{row.record.purpose}</span>{/if}
+                  {#if row.record?.related?.length}
+                    <span class="text-sm text-muted">related: {row.record.related.map(r => r.to).join(', ')}</span>
+                  {/if}
+                  <span class="cluster text-sm text-muted">
+                    <code>{tilde(row.path)}</code>
+                    {#if row.git}
+                      {#if row.git.branch}<code>{row.git.branch}</code>{:else}<Pill tone="warning">detached</Pill>{/if}
+                      {#if row.git.changes}<Pill tone="warning">{row.git.changes} changed</Pill>{:else}<Pill tone="success">clean</Pill>{/if}
+                      {#if row.git.ahead}<Pill tone="info">↑{row.git.ahead}</Pill>{/if}
+                      {#if row.git.behind}<Pill tone="info">↓{row.git.behind}</Pill>{/if}
+                      {#if !row.git.remote}<span>no remote</span>{/if}
+                      <span>{row.git.lastCommitAt ? ago(row.git.lastCommitAt) : 'no commits'}</span>
+                    {:else if group.section === 'recorded'}
+                      <Pill tone="muted">not a git repo</Pill>
+                    {/if}
+                  </span>
+                </div>
+                <span class="prototypes-actions" role="group" aria-label={`${row.name} actions`}>
+                  <Button size="xs" treatment="outlined" disabled={readOnly}
+                          aria-expanded={editing === editKey(group, row) ? 'true' : 'false'}
+                          onclick={() => open(group, row)}>{group.section === 'unsorted' ? 'Record' : 'Edit'}</Button>
+                  {#if group.section !== 'missing'}
+                    <Button size="xs" treatment="outlined" title={`Pin ${tilde(row.path)} and open its chat`}
+                            onclick={() => openInWorkbench(row)}>Workbench</Button>
+                  {/if}
+                  {#if group.section === 'recorded'}
+                    <Button size="xs" treatment="outlined" title={`Open ${tilde(row.path)} in Lathe`}
+                            onclick={() => openInLathe(row)}>Lathe</Button>
+                    <Button size="xs" treatment="outlined" disabled={readOnly} id={`prototype-relocate-${row.name}`}
+                            title={pinned[row.path] ? 'Pinned in Workbench — unpin it before moving' : `Move ${tilde(row.path)} to another folder`}
+                            aria-expanded={relocating === row.name ? 'true' : 'false'}
+                            onclick={() => toggleRelocate(row)}>Move</Button>
+                  {/if}
+                  <CopyButton text={row.path} />
+                </span>
+              </div>
+
+              {#if relocating === row.name && group.section === 'recorded'}
+                <form class="prototypes-form" id={`prototype-moveto-${row.name}`} onsubmit={(e) => relocate(e, row)}>
+                  <Input label="Move into folder" name="into" value=""
+                         hint={`An existing folder, starting / or ~/. The repo keeps its name: ${row.name}. Its record and Claude Code history follow.`} />
+                  {#if moveError}<p class="text-sm prototypes-form-error" role="alert">{moveError}</p>{/if}
+                  <span class="cluster">
+                    <Button type="submit" size="sm" disabled={moveBusy}>{moveBusy ? 'Moving…' : 'Move'}</Button>
+                    <Button size="sm" treatment="ghost" onclick={() => { relocating = null; moveError = null }}>Cancel</Button>
+                  </span>
+                </form>
+              {/if}
+
+              {#if editing === editKey(group, row)}
+                <form class="prototypes-form" id={`prototype-form-${row.name}`} onsubmit={(e) => saveRecord(e, group, row)}>
+                  <div class="prototypes-form-pick">
+                    <Select label="Owner"  name="owner"  placeholder="" value={row.record?.owner ?? 'personal'}
+                            options={answer.choices.owner} />
+                    <Select label="Kind"   name="kind"   placeholder="" value={row.record?.kind ?? 'spike'}
+                            options={answer.choices.kind} />
+                    <Select label="Status" name="status" placeholder="" value={row.record?.status ?? 'active'}
+                            options={answer.choices.status} />
+                  </div>
+                  {#if group.section === 'missing'}
+                    <Input label="Path" name="path" value={row.record.path}
+                           hint="Where the repo is now — starting / or ~/." />
+                  {/if}
+                  <Input label="Purpose" name="purpose" value={row.record?.purpose ?? ''}
+                         hint="One line: what it is for. Empty clears it." />
+                  <Textarea label="Related" name="related" rows={3} value={relatedText(row.record)}
+                            hint="One per line — repo-name: why." />
+                  {#if formError}<p class="text-sm prototypes-form-error" role="alert">{formError}</p>{/if}
+                  <span class="cluster">
+                    <Button type="submit" size="sm" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+                    <Button size="sm" treatment="ghost" onclick={() => { editing = null; formError = null }}>Cancel</Button>
+                  </span>
+                </form>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/each}
+{/if}
+
+<style>
+  .prototypes-error { white-space: pre-line; }
+  .prototypes-problems { margin: 0; padding-inline-start: var(--space-md); }
+  .prototypes-tools { align-items: end; }
+  .prototypes-group { margin-block-start: var(--space-lg); }
+  .prototypes-group-head { margin: 0 0 var(--space-xs); font-size: var(--text-lg); }
+  .prototypes-fold {
+    display: inline-flex; align-items: baseline; gap: var(--space-xs);
+    background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer;
+  }
+  .prototypes-group-label { text-transform: capitalize; }
+  .prototypes-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2xs); }
+  .prototypes-row { padding: var(--space-xs) var(--space-sm); }
+  .prototypes-over     { border-color: var(--color-primary); box-shadow: 0 -2px 0 var(--color-primary); }
+  .prototypes-dragging { opacity: 0.5; }
+  .prototypes-row-main { display: flex; align-items: flex-start; gap: var(--space-xs); }
+  .prototypes-row-what { display: flex; flex-direction: column; gap: var(--space-3xs); flex: 1; min-width: 0; }
+  .prototypes-row-what code { overflow-wrap: anywhere; }
+  .prototypes-handle {
+    cursor: grab; background: none; border: 0; padding: 0 var(--space-3xs);
+    color: var(--ink-mute); font: inherit; line-height: 1.6;
+  }
+  .prototypes-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2xs); }
+  .prototypes-form { display: flex; flex-direction: column; gap: var(--space-sm); margin-block-start: var(--space-sm); }
+  .prototypes-form-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-sm); }
+  .prototypes-form-error { color: var(--color-danger); }
+  .prototypes-candidates { padding: var(--space-sm); margin-block: var(--space-sm); display: flex; flex-direction: column; gap: var(--space-xs); }
+  .prototypes-candidate-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-xs); }
+  .prototypes-candidate { display: flex; flex-direction: column; gap: var(--space-3xs); }
+  .prototypes-name {
+    background: none; border: 0; padding: 0; font: inherit; font-weight: 600;
+    color: var(--color-primary); cursor: pointer; text-decoration: underline;
+  }
+  @media (max-width: 40rem) {
+    .prototypes-row-main { flex-wrap: wrap; }
+    .prototypes-actions { justify-content: flex-start; width: 100%; }
+  }
+</style>

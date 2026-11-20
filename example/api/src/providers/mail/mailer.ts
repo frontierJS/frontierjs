@@ -22,13 +22,14 @@
 // of `address` and `ref` in api/app.ts and nothing else.
 
 import type { App } from '@frontierjs/junction'
+import { messageIdFor } from '@frontierjs/junction/mail'
 import type { IMail, MailMessage, SendResult } from '@frontierjs/junction/mail'
 
 export const MAIL_TARGET = 'provider:mail'
 
 export function createConduitMailer(app: App, opts: { from: string }): IMail {
 
-  function payload(msg: MailMessage): Record<string, unknown> {
+  function payload(msg: MailMessage): { body: Record<string, unknown>, messageId: string } {
     // Read per SEND, not captured at construction.
     //
     // This is a FLEET: one process serves every shop, and each one is a business
@@ -40,25 +41,31 @@ export function createConduitMailer(app: App, opts: { from: string }): IMail {
     // `configFor()` rather than `$.config`: a confirmation is sent from a
     // Caravan job as often as from a request, and `$` refuses outside a service
     // call. `runAs(actor, { tenant })` has warmed it either way.
+    const from = msg.from ?? app.configFor?.().mail?.from ?? opts.from
+    // The provider's id is on no header, so the Message-ID a reply names is
+    // minted here and sent (`FJS-D684`).
+    const { header, id: messageId } = messageIdFor({ from, headers: msg.headers })
     const body: Record<string, unknown> = {
-      from:    msg.from ?? app.configFor?.().mail?.from ?? opts.from,
+      from,
       to:      Array.isArray(msg.to) ? msg.to : [msg.to],
       subject: msg.subject,
+      headers: header ? { ...msg.headers, [header]: messageId } : msg.headers,
     }
     if (msg.html) body.html = msg.html
     if (msg.text) body.text = msg.text
-    return body
+    return { body, messageId }
   }
 
   async function post(msg: MailMessage): Promise<SendResult> {
     const conduit = app.conduit
     if (!conduit) throw new Error('mailer: app.conduit is not configured')
 
+    const { body, messageId } = payload(msg)
     const result = await conduit.send<{ id: string }>({
       target: MAIL_TARGET,
       method: 'POST',
       path:   '/emails',
-      body:   payload(msg),
+      body,
     })
 
     // `send()` never throws — it returns the failure. `IMail` is a throwing
@@ -74,7 +81,7 @@ export function createConduitMailer(app: App, opts: { from: string }): IMail {
       )
     }
 
-    return { id: result.data?.id ?? 'unknown', message: 'sent' }
+    return { id: result.data?.id ?? 'unknown', messageId, message: 'sent' }
   }
 
   return {

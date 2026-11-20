@@ -39,7 +39,7 @@ import { ensureCert }  from '@frontierjs/outpost/cert'
 import { generateSigningKeys } from '@frontierjs/toolbelt/signature'
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
@@ -117,7 +117,7 @@ beforeAll(async () => {
   // The workspace rides on the SESSION. A principal with no workspace is
   // refused by the tenant claim guard before any service runs — which is the
   // declaration working, not a fixture detail to route around.
-  owner = session({ id: owner.id, workspaceId: ws.id })
+  owner = sessionContext({ id: owner.id, workspaceId: ws.id })
   account = await sys.secret.create({ data: {
     workspaceId: ws.id, name: 'do-main', kind: 'providerKey',
     providerKind: 'digitalocean', data: JSON.stringify({ token: 'dop_v1_devtoken' }),
@@ -1424,7 +1424,7 @@ describe('a machine is provisioned, enrolls itself, and can be destroyed', () =>
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: dev.id, role: 'developer', capabilities: grantsFor('developer'),
     }})
-    await expect(env.as(session({ id: dev.id, workspaceId: ws.id })).service('servers')
+    await expect(env.as(sessionContext({ id: dev.id, workspaceId: ws.id })).service('servers')
       .call('setBackups', row.id, { choice: 'on', plan: 'daily', hour: 20 })).rejects.toThrow(/Requires admin role/)
     expect((await sys.server.findFirst({ where: { id: row.id } })).backupPolicy).toBeNull()
   })

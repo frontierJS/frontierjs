@@ -23,9 +23,11 @@ together on disk and after some move out.
 - **`../fjs-prototypes/` is 56 separate repos and is not a repo itself.** Only
   `vellum` has a remote (`knightworksicc/vellum`), so nothing on disk records an
   owner. `LEGACY/` and `OUTDATED/` sit beside it in `~/code/FRONTIER/`, not in it.
-- **Moving a repo keeps its dependencies.** Every prototype names
-  `"link:@frontierjs/*"`, which resolves through bun's link registry rather
-  than a relative path.
+- **Moving a repo keeps its `package.json`, not its `node_modules`.** Every
+  prototype names `"link:@frontierjs/*"`, which resolves through bun's link
+  registry, but bun writes each link into `node_modules` as a relative path
+  (`../../../../frontierjs/packages/auth`). A move to another depth leaves
+  13–20 of them dangling per repo until they are re-pointed or reinstalled.
 - **Moving a repo loses what is keyed by its path.** Claude Code keys a
   project's transcripts and memory by its path, and there are 29
   `~/.claude/projects/-home-j-code-FRONTIER-fjs-prototypes-*` folders today.
@@ -134,6 +136,19 @@ together on disk and after some move out.
     scan change for every caller (B), and no history that plain `git`, editors
     and `fli` cannot see (C). Amends `FJS-D2266`'s location and drops
     `FJS-D2268`'s `.gitignore /*/`.
+- ~~**Q6 — A moved repo's transcripts.**~~ **Answered 2026-11-20 (`FJS-D2279`): B — rewrite only each line's top-level `cwd`, old path prefix to new, to a temp file renamed over the original with its mtime kept; refused while any process runs inside the repo.** Moving a repo renames its
+  `~/.claude/projects/` folders; `claude --resume` from the new path then works
+  (probed). But each transcript line records the `cwd` it ran in, and Workbench's
+  Claude screens and Import read that as where the session ran.
+  - **A** — leave the transcripts as written.
+  - **B** — rewrite only each line's top-level `cwd`, old path prefix to new,
+    to a temp file renamed over the original with its mtime kept; refused while
+    any process runs inside the repo.
+  - **C** — keep a ledger of moves and teach every Workbench reader of `cwd` to
+    map old to new.
+  - **Recommend B** — one truth, written where the move happens. A lists a moved
+    repo's sessions under a gone path and Import never offers them; C adds a
+    second name every reader (about seven) must consult, and a new one forgets.
 
 ---
 
@@ -197,13 +212,18 @@ Goal: the owner manages prototypes on one screen.
 Done when: a `drive-browser` run groups by owner, favorites one, drags one, edits a
 record inline, and the edit is in `CATALOG.json` on disk.
 
-- [ ] 2.1 `/prototypes/` route: group by owner (switchable to kind or status),
+- [x] 2.1 `/prototypes/` route: group by owner (switchable to kind or status),
   favorites first, then hand order, then last commit. Unsorted and missing go
   last. Each row shows git state from the scan.
-- [ ] 2.2 Inline record edit: owner, kind, status, purpose, related.
-- [ ] 2.3 Drag to reorder within a group, and fold a group.
-- [ ] 2.4 Row actions: Open in Workbench (a Pin), open in editor, copy path.
-- [ ] 2.5 Nav entry beside `git-activity`.
+- [x] 2.2 Inline record edit: owner, kind, status, purpose, related.
+- [x] 2.3 Drag to reorder within a group, and fold a group.
+- [x] 2.4 Row actions: Open in Workbench (a Pin), open in editor, copy path.
+  Open in editor is Lathe on a record, by name, so it pins nothing
+  (`prototypes.open`, `domain/local/lathe.ts`).
+- [x] 2.5 Nav entry beside `git-activity`. In the Machines menu; the
+  palette reads the nav table, so it is there too.
+- [x] 2.6 `bun run verify:prototypes` (workbench) is the done-when drive, over a
+  scratch catalog: the owner's `CATALOG.json` and view are fingerprinted and untouched.
 
 ### Phase 3 — Claude crawls it
 
@@ -211,11 +231,22 @@ Goal: "has a prototype done X?" starts from the catalog, not a 56-folder hunt.
 Done when: a fresh session asked for prior art on a named pattern reads
 `README.md` → `CATALOG.json` and narrows its `rg` to the matching records.
 
-- [ ] 3.1 A memory entry pointing at the README, replacing the path-only
+- [x] 3.1 A memory entry pointing at the README, replacing the path-only
   `fjs-prototypes-link-this-tree` lead line.
-- [ ] 3.2 Consolidation view on the page: pairs linked by `related`, and repos
+  *Done 2026-11-19: `prototypes-catalog-lookup` (reference), indexed beside the
+  old entry, which now points at it. Proved: a fresh `claude -p` asked for a
+  shared support inbox read the README, grepped `CATALOG.json`, and read only
+  `chatwoot/db/schema.lite`, answering in 8 turns.*
+- [x] 3.2 Consolidation view on the page: pairs linked by `related`, and repos
   of the same kind with overlapping `db/schema.lite` model names, as
   candidates for the owner to judge.
+  *Done 2026-11-19: `prototypes.candidates` (`domain/prototypes/candidates.ts`),
+  read only when the page's Merge candidates panel opens. Overlap counts only
+  top-level model declarations, at least two shared names, and names declared
+  in fewer than a quarter of the schemas (the real 44 drop AuditTrail, User and
+  Notification; one shared name gave 87 mostly-noise pairs, two gives 40). Over
+  the real catalog the unlinked finds are anvil–linear and chatwoot–quo (six
+  models each). `verify:prototypes` 70/0.*
 
 ### Phase 4 — Repos leave the folder
 
@@ -224,7 +255,18 @@ Claude's reach.
 Done when: one repo is moved, its record's `path` updated, and the page,
 `charterDir()` (if charter) and its Claude history all still find it.
 
-- [ ] 4.1 A move action: move the folder, update its record, and rename its
+- [x] 4.1 A move action: move the folder, update its record, and rename its
   `~/.claude/projects/` folder so transcripts and memory follow.
+  *Built 2026-11-19: `prototypes.move` (`domain/prototypes/move.ts`) and a Move
+  form on each recorded row. It carries every history folder whose transcripts
+  started in the repo or under it (by recorded `cwd`, since `lynx-spike-device`
+  encodes like `lynx-spike/device`), rewrites each line's `cwd` (`FJS-D2279`),
+  re-points every relative symlink that leaves the repo (bun's `node_modules`
+  links), repairs linked worktrees, and refuses a pinned checkout, a process running
+  inside, a taken destination and another disk before moving anything.
+  `charterDir()` reads the `charter` record. Proved by `prototypes.test.ts`
+  (Workbench Import offers the moved session at the new path) and
+  `verify:prototypes` 80/0 over a scratch Claude dir. The done-when's real move
+  of one of the owner's repos is not done; the owner picks which.*
 - [ ] 4.2 An optional generated lens folder of symlinks, one per record, rebuilt
   from the catalog. Only worth building once records span several roots.

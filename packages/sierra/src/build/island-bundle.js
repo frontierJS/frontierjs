@@ -168,7 +168,7 @@ function relativeApiPlugin(root) {
  * @param {string}   [opts.base='/']
  * @param {object}   [opts.theme]   — the app's `theme` block, so the switcher on a
  *                                  prerendered page knows what the app declared
- * @param {object}   [opts.analytics] — the app's `analytics` block, so `track()`
+ * @param {object}   [opts.analytics] — the app's `analytics` block, so `trackEvent()`
  *                                  in an island reaches the page's vendor tag
  * @param {string}   [opts.prefix]  — the app's storage prefix (`storagePrefix`)
  * @param {Function} opts.viteBuild — `build` from vite, injected so this file

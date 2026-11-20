@@ -47,6 +47,13 @@ export function expandPath(p: string): string {
   return p === '~' ? homedir() : p.startsWith('~/') ? join(homedir(), p.slice(2)) : p
 }
 
+/** Where the catalog says a prototype is, expanded; null when it records none. */
+export function recordedPath(name: string, dir?: string): string | null {
+  const { records } = readCatalog(dir)
+  const rec = Object.hasOwn(records, name) ? records[name] : undefined
+  return rec ? expandPath(rec.path) : null
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
 
 /** Why a record is not one — in plain words — or null. Says nothing about the disk. */
@@ -155,14 +162,20 @@ export function writeRecord(name: string, patch: Record<string, unknown>, dir?: 
 
 const names = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
 
-/** The owner's view with every name that matches no record dropped. Absent or unreadable is empty. */
+// A folded entry names a group, not a repo: `owner:kobami`, `kind:client`, `status:paused`.
+const GROUP = new Set([
+  ...OWNERS.map(v => `owner:${v}`), ...KINDS.map(v => `kind:${v}`), ...STATUSES.map(v => `status:${v}`),
+  'unsorted', 'missing',
+])
+
+/** The owner's view with every name that matches no record, and every group that is not one, dropped. Absent or unreadable is empty. */
 export function readView(known: Iterable<string>, wb?: string): View {
   const keep = new Set(known)
   let raw: unknown
   try { raw = JSON.parse(readFileSync(viewFile(wb), 'utf8')) } catch { raw = {} }
   const o = isObject(raw) ? raw : {}
-  const clean = (v: unknown) => [...new Set(names(v))].filter(n => keep.has(n))
-  return { favorites: clean(o.favorites), order: clean(o.order), folded: clean(o.folded) }
+  const clean = (v: unknown, set: Set<string>) => [...new Set(names(v))].filter(n => set.has(n))
+  return { favorites: clean(o.favorites, keep), order: clean(o.order, keep), folded: clean(o.folded, GROUP) }
 }
 
 /** Not filtered on the way in: a catalog that failed to read would otherwise empty the view. */
@@ -238,5 +251,7 @@ export async function listPrototypes(o: { dir?: string, wb?: string } = {}) {
     dir: root, file: catalog.file, error: catalog.error, problems: catalog.problems,
     recorded, unsorted, missing, truncated,
     view: readView(Object.keys(catalog.records), o.wb),
+    // The page's pickers read these, so a value added here needs no second copy there.
+    choices: { owner: OWNERS, kind: KINDS, status: STATUSES },
   }
 }

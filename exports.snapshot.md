@@ -26,6 +26,88 @@ it is invisible from inside this repo.
 
 None — every `exports`, `bin`, `main` and `types` target is inside its tarball.
 
+## Duplicate export names
+
+A value name two or more publishable packages each declare (a re-export is the
+declaring package's, not the re-exporter's). This list is the baseline `FJS-D2278`
+ratchets: a name or package that joins it fails unless a `DECISIONS.md` ruling
+lists the pair, and a rename that removes one drops it on the next write.
+
+- `$` — `@frontierjs/junction:.` · `@frontierjs/litestone:./transform`
+- `addressesOf` — `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-microsoft:.`
+- `after` — `@frontierjs/mesa:./runtime` · `@frontierjs/toolbelt:./rank`
+- `assemble` — `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-openai:.`
+- `assertHeaderValue` — `@frontierjs/junction:./mail` · `@frontierjs/conduit-gmail:.`
+- `batch` — `@frontierjs/mesa:./runtime` · `@frontierjs/conduit-cloudflare:.`
+- `bindSend` — `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
+- `bindStream` — `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-openai:.`
+- `cacheKey` — `@frontierjs/mcp:./client` · `@frontierjs/conduit-google:./maps`
+- `catalog` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `classify` — `@frontierjs/sierra:./scanner` · `@frontierjs/toolbelt:./json`
+- `completeSignIn` — `@frontierjs/jetty:.` · `@frontierjs/sierra:./resource`
+- `create` — `@frontierjs/litestone:./migrations` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `createMakeFromSchema` — `@frontierjs/sierra:./resource` · `@frontierjs/toolbelt:./jsonschema`
+- `createMessage` — `@frontierjs/junction:./mail` · `@frontierjs/conduit-anthropic:.`
+- `createResendMailer` — `@frontierjs/junction:./mail` · `@frontierjs/conduit-resend:.`
+- `createTestEnv` — `@frontierjs/litestone:./testing` · `@frontierjs/testing:.` (FJS-D1219)
+- `CURRENCY` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `decodeJwt` — `@frontierjs/conduit-apns:.` · `@frontierjs/conduit-google:./fcm`
+- `DEFAULT_SERVICE_NAMES` — `@frontierjs/auth:.` · `@frontierjs/orion:.`
+- `destroy` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `envelope` — `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.`
+- `errorBody` — `@frontierjs/conduit:.` · `@frontierjs/junction:.`
+- `exchangeCode` — `@frontierjs/auth:.` · `@frontierjs/conduit-microsoft:.` · `@frontierjs/conduit-oidc:.`
+- `fileBytes` — `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-quo:.`
+- `findCreated` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-airtable:.`
+- `getMessage` — `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `getTask` — `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-quo:.`
+- `getThread` — `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-mattermost:.`
+- `headerOf` — `@frontierjs/junction:./mail` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-microsoft:.`
+- `INVALID_DESTINATION_CODES` — `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `keywordOf` — `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `LIMITS` — `@frontierjs/outpost:./static` · `@frontierjs/toolbelt:./query`
+- `list` — `@frontierjs/junction:./envelope` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `machine` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `mail` — `@frontierjs/junction:./mail` · `@frontierjs/notifications:.`
+- `MAX_BODY_BYTES` — `@frontierjs/outpost:./server` · `@frontierjs/conduit-anthropic:./sink`
+- `MAX_LIMIT` — `@frontierjs/conduit-n8n:.` · `@frontierjs/conduit-plausible:.`
+- `me` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-microsoft:.`
+- `mirror` — `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-quo:.`
+- `nextLink` — `@frontierjs/toolbelt:./frontier` · `@frontierjs/conduit-37signals:.`
+- `now` — `@frontierjs/litestone:.` · `@frontierjs/mesa:./browser`
+- `openFile` — `@frontierjs/toolbelt:./frontier` · `@frontierjs/ui:./utils`
+- `OPTED_OUT_CODES` — `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `parseBody` — `@frontierjs/junction:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-openai:.`
+- `parseDuration` — `@frontierjs/litestone:.` · `@frontierjs/conduit-google:./maps`
+- `parseForm` — `@frontierjs/conduit-oidc:./sink` · `@frontierjs/conduit-stripe:./sink`
+- `parseFrontmatter` — `@frontierjs/sierra:./scanner` · `@frontierjs/toolbelt:./frontmatter`
+- `parseMime` — `@frontierjs/conduit-gmail:./sink` · `@frontierjs/conduit-microsoft:./sink`
+- `parseText` — `@frontierjs/mesa:.` · `@frontierjs/toolbelt:./predicate`
+- `PER_PAGE` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `postMessage` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-slack:.`
+- `preview` — `@frontierjs/litestone:./transform` · `@frontierjs/toolbelt:./json`
+- `RATE_LIMIT_FALLBACK_MS` — `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-google:./maps`
+- `resolveComponent` — `@frontierjs/email-kit:./render` · `@frontierjs/sierra:./islands`
+- `runToolLoop` — `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-openai:.`
+- `sendBatch` — `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.`
+- `sendEmail` — `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-sendgrid:.`
+- `sendMessage` — `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `signIn` — `@frontierjs/jetty:.` · `@frontierjs/sierra:./resource`
+- `signOut` — `@frontierjs/jetty:.` · `@frontierjs/sierra:./resource`
+- `splitCredential` — `@frontierjs/conduit-oidc:.` · `@frontierjs/conduit-s3:.`
+- `spread` — `@frontierjs/mesa:./runtime/terminal` · `@frontierjs/toolbelt:./rank`
+- `STATES` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `summarize` — `@frontierjs/litestone:./import` · `@frontierjs/toolbelt:./json`
+- `suppressionFor` — `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.`
+- `toE164` — `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-twilio:.`
+- `toMinor` — `@frontierjs/toolbelt:./units` · `@frontierjs/conduit-hetzner:.`
+- `TONES` — `@frontierjs/toolbelt:./tty` · `@frontierjs/ui:./utils`
+- `toSize` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `translate` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-apns:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-google:./maps` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-microsoft:.` · `@frontierjs/conduit-n8n:.` · `@frontierjs/conduit-oidc:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
+- `UNREGISTERED_CODES` — `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-twilio:.`
+- `verify` — `@frontierjs/litestone:./migrations` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `walk` — `@frontierjs/sierra:./scanner` · `@frontierjs/conduit-37signals:.`
+
 ## `@frontierjs/auth`
 
 `packages/auth` · ships `Authorize.mesa` `LICENSE` `README.md` `auth.ts` `authorize-page.snapshot.d.ts` `authorize-page.snapshot.js` `authorize.ts` `cleanup.ts` `clients.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `seed-login.ts` `services.ts` `tenancy.ts` `token.ts` `totp.ts` `types.ts`
@@ -560,7 +642,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls (types)` | `controls.d.ts` | yes |
 | exports | `./controls (default)` | `controls.js` | yes |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 103 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 104 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

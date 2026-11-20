@@ -5,7 +5,7 @@
 // otherwise as config object.
 
 import { connectHarbor } from '../runtime/connect-harbor.js'
-import { mount }     from '../runtime/mount.js'
+import { mountInto }     from '../runtime/mount.js'
 
 export function defineDock(arg) {
   const config = normalize(arg)
@@ -47,7 +47,7 @@ export function makeBootstrapper(config, type) {
     if (!root) {
       throw new Error(`#app not found in ${type} page DOM`)
     }
-    await mount(root, config.app, ctx)
+    await mountInto(root, config.app, ctx)
 
     // Lifecycle: popup close fires `unload`. Phase 0 doesn't track this for
     // hot-path code, but onUnmount hook is wired for symmetry.

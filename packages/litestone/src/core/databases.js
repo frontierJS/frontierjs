@@ -727,6 +727,11 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     if (dbPath !== ':memory:') writable.add(resolve(dbPath))
   }
 
+  // A file a model's own @@retention sweeps shrinks as a windowed database's does.
+  const ownWindow = new Set(schema.models
+    .filter((/** @type {any} */ m) => m.attributes.some((/** @type {any} */ a) => a.kind === 'retention'))
+    .map((/** @type {any} */ m) => m.attributes.find((/** @type {any} */ a) => a.kind === 'db')?.name ?? 'main'))
+
   // absPath → the connection pair already open on it.
   const opened = new Map()
 
@@ -780,7 +785,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
     }
 
     const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
-    const conns = connectionsFor(absPath, db.name, wantsWrite, !!db.retention, relative)
+    const conns = connectionsFor(absPath, db.name, wantsWrite, !!db.retention || ownWindow.has(db.name), relative)
 
     if (access === 'readonly') {
       registry[db.name] = { driver: 'sqlite', access: 'readonly', absPath, retention: db.retention, trailModel: db.trailModel, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb(db.name, 'readonly'), readDb: conns.readDb }
@@ -798,7 +803,7 @@ export function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMem
       registry.main = { driver: 'sqlite', access: false, absPath, retention: null, rawWriteDb: null, rawReadDb: null, writeDb: makeThrowingDb('main', false), readDb: makeThrowingDb('main', false) }
     } else {
       const wantsWrite = absPath === ':memory:' ? access === 'readwrite' : writable.has(absPath)
-      const conns = connectionsFor(absPath, 'main', wantsWrite, false, isRelativeStated(dbPath))
+      const conns = connectionsFor(absPath, 'main', wantsWrite, ownWindow.has('main'), isRelativeStated(dbPath))
       registry.main = access === 'readonly'
         ? { driver: 'sqlite', access: 'readonly', absPath, retention: null, rawWriteDb: null, rawReadDb: conns.rawReadDb, writeDb: makeThrowingDb('main', 'readonly'), readDb: conns.readDb }
         : { driver: 'sqlite', access: 'readwrite', absPath, retention: null, ...conns }

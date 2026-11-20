@@ -4,7 +4,7 @@
 // column" inside a flat query string. It stops at the bridge.
 //
 // It used not to. The bridge stripped $limit/$offset/$orderBy/$select from
-// ctx.query as "reserved params", and parseQuery — the query builder — then
+// ctx.query as "reserved params", and parseListQuery — the query builder — then
 // looked for exactly those four keys on ctx.query and found nothing. The
 // transport deleted precisely what the service layer was written to read, so
 // pagination, ordering and field selection were ALL inert over HTTP:
@@ -20,7 +20,7 @@ import { describe, test, expect } from 'bun:test'
 import { createTestApp, request } from '../src/testing/index.ts'
 import { createService } from '../src/core/service.ts'
 import { bridge } from '../src/transport/bridge.ts'
-import { parseQuery } from '../src/core/litestone.ts'
+import { parseListQuery } from '../src/core/litestone.ts'
 import { createApp, defaultConfig } from '../index.ts'
 import { createClient } from '../../litestone/src/index.js'
 
@@ -96,10 +96,10 @@ describe('the bridge splits the query string in two', () => {
   })
 })
 
-describe('parseQuery consumes directives', () => {
+describe('parseListQuery consumes directives', () => {
 
   test('directives drive the query, filters become the where clause', () => {
-    const q = parseQuery({ name: 'alice' }, 20, 100, { limit: 5, offset: 10, orderBy: '-id' })
+    const q = parseListQuery({ name: 'alice' }, 20, 100, { limit: 5, offset: 10, orderBy: '-id' })
     expect(q.limit).toBe(5)
     expect(q.offset).toBe(10)
     expect(q.where).toEqual({ name: 'alice' })
@@ -107,16 +107,16 @@ describe('parseQuery consumes directives', () => {
   })
 
   test('maxLimit still caps an over-large request', () => {
-    expect(parseQuery({}, 20, 100, { limit: 9999 }).limit).toBe(100)
+    expect(parseListQuery({}, 20, 100, { limit: 9999 }).limit).toBe(100)
   })
 
   test('limit 0 is honored — it means count-only, not "unset"', () => {
-    expect(parseQuery({}, 20, 100, { limit: 0 }).limit).toBe(0)
+    expect(parseListQuery({}, 20, 100, { limit: 0 }).limit).toBe(0)
   })
 
   test('a `$` key in query is refused by name, even beside the directive it spells', () => {
-    expect(() => parseQuery({ $limit: '10', $offset: '5', name: 'alice' })).toThrow(/'\$limit', '\$offset'/)
-    expect(() => parseQuery({ $limit: '10' }, 20, 100, { limit: 3 })).toThrow(/\$limit/)
+    expect(() => parseListQuery({ $limit: '10', $offset: '5', name: 'alice' })).toThrow(/'\$limit', '\$offset'/)
+    expect(() => parseListQuery({ $limit: '10' }, 20, 100, { limit: 3 })).toThrow(/\$limit/)
   })
 })
 

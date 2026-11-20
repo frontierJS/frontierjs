@@ -1777,7 +1777,7 @@ export interface RetainResult extends RetentionResult {
 // A sweep is batches that yield to the event loop between them, so it resolves
 // rather than returns; `batches` caps how many each table takes.
 export declare function runSqliteRetention(
-  db: unknown, models: unknown[], retention: string,
+  db: unknown, models: unknown[], retention: string | null,
   opts?: {
     pluralize?:   boolean
     now?:         (() => Date | string | number) | Date | string | number

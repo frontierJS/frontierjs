@@ -6,7 +6,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }          from '@frontierjs/litestone'
 import { basecampGateLevel }   from '../src/core/gate.ts'
 import { buildBasecampApp }    from '../src/app.ts'
@@ -117,7 +117,7 @@ beforeAll(async () => {
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: u.id, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString(),
     } })
-  const at = (u: any) => session({ id: u.id, workspaceId: ws.id })
+  const at = (u: any) => sessionContext({ id: u.id, workspaceId: ws.id })
   developer = at(d); viewer = at(v)
 })
 

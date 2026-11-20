@@ -753,6 +753,18 @@ export interface ConduitError {
   retry_after_ms?: number
 }
 
+/**
+ * The vendor's error body out of `ConduitError.raw` — an object as it came, a
+ * string parsed — or `null` where it is not a JSON object. A connector's
+ * `translate` reads `raw` through this so a text body, an HTML error page or a
+ * bare JSON string is no body rather than a throw or a string typed as one.
+ */
+export function errorBody<T extends object>(raw: unknown): T | null {
+  if (raw && typeof raw === 'object') return raw as T
+  if (typeof raw !== 'string') return null
+  try { const b = JSON.parse(raw); return b && typeof b === 'object' ? b as T : null } catch { return null }
+}
+
 // ─── Observers ──────────────────────────────────────────────
 
 // Every callback here is an Observer in the FJS-D06 sense: it receives and

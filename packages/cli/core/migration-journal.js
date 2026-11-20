@@ -9,12 +9,12 @@
 // compares the file's checksum with the one its journal recorded). The health
 // check rolls back, which is safe and late. The same comparison is a pure
 // function of two things the deploy already has -- the box's journal and the
-// local files -- so it is made here, with litestone's own `status()` and
+// local files -- so it is made here, with litestone's own `migrationStatus()` and
 // `checksum()` and no copy of either.
 
 import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
-import { status } from '@frontierjs/litestone/migrations'
+import { migrationStatus } from '@frontierjs/litestone/migrations'
 import { checksum } from '@frontierjs/litestone/migrate'
 import { shWord } from './swap.js'
 
@@ -36,7 +36,7 @@ export function journalDisagreements(rows, dir) {
     const put = db.query(`INSERT INTO "${JOURNAL_TABLE}" (name, applied_at, checksum) VALUES (?, ?, ?)`)
     for (const r of rows) put.run(r.name, '', r.checksum)
     const applied = new Map(rows.map(r => [r.name, r.checksum]))
-    return status(db, dir)
+    return migrationStatus(db, dir)
       .filter(r => r.state === 'modified' || r.state === 'orphaned')
       .map(r => ({
         file:    r.file,

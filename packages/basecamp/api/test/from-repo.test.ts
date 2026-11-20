@@ -17,7 +17,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }                   from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { withTestMeta }           from '@frontierjs/junction/testing'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
@@ -50,8 +50,8 @@ beforeAll(async () => {
   for (const [u, role] of [[a, 'admin'], [d, 'developer']] as const)
     await sys.workspaceMember.create({ data: {
       workspaceId: ws.id, userId: u.id, role, capabilities: grantsFor(role), acceptedAt: new Date().toISOString() } })
-  admin     = session({ id: a.id, workspaceId: ws.id })
-  developer = session({ id: d.id, workspaceId: ws.id })
+  admin     = sessionContext({ id: a.id, workspaceId: ws.id })
+  developer = sessionContext({ id: d.id, workspaceId: ws.id })
 
   box = await sys.server.create({ data: { workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
   box = await sys.server.transition(box.id, 'checkIn')

@@ -33,18 +33,18 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `resource.move(id, { after, before, into })` | `packages/sierra/src/resource/resource.js` | 21 |
 | `resource.save(data, { mode })` | `packages/sierra/src/resource/resource.js` | 17 |
 | `resource.options(field)` | `packages/sierra/src/resource/resource.js` | 14 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 13 |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 11 |
 | `IAuth.verifySession(token)` | `packages/junction/src/auth/types.ts` | 11 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 11 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 9 |
+| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 8 |
 | `announce()` | `packages/junction/src/transport/channels.ts` | 8 |
-| `$setAuth(user)` | `packages/litestone/src/core/client.js` | 7 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 7 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 7 |
 | `app.conduit.mirror(claim)` | `packages/conduit/src/mirror.ts` | 7 |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 6 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 6 |
-| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 5 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | 6 |
+| `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 5 |
 | `island(anchor, Comp, props, block, meta)` | `packages/mesa/src/runtime.js` | 5 |
-| `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 4 |
 | `app.conduit.receive(receiver)` | `packages/conduit/src/conduit.ts` | 4 |
 | `signRequest()` | `packages/toolbelt/src/signature/signature.js` | 4 |
 | `ctx.enqueue(job, payload)` | `packages/junction/src/plugins/outbox/engine.ts` | 4 |
@@ -57,8 +57,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 7 |
-| `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | yes | 4 |
+| `$setAuth(user)` / `asSystem()` | `packages/litestone/src/core/client.js` | yes | 8 |
+| `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | yes | 5 |
 | `withLitestoneDb(db)` | `packages/junction/src/core/litestone.ts` | yes | 1 |
 | `gateAuth()` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `validateInput(type)` | `packages/junction/src/core/litestone.ts` | yes | — |
@@ -70,8 +70,8 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `bearerClaim(...).mint(db, data)` / `.mintOnCreate()` / `.redeem(db)` | `packages/junction/src/core/bearer.ts` | yes | — |
 | `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | 1 |
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 6 |
-| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 6 |
+| `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 7 |
+| `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | yes | 7 |
 | `nearest(word, candidates)` / `nearestAll` | `packages/toolbelt/src/typo/typo.js` | yes | 2 |
 | `db.$readAs(accessor, row, principal)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$checkWrite(accessor, op, row, changes?)` | `packages/litestone/src/core/client.js` | yes | 2 |
@@ -79,7 +79,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `db.$primaryKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$mirrorKey(accessor)` | `packages/litestone/src/core/client.js` | yes | 3 |
 | `db.$claimsFor(principal)` | `packages/litestone/src/core/client.js` | yes | 3 |
-| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 5 |
+| `db.$protectedFields(accessor)` | `packages/litestone/src/core/client.js` | yes | 6 |
 ## Schema → API/UI
 
 | Seam | Owner | Declared in | Other sites |
@@ -171,7 +171,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
 | `page.query` / `page.directives` | `packages/sierra/src/router/index.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | 1 |
-| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 13 |
+| `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 11 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | 1 |
 | `appSrcDir(root)` / `appAliasPlugin()` | `packages/sierra/src/build/app-alias-plugin.js` | yes | 1 |
 | `swapInstances(entries, newFn, newSetMark, label)` | `packages/mesa/mesa-vite/swap.js` | yes | 2 |

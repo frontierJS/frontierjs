@@ -128,7 +128,7 @@ export function makeWriteData(shape, ctx, {
   writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields,
   _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull,
   allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores,
-  parentRefusal, keys,
+  parentRefusal, keys, refuseZonedWrite, deriveZoned,
 }) {
   const { _allowedWriteKeys, _virtualWriteKeys, _guardedWriteKeys, _systemWriteKeys, _immutableWriteKeys,
           _sequenceWriteKeys, _capabilityWriteKeys, _grantColumns, _edgeNamespaces } = keys
@@ -654,6 +654,7 @@ export function makeWriteData(shape, ctx, {
         delete cleaned[k]
       }
       if (cleaned) data = cleaned
+      refuseZonedWrite(data)
     }
 
     // A write to a table somebody DECLARES from invalidates every cached list:
@@ -840,6 +841,9 @@ export function makeWriteData(shape, ctx, {
     // A server fill (`@default`, an array's `[]`) is for an ABSENT key, so the
     // pre-flight exempts those columns and an explicit `null` on one reached
     // SQLite's NOT NULL (`FJS-2042`).
+    // After every refusal that grades the caller's keys, which this one is not.
+    data = deriveZoned(data, { creating, where })
+
     if (model && requireAll) {
       refuseMissingRequired(model, data)
       refuseClearingRequired(data)

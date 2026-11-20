@@ -56,15 +56,15 @@ function envPrefix() {
 }
 
 // An island that mounts nothing is a content script on every page its matches
-// name, and `runIsland` reaches the Mesa runtime through `mount()` whether or
-// not an `app` exists: 170 kB inlined into a bundle that only runs `main()`.
+// name, and `runIsland` reaches the Mesa runtime through `mountInto()` whether
+// or not an `app` exists: 170 kB inlined into a bundle that only runs `main()`.
 // The island file is read for a `defineIsland({...})` whose object has no `app`;
 // anything the read cannot prove (a spread, a computed key, a config held in a
-// variable, a parse failure) keeps the real `mount`, so a wrong guess costs
+// variable, a parse failure) keeps the real `mountInto`, so a wrong guess costs
 // bytes and never a UI.
 const MOUNT_MODULE = fileURLToPath(new URL('../runtime/mount.js', import.meta.url))
-const MOUNT_STUB   = `export async function mount() {
-  throw new Error('[jetty] mount() is not bundled: this island declares no app')
+const MOUNT_STUB   = `export async function mountInto() {
+  throw new Error('[jetty] mountInto() is not bundled: this island declares no app')
 }
 `
 

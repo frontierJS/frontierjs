@@ -2,7 +2,7 @@
 //
 // An island with no `app` mounts nothing, so the content script it becomes
 // (injected on every page its `matches` names) must not pay for the Mesa
-// runtime that `runIsland` reaches through `mount()`. An island with an `app`
+// runtime that `runIsland` reaches through `mountInto()`. An island with an `app`
 // still must carry it, or its UI has no runtime to mount on.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
@@ -49,8 +49,8 @@ try {
     import { defineIsland } from ${define}
     export default defineIsland({ matches: ['<all_urls>'], app(root) { root.textContent = 'hi' } })
   `)
-  if (/stub mount/.test(ui)) ok('an island with an app still carries mount()')
-  else bad('an island with an app lost mount()')
+  if (/stub mount/.test(ui)) ok('an island with an app still carries mountInto()')
+  else bad('an island with an app lost mountInto()')
 
   // `app` the analysis cannot see (not an object literal) must keep the runtime.
   const opaque = await bundle('opaque', `
@@ -58,8 +58,8 @@ try {
     const cfg = { matches: ['<all_urls>'], app(root) { root.textContent = 'hi' } }
     export default defineIsland(cfg)
   `)
-  if (/stub mount/.test(opaque)) ok('a config the build cannot read statically keeps mount()')
-  else bad('a config the build cannot read statically lost mount()')
+  if (/stub mount/.test(opaque)) ok('a config the build cannot read statically keeps mountInto()')
+  else bad('a config the build cannot read statically lost mountInto()')
 } finally {
   rmSync(root, { recursive: true, force: true })
 }

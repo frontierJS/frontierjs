@@ -18,7 +18,7 @@
 import { Database } from 'bun:sqlite'
 import { chmodSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
-import { status } from '@frontierjs/litestone/migrations'
+import { migrationStatus } from '@frontierjs/litestone/migrations'
 
 /** How many copies are kept. Each is the whole database, on the disk it lives on. */
 export const PRE_MIGRATE_KEEP = 3
@@ -35,7 +35,7 @@ export function copyBeforeMigrating(
   log:           { info(msg: string, meta?: object): void },
 ): string | null {
   if (!dbPath || dbPath === ':memory:') return null
-  const rows    = status(rawDb, migrationsDir)
+  const rows    = migrationStatus(rawDb, migrationsDir)
   const pending = rows.filter(r => r.state === 'pending').map(r => r.file)
   if (!pending.length || !rows.some(r => r.state === 'applied')) return null
 

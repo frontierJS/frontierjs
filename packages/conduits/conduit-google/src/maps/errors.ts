@@ -9,7 +9,7 @@
 // `client_error`, and only `details[].reason === 'API_KEY_INVALID'` says it
 // was the credential. One owner: nothing else in the package reads `raw`.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { GoogleErrorBody } from './types.ts'
 
 export type GoogleMapsFailureKind =
@@ -37,10 +37,6 @@ export interface GoogleMapsFailure {
  */
 export const RATE_LIMIT_FALLBACK_MS = 60_000
 
-export function parseBody(raw: unknown): GoogleErrorBody | null {
-  try { return typeof raw === 'string' ? JSON.parse(raw) : (raw as GoogleErrorBody) } catch { return null }
-}
-
 export function translate(error: ConduitError): GoogleMapsFailure {
   const base: GoogleMapsFailure = {
     kind:      error.kind,
@@ -50,7 +46,7 @@ export function translate(error: ConduitError): GoogleMapsFailure {
   }
   if (error.kind === 'rate_limited' && base.retryAfterMs === undefined) base.retryAfterMs = RATE_LIMIT_FALLBACK_MS
 
-  const e = parseBody(error.raw)?.error
+  const e = errorBody<GoogleErrorBody>(error.raw)?.error
   if (!e) return base
   const reason = e.details?.find(d => d.reason)?.reason
 

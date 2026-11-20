@@ -15,7 +15,7 @@ import { join } from 'path'
 import { parse } from '../src/core/parser.js'
 import { splitStatements, parseChecks } from '../src/core/migrate.js'
 import { createClient } from '../src/index.js'
-import { create, apply, status, verify, autoMigrate, appliedMigrations,
+import { create, apply, migrationStatus, verify, autoMigrate, appliedMigrations,
          listMigrationFiles, nextMigrationName, unresolvedBlocks } from '../src/core/migrations.js'
 
 const V1 = `
@@ -458,7 +458,7 @@ describe('apply — an applied file edited in place is refused (FJS-3578)', () =
     expect(res.refused).toBe(true)
     expect(res.modified).toEqual([initial])
     expect(res.error).toContain(initial)
-    expect(status(db, dir).find(r => r.file === initial)?.state).toBe('modified')
+    expect(migrationStatus(db, dir).find(r => r.file === initial)?.state).toBe('modified')
 
     writeFileSync(join(dir, '20990101000002_next.sql'), `CREATE TABLE next (id INTEGER);`)
     const later = await apply(db, dir)
@@ -581,7 +581,7 @@ describe('unmatched migration files are named, never silently skipped', () => {
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, '001_initial_schema.sql'), 'CREATE TABLE t (id INTEGER);')
 
-    const rows = status(db, dir)
+    const rows = migrationStatus(db, dir)
 
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ file: '001_initial_schema.sql', state: 'skipped' })
@@ -1230,7 +1230,7 @@ describe('apply, status and verify refuse a client by name (FJS-2426)', () => {
 
   it('status', async () => {
     const { dir, client } = await setup()
-    expect(() => status(client as any, dir)).toThrow(/\$rawDbs\.main/)
+    expect(() => migrationStatus(client as any, dir)).toThrow(/\$rawDbs\.main/)
   })
 
   it('apply', async () => {
@@ -1245,7 +1245,7 @@ describe('apply, status and verify refuse a client by name (FJS-2426)', () => {
 
   it('a raw handle still works', async () => {
     const { dir, db } = await setup()
-    expect(status(db, dir)).toEqual([])
+    expect(migrationStatus(db, dir)).toEqual([])
   })
 })
 

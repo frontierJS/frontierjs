@@ -26,7 +26,7 @@
 // two communicate via window.postMessage. See ./page-script.js.
 
 import { connectHarbor }     from '../runtime/connect-harbor.js'
-import { mount }              from '../runtime/mount.js'
+import { mountInto }          from '../runtime/mount.js'
 import { _registerActivePort } from '../resources/active-port.js'
 import { bootstrapUnoMirror } from './unocss-mirror.js'
 import { injectPageScript }   from './page-script.js'
@@ -104,7 +104,7 @@ export async function runIsland(islandModule, meta) {
   const { shadow, hostInDoc } = mountIslandShell(id, cfg)
 
   // Mount the Mesa app inside the shadow root.
-  const mountHandle = await mount(shadow, cfg.app, { harbor, id, ...ctx })
+  const mountHandle = await mountInto(shadow, cfg.app, { harbor, id, ...ctx })
 
   // UnoCSS DOM-mirror: copy classes used in shadow → mirror in host doc, copy
   // generated styles back into the shadow. Disabled if the consumer turns it

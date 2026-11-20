@@ -601,7 +601,7 @@ function watchDirectiveReads(ctx: ServiceContext, sent: string[]): (() => void) 
   if (!pending.size) return undefined
 
   const read = (k: string | symbol) => { if (typeof k === 'string') pending.delete(k) }
-  // Enumeration reads every key — parseQuery and a spread into findMany both
+  // Enumeration reads every key — parseListQuery and a spread into findMany both
   // apply all of it.
   ctx.directives = new Proxy(target, {
     get(t, k, r)                   { read(k); return Reflect.get(t, k, r) },
@@ -884,7 +884,7 @@ async function _callService(
     await runInServiceCall(coverage, () => runPipeline(ctx, resolvedPipeline, async () => {
       // The body must read every filter autoFilter admitted — see
       // watchFilterReads. Around the method alone, so a hook's reads do not count.
-      // Not around the base find and get: their parseQuery reads everything, and
+      // Not around the base find and get: their parseListQuery reads everything, and
       // the two Proxies cost ~9 µs a find for a check that cannot fire (FJS-3754).
       const watched = !isCustom && !isDerivedHook(methodFn)
       const settleFilterReads    = watched ? watchFilterReads(ctx) : undefined

@@ -535,6 +535,18 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       continue
     }
 
+    // ── DateTime @zoned(date, time, zone) — stored, but litestone writes it ──
+    // The write path refuses it from every caller (`FJS-D963`), so a form box
+    // for it can only fail.
+    const zonedAttr = field.type.name === 'DateTime' && field.attributes.find(a => a.kind === 'zoned' && a.sources?.length)
+    if (zonedAttr) {
+      if (mode !== 'create' && mode !== 'update') {
+        const { 'x-zoned': _wall, ...fs } = fieldToJsonSchema(field, schema, enumDefs, inlineEnums, audience, typeDefs, fileDef)
+        properties[field.name] = { ...fs, readOnly: true, 'x-litestone-kind': 'zoned' }
+      }
+      continue
+    }
+
     // ── @version — readOnly everywhere, present in update ───────────────────
     // A caller never chooses the value: create writes 1, every write bumps it.
     // But an update must CARRY the one it read, so unlike a computed field it

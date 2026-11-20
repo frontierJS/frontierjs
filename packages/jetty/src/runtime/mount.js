@@ -18,7 +18,7 @@
 // When Mesa isn't installed, the build fails at this line with a clear
 // "could not resolve" error. To prevent that for jetty's own dev/test
 // where Mesa isn't installed, jetty's mesa-plugin.js detects Mesa absence
-// and the test fixtures use stub-shape apps that never call mount() with
+// and the test fixtures use stub-shape apps that never call mountInto() with
 // a real Mesa component.
 //
 // Mesa's compiled component shape:
@@ -59,7 +59,7 @@ async function loadRuntime() {
  * @param {object} [props] — props passed to the component
  * @returns {Promise<{ destroy?: () => void }>}
  */
-export async function mount(root, app, props = {}) {
+export async function mountInto(root, app, props = {}) {
   if (app == null) {
     root.textContent = '[jetty] no app provided'
     return {}

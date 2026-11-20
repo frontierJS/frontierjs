@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 199**.
+Graded: **13 of 200**.
 
-## data — 3 of 67
+## data — 3 of 68
 
 ### Schema and parse
 
@@ -106,6 +106,7 @@ Graded: **13 of 199**.
 | --- | --- |
 | Litestone emits columns verbatim camelCase and `DateTime` as ISO-8601 TEXT. | **none** |
 | Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing. | **none** |
+| A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes | **none** |
 
 ### The audit trail and the log
 

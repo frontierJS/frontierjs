@@ -11,7 +11,7 @@
 // currency, so `* 100` is wrong for the yen by a hundred (`@money`'s rule).
 
 import type { ConduitError, ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
-import { minorUnits, roundMinor } from '@frontierjs/toolbelt/units'
+import { toMinor } from '@frontierjs/toolbelt/units'
 
 export const DIGITALOCEAN_ADDRESS = 'https://api.digitalocean.com'
 /** DO's documented maximum, so a fleet picker gets the whole list in one call. */
@@ -53,6 +53,10 @@ type Row = Record<string, unknown>
 const rows = (body: unknown, key: string): Row[] => { const l = (body as Row | null)?.[key]; return Array.isArray(l) ? l as Row[] : [] }
 const str = (v: unknown) => typeof v === 'string' ? v : ''
 const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : 0
+const priceOf = (v: unknown): number | null => {
+  if (typeof v !== 'string' && typeof v !== 'number') return null
+  try { return toMinor(v, CURRENCY) } catch { return null }
+}
 
 /** DO's `{ id, message }` error body, read for the sentence and the id. */
 export function translate(error: ConduitError, status?: number, headers?: Record<string, string>): DoFailure {
@@ -73,8 +77,10 @@ const fail = (r: { error: ConduitError; meta: { status?: number; headers?: Recor
 export const STATES: Record<string, MachineState> = { new: 'starting', active: 'running', off: 'off', archive: 'deleting' }
 
 export function toSize(s: Row): Size {
-  const minor = roundMinor(num(s.price_monthly) * 10 ** minorUnits(CURRENCY))
-  const regions = Array.isArray(s.regions) ? (s.regions as unknown[]).map(str).filter(Boolean) : []
+  // A missing price read as 0 would offer the size free in every region, so a size with no price is sold nowhere.
+  const price = priceOf(s.price_monthly)
+  const minor = price ?? 0
+  const regions = price === null ? [] : Array.isArray(s.regions) ? (s.regions as unknown[]).map(str).filter(Boolean) : []
   return { slug: str(s.slug), label: str(s.description) || str(s.slug), vcpu: num(s.vcpus), memoryMb: num(s.memory), diskGb: num(s.disk), currency: CURRENCY,
     // DO states one price and the regions that have it; the map is what makes this and Hetzner's per-location pricing one shape.
     prices: Object.fromEntries(regions.map(r => [r, minor])) }

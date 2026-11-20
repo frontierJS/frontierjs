@@ -27,7 +27,7 @@ import { buildWhere, buildOrderBy, sql, now, schemaRaw,
          normalizeOrderBy, buildCursorWhere,
          isNamedAgg, buildNamedAggExpr,
          quoteIdent } from '../src/core/query.js'
-import { create, apply, status,
+import { create, apply, migrationStatus,
          verify, autoMigrate }        from '../src/core/migrations.js'
 import { tempDir }                    from '../src/tmp-dirs.js'
 
@@ -1865,12 +1865,12 @@ describe('migrations', () => {
     const db = new Database(dbPath)
     create(db, result, 'initial', migDir)
 
-    const before = status(db, migDir)
+    const before = migrationStatus(db, migDir)
     expect(before.some((r: any) => r.state === 'pending')).toBe(true)
 
     apply(db, migDir)
 
-    const after = status(db, migDir)
+    const after = migrationStatus(db, migDir)
     expect(after.every((r: any) => r.state === 'applied')).toBe(true)
     db.close()
   })
@@ -2024,14 +2024,14 @@ describe('status() — sql field', () => {
     // Create a temp migrations dir with one file
     const { join } = await import('path')
     const { mkdirSync, writeFileSync } = await import('fs')
-    const { status } = await import('../src/core/migrations.js')
+    const { migrationStatus } = await import('../src/core/migrations.js')
 
     const dir = tmpSub('mig-test-')
     mkdirSync(dir, { recursive: true })
     const sql = 'CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY);'
     writeFileSync(join(dir, '20240101000000_test.sql'), sql)
 
-    const rows = status(db.$db, dir)
+    const rows = migrationStatus(db.$db, dir)
     expect(rows.length).toBe(1)
     expect(rows[0].sql).toBe(sql)
     expect(rows[0].state).toBe('pending')
@@ -2042,7 +2042,7 @@ describe('status() — sql field', () => {
     const { db } = await makeTestClient(`model T { id Int @id }`)
     const { join } = await import('path')
     const { mkdirSync, writeFileSync, unlinkSync } = await import('fs')
-    const { status, apply } = await import('../src/core/migrations.js')
+    const { migrationStatus, apply } = await import('../src/core/migrations.js')
 
     const dir = tmpSub('mig-orphan-')
     mkdirSync(dir, { recursive: true })
@@ -2053,7 +2053,7 @@ describe('status() — sql field', () => {
     apply(db.$db, dir)
     unlinkSync(filePath)
 
-    const rows = status(db.$db, dir)
+    const rows = migrationStatus(db.$db, dir)
     const orphan = rows.find((r: any) => r.state === 'orphaned')
     expect(orphan).toBeDefined()
     expect(orphan.sql).toBeNull()

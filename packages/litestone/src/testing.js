@@ -3393,7 +3393,7 @@ function _columnPayload(schema, model, row) {
   for (const field of model.fields) {
     if (field.type.array || field.type.kind === 'relation') continue
     const attrs = field.attributes
-    if (attrs.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'from' || a.kind === 'version')) continue
+    if (attrs.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'from' || a.kind === 'version' || (a.kind === 'zoned' && a.sources?.length))) continue
     if (attrs.some(a => a.kind === 'id') && attrs.some(a => a.kind === 'default')) continue
     if (row[field.name] === undefined || row[field.name] === null) continue
     data[field.name] = row[field.name]
@@ -3667,6 +3667,7 @@ function _shouldSkipField(field, model) {
   if (attrs.some(a => a.kind === 'transient')) return true  // no column — the API lifts it off the payload
   if (attrs.some(a => a.kind === 'from'))     return true  // subquery — not writable
   if (attrs.some(a => a.kind === 'derived'))  return true  // expression over the row — not writable
+  if (attrs.some(a => a.kind === 'zoned' && a.sources?.length)) return true  // litestone derives the instant
   if (attrs.some(a => a.kind === 'generated')) return true
   if (attrs.some(a => a.kind === 'funcCall'))  return true
   // @sequence — the db owns this counter. An explicit value IS honored and moves

@@ -1201,19 +1201,19 @@ describe('Memory cache', () => {
 
 // ─── Litestone query translator tests ─────────────────────────────────────
 
-import { parseQuery as parseLSQuery, parseWhere, deriveModelName } from '../src/core/litestone.ts'
+import { parseListQuery, parseWhere, deriveModelName } from '../src/core/litestone.ts'
 
 describe('Litestone query translator', () => {
 
   it('parses basic query params', () => {
-    const q = parseLSQuery({ name: 'alice' }, 20, 100, { limit: 10, offset: 5 })
+    const q = parseListQuery({ name: 'alice' }, 20, 100, { limit: 10, offset: 5 })
     expect(q.limit).toBe(10)
     expect(q.offset).toBe(5)
     expect(q.where).toEqual({ name: 'alice' })
   })
 
   it('caps take at maxLimit', () => {
-    const q = parseLSQuery({}, 20, 100, { limit: 9999 })
+    const q = parseListQuery({}, 20, 100, { limit: 9999 })
     expect(q.limit).toBe(100)
   })
 
@@ -1251,42 +1251,42 @@ describe('Litestone query translator', () => {
   })
 
   it('parses sort string', () => {
-    const q = parseLSQuery({}, 20, 100, { orderBy: 'name,-created_at' })
+    const q = parseListQuery({}, 20, 100, { orderBy: 'name,-created_at' })
     expect(q.orderBy).toEqual([{ name: 'asc' }, { created_at: 'desc' }])
   })
 
   it('parses select string', () => {
-    const q = parseLSQuery({}, 20, 100, { select: 'id,name,email' })
+    const q = parseListQuery({}, 20, 100, { select: 'id,name,email' })
     expect(q.select).toEqual({ id: true, name: true, email: true })
   })
 
   it('parses $populate string', () => {
-    const q = parseLSQuery({}, 20, 100, { populate: 'author,tags' })
+    const q = parseListQuery({}, 20, 100, { populate: 'author,tags' })
     expect(q.include).toEqual({ author: true, tags: true })
   })
 
   it('parses $populate with field selection', () => {
-    const q = parseLSQuery({}, 20, 100, { populate: 'author:name+email' })
+    const q = parseListQuery({}, 20, 100, { populate: 'author:name+email' })
     expect(q.include).toEqual({ author: { select: { name: true, email: true } } })
   })
 
   it('trims whitespace in $populate', () => {
-    const q = parseLSQuery({}, 20, 100, { populate: 'author , tags' })
+    const q = parseListQuery({}, 20, 100, { populate: 'author , tags' })
     expect(q.include).toEqual({ author: true, tags: true })
   })
 
   it('parses $search', () => {
-    const q = parseLSQuery({}, 20, 100, { search: 'hello world' })
+    const q = parseListQuery({}, 20, 100, { search: 'hello world' })
     expect(q.search).toBe('hello world')
   })
 
   it('parses $withDeleted', () => {
-    const q = parseLSQuery({}, 20, 100, { withDeleted: true })
+    const q = parseListQuery({}, 20, 100, { withDeleted: true })
     expect(q.withDeleted).toBe(true)
   })
 
   it('parses $onlyDeleted', () => {
-    const q = parseLSQuery({}, 20, 100, { onlyDeleted: true })
+    const q = parseListQuery({}, 20, 100, { onlyDeleted: true })
     expect(q.onlyDeleted).toBe(true)
   })
 
@@ -1311,12 +1311,12 @@ describe('Litestone query translator', () => {
   })
 
   it('parses sort object with MongoDB-style values', () => {
-    const q = parseLSQuery({}, 20, 100, { orderBy: { name: 1, created_at: -1 } as never })
+    const q = parseListQuery({}, 20, 100, { orderBy: { name: 1, created_at: -1 } as never })
     expect(q.orderBy).toEqual([{ name: 'asc' }, { created_at: 'desc' }])
   })
 
   it('defaults offset to 0 when $offset not set', () => {
-    const q = parseLSQuery({})
+    const q = parseListQuery({})
     expect(q.offset).toBe(0)
   })
 })

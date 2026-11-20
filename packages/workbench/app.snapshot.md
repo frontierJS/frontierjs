@@ -448,12 +448,15 @@ name when it declares none.
 
 ### `prototypes` · model `prototypes`
 
-- **methods** — `list`, `saveRecord`, `saveView`
-- **custom methods** — `list`, `saveRecord`, `saveView`
+- **methods** — `list`, `saveRecord`, `saveView`, `open`, `candidates`, `move`
+- **custom methods** — `list`, `saveRecord`, `saveView`, `open`, `candidates`, `move`
 - **who may call** —
   - `list` — standing 5 or above — declared `gate: 5`
   - `saveRecord` — standing 5 or above — declared `gate: 5`
   - `saveView` — standing 5 or above — declared `gate: 5`
+  - `open` — standing 5 or above — declared `gate: 5`
+  - `candidates` — standing 5 or above — declared `gate: 5`
+  - `move` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

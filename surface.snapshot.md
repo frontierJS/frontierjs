@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4696 source file(s) read
+27 package(s) · 4716 source file(s) read
 366 entry point(s), 34 imported by nothing outside their package, 14 emitted
-1808 value export(s), 661 reached by nothing outside, 187 emitted
+1811 value export(s), 662 reached by nothing outside, 186 emitted
 472 type export(s), 343 reached by nothing outside
 ```
 
@@ -37,14 +37,14 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `litestone` | 41 | 5 | 277 | 130 | 43 | 1 | 1 |
 | `junction` | 28 | 3 | 286 | 123 | 14 | 278 | 213 |
 | `mesa` | 34 | 4 | 327 | 111 | 76 | 0 | 0 |
-| `sierra` | 49 | 6 | 206 | 86 | 21 | 0 | 0 |
+| `sierra` | 49 | 6 | 206 | 87 | 21 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
-| `toolbelt` | 90 | 0 | 326 | 42 | 13 | 0 | 0 |
+| `toolbelt` | 90 | 0 | 328 | 42 | 12 | 0 | 0 |
 | `ui` | 18 | 0 | 57 | 36 | 3 | 0 | 0 |
 | `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
 | `outpost` | 26 | 2 | 70 | 21 | 4 | 0 | 0 |
 | `site-kit` | 10 | 5 | 36 | 9 | 1 | 0 | 0 |
-| `conduit` | 5 | 1 | 29 | 11 | 0 | 61 | 33 |
+| `conduit` | 5 | 1 | 30 | 11 | 0 | 61 | 33 |
 | `mcp` | 5 | 1 | 24 | 7 | 0 | 36 | 22 |
 | `email-kit` | 5 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 3 | 0 | 16 | 4 | 0 | 30 | 22 |
@@ -100,7 +100,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/conduit`
 
-`packages/conduit` · 5 entry point(s) · 29 value, 61 type export(s)
+`packages/conduit` · 5 entry point(s) · 30 value, 61 type export(s)
 
 **Entries imported by nothing outside (1):** `./stores/memory`
 
@@ -176,7 +176,7 @@ Every entry is imported and every name reached.
 
 **Entries not source (3, not graded):** `./outbox.lite` `./backfill.lite` `./metrics.lite`
 
-**Unreached values (123):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `clampCols` `clampRows` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `defaultCsp` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fetchPublicText` `fieldError` `fromStatusCode` `generateEnvExample` `heldClaims` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isFrameHook` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `markFrameHook` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `outboxSchemaFragment` `parseAggregate` `parseCookies` `parseLitestoneQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicFetchError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `resolveRawCaller` `resolverClaimsFor` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `shellArgv` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `traceIdOf` `unknownKeys` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
+**Unreached values (123):** `accessorIfModel` `AIBuilder` `announcementPayload` `applyClaims` `assertAuditModel` `assertBackfillField` `AuthClient` `autoloadServices` `autoSort` `backfillSchemaFragment` `bearerOf` `bodyLimit` `BULK_FAILURES` `CacheValueError` `checkPrincipalSetting` `checkUnknownKeys` `clampCols` `clampRows` `collectMethodInputs` `collectMethodOutputs` `collectMetrics` `combineOrigins` `COMMITMENT_SWEEP_JOB` `consoleWriter` `createChannelManager` `createEventBus` `createLitestoneBase` `createMemoryCache` `createSchema` `createSmtpMailer` `createSqliteCache` `createStats` `cronMatcher` `currentCall` `customMethodNames` `dataRealmFacts` `declaredTransitionMethods` `declaresNoSoftDelete` `decodeValue` `defaultCsp` `deriveModelName` `describeDataRealm` `describedOf` `describePrincipalRealm` `encodeValue` `errorResponse` `extractIP` `fetchPublicText` `fieldError` `fromStatusCode` `generateEnvExample` `heldClaims` `inAfterCommitDrain` `installLogContext` `installMadeAt` `installQueryTelemetry` `isCrudGatedMethod` `isCustomMethod` `isDeclaredTransition` `isDerivedHook` `isFrameHook` `isServiceResult` `jsonResponse` `jsonSchemaToJunctionSchema` `JunctionClient` `liftReservedQuery` `loadServiceFile` `logTiming` `markDerived` `markFrameHook` `mergeHookMaps` `methodEntryName` `methodGateBasis` `mirrorClaimFor` `multiWriter` `nextDelayMs` `noopLogger` `outboxSchemaFragment` `parseAggregate` `parseCookies` `parseListQuery` `parseQuery` `partitionBulk` `PaymentRequired` `printEnvExample` `PublicFetchError` `READ_ONLY_METHODS` `readGateLevel` `readReplyTag` `redirectResponse` `refuseStream` `registerAuditMetrics` `renderPrometheus` `replyAddress` `requiredScope` `resetAnnouncementWarnings` `resetReservedQueryChecks` `resolveAccessor` `resolveDefsKey` `resolveMethodSelection` `resolvePipelines` `resolveRawCaller` `resolverClaimsFor` `ResultShapeError` `runPipeline` `serializeHookMap` `serveStatic` `SERVICE_OPTION_KEYS` `SERVICE_RUNTIME_KEYS` `ServiceProxy` `ServiceRegistry` `shellArgv` `splitAddress` `TENANT_CLIENT_OBSERVERS` `TENANT_REGISTRY` `tenantClaimGuard` `toBulkFailure` `traceIdOf` `unknownKeys` `validateInput` `watchFilterReads` `withTenantDb` `WRITE_VERBS`
 
 **Emitted (14):** `allowedMethodNames` `appJsonSchema` `assertContentId` `assertMailbox` `AUDIT_ACTOR_KINDS` `createSqliteWebhookStore` `describeShape` `describeStream` `fireDue` `generateOpenAPI` `LOCAL_PART_MAX` `otlp` `serviceMethodNames` `SUBSCRIPTION_PATH`
 
@@ -280,7 +280,7 @@ Every entry is imported and every name reached.
 
 **Entries not source (23, not graded):** `.` `./scanner` `./build` `./router` `./router/internals` `./analytics` `./resource` `./field-rules` `./islands` `./fetch` `./theme` `./postbuild` `./presence` `./devtools` `./widget` `./widget/serve` `./widget-headers` `./mcp` `./site/serve` `./site/compile` `./site/cloudflare` `./check` `./tui`
 
-**Unreached values (86):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `affectedPages` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `generateWidgetOrigin` `getComponents` `getDirection` `getLayoutChainForNode` `gitBranch` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `previewAlias` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerDeployed` `workerName` `WRANGLER_CONFIG` `writeCloudflare` `zoneOnAccount`
+**Unreached values (87):** `_deepMerge` `_findCatchAll` `_resetInternals` `_resetMcpApp` `_resetPage` `_resetPresenceHolders` `_scrollMemoryHas` `_scrollMemorySize` `affectedPages` `afterNavigate` `allSchemas` `appFailed` `applyHostContext` `buildCommitments` `buildGate` `buildLayoutMap` `buildRelations` `buildTransitions` `buildVersion` `ChainRenderer` `columnList` `commitmentsAt` `COMMITTED_MESSAGE` `COMPATIBILITY_DATE` `configureFetch` `createMemoryHistory` `defaultControlFor` `defaultDisplayFor` `fromFor` `generatedFor` `generateRouteTable` `generateWidgetOrigin` `getComponents` `getDirection` `getLayoutChainForNode` `gitBranch` `hasFileComponent` `hasSchemas` `hmrInvalidate` `isPublicRoute` `isSameDocumentOrigin` `isStaleWrite` `labelFieldInfo` `linkHrefOf` `loadLayoutChain` `mountIsland` `mountView` `normalizeBlanks` `oauthErrorMessage` `offlineStatus` `PAGE_RESERVED` `pathAliases` `pickFilter` `previewAlias` `readFrontmatter` `refusedFor` `registeredDisplays` `registerFileComponent` `registerModule` `renderRouteTable` `resolveHtmlClass` `ResourceHookError` `runPostBuild` `scanAndWrite` `seedDetermined` `setScheme` `sierraFetch` `siteEntry` `STALE_WRITE_MESSAGE` `stampedPage` `stripReadOnly` `submitInPlace` `suggestModel` `toConflict` `toolAnswer` `toolCall` `trackEvent` `transitionsAt` `unregisterDisplay` `updateParams` `whenReady` `WORKER_ENTRY` `workerDeployed` `workerName` `WRANGLER_CONFIG` `writeCloudflare` `zoneOnAccount`
 
 **Emitted (21):** `_setStaticPage` `buildThemeScript` `columnLabel` `configureAnalytics` `configureLocalDb` `CSS_MARK` `generateSchemas` `hmrReload` `hydrateIslands` `initAnalytics` `initRouter` `initTheme` `INTERACTION_TASKS` `mcpApp` `paletteSource` `pendingQueue` `registerSchemas` `remountKey` `resolveChain` `resourceIn` `startView`
 
@@ -306,13 +306,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/toolbelt`
 
-`packages/toolbelt` · 90 entry point(s) · 326 value, 0 type export(s)
+`packages/toolbelt` · 90 entry point(s) · 328 value, 0 type export(s)
 
 **Entries not source (45, not graded):** `./aria` `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./frontier` `./geo` `./docfences` `./env` `./frontmatter` `./glow` `./history` `./hooks` `./ids` `./inflect` `./json` `./jsonschema` `./keys` `./markdown` `./match` `./mailbox` `./mime` `./predicate` `./qr` `./query` `./transforms` `./rank` `./redact` `./seal` `./search` `./share` `./signature` `./sigv4` `./sse` `./sugar` `./textbox` `./textedit` `./trace` `./tty` `./typo` `./units`
 
 **Unreached values (42):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stringDoc` `TRANSFORM_NAMES` `transportFlags` `visualRange`
 
-**Emitted (13):** `CRON_FIELDS` `dayHeader` `distinctDays` `FILE_PLAIN_MAX` `formatChord` `fromWall` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
+**Emitted (12):** `CRON_FIELDS` `dayHeader` `distinctDays` `FILE_PLAIN_MAX` `formatChord` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
 
 ## `@frontierjs/ui`
 

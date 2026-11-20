@@ -273,7 +273,7 @@ const WHERE_COMBINATORS = new Set<string>(COMBINATORS)
  * name as the bridge refuses it (`FJS-D237`, `FJS-2442`). `$or`/`$and`/`$not`
  * are parseWhere's grammar, not directives.
  */
-export function parseQuery(
+export function parseListQuery(
   query: Record<string, unknown>,
   defaultLimit = 20,
   maxLimit = 100,
@@ -1160,7 +1160,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
 
   async function restoreImpl(ctx: ServiceContext): Promise<unknown> {
     const table = getTable(ctx)
-    const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
+    const q     = parseListQuery(ctx.query,...pageOf(ctx), ctx.directives)
 
     // By id it answers the row or a 404, as remove does. Litestone answers an
     // array for any where, so a by-id restore used to hand back `[row]` where
@@ -1549,7 +1549,7 @@ const columns = writableColumns(db, m.accessor)
   return {
     async find(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
+      const q     = parseListQuery(ctx.query,...pageOf(ctx), ctx.directives)
       const where = { ...q.where, ...softDeleteFilter() }
 
       // FTS5 search path — routes to table.search() when $search is present.
@@ -1684,7 +1684,7 @@ const columns = writableColumns(db, m.accessor)
 
     async get(ctx: ServiceContext): Promise<unknown> {
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
+      const q     = parseListQuery(ctx.query,1, 1, ctx.directives)
       refuseRecursive(q.recursive, 'a read of one row', ctx)
 
       if (ctx.id) {
@@ -1752,7 +1752,7 @@ const columns = writableColumns(db, m.accessor)
       if (Array.isArray(ctx.data)) ensureBulkAllowed('create')
 
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, 1, 1, ctx.directives)
+      const q     = parseListQuery(ctx.query,1, 1, ctx.directives)
 
       if (Array.isArray(ctx.data)) {
         if (ctx.data.length > bulkMax) {
@@ -1824,7 +1824,7 @@ const columns = writableColumns(db, m.accessor)
 
       assertNameable(ctx)
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
+      const q     = parseListQuery(ctx.query,...pageOf(ctx), ctx.directives)
 
       if (softDelete && (ctx.data as Record<string, unknown>)[softDelete] !== undefined) {
         throw new BadRequest(`Cannot set ${softDelete} directly — use remove()`)
@@ -1854,7 +1854,7 @@ const columns = writableColumns(db, m.accessor)
       if (mirrored?.forward.update) return forwardUpdate(ctx, mirrored, 'patch')
 
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
+      const q     = parseListQuery(ctx.query,...pageOf(ctx), ctx.directives)
 
       if (softDelete && (ctx.data as Record<string, unknown>)[softDelete] !== undefined) {
         throw new BadRequest(`Cannot set ${softDelete} directly — use remove()`)
@@ -1925,7 +1925,7 @@ const columns = writableColumns(db, m.accessor)
       if (mirrored?.forward.remove) return forwardRemove(ctx, mirrored)
 
       const table = getTable(ctx)
-      const q     = parseQuery(ctx.query, ...pageOf(ctx), ctx.directives)
+      const q     = parseListQuery(ctx.query,...pageOf(ctx), ctx.directives)
 
       refuseHardDelete(ctx, q)
 
@@ -3184,7 +3184,7 @@ export function watchFilterReads(ctx: ServiceContext): (() => void) | undefined 
 
   const read = (k: string | symbol) => { if (typeof k === 'string') pending.delete(k) }
   // Enumeration reads every key — `parseWhere($.query)`, a spread and the base
-  // find's parseQuery all walk the object, and each applies all of it.
+  // find's parseListQuery all walk the object, and each applies all of it.
   ctx.query = new Proxy(target, {
     get(t, k, r)                   { read(k); return Reflect.get(t, k, r) },
     has(t, k)                      { read(k); return Reflect.has(t, k) },

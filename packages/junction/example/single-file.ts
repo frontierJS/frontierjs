@@ -189,7 +189,8 @@ function issueToken(username: string, role = 'user'): string {
 const consoleMailer: IMail = {
   async send(msg: MailMessage): Promise<SendResult> {
     log.info('[mail] would send', { to: msg.to, subject: msg.subject })
-    return { id: `mail-${Date.now()}`, message: 'logged' }
+    const id = `mail-${Date.now()}`
+    return { id, messageId: `<${id}@console.invalid>`, message: 'logged' }
   },
   async batch(msgs) {
     return Promise.all(msgs.map(m => this.send(m)))

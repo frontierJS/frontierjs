@@ -751,3 +751,112 @@ describe('placing a model in a windowed database', () => {
     expect(own(parsed)[0].generated).toBeUndefined()
   })
 })
+
+// A window is the model's when it says one (FJS-D1059, FJS-2289). Retention was
+// the database's word alone, so ninety days beneath tables kept for ever meant a
+// file of its own — every relation refused across it, and the migrator moved
+// the table as a new empty one there. `@@retention(90d, from: col)` keeps the
+// model in its file with its relations; `from:` names its clock (FJS-2285).
+describe('a model with its own window', () => {
+  const MODELS = `
+    model GridPoint { id Int @id @default(autoincrement())  label String  rankings Ranking[] }
+    model Ranking {
+      id          Int       @id @default(autoincrement())
+      point       GridPoint @relation(fields: [pointId], references: [id], onDelete: Cascade)
+      pointId     Int
+      capturedAt  DateTime
+      @@retention(90d, from: capturedAt)
+    }
+  `
+  const open = async (database = '', models = MODELS) => {
+    const dir = tmp()
+    const db  = await createClient({ schema: `
+      database main { path "${join(dir, 'app.db')}"  ${database} }
+      ${models}
+    ` })
+    return { db, sys: db.asSystem(), dir }
+  }
+
+  test('is swept by its own clock in a database with no window, and keeps its relation', async () => {
+    const { db, sys } = await open()
+    const point = await sys.gridPoint.create({ data: { label: 'p' } })
+    await sys.ranking.create({ data: { pointId: point.id, capturedAt: ago(200) } })
+    await sys.ranking.create({ data: { pointId: point.id, capturedAt: ago(2) } })
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: any) => r.model === 'Ranking')).toMatchObject({ database: 'main', table: 'ranking', removed: 1 })
+    expect(swept.find((r: any) => r.model === 'GridPoint')).toBeUndefined()
+    expect((await sys.gridPoint.findMany()).length).toBe(1)
+    const kept = await sys.gridPoint.findFirst({ include: { rankings: true } })
+    expect(kept.rankings.length).toBe(1)
+    db.$close()
+  })
+
+  test('its window wins over the database\'s, and a neighbor keeps the database\'s', async () => {
+    const { db, sys } = await open('retention 1y', `
+      model Log   { id Int @id @default(autoincrement())  createdAt DateTime @default(now()) }
+      model Event { id Int @id @default(autoincrement())  createdAt DateTime @default(now())  @@retention(30d) }
+    `)
+    await sys.log.create({ data: { createdAt: ago(60) } })
+    await sys.event.create({ data: { createdAt: ago(60) } })
+
+    const swept = await sys.$retain()
+    expect(swept.find((r: any) => r.model === 'Event')).toMatchObject({ removed: 1 })
+    expect(swept.find((r: any) => r.model === 'Log')).toMatchObject({ removed: 0 })
+    expect((await sys.log.findMany()).length).toBe(1)
+    db.$close()
+  })
+
+  test('the startup pass sweeps it too', async () => {
+    const { db, sys, dir } = await open()
+    const point = await sys.gridPoint.create({ data: { label: 'p' } })
+    await sys.ranking.create({ data: { pointId: point.id, capturedAt: ago(200) } })
+    db.$close()
+
+    const again = await createClient({ schema: `database main { path "${join(dir, 'app.db')}" }\n${MODELS}` })
+    expect((await again.asSystem().ranking.findMany()).length).toBe(0)
+    again.$close()
+  })
+
+  test('its file is created incremental, as a windowed database\'s is', async () => {
+    const { db, dir } = await open()
+    db.$close()
+    const raw = new BunDatabase(join(dir, 'app.db'), { readonly: true })
+    try { expect((raw.query('PRAGMA auto_vacuum').get() as any).auto_vacuum).toBe(2) } finally { raw.close() }
+  })
+
+  test('its clock column earns the index the sweep reads', async () => {
+    const { db, dir } = await open()
+    db.$close()
+    const raw = new BunDatabase(join(dir, 'app.db'), { readonly: true })
+    try {
+      const plan = (raw.query(`EXPLAIN QUERY PLAN SELECT rowid AS r FROM "ranking" WHERE "capturedAt" < ? LIMIT 1000`)
+        .all('2026-01-01') as { detail: string }[]).map(r => r.detail).join(' | ')
+      expect(plan).toMatch(/SEARCH ranking USING (COVERING )?INDEX idx_ranking_capturedAt/)
+    } finally { raw.close() }
+  })
+
+  test('a clock that is not a DateTime column of the model is refused by name', async () => {
+    const { parse } = await import('../src/core/parser.js')
+    const errs = (body: string) => parse(`model Ranking { id Int @id  label String  capturedAt DateTime  ${body} }`).errors.join('\n')
+    expect(errs('@@retention(90d, from: missing)')).toMatch(/@@retention.*'missing'/)
+    expect(errs('@@retention(90d, from: label)')).toMatch(/@@retention.*'label'.*DateTime/)
+    expect(errs('@@retention(90d)')).toMatch(/@@retention.*'createdAt'/)
+    expect(errs('@@retention(90d, from: capturedAt)')).toBe('')
+  })
+
+  test('a window that is not a duration is refused at parse', async () => {
+    const { parse } = await import('../src/core/parser.js')
+    expect(parse(`model Ranking { id Int @id  createdAt DateTime  @@retention(90x) }`).errors.join('\n')).toMatch(/@@retention.*90x/)
+  })
+
+  test('a model in a jsonl database is refused, since only SQLite is swept per model', async () => {
+    const { parse } = await import('../src/core/parser.js')
+    const errs = parse(`
+      database main { path "./app.db" }
+      database raw  { path "./raw/"  driver jsonl }
+      model Hit { id Int @id  createdAt DateTime  @@db(raw)  @@retention(30d) }
+    `).errors.join('\n')
+    expect(errs).toMatch(/@@retention.*jsonl/)
+  })
+})

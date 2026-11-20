@@ -20,7 +20,7 @@
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { buildService } from '../src/core/service.ts'
-import { parseQuery } from '../src/core/litestone.ts'
+import { parseListQuery } from '../src/core/litestone.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import type { ServiceContext } from '../src/core/context.ts'
 import { createTestApp, request } from '../src/testing/index.ts'
@@ -196,13 +196,13 @@ describe('the server answers a window', () => {
   })
 
   test('the directive is parsed, and an empty one is not a cursor', () => {
-    expect(parseQuery({}, 20, 100, { after: 'abc' }).after).toBe('abc')
-    expect(parseQuery({}, 20, 100, { after: '' }).after).toBeUndefined()
-    expect(parseQuery({}, 20, 100).after).toBeUndefined()
+    expect(parseListQuery({}, 20, 100, { after: 'abc' }).after).toBe('abc')
+    expect(parseListQuery({}, 20, 100, { after: '' }).after).toBeUndefined()
+    expect(parseListQuery({}, 20, 100).after).toBeUndefined()
   })
 
   test('$after is not a filter — on the query past the bridge it is refused by name', () => {
-    expect(() => parseQuery({ $after: 'abc', name: 'x' }, 20, 100)).toThrow(/\$after/)
+    expect(() => parseListQuery({ $after: 'abc', name: 'x' }, 20, 100)).toThrow(/\$after/)
   })
 })
 

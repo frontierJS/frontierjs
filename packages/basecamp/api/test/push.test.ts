@@ -11,7 +11,7 @@
 import { test, expect, describe, beforeAll, spyOn } from 'bun:test'
 import { createHmac }             from 'node:crypto'
 import { join }                   from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
@@ -41,7 +41,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: user.id, role: 'admin',
     capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
-  admin = session({ id: user.id, workspaceId: ws.id })
+  admin = sessionContext({ id: user.id, workspaceId: ws.id })
 
   box = await sys.server.create({ data: {
     workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })

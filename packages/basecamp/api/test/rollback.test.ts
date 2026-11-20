@@ -22,7 +22,7 @@
 
 import { test, expect, describe, beforeAll } from 'bun:test'
 import { join }              from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -71,8 +71,8 @@ beforeAll(async () => {
 
   // ADMIN is 5 and DEVELOPER is 4, which is the pair the gate sits between:
   // `@gate(5)` on the move against `Deployment`'s own update gate of USER(4).
-  admin     = session({ id: a.id, workspaceId: ws.id })
-  developer = session({ id: d.id, workspaceId: ws.id })
+  admin     = sessionContext({ id: a.id, workspaceId: ws.id })
+  developer = sessionContext({ id: d.id, workspaceId: ws.id })
 
   // A machine that can take a release, or `resolveExecutor` refuses before any
   // of this is reached.

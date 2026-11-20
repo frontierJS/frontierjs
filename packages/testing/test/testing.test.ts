@@ -10,7 +10,7 @@ import { describe, expect, test } from 'bun:test'
 import { join }                   from 'node:path'
 import { createApp, createService } from '@frontierjs/junction'
 import { GatePlugin }             from '@frontierjs/litestone'
-import { createTestEnv, session } from '../src/index.ts'
+import { createTestEnv, sessionContext } from '../src/index.ts'
 
 const SCHEMA = join(import.meta.dir, 'fixtures', 'schema.lite')
 
@@ -42,9 +42,9 @@ async function env(extra: Record<string, unknown> = {}) {
   }) as any
 }
 
-const member = session({ id: 'u-member', role: 'member' })
-const admin  = session({ id: 'u-admin',  role: 'member', isAdmin: true })
-const reader = session({ id: 'u-reader', role: 'reader' })
+const member = sessionContext({ id: 'u-member', role: 'member' })
+const admin  = sessionContext({ id: 'u-admin',  role: 'member', isAdmin: true })
+const reader = sessionContext({ id: 'u-reader', role: 'reader' })
 
 describe('createTestEnv — the API tier', () => {
 
@@ -158,12 +158,12 @@ describe('createTestEnv — the API tier', () => {
     await e.close()
   })
 
-  test('a principal spelling its id `userId` is refused, naming session()', async () => {
+  test('a principal spelling its id `userId` is refused, naming sessionContext()', async () => {
     // A session and a User row put the id at `id`; a `userId` ran as a caller
     // with no id while nothing complained (`FJS-1890`, `FJS-D1307`).
     const e = await env()
     await expect(e.as({ userId: 'u-member', role: 'member' } as never).service('leads').find())
-      .rejects.toThrow(/user has no 'id'[\s\S]*session\(\{ id \}\)/)
+      .rejects.toThrow(/user has no 'id'[\s\S]*sessionContext\(\{ id \}\)/)
     await e.close()
   })
 
@@ -250,12 +250,12 @@ describe('createTestEnv — the API tier', () => {
   })
 })
 
-describe('session()', () => {
+describe('sessionContext()', () => {
   test('fills the three required fields and invents nothing else', async () => {
     // Defaulting verifiedAt to null would grade every session it built down to
     // VISITOR(1) through sessionGateLevel — absent means the app does not model
     // the stage, and only null grades down.
-    const s = session({ id: 'u1' })
+    const s = sessionContext({ id: 'u1' })
     expect(s).toEqual({ id: 'u1', userType: 'user', authMethod: 'session' })
     expect('verifiedAt'   in s).toBe(false)
     expect('activatedAt'  in s).toBe(false)
@@ -263,6 +263,6 @@ describe('session()', () => {
   })
 
   test('a stated field wins', () => {
-    expect(session({ id: 'u1', userType: 'bot', verifiedAt: null }).userType).toBe('bot')
+    expect(sessionContext({ id: 'u1', userType: 'bot', verifiedAt: null }).userType).toBe('bot')
   })
 })

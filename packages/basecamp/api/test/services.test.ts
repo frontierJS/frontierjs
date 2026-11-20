@@ -5,8 +5,8 @@
 // Everything between a principal and that boundary is derivation this app
 // writes itself and nothing was executing it:
 //
-//   session → SessionContext → withWorkspaceStanding → memberRole
-//           → basecampGateLevel → toDataPrincipal → the scoped client
+//   sessionContext → SessionContext → withWorkspaceStanding → memberRole
+//                  → basecampGateLevel → toDataPrincipal → the scoped client
 //
 // Four of those five steps are basecamp's, and a principal can arrive correct
 // at every one of them and land wrong. `env.as(user).service(name)` is the same
@@ -22,7 +22,7 @@ import { ensureCert }  from '@frontierjs/outpost/cert'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { Database }    from 'bun:sqlite'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { slug } from '@frontierjs/toolbelt/inflect'
 import { seriesKey }   from '@frontierjs/junction'
@@ -134,7 +134,7 @@ beforeAll(async () => {
 
   // The workspace id rides on the SESSION here. resolveWorkspaceId() reads the
   // header first, then ?workspace_id, then the principal.
-  const at = (u: any) => session({ id: u.id, workspaceId: ws.id })
+  const at = (u: any) => sessionContext({ id: u.id, workspaceId: ws.id })
   owner = at(o); developer = at(d); viewer = at(v)
   // A real account with no membership anywhere in this workspace — VISITOR(1).
   outsider = at(x)
@@ -145,7 +145,7 @@ beforeAll(async () => {
   // exempting a `@@tenant(none)` service, this is what would go red.
   const a = await mk(`sys-${uniq()}@x.co`)
   await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
-  sysadmin = session({ id: a.id, isSystemAdmin: true })
+  sysadmin = sessionContext({ id: a.id, isSystemAdmin: true })
 
   // The machine the outpost-signature tests check in as. Its own row, so those
   // tests never move a server another test is asserting the status of.
@@ -466,7 +466,7 @@ describe('the two transports answer the same app', () => {
     const owner = await open(token), stranger = await open(strangerToken)
     try {
       const ownerWs = (await sys.workspaceMember.findFirst({ where: { userId: parityUser } })).workspaceId
-      const flows   = penv.as(session({ id: parityUser, workspaceId: ownerWs })).service('flows')
+      const flows   = penv.as(sessionContext({ id: parityUser, workspaceId: ownerWs })).service('flows')
       // The joins run after `connect`, so a flow is drafted until one lands.
       const deadline = Date.now() + 5000
       while (!owner.got.length && Date.now() < deadline) {
@@ -505,7 +505,7 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
 
     // No workspaceId on the session — the third fallback cannot answer, so the
     // query is the only thing that can.
-    const bare = session({ id: u.id })
+    const bare = sessionContext({ id: u.id })
 
     const rows = await env.as(bare).service('projects').find({ workspace_id: ws.id })
     expect(Array.isArray(rows.data ?? rows)).toBe(true)
@@ -516,7 +516,7 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
     const uniq = Math.random().toString(36).slice(2, 8)
     const acct = await sys.account.findFirst({ where: {} })
     const u    = await sys.user.create({ data: { email: `q2-${uniq}@x.co`, accountId: acct.id } })
-    const bare = session({ id: u.id })
+    const bare = sessionContext({ id: u.id })
 
     // Refused by `tenantClaimGuard` now rather than by `requireWorkspace`: the
     // schema declares row tenancy, so junction installs a guard that fires
@@ -1177,7 +1177,7 @@ describe('a workspace role is not a thing you may hand yourself', () => {
     }
     const admin = await mk('admin')
     const pat   = await mk('developer')
-    return { admin, adminS: session({ id: admin.id, workspaceId: ws.id }), pat }
+    return { admin, adminS: sessionContext({ id: admin.id, workspaceId: ws.id }), pat }
   }
 
   const roleOfMember = async (userId: string) =>
@@ -1427,7 +1427,7 @@ describe('auth\'s people service reaches only the operator\'s workspace', () => 
     }
     const admin = await mk([[ws, 'admin']])
     return {
-      people:  env.as(session({ id: admin.id, workspaceId: ws.id })).service('people'),
+      people:  env.as(sessionContext({ id: admin.id, workspaceId: ws.id })).service('people'),
       onlyB:   await mk([[other, 'developer']]),
       both:    await mk([[ws, 'developer'], [other, 'developer']]),
       onlyA:   await mk([[ws, 'developer']]),
@@ -3492,7 +3492,7 @@ describe('infra.summary counts the fleet Home opens on', () => {
     const w    = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sum', slug: `sum-${tag()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: w.id, userId: u.id, role: 'viewer',
       capabilities: grantsFor('viewer'), acceptedAt: new Date().toISOString() } })
-    me = session({ id: u.id, workspaceId: w.id })
+    me = sessionContext({ id: u.id, workspaceId: w.id })
 
     await serverAt('online',  { workspaceId: w.id, name: 'a', slug: `a-${tag()}` })
     await serverAt('online',  { workspaceId: w.id, name: 'b', slug: `b-${tag()}` })
@@ -4447,7 +4447,7 @@ describe('the trash lists what was deleted, and each service brings its own back
     const e    = await sys.environment.create({ data: { workspaceId: doomed.id, projectId: proj.id, name: 'staging', slug: 'staging' } })
     const a    = await sys.app.create({ data: { workspaceId: doomed.id, environmentId: e.id, name: 'Web', slug: `web-${uniq()}`, kind: 'static' } })
 
-    const removed = await env.as(session({ id: owner.id, workspaceId: doomed.id })).service('workspaces').remove(doomed.id)
+    const removed = await env.as(sessionContext({ id: owner.id, workspaceId: doomed.id })).service('workspaces').remove(doomed.id)
     expect(removed.apps.map((x: any) => x.id)).toEqual([a.id])
     expect(removed.apps[0].machine).toMatchObject({ ok: false, why: expect.any(String) })
   })
@@ -4531,7 +4531,7 @@ describe('infra.launch walks to the screen each step happens on', () => {
     await sys.workspaceMember.create({ data: {
       workspaceId: w.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
     } })
-    const me = env.as(session({ id: o.id, workspaceId: w.id })).service('infra')
+    const me = env.as(sessionContext({ id: o.id, workspaceId: w.id })).service('infra')
 
     const empty = await me.call('launch')
     expect(empty.done).toBe(0)
@@ -4646,7 +4646,7 @@ describe('users — a person edits their own profile, at any standing', () => {
   })
 
   test('a caller naming no workspace edits theirs too', async () => {
-    const bare = session({ id: viewer.id })
+    const bare = sessionContext({ id: viewer.id })
     const out = await env.as(bare).service('users').patch(viewer.id, { nickname: 'Vee 2' })
     expect(out.nickname).toBe('Vee 2')
   })
@@ -4715,7 +4715,7 @@ describe('owners: leaving, promoting, removing', () => {
         workspaceId: w.id, userId: p.id, role: p.role,
         capabilities: grantsFor(p.role), acceptedAt: new Date().toISOString(),
       } })
-    const as = (i: number) => env.as(session({ id: people[i].id, workspaceId: w.id })).service('workspaces')
+    const as = (i: number) => env.as(sessionContext({ id: people[i].id, workspaceId: w.id })).service('workspaces')
     const roleOf = async (i: number) =>
       (await sys().workspaceMember.findFirst({ where: { workspaceId: w.id, userId: people[i].id } }))?.role ?? null
     return { w, people, as, roleOf }
@@ -6881,7 +6881,7 @@ describe('app-backups: an app\'s volume is archived on its machine', () => {
 
       // The person /setup makes: the workspace's owner and the hub tier at once.
       await sys.user.update({ where: { id: owner.id }, data: { isSystemAdmin: true } })
-      const hubOp = session({ id: owner.id, isSystemAdmin: true, workspaceId: ws.id })
+      const hubOp = sessionContext({ id: owner.id, isSystemAdmin: true, workspaceId: ws.id })
       const used  = await env.as(hubOp).service('servers').call('useHost', null, {})
       expect(used.enrolled).toBe(false)
       expect(used.server.slug).not.toBe(HOST_SLUG)

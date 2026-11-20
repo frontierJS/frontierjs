@@ -8,7 +8,7 @@
 // keeps the body on `raw`. One reader: nothing else in the package touches
 // `raw` or `meta.status`.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { OAuthErrorBody } from './types.ts'
 
 export type OidcFailureKind =
@@ -29,13 +29,6 @@ export interface OidcFailure {
   retryAfterMs?: number
   /** The request went out and nobody knows whether it was applied — a lost refresh under rotation is the case. */
   indeterminate?: boolean
-}
-
-export function parseBody(raw: unknown): OAuthErrorBody | null {
-  try {
-    const v = typeof raw === 'string' ? JSON.parse(raw) : raw
-    return v && typeof v === 'object' ? v as OAuthErrorBody : null
-  } catch { return null }
 }
 
 /** RFC 6750 §3: a resource server's refusal rides `WWW-Authenticate: Bearer error="…"`. */
@@ -69,7 +62,7 @@ export function translate(error: ConduitError, headers?: Record<string, string>)
     ...(error.retry_after_ms !== undefined ? { retryAfterMs: error.retry_after_ms } : {}),
     ...(error.indeterminate ? { indeterminate: true } : {}),
   }
-  const body = parseBody(error.raw) ?? parseBearerChallenge(headers?.['www-authenticate'])
+  const body = errorBody<OAuthErrorBody>(error.raw) ?? parseBearerChallenge(headers?.['www-authenticate'])
   if (!body?.error) return base
   // A 429 keeps its kind whatever the body says: the status carries
   // Retry-After and the body is whatever the provider felt like.

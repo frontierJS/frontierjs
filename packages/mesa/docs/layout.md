@@ -101,6 +101,8 @@ src/
                          shows, since parity is byte for byte against it
   entities.js          — htmlEntitiesToText(): character references as text,
                          read by the compiler and the terminal runtime's {@html}
+  host-spread.js       — spreadOnto(): a {...attrs} spread on a host node, shared by
+                         the terminal and native runtimes; each passes its event table
   render-component.js  — renderComponent(): a component → HTML, at build time
   render.js            — SSR / static-site rendering entry
   compiler-md.js       — Markdown + frontmatter compiler (the .md path)

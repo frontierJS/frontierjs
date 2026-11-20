@@ -23,7 +23,7 @@
 // So one double is written, and the other two are named rather than shipped —
 // otherwise somebody completes the set later and the drift starts.
 
-import { assertMessageAddresses, assertHeaderValue, assertHeaderName } from '@frontierjs/junction/mail'
+import { assertMessageAddresses, assertHeaderValue, assertHeaderName, messageIdFor } from '@frontierjs/junction/mail'
 import type { IMail, MailMessage, SendResult } from '@frontierjs/junction/mail'
 
 export interface TestMailer extends IMail {
@@ -69,6 +69,13 @@ export function createTestMailer(): TestMailer {
     sent.push(message)
   }
 
+  // A stated Message-ID is answered as the real mailers answer it; the double
+  // has no configured From, so a minted one takes a fixed domain.
+  function answer(message: MailMessage): SendResult {
+    const { id: messageId } = messageIdFor({ from: message.from ?? 'test@createtestmailer.test', headers: message.headers })
+    return { id: `test-${sent.length}`, messageId, message: 'accepted by createTestMailer' }
+  }
+
   return {
     get sent() { return sent },
     get last() { return sent[sent.length - 1] },
@@ -88,7 +95,7 @@ export function createTestMailer(): TestMailer {
 
     async send(message) {
       accept(message)
-      return { id: `test-${sent.length}`, message: 'accepted by createTestMailer' }
+      return answer(message)
     },
 
     async batch(messages) {
@@ -97,7 +104,7 @@ export function createTestMailer(): TestMailer {
       const out: SendResult[] = []
       for (const m of messages) {
         accept(m)
-        out.push({ id: `test-${sent.length}`, message: 'accepted by createTestMailer' })
+        out.push(answer(m))
       }
       return out
     },

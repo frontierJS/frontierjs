@@ -7,7 +7,7 @@ Testing first) and adds the API half. **Nothing here mocks a module**; a test
 passes a real client, a real plugin, or a double listed below.
 
 ```ts fragment
-import { createTestEnv, session, createTestMailer } from '@frontierjs/testing'
+import { createTestEnv, sessionContext, createTestMailer } from '@frontierjs/testing'
 
 const env = await createTestEnv({
   schema:     'db/schema.lite',
@@ -44,7 +44,7 @@ A test about a hook, a plugin guard or `ctx.user` wants `as`.
 
 ## Principals
 
-- `session({ id, role, isAdmin, … })` builds a `SessionContext`. A standing
+- `sessionContext({ id, role, isAdmin, … })` builds a `SessionContext`. A standing
   field you omit is *absent*, which grades as permissive; `verifiedAt: null` is
   what grades down to VISITOR.
 - `createStubAuth({ users: [{ id: 'u1', isAdmin: true }] })` is an `IAuth`;

@@ -45,7 +45,7 @@ process.env.CLAUDE_BIN = FAKE_CLAUDE
 
 const { startMattermostSink } = await import('@frontierjs/conduit-mattermost/sink')
 const { startBasecampSink } = await import('@frontierjs/conduit-37signals/sink')
-const { createTestEnv, session } = await import('@frontierjs/testing')
+const { createTestEnv, sessionContext } = await import('@frontierjs/testing')
 const { createJunctionClient } = await import('@frontierjs/junction/client')
 const { buildWorkbenchApp } = await import('../src/app.ts')
 const { applyFrame } = await import('../src/providers/chat/sync.ts')
@@ -91,7 +91,7 @@ try {
   const sys = env.system
   const ada = await sys.member.create({ data: { nick: 'ada' } })
   const bo  = await sys.member.create({ data: { nick: 'bo' } })
-  const as  = (m: { id: number }) => env.as(session({ id: String(m.id), isAdmin: true }))
+  const as  = (m: { id: number }) => env.as(sessionContext({ id: String(m.id), isAdmin: true }))
 
   // ── link ──────────────────────────────────────────────────────────────
   const refused = await as(ada).service('chat').call('connect', null, { token: 'not-a-token' }).then(() => null, (e: any) => e)
@@ -817,7 +817,7 @@ try {
   } as any)
   try {
     const bareMember = await bare.system.member.create({ data: { nick: 'bare' } })
-    const bareCall = (method: string, data: unknown) => bare.as(session({ id: String(bareMember.id), isAdmin: true })).service('chat').call(method, null, data).then((r: any) => r, (e: any) => e)
+    const bareCall = (method: string, data: unknown) => bare.as(sessionContext({ id: String(bareMember.id), isAdmin: true })).service('chat').call(method, null, data).then((r: any) => r, (e: any) => e)
     check((await bareCall('status', {}) as any).todos === false, 'with no account or token chat.status says to-dos are off')
     const off = await bareCall('makeTodo', { postExternalId: todoPost.id, projectId: 1, listId: 2, title: 'Nope' })
     check(codeOf(off) === 503 && /not configured/.test(off?.message ?? '') && codeOf(await bareCall('todoProjects', {})) === 503, 'and every to-do method answers a plain 503 not configured', off?.message)

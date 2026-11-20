@@ -10,7 +10,7 @@
 // request. A 429 arrives with no `Retry-After`; the wait is `X-Ratelimit-Reset`,
 // in seconds, which conduit does not read and this does.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { MattermostErrorBody } from './types.ts'
 
 export type MattermostFailureKind =
@@ -29,14 +29,8 @@ export interface MattermostFailure {
   retryAfterMs?: number
 }
 
-export function bodyOf(raw: unknown): MattermostErrorBody | null {
-  if (raw && typeof raw === 'object') return raw as MattermostErrorBody
-  if (typeof raw !== 'string') return null
-  try { const b = JSON.parse(raw); return b && typeof b === 'object' ? b as MattermostErrorBody : null } catch { return null }
-}
-
 export function translate(error: ConduitError, status?: number, headers?: Record<string, string>): MattermostFailure {
-  const body = bodyOf(error.raw)
+  const body = errorBody<MattermostErrorBody>(error.raw)
   const code = body?.id
   const reset = headers?.['x-ratelimit-reset']
   const retryAfterMs = error.retry_after_ms ?? (reset !== undefined && Number.isFinite(Number(reset)) ? Number(reset) * 1000 : undefined)

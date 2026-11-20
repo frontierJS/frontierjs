@@ -16,7 +16,7 @@
 // starts over), and an upsert that matched two rows is `conflict` with
 // `code: 'ambiguous_match'` and wrote nothing.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { AirtableErrorBody } from './types.ts'
 
 export type AirtableFailureKind =
@@ -41,12 +41,6 @@ export interface AirtableFailure {
 /** A 30 s wait, the docs' number: no 429 here carries a `Retry-After`. */
 export const RATE_LIMIT_WAIT_MS = 30_000
 
-export function bodyOf(raw: unknown): AirtableErrorBody | null {
-  if (raw && typeof raw === 'object') return raw as AirtableErrorBody
-  if (typeof raw !== 'string') return null
-  try { const b = JSON.parse(raw); return b && typeof b === 'object' ? b as AirtableErrorBody : null } catch { return null }
-}
-
 /** The type and sentence out of either error shape. */
 function read(body: AirtableErrorBody | null): { type?: string; message?: string } {
   if (!body) return {}
@@ -59,7 +53,7 @@ function read(body: AirtableErrorBody | null): { type?: string; message?: string
 }
 
 export function translate(error: ConduitError, status?: number): AirtableFailure {
-  const body = bodyOf(error.raw)
+  const body = errorBody<AirtableErrorBody>(error.raw)
   const { type, message } = read(body)
   const text = typeof error.raw === 'string' && !body ? error.raw.trim() : ''
   const base: AirtableFailure = {

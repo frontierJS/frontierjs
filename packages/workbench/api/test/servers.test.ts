@@ -6,7 +6,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { LEVELS } from '@frontierjs/litestone'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import type { App } from '@frontierjs/junction'
 
 import { buildWorkbenchApp } from '../src/app.ts'
@@ -84,7 +84,7 @@ describe('the servers service over stubbed providers', () => {
     envs.push(env)
     const sys = env.system as any
     const member = await sys.member.create({ data: { nick: 'jordan' } })
-    const as = env.as(session({ id: String(member.id), isAdmin: true }))
+    const as = env.as(sessionContext({ id: String(member.id), isAdmin: true }))
     return { env, sys, member, svc: as.service('servers'), db: env.db as any, memberId: member.id }
   }
 

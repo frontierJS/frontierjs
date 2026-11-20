@@ -137,3 +137,30 @@ migrations/
 ```
 
 `litestone migrate create` and `litestone migrate apply` handle all databases in one command.
+
+## Retention
+
+`retention 30d` on a database block deletes every row of every model in it once the row's `createdAt` is older than the window. The sweep runs at startup and on `db.asSystem().$retain()`, which an app schedules. A model with no `createdAt DateTime` keeps its rows and gets a `skipped` line in `$retain()`'s report.
+
+A model can set its own window with `@@retention`. It is read before the database's window, and the model keeps its file and its relations. `from:` names the column the window counts from, which defaults to `createdAt`:
+
+```lite
+database main { path "./app.db" }
+
+model GridPoint {
+  id       Int @id @default(autoincrement())
+  rankings Ranking[]
+  @@gate(0)
+}
+
+model Ranking {
+  id         Int       @id @default(autoincrement())
+  point      GridPoint @relation(fields: [pointId], references: [id], onDelete: Cascade)
+  pointId    Int
+  capturedAt DateTime
+  @@retention(90d, from: capturedAt)
+  @@gate(0)
+}
+```
+
+`GridPoint` rows are kept indefinitely; `Ranking` rows older than ninety days by `capturedAt` are swept. The clock column gets the index the sweep uses. The model form is SQLite only, because a jsonl database compacts as one file.

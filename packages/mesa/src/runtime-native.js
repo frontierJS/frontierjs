@@ -39,6 +39,7 @@
 import { createRoot, createEffect, createSignal, onCleanup, eachItems, setRenderEnvironment, captureContext } from './runtime.js'
 import { NATIVE_TAGS, NATIVE_EVENTS, inputKind, tagClass } from './native/tags.js'
 import { htmlEntitiesToText } from './entities.js'
+import { spreadOnto } from './host-spread.js'
 
 // A phone is a running client with no `document`, where `runtime.js` left to
 // itself assumes a server render and makes `$.onMount` and a watch no-ops.
@@ -203,24 +204,7 @@ function paintStyle(node) {
 }
 
 export function spread(node, fn) {
-  const live = {}
-  let prev = {}
-  const put = (k, v) => {
-    const event = k.length > 2 && k.startsWith('on') ? k.slice(2) : null
-    if (event && (typeof v === 'function' || event in live)) {
-      if (!NATIVE_EVENTS[event]) return
-      if (!(event in live)) on(node, event, (e) => live[event]?.(e))
-      live[event] = typeof v === 'function' ? v : null
-      return
-    }
-    if (typeof v !== 'function') set_attribute(node, k, v)
-  }
-  createEffect(() => {
-    const state = fn() ?? {}
-    for (const k in state) if (prev[k] !== state[k]) put(k, state[k])
-    for (const k in prev) if (!(k in state)) put(k, null)
-    prev = { ...state }
-  })
+  spreadOnto(node, fn, { events: NATIVE_EVENTS, on, setAttribute: set_attribute })
 }
 
 export function text(value) {

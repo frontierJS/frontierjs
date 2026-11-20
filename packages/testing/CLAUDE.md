@@ -11,7 +11,7 @@ needs a Junction app, which Litestone may not import (Invariant 1).
 ## Layout
 
 ```
-src/index.ts          createTestEnv, session, the principal binding, the `listen` port
+src/index.ts          createTestEnv, sessionContext, the principal binding, the `listen` port
 src/parity.ts         verifyTransportParity — HTTP vs WS, over a real socket
 src/drive.ts          drive() — @frontierjs/testing/drive: the servers, the checks
                       and the exit code around @frontierjs/mesa/drive's page
@@ -39,7 +39,7 @@ a port, opens a socket and owns a comparison.
   client does not exist until `createTestEnv` is called.
 - **`env.as(user)`** — the principal bound into every service call.
 - **`env.announced()`** — the announcement buffer, cleared when `act` begins.
-- **`session()`** — a `SessionContext` from the fields a test states.
+- **`sessionContext()`** — a `SessionContext` from the fields a test states.
 - **`listen: true`** — a real port, `env.url` and `env.port`. Off by default.
 - **`env.verifyTransportParity()`** — the same call down HTTP and WS, compared.
 

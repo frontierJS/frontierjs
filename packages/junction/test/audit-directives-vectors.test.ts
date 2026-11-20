@@ -19,7 +19,7 @@ import { createClient }  from '../../litestone/src/index.js'
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
 import { bridge }        from '../src/transport/bridge.ts'
-import { parseQuery }    from '../src/core/litestone.ts'
+import { parseListQuery } from '../src/core/litestone.ts'
 import { normalizeOrderBy } from '@frontierjs/toolbelt/query'
 import { orderByPair }   from '@frontierjs/toolbelt/directives'
 import { request }       from '../src/testing/index.ts'
@@ -168,7 +168,7 @@ describe('a directive VALUE the grammar does not admit is refused by name, as an
     expect((res.body as Row).id).toBe(1)
   })
 
-  test('parseQuery holds no flag grammar of its own: a $-key on query is refused, not read as a third truthy table', () => {
-    expect(() => parseQuery({ $withDeleted: '1' } as never, 20, 100, {})).toThrow(/\$withDeleted/)
+  test('parseListQuery holds no flag grammar of its own: a $-key on query is refused, not read as a third truthy table', () => {
+    expect(() => parseListQuery({ $withDeleted: '1' } as never, 20, 100, {})).toThrow(/\$withDeleted/)
   })
 })

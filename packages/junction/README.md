@@ -277,11 +277,35 @@ is replaced from the caller's claims once the call is scoped to them, before a
 one with no value, or a guest with no claims is a 400 naming it. Server code
 reads `ctx.user.<claim>` instead.
 
-```typescript fragment
-await app.service('expenses').find(
+```typescript
+import { createApp, createService } from '@frontierjs/junction'
+import { createClient }             from '@frontierjs/litestone'
+
+const db = await createClient({ db: ':memory:', schema: `
+  claim employeeId from Employee(userId)
+  model User     { id String @id  @@auth }
+  model Employee { id Int @id  userId String @unique  user User @relation(fields: [userId], references: [id]) }
+  model Expense  {
+    id            Int    @id @default(autoincrement())
+    status        String
+    submittedById Int
+    @@allow(read, auth() != null)
+  }
+` })
+const sys = db.asSystem()
+await sys.user.create({ data: { id: 'u1' } })
+await sys.employee.create({ data: { id: 1, userId: 'u1' } })
+await sys.expense.create({ data: { status: 'submitted', submittedById: 1 } })
+await sys.expense.create({ data: { status: 'submitted', submittedById: 2 } })
+
+const app = createApp({ db })
+app.services.register(createService({ name: 'expenses', model: 'Expense' }))
+
+const inbox = await app.service('expenses').find(
   { status: 'submitted', submittedById: { not: { $auth: 'employeeId' } } },
-  { user },
+  { user: { id: 'u1' } },
 )
+if (inbox.data.length !== 1 || inbox.data[0].submittedById !== 2) throw new Error('expected only the other employee\'s expense')
 ```
 
 Internal callers pass directives under their own key — a flat `{ limit: 10 }`

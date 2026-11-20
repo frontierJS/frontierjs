@@ -1,0 +1,13 @@
+<script module>
+  // src/resources/Prototype.mesa — the Resource layer for the prototypes catalog.
+  //
+  // No model: a record is a line in fjs-prototypes/catalog/CATALOG.json and the
+  // view is a file under ~/.config/workbench (api domain/prototypes/catalog.ts).
+  // The owner, kind and status values come with each listing as `choices`; only
+  // what the page says about them lives here.
+  import { createResource } from '@frontierjs/sierra/resource'
+
+  export const prototypes = createResource('prototypes', { model: null })
+
+  export const STATUS_TONES = { active: 'success', paused: 'warning', archived: 'muted', moving: 'info' }
+</script>

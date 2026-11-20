@@ -51,7 +51,7 @@ export function requireRole(...roles: string[]): Hook {
  * callers that read it.
  *
  * A MODEL service does not need this — `paginate: { default, max }` is a
- * service option and `parseQuery` has always applied it correctly. This is for
+ * service option and `parseListQuery` has always applied it correctly. This is for
  * a service that builds its own query.
  */
 export function paginate(defaultLimit = 20, maxLimit = 100): Hook {

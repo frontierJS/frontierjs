@@ -6,7 +6,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join } from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin } from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -37,7 +37,7 @@ beforeAll(async () => {
     workspaceId: ws.id, userId: user.id, role: 'owner',
     capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
   } })
-  owner = session({ id: user.id, workspaceId: ws.id })
+  owner = sessionContext({ id: user.id, workspaceId: ws.id })
 }, 120_000)
 
 afterAll(async () => { await env?.close() })

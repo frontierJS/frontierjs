@@ -241,6 +241,14 @@ export type Shape = {
      */
     exclusionParents: any[];
     /**
+     * its `DateTime @zoned(date, time, zone)` instants and their sources
+     */
+    zoned: any[];
+    /**
+     * children whose `@zoned` instant reads its zone off this model
+     */
+    zonedParents: any[];
+    /**
      * the `@values` bindings its columns carry
      */
     valueSets: any[];

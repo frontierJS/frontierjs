@@ -22,7 +22,7 @@ export { generateDDL, generateDDLForDatabase,
 export { introspect, buildPristine, buildPristineForDatabase, diffSchemas,
          generateMigrationSQL, summarizeDiff,
          splitStatements, checksum }             from './core/migrate.js'
-// create / apply / status / verify are bare words: '@frontierjs/litestone/migrations'
+// create / apply / migrationStatus / verify are bare words: '@frontierjs/litestone/migrations'
 export { listMigrationFiles, unmatchedMigrationFiles,
          describeSkipped,
          autoMigrate }                           from './core/migrations.js'

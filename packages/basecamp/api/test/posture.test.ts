@@ -14,7 +14,7 @@ import { createHash }  from 'node:crypto'
 import { mkdtempSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { ensureCert }  from '@frontierjs/outpost/cert'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { generateSigningKeys, signRequest } from '@frontierjs/toolbelt/signature'
 import { GatePlugin }  from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
@@ -260,7 +260,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: o.id, role: 'owner', capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString(),
   } })
-  owner   = session({ id: o.id, workspaceId: ws.id })
+  owner   = sessionContext({ id: o.id, workspaceId: ws.id })
   machine = await sys.server.create({ data: { workspaceId: ws.id, name: 'drifted-01', slug: `d-${uniq()}`, status: 'pending' } })
   await sys.server.create({ data: { workspaceId: ws.id, name: 'quiet-02',   slug: `q-${uniq()}`, status: 'pending' } })
 
@@ -613,7 +613,7 @@ describe('the host row on /hub/security/', () => {
     const sys = env.system
     const a   = await sys.user.create({ data: { email: `hub-${Date.now()}@x.co`, accountId: (await sys.account.findFirst({})).id } })
     await sys.user.update({ where: { id: a.id }, data: { isSystemAdmin: true } })
-    admin = session({ id: a.id, isSystemAdmin: true })
+    admin = sessionContext({ id: a.id, isSystemAdmin: true })
   })
 
   test('with no host row nothing reads the box, and only the backup is graded', async () => {

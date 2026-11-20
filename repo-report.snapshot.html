@@ -7178,8 +7178,8 @@ try {
       <td class="m sub">packages/litestone/docs/testing.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
-      <td class="m">Audit Trail</td>
-      <td class="m sub">Litestone provides a field-level and model-level audit trail via the trail database driver.</td>
+      <td class="m">trail</td>
+      <td class="m sub">const entries = await sys.auditTrail.findMany({ where: { model: &#39;Widget&#39;, operation: &#39;update&#39; } })// three entries, each {…</td>
       <td class="m sub">packages/litestone/docs/trail.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -7873,7 +7873,7 @@ try {
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
-      <td class="m">session()</td>
+      <td class="m">sessionContext()</td>
       <td class="m sub">Fills the three required SessionContext fields and invents nothing else.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>

@@ -43,6 +43,7 @@
  */
 
 import { mount } from '@frontierjs/mesa/runtime'
+import { kebab } from '@frontierjs/toolbelt/inflect'
 
 /**
  * What an unreplaced CSS placeholder starts with — the one definition, which
@@ -100,13 +101,8 @@ function marksOn(el) {
   return m
 }
 
-/** kebab-case, so a component name reaches HTML as a legal tag. */
-export function kebab(name) {
-  return String(name)
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/[\s_]+/g, '-')
-    .toLowerCase()
-}
+// A component name reaches HTML as a tag through toolbelt's kebab, so `HTMLParser` is `html-parser`.
+export { kebab }
 
 /**
  * A custom element name must contain a dash and start with a letter. A widget

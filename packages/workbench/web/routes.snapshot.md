@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-31 routes · 2 layouts · target spa · trailing slash always
+32 routes · 2 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -48,6 +48,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/messages/threads/` | `src/routes/messages/threads/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/messages/waiting/` | `src/routes/messages/waiting/index.mesa` | `src/routes/messages/_module.mesa` | — |
 | `/notifications/` | `src/routes/notifications/index.mesa` | `src/routes/_module.mesa` | — |
+| `/prototypes/` | `src/routes/prototypes/index.mesa` | `src/routes/_module.mesa` | — |
 | `/recommended-services/` | `src/routes/recommended-services/index.mesa` | `src/routes/_module.mesa` | — |
 | `/servers/` | `src/routes/servers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
@@ -87,6 +88,7 @@ this section exists to show.
 - `/messages/threads/` — siteName: `Workbench` · title: `Threads`
 - `/messages/waiting/` — siteName: `Workbench` · title: `Waiting`
 - `/notifications/` — siteName: `Workbench` · title: `Notifications`
+- `/prototypes/` — siteName: `Workbench` · title: `Prototypes`
 - `/recommended-services/` — siteName: `Workbench` · title: `Recommended services`
 - `/servers/` — siteName: `Workbench` · title: `Servers`
 - `/settings/` — siteName: `Workbench` · title: `Settings`
@@ -98,5 +100,5 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 19 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/capture/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
+- `src/routes/_module.mesa` — 20 routes: `/`, `/atlas/`, `/atlas/autopilot/`, `/atlas/decide/`, `/basecamps/`, `/basecamps/new/`, `/capture/`, `/charter/`, `/charter/drill/`, `/git-activity/local/`, `/home/`, `/laptop/`, `/login/`, `/notifications/`, `/prototypes/`, `/recommended-services/`, `/servers/`, `/settings/`, `/terminal/`, `/workbench/`
 - `src/routes/messages/_module.mesa` — 12 routes: `/messages/`, `/messages/:id/`, `/messages/activity/`, `/messages/browse/`, `/messages/catch-up/`, `/messages/drafts/`, `/messages/groups/`, `/messages/saved/`, `/messages/scheduled/`, `/messages/search/`, `/messages/threads/`, `/messages/waiting/`

@@ -394,7 +394,7 @@ export function withCallEffects(
 // collision where `state` means app-global shared; `locals` has the
 // Astro/SvelteKit per-request meaning we want.)
 export interface ServiceContextLocals {
-  /** `Pagination`, not a restatement of it — `paginate()` and `parseQuery`
+  /** `Pagination`, not a restatement of it — `paginate()` and `parseListQuery`
    *  both answer the same shape through `clampPagination`, and a third spelling
    *  here is how the hook and the query builder came to disagree in the first place. */
   paginate?: Pagination
@@ -1293,7 +1293,7 @@ function statedSession(user: SessionContext): SessionContext {
 ` +
     `An internal call's principal is a SessionContext, and the caller's id is ` +
     `'id'; a service reads it as $.me.id. Build one with ` +
-    `session({ id }) from @frontierjs/testing, run deferred work through ` +
+    `sessionContext({ id }) from @frontierjs/testing, run deferred work through ` +
     `app.runAs(id, fn), or pass { user: null } to call as nobody.`
   )
 }

@@ -102,7 +102,7 @@ export { createSchema, v }                                        from './src/co
 export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult, ValidationError } from './src/core/schema.ts'
 
 // ─── Litestone ───────────────────────────────────────────────────────────
-export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
+export { createLitestoneBase, parseListQuery, parseWhere,
          findWindow,
          deriveModelName, accessorCandidates, withLitestoneDb,
          sessionGateLevel, callerGateLevel, principalGateLevel, toDataPrincipal, LEVELS,

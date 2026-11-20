@@ -22,7 +22,7 @@ import { openDatabase }                           from '../core/engine.js'
 import { inlineImportsFromDisk }                       from '../core/parser.js'
 import { buildPristine, introspect, diffSchemas,
          generateMigrationSQL, summarizeDiff, checksum } from '../core/migrate.js'
-import { create, apply, status, verify,
+import { create, apply, migrationStatus, verify,
          createForDatabase, listMigrationFiles, migrationStatements,
          describeSkipped, appliedMigrations,
          baseline, accept, historyGap, driftAgainstLive,
@@ -1233,7 +1233,7 @@ async function cmdStatus(cfg) {
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${cyan(name)}`)
 
-      const rows = status(rawDb, migrationsDir)
+      const rows = migrationStatus(rawDb, migrationsDir)
 
       if (rows.length === 0) {
         console.log(`  ${dim('no migration files found')}
@@ -3274,7 +3274,7 @@ async function cmdDoctor() {
           // ── DB ─────────────────────────────────────────────────────────────
           // Build list of SQLite databases to check:
           // multi-DB schemas declare them in database blocks; single-DB uses cfg.db
-          const { status: migStatus } = await import('../core/migrations.js')
+          const { migrationStatus: migStatus } = await import('../core/migrations.js')
           const { buildPristineForDatabase, diffSchemas, introspect } = await import('../core/migrate.js')
           const migrationsBase = resolve(getFlag('migrations') ?? cfg.migrations ?? './migrations')
 

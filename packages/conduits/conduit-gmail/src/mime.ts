@@ -50,10 +50,11 @@ export class MimeRefusal extends TypeError {
 // eslint-disable-next-line no-control-regex
 const NON_ASCII = /[^\x20-\x7e]/
 
-/** A header value with a line break is an injection; refused by the header's name. */
+/** A header value with a line break is an injection; NUL, VT and FF are refused with it, as junction's smtp refuses them. */
 export function assertHeaderValue(name: string, value: string): string {
   const v = String(value ?? '')
   if (/[\r\n]/.test(v)) throw new MimeRefusal(`header '${name}' contains a line break — refused as header injection`)
+  if (/[\x00\x0b\x0c]/.test(v)) throw new MimeRefusal(`header '${name}' contains a control character`)
   return v.trim()
 }
 

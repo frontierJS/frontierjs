@@ -2,7 +2,7 @@
 //
 // Sierra has `getClient()` returning a Junction client; jetty has a port
 // instead. The registry is set by jetty's auto-generated main.js right after
-// connectHarbor resolves and before mount(). Components that import resource
+// connectHarbor resolves and before mountInto(). Components that import resource
 // helpers (createResource, signIn, etc.) read the port from here.
 //
 // Module-level state is the right answer for Pages: each Page is its own JS

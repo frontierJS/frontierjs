@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**131 words** — 13 declarations · 76 field attributes · 38 model attributes · 4 transition words.
+**132 words** — 13 declarations · 76 field attributes · 39 model attributes · 4 transition words.
 
 ## Index
 
@@ -41,7 +41,7 @@ and shows you the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@validate`](#validate-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@validate`](#validate-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@retention`](#retention-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@require`](#require-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -1408,9 +1408,9 @@ model Example {
 - **Deeper** — [vectors.md](vectors.md)
 - **See also** — [`@point`](#point-field)
 
-#### `@zoned` `(<field> | <relation>.<field>)` <a id="zoned-field"></a>
+#### `@zoned` `([<date>, <time>,] <field> | <relation>.<field>)` <a id="zoned-field"></a>
 
-This String @date or @time is a wall clock, read in the zone held at the path: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. A @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written.
+The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant.
 
 ```lite
 model Example {
@@ -1775,6 +1775,22 @@ model Example {
 - **Also typed** — `valid time` · `validity` · `as of` · `effectivity`
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@@expires`](#expires-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model)
+
+#### `@@retention` `(<duration>[, from: <field>])` <a id="retention-model"></a>
+
+This model's rows are deleted once they are older than the window, by the same sweep as a database's `retention` — at startup and on `$retain()` — and its own window is read before the database's. The model keeps its file, its relations and their cascade, so ninety days beneath tables kept for ever needs no database of its own. `from:` names the clock, a `DateTime` column of this model, and defaults to `createdAt`; a model whose clock is missing or not a `DateTime` is refused at parse. The clock column earns the index the sweep reads. SQLite only: a jsonl database compacts as one file and takes its window on the database block.
+
+```lite
+model Example {
+  id Int @id
+  capturedAt DateTime
+  @@retention(90d, from: capturedAt)
+}
+```
+
+- **Also typed** — `prune` · `purge after`
+- **Deeper** — [multi-database.md](multi-database.md)
+- **See also** — [`@@expires`](#expires-model) · [`@@softDelete`](#softdelete-model)
 
 #### `@@commitment` `([<relation>.]<transition>, on: <field> [+|- <n><unit> | <field>] [, while: <expr>])` <a id="commitment-model"></a>
 

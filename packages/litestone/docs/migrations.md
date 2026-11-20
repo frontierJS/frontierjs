@@ -171,14 +171,14 @@ database is disposable, and this is the option that keeps the data.
 
 ```js
 import { parseFile } from '@frontierjs/litestone'
-import { create, apply, status, verify } from '@frontierjs/litestone/migrations'
+import { create, apply, migrationStatus, verify } from '@frontierjs/litestone/migrations'
 
 const parseResult = parseFile('./schema.lite')
-const raw         = db.$rawDbs.main          // apply, status and verify take the SQLite handle
+const raw         = db.$rawDbs.main          // apply, migrationStatus and verify take the SQLite handle
 
 create(parseResult && db, parseResult, 'add-posts', './migrations')   // → { created, name, filePath, summary, sql }
 await apply(raw, './migrations')                                       // → { applied: [{ file, ok, elapsed }], pending, skipped }
-status(raw, './migrations')                                            // → [{ file, state, applied_at, tampered, sql }]
+migrationStatus(raw, './migrations')                                   // → [{ file, state, applied_at, tampered, sql }]
 verify(raw, parseResult, './migrations')                               // → { state: 'in-sync', message }
 ```
 

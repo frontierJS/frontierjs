@@ -93,6 +93,7 @@ Detail: `references/columns-and-clocks.md`
 
 - **Litestone emits columns verbatim camelCase and `DateTime` as ISO-8601 TEXT.**
 - **Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing.**
+- **A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes** (`FJS-D963`, `FJS-D1434`)
 
 ## The audit trail and the log
 Detail: `references/the-audit-trail-and-the-log.md`

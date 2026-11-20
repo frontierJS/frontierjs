@@ -112,7 +112,7 @@ const topLevel = (files) =>
 
 // ─── render ───────────────────────────────────────────────────────────────────
 
-const render = ({ sections, problems, wsNames }) => {
+const render = ({ sections, problems, wsNames, duplicates }) => {
   const out = []
 
   out.push('# Published surface snapshot')
@@ -149,6 +149,16 @@ const render = ({ sections, problems, wsNames }) => {
   } else {
     out.push('None — every `exports`, `bin`, `main` and `types` target is inside its tarball.')
   }
+  out.push('')
+
+  out.push(duplicates.title)
+  out.push('')
+  out.push('A value name two or more publishable packages each declare (a re-export is the')
+  out.push('declaring package\'s, not the re-exporter\'s). This list is the baseline `FJS-D2278`')
+  out.push('ratchets: a name or package that joins it fails unless a `DECISIONS.md` ruling')
+  out.push('lists the pair, and a rename that removes one drops it on the next write.')
+  out.push('')
+  out.push(...(duplicates.lines.length ? duplicates.lines : ['None.']))
   out.push('')
 
   for (const { pkg, folder, top, targets } of sections) {
@@ -239,16 +249,39 @@ for (const { pkg, dir, folder } of publishable) {
   sections.push({ pkg, folder, top: topLevel(packed.files), targets })
 }
 
-const body = render({ sections, problems, wsNames })
+const outPath = flag.out ? resolve(flag.out) : resolve(wsRoot, 'exports.snapshot.md')
+
+const names = await import(resolve(global.fliRoot, 'core/export-names.js'))
+const decisions = existsSync(resolve(wsRoot, 'DECISIONS.md')) ? readFileSync(resolve(wsRoot, 'DECISIONS.md'), 'utf8') : ''
+// The held-out connectors are in the census though not in the sections above:
+// they will be published, and a name they share with a framework package is a
+// clash the day one is released.
+const { packageMembers } = await import(resolve(global.fliRoot, 'core/workspace-members.js'))
+const census    = packageMembers(wsRoot).filter(m => !m.manifest.private).map(m => ({ pkg: m.manifest, dir: m.dir }))
+const shared    = names.sharedNames(census)
+const baseline  = names.parseBaseline(existsSync(outPath) ? readFileSync(outPath, 'utf8') : '')
+const unruled   = names.newDuplicates(shared, baseline, decisions)
+const duplicates = { title: names.SECTION_TITLE, lines: names.sectionLines(shared, decisions) }
+
+const body = render({ sections, problems, wsNames, duplicates })
 
 if (pairCount) {
   for (const p of problems.filter(p => p.includes('spelled twice'))) log.error(p)
   process.exitCode = 1
 }
 
-if (flag.stdout) { echo(body); return }
+// A new duplicate is refused before anything is written: absorbing it into the
+// baseline on the next write is exactly the growth the ratchet exists to stop.
+for (const { name, packages: pkgs } of unruled) {
+  log.error(
+    `\`${name}\` is exported by ${pkgs.slice(0, 4).map(p => p.pkg).join(' and ')}${pkgs.length > 4 ? ` and ${pkgs.length - 4} more` : ''} — rename one, ` +
+    `or cite a DECISIONS.md ruling whose heading names \`${name}\` and both packages`
+  )
+}
+if (unruled.length) process.exitCode = 1
 
-const outPath = flag.out ? resolve(flag.out) : resolve(wsRoot, 'exports.snapshot.md')
+if (flag.stdout) { echo(body); return }
+if (unruled.length && !flag.check) return
 
 if (flag.check) {
   if (!existsSync(outPath)) {
@@ -282,6 +315,13 @@ echo(`  ${chalk.dim(`${sections.length} publishable package(s)`)}${problems.leng
 - **Entry points** — every `exports` subpath, `bin`, `main` and `types` target,
   each marked with whether the tarball actually contains it.
 - **Peers** — the ranges naming another workspace package.
+- **Duplicate export names** — every value name two publishable packages each
+  declare (`core/export-names.js`, read statically; a re-export is its declaring
+  package's). The committed section is a ratchet (`FJS-D2278`): a name or package
+  that joins it fails, in a write and in `--check`, unless a `DECISIONS.md`
+  ruling heading names the name and every package. A name that stops being
+  shared drops out on the next write; nothing is ever added to the baseline by
+  a write alone.
 
 ## Why it is committed
 

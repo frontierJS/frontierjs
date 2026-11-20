@@ -21,7 +21,7 @@
 // the bridge. Keeping it internal meant the transport and the query builder
 // both had opinions about the same keys — and they disagreed: the bridge
 // stripped $limit/$offset/$orderBy/$select from ctx.query as "reserved", and
-// parseQuery then looked for exactly those four keys on ctx.query and found
+// parseListQuery then looked for exactly those four keys on ctx.query and found
 // nothing. Pagination, ordering and field selection were all inert over HTTP.
 
 export interface QueryDirectives {
@@ -88,7 +88,7 @@ export interface QueryDirectives {
 // ─── Pagination ───────────────────────────────────────────────────────────
 // What a limit and an offset MEAN, answered once.
 //
-// Two callers had two answers and only one of them worked. `parseQuery` reads
+// Two callers had two answers and only one of them worked. `parseListQuery` reads
 // `Number()` and falls back on a non-finite result, because a NaN limit reaches
 // SQLite as a bind failure rather than as "no limit" — and treats a limit of 0
 // as meaningful, since that is how a caller asks for the count alone. The

@@ -279,24 +279,24 @@ describe('the vendor tag', () => {
 
 describe('configureAnalytics — a page whose tag is already in the HTML', () => {
 
-  test('track() reaches the vendor and nothing is loaded', async () => {
+  test('trackEvent() reaches the vendor and nothing is loaded', async () => {
     installWindow({ idle: true })
     const calls = []
     window.plausible = (...a) => calls.push(a)
     const A = await freshAnalytics()
     expect(A.configureAnalytics({ provider: 'plausible', domain: 'shop.example' })).toBe(true)
-    A.track('Lead', { form: 'contact' })
+    A.trackEvent('Lead', { form: 'contact' })
     vi.advanceTimersByTime(6000)
     expect(calls).toEqual([['Lead', { props: { form: 'contact' } }]])
     expect(scripts).toHaveLength(0)
   })
 
-  test('before it, track() is a no-op — the state an island page was in', async () => {
+  test('before it, trackEvent() is a no-op — the state an island page was in', async () => {
     installWindow({ idle: true })
     const calls = []
     window.plausible = (...a) => calls.push(a)
     const A = await freshAnalytics()
-    A.track('Lead')
+    A.trackEvent('Lead')
     expect(calls).toEqual([])
   })
 })

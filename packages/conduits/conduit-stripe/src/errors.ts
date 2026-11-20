@@ -6,7 +6,7 @@
 // answer in the body and conduit keeps that body on `error.raw`, so this is a
 // translation and not a guess. One owner: nothing else reads `raw`.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { StripeErrorBody } from './types.ts'
 
 export type StripeFailureKind =
@@ -27,10 +27,6 @@ export interface StripeFailure {
   retryAfterMs?: number
 }
 
-export function parseBody(raw: unknown): StripeErrorBody | null {
-  try { return typeof raw === 'string' ? JSON.parse(raw) : (raw as StripeErrorBody) } catch { return null }
-}
-
 export function translate(error: ConduitError): StripeFailure {
   const base: StripeFailure = {
     kind:      error.kind,
@@ -38,7 +34,7 @@ export function translate(error: ConduitError): StripeFailure {
     retryable: error.retryable,
     ...(error.retry_after_ms !== undefined ? { retryAfterMs: error.retry_after_ms } : {}),
   }
-  const e = parseBody(error.raw)?.error
+  const e = errorBody<StripeErrorBody>(error.raw)?.error
   if (!e) return base
 
   const kind: StripeFailureKind =

@@ -89,4 +89,4 @@ behind points there; `bun run build:desktop` puts 5501 back.
 against a stub door; `services.test.ts` the bell's service). For anything under `web/`, start
 `bun run api` and `bun run web`, sign in, and see `/workbench/`; stop both after. The drives,
 by `DRIVES.md`: `verify:desktop` (the shell, the door and the local scan) and `verify:atlas`
-(`/atlas/` over the real registers, signed in at this door; holds no port) and `verify:capture` (`/capture/` over a temp `XDG_CONFIG_HOME`; the real `~/.config/capture` is never touched). The live peer call needs a running Basecamp with this key enrolled.
+(`/atlas/` over the real registers, signed in at this door; holds no port), `verify:capture` (`/capture/` over a temp `XDG_CONFIG_HOME`; the real `~/.config/capture` is never touched) and `verify:prototypes` (`/prototypes/` over a scratch catalog; the real `CATALOG.json` is fingerprinted and untouched). The live peer call needs a running Basecamp with this key enrolled.

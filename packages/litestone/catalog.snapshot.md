@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**131 words** — 13 declarations · 76 field attributes · 38 model attributes · 4 transition words.
+**132 words** — 13 declarations · 76 field attributes · 39 model attributes · 4 transition words.
 
 ## Declarations
 
@@ -96,7 +96,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |
 | `@time` | Refuse a bad value | [(seconds: true[, message: "..."])] |  |  |  |
 | `@zone` | Refuse a bad value | [(message)] |  |  |  |
-| `@zoned` | Shape the table | (<field> \| <relation>.<field>) |  |  |  |
+| `@zoned` | Shape the table | ([<date>, <time>,] <field> \| <relation>.<field>) |  |  |  |
 | `@regex` | Refuse a bad value | ("pattern"[, message]) |  |  |  |
 | `@length` | Refuse a bad value | (min[, max][, message]) |  |  |  |
 | `@startsWith` | Refuse a bad value | ("text"[, message]) |  |  |  |
@@ -135,6 +135,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@expires` | Shape the table | (<field>) |  |  |  |
 | `@@effective` | Shape the table | (from: <field>, to: <field>) |  |  |  |
+| `@@retention` | Shape the table | (<duration>[, from: <field>]) |  |  |  |
 | `@@commitment` | Shape the table | ([<relation>.]<transition>, on: <field> [+\|- <n><unit> \| <field>] [, while: <expr>]) |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |

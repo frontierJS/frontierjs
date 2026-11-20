@@ -26,6 +26,7 @@ import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { hasTransforms, buildValidationMap, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { createExclusionLedger } from './exclusion.js'
+import { buildZonedMap, makeZoned } from './zoned.js'
 import { makeLedgerNotes } from './ledger-notes.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
@@ -336,6 +337,8 @@ export const SEARCH_RESOLVE = Symbol.for('litestone.searchResolve')
  * @property {{ byParent: any[], byChild: any[], requiresChildren: any[] | null }} cardinality
  * @property {any[]} exclusions                 this model's `@@exclude` memberships, each with its `scope` name
  * @property {any[]} exclusionParents           members whose range `@from`s this model's columns
+ * @property {any[]} zoned                      its `DateTime @zoned(date, time, zone)` instants and their sources
+ * @property {any[]} zonedParents               children whose `@zoned` instant reads its zone off this model
  * @property {any[]} valueSets                  the `@values` bindings its columns carry
  * @property {Map<string, any[]>} fieldLogs    `@trail` targets by field
  * @property {any[] | null} modelLogs           `@@trail` targets
@@ -1577,6 +1580,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     buildWhereWithEncryption: (...a) => buildWhereWithEncryption(...a),
   })
 
+  const { refuseZonedWrite, deriveZoned, zoneTouched, zonedParentKeys, recomputeZonedChildren } = makeZoned(shape, {
+    readDb, writeDb, col,
+    buildWhereWithEncryption: (...a) => buildWhereWithEncryption(...a),
+  })
+
 
   const {
     writeData, refuseSystemEntries, applyFieldRefDefaults, applyPathDefaults, applyRanks, rankOnScopeChange,
@@ -1585,7 +1593,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     writeDb, T, col, plugins, computedFns, hasFieldPolicy, _hasEnumFields,
     _extensible, _sealSelf, _tableTransitions, _fieldsByName, _authDefaultOf, _authFillsNull,
     allocateExtSlot, mirrorExtSlots, remirrorMovedRow, pathWriteRefusal, requiredFailure, storesWhatOmissionStores,
-    parentRefusal, keys: _writeKeys,
+    parentRefusal, keys: _writeKeys, refuseZonedWrite, deriveZoned,
   })
 
   // Hydration for the grouped and aggregated paths, which return SQLite's own
@@ -2852,6 +2860,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // knows, and only before the statement runs.
     if (notes.before) noteCardinalityBySql(wSql, wBinds)
     if (plan.exclusion) { noteExclusionBySql(wSql, wBinds, plan.exclusion) }
+    const zoneMoved = plan.op !== 'delete' && plan.op !== 'remove'
+      && (statements.some(st => zoneTouched(st.data)) || (plan.op === 'upsert' && zoneTouched(plan.args?.update)))
+    const zonedKeys = zoneMoved && plan.op === 'update' ? zonedParentKeys(wSql, wBinds) : null
     const moves = plan.moves ? movesOnto(plan.moves, wSql, wBinds) : false
     if (sel && cascadeHeard()) doomed = cascadeDoomed(readOwn ? affected : readAll(readDb.query(sel.sql).all(...sel.params)))
 
@@ -2888,6 +2899,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       count += n
       if (notes.after === 'row') { noteCardinality(st.data); noteExclusion(st.data) }
     }
+    // An upsert's RETURNING is the parent row whatever path it took.
+    if (zoneMoved && count) recomputeZonedChildren(zonedKeys ?? rows ?? [],
+      (model, row) => tx.exclusions?.note(model, row))
     // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
     if (count && moves) throw plan.moves
     // A row result is read once here — the post-update rule, the notes, the
@@ -3535,7 +3549,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // SQLite's own refusal is — so it needs a rollback to throw into.
     const ownUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
       && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
-      && !rankScopeTouched(data)
+      && !rankScopeTouched(data) && !zoneTouched(data)
 
     // The plan: the WHERE and the SET, the before snapshot, the move's grade
     // and compare-and-swap, the version's, the seals — every conjunct that
@@ -3772,7 +3786,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       verb: 'upsert', op: 'upsert', statements: [{ ...stmt, data: insRow, one: true }], count: null, returning: true,
       where: null, args: { where, create: createData, update: updateData }, query: stmt, prefetch: false,
       moves: null, exclusion: null, post: false, softCascade: null, batch: false, logs: false, system: null,
-      announce: null, result: { select: undefined, include: undefined }, bare: tx.state.depth === 0,
+      announce: null, result: { select: undefined, include: undefined },
+      // A zone write recomputes the children in this statement's unit.
+      bare: tx.state.depth === 0 && !zoneTouched(insRow) && !zoneTouched(updRow),
       refuse: null, before: null, transition: null, restamp,
     }
   }
@@ -5818,9 +5834,11 @@ export async function createClient({
   async function _runRetention({ jsonl = true, batches = Infinity } = {}) {
     const swept = []
     for (const [dbName, conn] of Object.entries(dbRegistry)) {
-      if (!conn.retention && !conn.maxSize) continue
+      // A model's own @@retention sweeps in a database that declares no window.
+      const owned = _retentionModels(dbName).some(m => m.attributes.some(a => a.kind === 'retention'))
+      if (!conn.retention && !conn.maxSize && !owned) continue
 
-      if (conn.driver === 'sqlite' && conn.retention && conn.rawWriteDb) {
+      if (conn.driver === 'sqlite' && (conn.retention || owned) && conn.rawWriteDb) {
         const opts = {
           pluralize: pluralizeTableNames, now, batches,
           hears:       _retentionHears,
@@ -5942,6 +5960,7 @@ export async function createClient({
   const validationMap  = once('buildValidationMap', [], () => buildValidationMap(schema))
   const cardinalityMap = once('buildCardinalityMap', [pluralizeTableNames], () => buildCardinalityMap(schema, pluralizeTableNames))
   const exclusionMap   = once('buildExclusionMap', [pluralizeTableNames], () => buildExclusionMap(schema, pluralizeTableNames))
+  const zonedMap       = once('buildZonedMap', [pluralizeTableNames], () => buildZonedMap(schema, pluralizeTableNames))
   const fieldPolicyMap = once('buildFieldPolicyMap', [], () => buildFieldPolicyMap(schema))
   const secretMap      = once('buildSecretMap', [], () => buildSecretMap(schema))
   const claimSet       = once('buildClaimSet', [_claimsKey], () => buildClaimSet(schema, claims ?? null))
@@ -6107,6 +6126,8 @@ export async function createClient({
       exclusions:        declared(exclusionMap.byModel, name, []).flatMap(scope =>
                            exclusionMap.scopes[scope].members.filter(m => m.model === name).map(m => ({ scope, ...m }))),
       exclusionParents:  declared(exclusionMap.byParent, name, []),
+      zoned:             declared(zonedMap.byModel, name, []),
+      zonedParents:      declared(zonedMap.byParent, name, []),
       valueSets:         declared(valueSetMap, name, []),
       fieldLogs,
       modelLogs:         declared(logMap.models, name, null),

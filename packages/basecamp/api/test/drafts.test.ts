@@ -23,7 +23,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { join }                   from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
 import { buildBasecampApp }       from '../src/app.ts'
@@ -88,9 +88,9 @@ beforeAll(async () => {
     source: { kind: 'git', repo: remote, path: 'site' } } })
   await sys.appEditor.create({ data: { appId: site.id, userId: e.id, role: 'edit' } })
 
-  admin    = session({ id: a.id, workspaceId: ws.id })
-  editor   = session({ id: e.id })
-  stranger = session({ id: s.id })
+  admin    = sessionContext({ id: a.id, workspaceId: ws.id })
+  editor   = sessionContext({ id: e.id })
+  stranger = sessionContext({ id: s.id })
 })
 
 const sink = startCfSink(0)
@@ -679,7 +679,7 @@ describe('publishing a draft', () => {
     const { accountId } = await sys.workspace.findFirst({ where: { id: site.workspaceId } })
     const u = await sys.user.create({ data: { email: `kim-${uniq()}@x.co`, name: 'Kim', status: 'active', accountId } })
     await sys.appEditor.create({ data: { appId: site.id, userId: u.id, role: 'publish' } })
-    publisher = session({ id: u.id })
+    publisher = sessionContext({ id: u.id })
   })
 
   test('an editor without the publish grant is refused, and nothing is queued', async () => {
@@ -840,7 +840,7 @@ describe('appEditors.create', () => {
     const dev = await sys.user.create({ data: { email: `dev-${uniq()}@x.co`, name: 'Dev', accountId, status: 'active' } })
     await sys.workspaceMember.create({ data: {
       workspaceId: site.workspaceId, userId: dev.id, role: 'developer', capabilities: grantsFor('developer'), acceptedAt: new Date().toISOString() } })
-    const developer = session({ id: dev.id, workspaceId: site.workspaceId })
+    const developer = sessionContext({ id: dev.id, workspaceId: site.workspaceId })
     const refused = await refusal(editors(developer).create({ appId: site.id, userId: dev.id }))
     expect(refused.code).toBe(403)
     expect(await sys.appEditor.findFirst({ where: { appId: site.id, userId: dev.id } })).toBeNull()

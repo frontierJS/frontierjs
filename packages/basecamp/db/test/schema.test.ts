@@ -2554,7 +2554,7 @@ describe('App display label', () => {
     const sys   = db.asSystem() as any
     const ws    = await seedWorkspace(sys)
     const parts = parseFile(SCHEMA).schema.models.find((m: any) => m.name === 'App')!
-      .attributes.find((a: any) => a.kind === 'labelField').parts as { via: string | null, field: string }[]
+      .attributes.find((a: any) => a.kind === 'labelField')!.parts as { via: string | null, field: string }[]
     const ids: string[] = []
     for (const name of ['Alpha', 'Beta']) {
       const project = await sys.project.create({ data: { workspaceId: ws.id, name, slug: name.toLowerCase() } })

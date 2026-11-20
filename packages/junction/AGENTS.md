@@ -502,7 +502,7 @@ Everything above is loud. These are not.
 
 - **`$.me.id` is `undefined`.** The principal's id is `id` (`FJS-D1307`), never
   `userId`; a stated principal spelled `userId` is refused by name. A mock that
-  builds one uses `session({ id })`. `ctx.params` is `undefined` too, so a role
+  builds one uses `sessionContext({ id })`. `ctx.params` is `undefined` too, so a role
   check reading `ctx.params.user` passes for everyone.
 
 - **A payload key the caller may not write is dropped with a 201.** A key that

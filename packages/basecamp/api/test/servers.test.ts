@@ -13,7 +13,7 @@ import { join }                   from 'node:path'
 import { mkdtempSync }            from 'node:fs'
 import { tmpdir }                 from 'node:os'
 import { ensureCert }             from '@frontierjs/outpost/cert'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { generateSigningKeys, signRequest }            from '@frontierjs/toolbelt/signature'
 import { GatePlugin }             from '@frontierjs/litestone'
 import { basecampGateLevel }      from '../src/core/gate.ts'
@@ -40,7 +40,7 @@ beforeAll(async () => {
   const ws   = await sys.workspace.create({ data: { accountId: acct.id, name: 'Fleet', slug: `f-${uniq()}` } })
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: user.id, role: 'admin', capabilities: grantsFor('admin'), acceptedAt: new Date().toISOString() } })
-  admin = session({ id: user.id, workspaceId: ws.id })
+  admin = sessionContext({ id: user.id, workspaceId: ws.id })
 
   machine = await sys.server.create({ data: { workspaceId: ws.id, name: 'm-01', slug: `m-${uniq()}` } })
   const other = await sys.server.create({ data: { workspaceId: ws.id, name: 'm-02', slug: `m-${uniq()}` } })

@@ -7,7 +7,7 @@
 // The manifest holds only what the archived files cannot answer for
 // themselves: which key encrypted them, and what each file's bytes were when
 // it was written. Whether this code can serve the archived schema is read from
-// the staged databases' own migration history through litestone's `status()`,
+// the staged databases' own migration history through litestone's `migrationStatus()`,
 // not from a hash recorded here — a hash of `schema.lite` refuses a restore
 // whose pending migrations would apply, and a copy of the history is a second
 // record of it. Pre-alpha `initial_schema.sql` is rewritten in place, so an
@@ -21,7 +21,7 @@
 import { Database }       from 'bun:sqlite'
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
-import { status }         from '@frontierjs/litestone/migrations'
+import { migrationStatus } from '@frontierjs/litestone/migrations'
 import { encryptionKeyFingerprint } from '../../core/db.ts'
 
 export const MANIFEST_FILE = 'manifest.json'
@@ -123,7 +123,7 @@ export async function archiveRefusals(
     if (!existsSync(staged)) continue
     const raw = new Database(staged)
     try {
-      for (const row of status(raw, join(opts.migrationsRoot, name))) {
+      for (const row of migrationStatus(raw, join(opts.migrationsRoot, name))) {
         if (row.state === 'orphaned') reasons.push(
           `${name}.db applied ${row.file}, which this Basecamp does not have; the archive is from a newer version.`)
         if (row.state === 'modified') reasons.push(

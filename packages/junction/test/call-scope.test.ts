@@ -604,7 +604,7 @@ describe('$.me — one spelling of the caller', () => {
     await expect(a.service('whoami').find({}, { user: { userId: 'u1', role: 'user' } } as never))
       .rejects.toThrow(/user has no 'id'/)
     await expect(a.service('whoami').call('find', null, null, { user: { userId: 'u1' } } as never))
-      .rejects.toThrow(/session\(\{ id \}\)/)
+      .rejects.toThrow(/sessionContext\(\{ id \}\)/)
   })
 
   test('null still means as nobody, and absent still inherits', async () => {

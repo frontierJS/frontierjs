@@ -85,8 +85,9 @@ export function parseSize(/** @type {any} */ str) {
 }
 
 // ─── SQLite retention ─────────────────────────────────────────────────────────
-// Deletes rows older than the retention period from every model in the database
-// that has a `createdAt DateTime` field; one without answers a `skipped` line.
+// Deletes rows older than its window from every model in the window — its own
+// `@@retention`, else the database's — by its clock column, `createdAt` unless
+// `from:` names another; a model without that column answers a `skipped` line.
 //
 // Safe to call at startup — silently skips tables that don't exist yet,
 // and no-ops when nothing needs deleting.
@@ -104,7 +105,7 @@ export function parseSize(/** @type {any} */ str) {
 //
 // @param rawWriteDb  raw Bun Database handle
 // @param models      array of model AST nodes belonging to this database
-// @param retention   duration string e.g. '30d', '90d', '1y'
+// @param retention   the database's window e.g. '30d', '90d', '1y', or null
 // @param opts.pluralize    the client's table-name rule — see below
 // @param opts.now          the client's clock
 // @param opts.hears        (modelName) → whether anything hears this model's
@@ -115,8 +116,8 @@ export function parseSize(/** @type {any} */ str) {
 //                           under those rows, read before the DELETE takes them
 // @param opts.batches      most batches per table; the boot pass takes one
 // @param opts.stopped      () → true once the client closed, checked between batches
-// @returns [{ model, table, removed }] for every model in the database; `error`
-//          on one that would not sweep, `skipped` on one with no createdAt
+// @returns [{ model, table, removed }] for every model in a window; `error`
+//          on one that would not sweep, `skipped` on one with no clock column
 
 export const RETENTION_BATCH = 1000
 
@@ -124,27 +125,31 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
   pluralize = false, now = Date.now, hears = null, onRemoved = null, doomedUnder = null,
   batches = Infinity, stopped = null,
 } = {}) {
-  const ms = parseDuration(retention)
-  if (!ms) return []
-
   // The client's clock, not the wall clock. A sweep is a CROSSING — a row aging
   // past a window — and staging one is the whole reason a test freezes a clock;
   // reading `Date.now()` here made `env.clock.advance('100d')` move nothing that
   // this pass could see.
-  const cutoff = new Date(nowMs(now) - ms).toISOString()
-  const swept  = []
+  const at    = nowMs(now)
+  const swept = []
 
   for (const model of models) {
     if (stopped?.()) break
-    // Only models with a createdAt DateTime field
-    const createdAt = model.fields.find(
-      (/** @type {any} */ f) => f.name === 'createdAt' && f.type.name === 'DateTime'
+    // A model's own @@retention is read before the database's (FJS-D1059); a
+    // model with neither is not in the window and gets no line.
+    const own    = model.attributes?.find((/** @type {any} */ a) => a.kind === 'retention')
+    const window = own?.window ?? retention
+    const ms     = parseDuration(window)
+    if (!ms) continue
+    const cutoff = new Date(at - ms).toISOString()
+    const name   = own?.from ?? 'createdAt'
+    const clock  = model.fields.find(
+      (/** @type {any} */ f) => f.name === name && f.type.name === 'DateTime'
     )
     // Said, not dropped: a model dated by another name (`fetchedAt`) keeps every
     // row under a declared window, and a report with no line for it cannot be
     // told from one that swept it (FJS-2285).
-    if (!createdAt) {
-      swept.push({ model: model.name, table: modelToTableName(model, pluralize), removed: 0, skipped: 'no createdAt DateTime' })
+    if (!clock) {
+      swept.push({ model: model.name, table: modelToTableName(model, pluralize), removed: 0, skipped: `no ${name} DateTime` })
       continue
     }
 
@@ -186,7 +191,7 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
       // no other write lands inside a batch and no row is handed over twice.
       try {
         ids = rawWriteDb
-          .prepare(`SELECT rowid AS r FROM ${quoteIdent(table)} WHERE ${quoteIdent(fieldToColumnName(createdAt))} < ? LIMIT ${RETENTION_BATCH}`)
+          .prepare(`SELECT rowid AS r FROM ${quoteIdent(table)} WHERE ${quoteIdent(fieldToColumnName(clock))} < ? LIMIT ${RETENTION_BATCH}`)
           .all(cutoff).map((/** @type {any} */ x) => x.r)
         if (!ids.length) break
         const list = JSON.stringify(ids)
@@ -218,7 +223,7 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
     if (removed > 0) {
       console.log(
         `[litestone] retention: removed ${removed} row${removed === 1 ? '' : 's'}` +
-        ` from '${table}' (older than ${retention})`
+        ` from '${table}' (older than ${window})`
       )
     }
   }

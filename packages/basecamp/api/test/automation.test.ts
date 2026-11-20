@@ -21,7 +21,7 @@
 
 import { test, expect, describe, beforeAll, afterAll } from 'bun:test'
 import { join }              from 'node:path'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }        from '@frontierjs/litestone'
 import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
@@ -88,9 +88,9 @@ beforeAll(async () => {
   await member(ws, d, 'developer')
   await member(other, o, 'admin')
 
-  admin     = session({ id: a.id, workspaceId: ws.id })
-  developer = session({ id: d.id, workspaceId: ws.id })
-  outsider  = session({ id: o.id, workspaceId: other.id })
+  admin     = sessionContext({ id: a.id, workspaceId: ws.id })
+  developer = sessionContext({ id: d.id, workspaceId: ws.id })
+  outsider  = sessionContext({ id: o.id, workspaceId: other.id })
 
   box = await sys.server.create({ data: { workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
   box = await sys.server.transition(box.id, 'checkIn')

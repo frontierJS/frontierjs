@@ -1,0 +1,12 @@
+<script>
+  let hits = ''
+  const first  = () => { hits += 'a' }
+  const second = () => { hits += 'b' }
+  let attrs = { onclick: first }
+  const swap = () => { attrs = { onclick: second } }
+</script>
+<div>
+  <button {...attrs}>Hit</button>
+  <button onclick={swap}>Swap</button>
+  <p>hits: [{hits}]</p>
+</div>

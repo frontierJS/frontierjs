@@ -75,7 +75,7 @@ describe('islandEntrySource', () => {
     expect(src).not.toContain('@frontierjs/sierra/theme')
   })
 
-  test('carries the app\'s analytics block, so track() in an island reaches the page\'s tag (FJS-2058)', () => {
+  test('carries the app\'s analytics block, so trackEvent() in an island reaches the page\'s tag (FJS-2058)', () => {
     const src = islandEntrySource(
       [{ component: 'Form', module: '/a.mesa' }],
       { analytics: { provider: 'plausible', domain: 'shop.example' } },

@@ -19,7 +19,7 @@
 // with the `resume` URL that re-enters at it. A 400's `reason` is already the
 // code. Each is a cursor to re-enter, never one to retry.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { BasecampErrorBody } from './types.ts'
 
 export type BasecampFailureKind =
@@ -43,14 +43,8 @@ export interface BasecampFailure {
   resume?:       string
 }
 
-export function bodyOf(raw: unknown): BasecampErrorBody | null {
-  if (raw && typeof raw === 'object') return raw as BasecampErrorBody
-  if (typeof raw !== 'string') return null
-  try { const b = JSON.parse(raw); return b && typeof b === 'object' ? b as BasecampErrorBody : null } catch { return null }
-}
-
 export function translate(error: ConduitError, status?: number, headers?: Record<string, string>): BasecampFailure {
-  const body = bodyOf(error.raw)
+  const body = errorBody<BasecampErrorBody>(error.raw)
   const text = typeof error.raw === 'string' && !body ? error.raw.trim() : ''
   const base: BasecampFailure = {
     kind:      error.kind,

@@ -7,7 +7,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { LEVELS } from '@frontierjs/litestone'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import type { App } from '@frontierjs/junction'
 
 import { buildWorkbenchApp } from '../src/app.ts'
@@ -55,7 +55,7 @@ describe('the member reads the notifications the morning report wrote', () => {
     const sys = env.system as any
     const member = await sys.member.create({ data: { nick: 'jordan' } })
     const stranger = await sys.member.create({ data: { nick: 'other' } })
-    const as = (m: { id: number }) => env.as(session({ id: String(m.id), isAdmin: true })).service('notifications')
+    const as = (m: { id: number }) => env.as(sessionContext({ id: String(m.id), isAdmin: true })).service('notifications')
     return { env, sys, member, stranger, as }
   }
 

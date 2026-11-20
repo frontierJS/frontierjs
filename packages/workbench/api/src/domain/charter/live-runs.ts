@@ -21,6 +21,7 @@ import { basename, join, resolve }                                  from 'node:p
 import { env, workbenchDir }                                        from '../../core/env.ts'
 import { tail }                                                     from '../workbench/workbench-run.ts'
 import { readLiveRecord, stateOf, type LiveRecord, type LiveState } from './live-record.ts'
+import { recordedPath }                                             from '../prototypes/catalog.ts'
 
 export type Case = {
   /** The record's name: the file's name without `.json`. */
@@ -68,8 +69,9 @@ const WORD   = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 const today  = () => new Date().toISOString().slice(0, 10)
 const RECORD = /^(\d{4}-\d{2}-\d{2})-live-(.+)\.json$/
 
+// A prototype the catalog moved is found where its record says (`domain/prototypes/move.ts`).
 export const charterDir = (o: Options = {}) =>
-  o.dir || env.CHARTER_DIR || resolve(import.meta.dir, '../../../../../../../fjs-prototypes/charter')
+  o.dir || env.CHARTER_DIR || recordedPath('charter') || resolve(import.meta.dir, '../../../../../../../fjs-prototypes/charter')
 const pickedDir = (o: Options) => join(o.wb || workbenchDir(), 'charters')
 const logDir    = (o: Options) => join(o.wb || workbenchDir(), 'logs')
 

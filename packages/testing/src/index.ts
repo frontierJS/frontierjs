@@ -296,7 +296,7 @@ export async function createTestEnv<TClient = RegisteredClient>(
   return env
 }
 
-// ─── session ──────────────────────────────────────────────────────────────────
+// ─── sessionContext ───────────────────────────────────────────────────────────
 
 /**
  * A `SessionContext` from the fields a test cares about. The required three
@@ -306,7 +306,7 @@ export async function createTestEnv<TClient = RegisteredClient>(
  * helper that defaulted `verifiedAt: null` would silently drop every session it
  * built to VISITOR(1).
  */
-export function session(fields: Partial<SessionContext> = {}): SessionContext {
+export function sessionContext(fields: Partial<SessionContext> = {}): SessionContext {
   return {
     id:         fields.id       ?? 'test-user',
     userType:   fields.userType ?? 'user',

@@ -17,7 +17,7 @@ import { X509Certificate } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:https'
 import { tmpdir } from 'node:os'
-import { createTestEnv, session } from '@frontierjs/testing'
+import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
@@ -73,7 +73,7 @@ beforeAll(async () => {
   await sys.workspaceMember.create({ data: {
     workspaceId: ws.id, userId: user.id, role: 'owner', capabilities: grantsFor('owner'),
   }})
-  owner   = session({ id: user.id, workspaceId: ws.id })
+  owner   = sessionContext({ id: user.id, workspaceId: ws.id })
   account = await cfAccount('cf-main', CF_TOKEN)
 })
 
@@ -212,7 +212,7 @@ describe('the edge service', () => {
     const { grantsFor } = await import('../src/core/capabilities.ts')
     const u = await sys.user.create({ data: { email: `${role}-${tag()}@x.co`, accountId } })
     await sys.workspaceMember.create({ data: { workspaceId, userId: u.id, role, capabilities: grantsFor(role) } })
-    return session({ id: u.id, workspaceId })
+    return sessionContext({ id: u.id, workspaceId })
   }
 
   beforeAll(async () => {
@@ -266,7 +266,7 @@ describe('the edge service', () => {
     const made: any = await env.as(holder).service('apiKeys').create({ name: `edge-${tag()}`, scopes: ['edge:read'], expiresIn: '30d' })
     const row = await sys.apiKey.findUnique({ where: { id: made.id } })
     const wire   = { transport: 'http' }
-    const reader = session({ ...holder, authMethod: 'apiKey', credentialId: row.credentialId, scopes: ['edge:read'] })
+    const reader = sessionContext({ ...holder, authMethod: 'apiKey', credentialId: row.credentialId, scopes: ['edge:read'] })
     const { accounts } = await edge(reader).call('zones', null, {}, wire) as any
     expect(accounts.map((a: any) => a.name)).toContain('cf-a-good')
     await expect(edge(reader).call('records', null, { providerSecretId: good.id, zoneId: 'zone-example' }, wire)).resolves.toBeDefined()
@@ -450,10 +450,10 @@ describe('sync', () => {
     const own  = await sys.user.create({ data: { email: `sync-${tag()}@x.co`, accountId: acct.id } })
     site = await sys.workspace.create({ data: { accountId: acct.id, name: 'Sync', slug: `sync-${tag()}` } })
     await sys.workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
-    admin = session({ id: own.id, workspaceId: site.id })
+    admin = sessionContext({ id: own.id, workspaceId: site.id })
     const dev = await sys.user.create({ data: { email: `dev-${tag()}@x.co`, accountId: acct.id } })
     await sys.workspaceMember.create({ data: { workspaceId: site.id, userId: dev.id, role: 'developer', capabilities: grantsFor('developer') } })
-    developer = session({ id: dev.id, workspaceId: site.id })
+    developer = sessionContext({ id: dev.id, workspaceId: site.id })
 
     good = await sys.secret.create({ data: {
       workspaceId: site.id, name: 'cf-sync', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),
@@ -1017,7 +1017,7 @@ describe('a deleted App', () => {
     const own  = await sys().user.create({ data: { email: `gone-${tag()}@x.co`, accountId: acct.id } })
     site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Gone', slug: `gone-${tag()}` } })
     await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
-    admin = session({ id: own.id, workspaceId: site.id })
+    admin = sessionContext({ id: own.id, workspaceId: site.id })
     good = await sys().secret.create({ data: {
       workspaceId: site.id, name: 'cf-gone', kind: 'providerKey', providerKind: 'cloudflare', data: JSON.stringify({ token: CF_TOKEN }),
     }})
@@ -1031,7 +1031,7 @@ describe('a deleted App', () => {
 
     const other = await sys().workspace.create({ data: { accountId: acct.id, name: 'Bare', slug: `bare-${tag()}` } })
     await sys().workspaceMember.create({ data: { workspaceId: other.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
-    bare = session({ id: own.id, workspaceId: other.id })
+    bare = sessionContext({ id: own.id, workspaceId: other.id })
   })
 
   test('takes its Domain\'s CNAME and its own ingress record with it', async () => {
@@ -1282,7 +1282,7 @@ describe('the ingress name', () => {
     const own  = await sys().user.create({ data: { email: `name-${tag()}@x.co`, accountId: acct.id } })
     site = await sys().workspace.create({ data: { accountId: acct.id, name: 'Name', slug: `name-${tag()}` } })
     await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: own.id, role: 'owner', capabilities: grantsFor('owner') } })
-    admin = session({ id: own.id, workspaceId: site.id })
+    admin = sessionContext({ id: own.id, workspaceId: site.id })
     good = await sys().secret.create({ data: { workspaceId: site.id, name: 'cf-name', kind: 'providerKey', providerKind: 'cloudflare',
       data: JSON.stringify({ token: CF_TOKEN }) } })
     await registerAtSink(good)
@@ -1529,7 +1529,7 @@ describe.skipIf(!hasDocker)('a read-only copy\'s Domains, minted against Pebble'
     const { grantsFor } = await import('../src/core/capabilities.ts')
     const user = await sys().user.create({ data: { email: `copy-${tag()}@x.co`, accountId: site.accountId } })
     await sys().workspaceMember.create({ data: { workspaceId: site.id, userId: user.id, role: 'owner', capabilities: grantsFor('owner') } })
-    const read = await env.as(session({ id: user.id, workspaceId: site.id })).service('appCopies').find({ appId: target.id })
+    const read = await env.as(sessionContext({ id: user.id, workspaceId: site.id })).service('appCopies').find({ appId: target.id })
     expect(read.data[0].certError).toContain('bad_name.shop.test: ')
     expect(read.data[0].certError).toContain('shop.nowhere.test: no connected zone holds it')
   }, 60_000)

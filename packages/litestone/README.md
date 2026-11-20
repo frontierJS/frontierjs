@@ -1574,7 +1574,7 @@ rows in the wrong order, and neither is visible in the result.
 
 ```js
 import { autoMigrate, parseFile } from '@frontierjs/litestone'
-import { create, apply, status, verify } from '@frontierjs/litestone/migrations'
+import { create, apply, migrationStatus, verify } from '@frontierjs/litestone/migrations'
 import { openDatabase } from '@frontierjs/litestone/engine'
 
 const parseResult = parseFile('./schema.lite')
@@ -1586,7 +1586,7 @@ autoMigrate(db, parseResult)
 const raw = openDatabase('./app.db')
 create(raw, parseResult, 'add-users', './migrations')  // generate SQL file
 await apply(raw, './migrations')                       // apply pending
-status(raw, './migrations')                            // show applied/pending
+migrationStatus(raw, './migrations')                   // show applied/pending
 verify(raw, parseResult, './migrations')               // check live vs schema
 ```
 

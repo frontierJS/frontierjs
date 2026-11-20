@@ -10,7 +10,7 @@
 // else. A 404 is `gone` by status alone; `listHistory` renames it
 // `history_gap`, which is the one place the call knows more than the body.
 
-import type { ConduitError } from '@frontierjs/conduit'
+import { errorBody, type ConduitError } from '@frontierjs/conduit'
 import type { GoogleErrorBody } from './types.ts'
 
 export type GmailFailureKind =
@@ -53,10 +53,6 @@ const POLICY_REASONS = new Set(['domainPolicy', 'forbidden', 'accessNotConfigure
 const QUOTA_REASONS  = new Set(['dailyLimitExceeded', 'quotaExceeded', 'dailyLimitExceededUnreg'])
 const RATE_REASONS   = new Set(['userRateLimitExceeded', 'rateLimitExceeded', 'RATE_LIMIT_EXCEEDED'])
 
-export function parseBody(raw: unknown): GoogleErrorBody | null {
-  try { return typeof raw === 'string' ? JSON.parse(raw) : (raw as GoogleErrorBody) } catch { return null }
-}
-
 /** `details[].reason` is the scope case's spelling; `errors[].reason` everything else's. */
 function reasonOf(e: NonNullable<GoogleErrorBody['error']>): string | undefined {
   const detail = e.details?.find(d => d.reason)?.reason
@@ -78,7 +74,7 @@ export function translate(error: ConduitError, status?: number, headers?: Record
     ...(error.retry_after_ms !== undefined ? { retryAfterMs: error.retry_after_ms } : {}),
     ...(error.indeterminate ? { indeterminate: true as const } : {}),
   }
-  const e      = parseBody(error.raw)?.error
+  const e      = errorBody<GoogleErrorBody>(error.raw)?.error
   const reason = e ? reasonOf(e) : undefined
   const http   = status ?? e?.code
   const extra  = {

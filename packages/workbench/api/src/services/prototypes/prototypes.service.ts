@@ -4,6 +4,9 @@
 //   GET  /prototypes   list         every prototype in one answer: { recorded, unsorted, missing, view, problems, error }
 //   POST /prototypes   saveRecord   { name, record } set or patch one record in CATALOG.json -> { name, record }
 //   POST /prototypes   saveView     { favorites, order, folded } the owner's view -> { view }
+//   POST /prototypes   open         { name } a recorded prototype's folder, in Lathe -> { opened }
+//   GET  /prototypes   candidates   pairs that might merge, linked or sharing models -> { candidates, common, schemas }
+//   POST /prototypes   move         { name, into } the repo into another folder, its record and Claude history with it -> { name, from, to, path, histories }
 //
 // No model and nothing in the database: the records are a file Claude reads and
 // the owner edits by hand, and the view is a file beside pins.json.
@@ -13,9 +16,12 @@
 
 import { existsSync, statSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { createService, BadRequest, $ } from '@frontierjs/junction'
+import { createService, BadRequest, Conflict, NotFound, $ } from '@frontierjs/junction'
 import { LEVELS }                       from '@frontierjs/litestone'
-import { expandPath, listPrototypes, validateRecord, writeRecord, writeView } from '../../domain/prototypes/catalog.ts'
+import { openInLathe }                from '../../domain/local/lathe.ts'
+import { listCandidates }            from '../../domain/prototypes/candidates.ts'
+import { movePrototype }             from '../../domain/prototypes/move.ts'
+import { expandPath, listPrototypes, readCatalog, validateRecord, writeRecord, writeView } from '../../domain/prototypes/catalog.ts'
 
 const isDir = (p: string) => { try { return statSync(p).isDirectory() } catch { return false } }
 
@@ -29,6 +35,9 @@ export default createService({
     { method: 'list',       read: true, gate: LEVELS.ADMINISTRATOR },
     { method: 'saveRecord', gate: LEVELS.ADMINISTRATOR },
     { method: 'saveView',   gate: LEVELS.ADMINISTRATOR },
+    { method: 'open',       gate: LEVELS.ADMINISTRATOR },
+    { method: 'candidates', read: true, gate: LEVELS.ADMINISTRATOR },
+    { method: 'move',       gate: LEVELS.ADMINISTRATOR },
   ],
 
   async list() {
@@ -57,6 +66,33 @@ export default createService({
   async saveView() {
     const out = writeView($.data ?? {})
     if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async candidates() {
+    return listCandidates()
+  },
+
+  // By name, so the folder that moves is the record's and never the caller's.
+  async move() {
+    const { name, into } = ($.data ?? {}) as { name?: unknown, into?: unknown }
+    if (typeof name !== 'string' || typeof into !== 'string' || !into.trim())
+      throw new BadRequest('move takes { name, into }: the recorded repo and the folder to move it into')
+    const out = movePrototype(name, into)
+    if ('refused' in out) throw new Conflict(out.refused)
+    return out
+  },
+
+  // By name, so the path that runs is the record's and never the caller's.
+  async open() {
+    const { name } = ($.data ?? {}) as { name?: unknown }
+    const { records } = readCatalog()
+    const rec = typeof name === 'string' && Object.hasOwn(records, name) ? records[name] : undefined
+    if (!rec) throw new NotFound(`no prototype is recorded as '${String(name)}'`)
+    const path = expandPath(rec.path)
+    if (!isDir(path)) throw new Conflict(`${name}'s folder ${path} is gone`)
+    const out = openInLathe(path)
+    if ('refused' in out) throw new Conflict(out.refused)
     return out
   },
 

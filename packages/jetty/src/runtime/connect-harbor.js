@@ -5,7 +5,7 @@
 //
 // Auto-generated main.js calls this once at module top:
 //   const harbor = await connectHarbor({ type: 'dock', id: 'dock' })
-//   mount(root, App, { harbor })
+//   mountInto(root, App, { harbor })
 
 import { PagePort } from './page-port.js'
 

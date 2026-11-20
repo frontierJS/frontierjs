@@ -732,6 +732,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 
 ### proposed
 
+- `connector-copied-helpers.md` — `toE164`/`keywordOf` copied across quo, twilio and telnyx (waits on an `sms` home); apns and fcm JWT signers copied though `conduit-oidc` already exports `signJwt` (adoption, ready now)
 - `hydration.md` — whether Mesa hydrates, and the two things "server component" names (inert, derived; server-only, declared); fixes `FJS-4313`; Q1 recommend B (direction, amend RULE 20), Q2 whole page first keyed by reactive edge; 0.1 drive FJS-4313 next
 - `widget-loader.md` — one pasted `<script data-form=KEY>`: a loader asks the API what the key is and imports that widget's hashed bundle; Q1 recommend Sierra emits it; decide before ELA's cutover
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`

@@ -267,7 +267,7 @@ export function startDevClient({ port, clientType, onEvent } = {}) {
 
     // Dynamic import the new entry. The module's top-level code runs:
     //   - dev-client startup is sentinel-protected (no second WS)
-    //   - mount() is gated on __jettyHmrFirstRun (skipped — we're already mounted)
+    //   - mountInto() is gated on __jettyHmrFirstRun (skipped — we're already mounted)
     //   - App import re-evaluates and globalThis.__JETTY_HMR_APPS[clientType] = new App
     await import(/* @vite-ignore */ url.href)
 

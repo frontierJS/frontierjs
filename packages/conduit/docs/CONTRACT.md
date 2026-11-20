@@ -39,7 +39,8 @@ process, and every drive here runs without one.
 
 `translate(error, status?, headers?) → <Name>Failure { kind, retryable, message, code? }`.
 It reads the vendor's error body out of `raw` and the HTTP status out of
-`meta.status`, and nothing else in the package touches either. `kind` is a
+`meta.status`, and nothing else in the package touches either. The body comes
+out of `raw` through conduit's `errorBody<T>(raw)`, never a copy of it. `kind` is a
 DOMAIN word (`declined`, `opted_out`, `gone`, `capacity`) or the conduit kind
 passed through; a connector never invents a `ConduitErrorKind`.
 

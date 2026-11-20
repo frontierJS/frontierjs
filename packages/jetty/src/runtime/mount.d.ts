@@ -9,6 +9,6 @@
  * @param {object} [props] — props passed to the component
  * @returns {Promise<{ destroy?: () => void }>}
  */
-export function mount(root: Element | ShadowRoot, app: Function | any | string, props?: object): Promise<{
+export function mountInto(root: Element | ShadowRoot, app: Function | any | string, props?: object): Promise<{
     destroy?: () => void;
 }>;

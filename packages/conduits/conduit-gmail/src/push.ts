@@ -42,13 +42,12 @@ export function decodePushEnvelope(body: unknown): PushNotification | null {
 // token has. The signature half is oidc's, imported as a package; the claims
 // are this profile's, checked here.
 
-import { ALLOWED_ALGS, algFitsKey, importPublicJwk, parseJwt, selectKey, verifySignature, type AllowedAlg, type Jwks } from '@frontierjs/conduit-oidc'
+import { ALLOWED_ALGS, DEFAULT_CLOCK_SKEW_SECONDS, algFitsKey, importPublicJwk, parseJwt, selectKey, verifySignature, type AllowedAlg, type Jwks } from '@frontierjs/conduit-oidc'
 import type { CredentialResolver } from '@frontierjs/conduit'
 
 /** Google issues both spellings. */
 export const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'] as const
 export const GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
-export const DEFAULT_CLOCK_SKEW_SECONDS = 60
 
 export interface PushClaims {
   iss:             string
