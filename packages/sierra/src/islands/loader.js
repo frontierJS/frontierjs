@@ -62,7 +62,7 @@
  * children. That is warned about rather than silently reinterpreted.
  */
 
-import { mount } from '@frontierjs/mesa/runtime'
+import { mount, schedule } from '@frontierjs/mesa/runtime'
 
 const OPEN   = 'mesa-island '
 const CLOSE  = '/mesa-island'
@@ -218,69 +218,106 @@ export function mountIsland(island, Component) {
   return handle
 }
 
-/**
- * Schedule `fn` according to a `client:*` directive.
- *
- * Returns a teardown for the ones that wait on something, so a caller can
- * cancel. `static` never runs: it means "no JS even if the component is
- * reactive" (VISION §18.5), so the prerendered markup is the final answer and
- * mounting would be the opposite of what was asked for.
- */
-export function schedule(directive, media, target, fn) {
-  switch (directive) {
-    case 'static':
-      return () => {}
+// `client:*` timing is Mesa's, shared with a flagged page's `hydIsland`.
+export { schedule }
 
-    case 'load':
-      fn()
-      return () => {}
+// ─── a click before the mount ────────────────────────────────────────────────
 
-    case 'idle': {
-      if (typeof requestIdleCallback === 'function') {
-        const id = requestIdleCallback(fn)
-        return () => cancelIdleCallback(id)
-      }
-      // Safari <17 has no requestIdleCallback. A timeout is the standard
-      // stand-in — later than idle would be, never never.
-      const id = setTimeout(fn, 1)
-      return () => clearTimeout(id)
-    }
+/** Events caught by an inner island, so an enclosing one does not replay them too. */
+const _caught = new WeakSet()
 
-    case 'visible': {
-      if (typeof IntersectionObserver !== 'function') { fn(); return () => {} }
-      const io = new IntersectionObserver((entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) { io.disconnect(); fn(); return }
-        }
-      })
-      // Observe the marker's next element sibling — a comment cannot be
-      // observed. With nothing to observe there is nothing to become visible,
-      // so mount rather than strand the island forever.
-      const el = nextElement(target)
-      if (!el) { fn(); return () => {} }
-      io.observe(el)
-      return () => io.disconnect()
-    }
+// The browser already does what these were clicked for, so a replay would do it twice.
+const NATIVE = 'a[href], area[href], input, select, textarea, label, summary'
 
-    case 'media': {
-      if (!media || typeof matchMedia !== 'function') { fn(); return () => {} }
-      const mq = matchMedia(media)
-      if (mq.matches) { fn(); return () => {} }
-      const onChange = (e) => { if (e.matches) { mq.removeEventListener('change', onChange); fn() } }
-      mq.addEventListener('change', onChange)
-      return () => mq.removeEventListener('change', onChange)
-    }
-
-    default:
-      console.warn(`[Sierra islands] unknown client:${directive} — mounting immediately`)
-      fn()
-      return () => {}
-  }
+function hasNativeDefault(el) {
+  if (el.closest(NATIVE)) return true
+  const button = el.closest('button')
+  return !!button?.form && button.type !== 'button'
 }
 
-function nextElement(node) {
-  for (let n = node.nextSibling; n; n = n.nextSibling) if (n.nodeType === 1) return n
+/** Element indices from the island's range down to `el`, or null when `el` is outside it. */
+function pathTo(el, range) {
+  const path = []
+  for (let n = el; n; n = n.parentElement) {
+    const top = range.filter((r) => r.nodeType === 1).indexOf(n)
+    if (top >= 0) return [top, ...path.reverse()]
+    if (!n.parentElement) return null
+    path.push([...n.parentElement.children].indexOf(n))
+  }
   return null
+}
+
+function follow(path, range) {
+  let el = range.filter((r) => r.nodeType === 1)[path[0]]
+  for (const i of path.slice(1)) el = el?.children[i]
+  return el ?? null
+}
+
+/**
+ * Hold the first click that lands on an island's prerendered markup before the
+ * island is live, and press the same element once it is.
+ *
+ * Every directive but `static` leaves a gap: even `load` awaits its chunk. The
+ * button is on screen in that gap and has no handler, so without this the
+ * visitor's first press is lost and nothing says so (FJS-4428). A click also
+ * calls `wake`, which mounts the island now rather than when its directive
+ * would have.
+ *
+ * The element is found again by its position among the range's elements, so a
+ * mount whose markup differs from the prerender is caught: the click is dropped
+ * with a warning rather than landing on something the visitor did not press.
+ * A link, a form control or a submit button is left alone — the browser acted
+ * on that click already.
+ *
+ * @returns {{ replay(): void, release(): void }}
+ */
+function catchEarlyClicks(island, wake) {
+  const name = island.meta.component
+  let held = null
+  const onPointer = () => wake()
+  const onClick = (e) => {
+    wake()
+    if (_caught.has(e) || !(e.target instanceof island.open.ownerDocument.defaultView.Element)) return
+    _caught.add(e)
+    if (held || hasNativeDefault(e.target)) return
+    const path = pathTo(e.target, nodesBetween(island.open, island.close))
+    if (path) held = { path, tag: e.target.tagName, event: e }
+  }
+  const targets = island.nodes.filter((n) => n.nodeType === 1)
+  for (const el of targets) {
+    el.addEventListener('pointerdown', onPointer)
+    el.addEventListener('click', onClick)
+  }
+
+  const release = () => {
+    for (const el of targets) {
+      el.removeEventListener('pointerdown', onPointer)
+      el.removeEventListener('click', onClick)
+    }
+    held = null
+  }
+
+  const replay = () => {
+    const caught = held
+    release()
+    if (!caught) return
+    const el = follow(caught.path, nodesBetween(island.open, island.close))
+    if (el?.tagName !== caught.tag) {
+      console.warn(
+        `[Sierra islands] <${name}> was clicked before it mounted, and its live markup has no ` +
+        `<${caught.tag.toLowerCase()}> where the prerendered one was — the click is dropped.`
+      )
+      return
+    }
+    const { clientX, clientY, screenX, screenY, button, buttons, ctrlKey, shiftKey, altKey, metaKey, detail } = caught.event
+    const View = el.ownerDocument.defaultView
+    el.dispatchEvent(new View.MouseEvent('click', {
+      bubbles: true, cancelable: true, composed: true,
+      clientX, clientY, screenX, screenY, button, buttons, ctrlKey, shiftKey, altKey, metaKey, detail,
+    }))
+  }
+
+  return { replay, release }
 }
 
 /**
@@ -329,12 +366,22 @@ export function hydrateIslands(registry, { root = document.body } = {}) {
       }
     }
     // The fetch happens inside the scheduled callback, not before it, so a
-    // client:visible island downloads nothing until it scrolls into view.
-    schedule(island.meta.directive, island.meta.media, island.open, async () => {
+    // client:visible island downloads nothing until it scrolls into view —
+    // unless a visitor presses it first, which starts it at once.
+    let started = false
+    let cancel = null
+    const start = () => {
+      if (started) return
+      started = true
+      cancel?.()
+      run()
+    }
+    const early = island.meta.directive === 'static' ? null : catchEarlyClicks(island, start)
+    const run = async () => {
       // An ancestor mounted between scheduling and now: it rendered this
       // component live as part of its own render, so there is nothing to mount
       // and nothing worth downloading to mount it with.
-      if (!island.open.isConnected) return
+      if (!island.open.isConnected) return early?.release()
       try {
         const Component = await resolveComponent(entry)
         if (typeof Component !== 'function') {
@@ -345,11 +392,14 @@ export function hydrateIslands(registry, { root = document.body } = {}) {
           )
           return
         }
-        mountIsland(island, Component)
+        if (mountIsland(island, Component)) early?.replay()
       } catch (err) {
         console.error(`[Sierra islands] <${name}> failed to load or mount — it stays inert:`, err)
+      } finally {
+        early?.release()
       }
-    })
+    }
+    cancel = schedule(island.meta.directive, island.meta.media, island.open, start)
     scheduled.push({ component: name, directive: island.meta.directive })
   }
 

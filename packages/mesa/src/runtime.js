@@ -1,6 +1,8 @@
 /**
  * @frontierjs/mesa-runtime  v0.1.0
  */
+import { parseMarker } from './hydration-protocol.js'
+import * as HYD from './hydration-protocol.js'
 import { WINDOW_BINDS } from './window-binds.js'
 import { clock } from './clock.js'
 import { ISLAND_OPEN, ISLAND_CLOSE, islandPayload, dynamicTag, stampAt, warnRefusedName,
@@ -2937,6 +2939,366 @@ export function makeComponent(init) {
   }
 }
 
+// ─── hydrate: adopt a hydratable server page ─────────────────────────────────
+//
+// One TreeWalker pass reads every marker into instance → key → node, then the
+// component runs once over it (`IDEAS/hydration.md` Phase 2). A flagged
+// compile asks `claim()` at a component root and `adopting()` at a block body;
+// both answer null when nothing is being adopted, and the code renders as
+// `mount()` does. A mismatch re-renders the smallest enclosing block, and one
+// at a component root the page (FJS-D2260).
+
+let _hydration   = null   // the page hydrate() is adopting, until its root claims it
+let _pendingBlock = null  // the handle a block hands the body it calls next
+
+class HydrationMismatch extends Error {}
+
+function _collectMarkers(root) {
+  const instances = new Map()
+  const at = (id) => {
+    let inst = instances.get(id)
+    if (!inst) instances.set(id, (inst = _instance(id)))
+    return inst
+  }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT)
+  for (let c = walker.nextNode(); c; c = walker.nextNode()) {
+    const m = parseMarker(c.data)
+    if (!m) continue
+    if (m.kind === HYD.INSTANCE) { const inst = at(m.id); inst.start = c; inst.scope = m.key }
+    else if (m.kind === HYD.MARK) at(m.id).marks.set(m.key, c)
+    else if (m.kind === HYD.OPEN) at(m.id).opens.set(m.key, c)
+    else if (m.kind === HYD.CLOSE) at(m.id).closes.set(m.key, c)
+  }
+  return { instances, rootTaken: false }
+}
+
+const _instance = (id) => ({ id, start: null, scope: null, marks: new Map(), opens: new Map(), closes: new Map() })
+
+const _mismatch = (opts, what) => Object.assign(new HydrationMismatch(`[Mesa hydrate] ${opts?.file}: ${what}`), { dev: !!opts?.dev })
+
+// A dev build names what it re-rendered; production re-renders quietly.
+const _hydWarn = (opts, msg) => { if (opts?.dev) console.warn(msg) }
+
+// The server's nodes move into a fragment the block inserts back where they
+// were: they keep their identity, which is what adoption promises.
+function _takeRange(from, stop) {
+  const frag = document.createDocumentFragment()
+  for (let n = from.nextSibling; n && n !== stop; n = from.nextSibling) frag.appendChild(n)
+  return frag
+}
+
+function _handle(page, inst, opts, first, frag) {
+  return {
+    frag,
+    dev: !!opts.dev,
+    /** The one root node of a single-element template, which carries no key. */
+    // A template of one element IS that element, which the page holds right
+    // after the marker; flag 0 still yields a fragment when there are several
+    // top-level nodes, so only the parsed template can say which it is.
+    root(tpl) {
+      if (tpl().nodeType === 11) return null
+      if (first?.nodeType !== 1) throw _mismatch(opts, `the root element of ${inst.id} is not on the page`)
+      return first
+    },
+    take(key) {
+      const mark = inst.marks.get(key)
+      if (mark) {
+        if (parseMarker(mark.data).state === HYD.EMPTY) {
+          const text = document.createTextNode('')
+          mark.before(text)
+          return text
+        }
+        if (!mark.previousSibling) throw _mismatch(opts, `binding ${key} in ${inst.id} has no node before its marker`)
+        return mark.previousSibling
+      }
+      const open = inst.opens.get(key)
+      if (open) {
+        const close = inst.closes.get(key)
+        if (!close) throw _mismatch(opts, `block ${key} in ${inst.id} never closes`)
+        close.__hyd = { page, inst, opts, key, open, close, state: parseMarker(open.data).state }
+        return close
+      }
+      const child = page.instances.get(inst.id + '.' + key)
+      if (child?.start) {
+        // Carried on the anchor, not in module state: a block adopted between
+        // this take and the call it feeds would otherwise drop the claim.
+        const anchor = document.createComment('')
+        anchor.__claim = { page, id: child.id }
+        child.start.before(anchor)
+        return anchor
+      }
+      throw _mismatch(opts, `no marker for binding ${key} (source offset ${parseInt(key, 36)}) in ${inst.id}`)
+    },
+  }
+}
+
+/**
+ * A flagged component root's half of adoption: its instance, or null when
+ * nothing is being adopted. `opts.scope` is the component's own scope id, so a
+ * page written by another build of it fails closed (FJS-D2177); `opts.unkeyed`
+ * names root nodes its code reads with no key.
+ */
+export function claim(anchor, opts) {
+  let page, id
+  if (anchor?.__claim) { ({ page, id } = anchor.__claim); anchor.__claim = null }
+  else if (_hydration && !_hydration.rootTaken) { page = _hydration; id = '0'; page.rootTaken = true }
+  if (!page) return null
+  const inst = page.instances.get(id)
+  if (!inst?.start) throw _mismatch(opts, `no instance marker for ${id}`)
+  if (opts.scope && inst.scope !== '-' && inst.scope !== opts.scope)
+    throw _mismatch(opts, `${id} was rendered by scope ${inst.scope} and this build is ${opts.scope}, a page and a bundle from different builds`)
+  if (opts.unkeyed) throw _mismatch(opts, `${opts.unkeyed} has no hydration key`)
+  return _handle(page, inst, opts, inst.start.nextSibling, null)
+}
+
+/** A flagged block body's half: the handle its block is adopting it with, or null. */
+export function adopting(file, unkeyed) {
+  const h = _pendingBlock
+  _pendingBlock = null
+  if (h && unkeyed) throw _mismatch({ file, dev: h.dev }, `${unkeyed} has no hydration key`)
+  return h
+}
+
+// Run a body over the server's nodes under an owner of its own, so a mismatch
+// halfway disposes what it bound and the block renders afresh in their place.
+function _adopt(h, opts, what, make) {
+  const prev = _owner, comps = _compStack.length, ctxs = _contextStack.length
+  const owner = { _fn: null, _deps: new Set(), _cleanups: [], _children: [], _owner: prev, _notify() {}, _run() {} }
+  if (prev) prev._children.push(owner)
+  _owner = owner
+  _pendingBlock = h
+  try {
+    return make()
+  } catch (e) {
+    if (!(e instanceof HydrationMismatch)) throw e
+    _unwindComponents(comps, ctxs)
+    _owner = prev
+    _disposeNode(owner, true)
+    _hydWarn(opts, `${e.message}; re-rendered ${what}`)
+    return _fresh(make)
+  } finally {
+    _owner = prev
+    _pendingBlock = null
+  }
+}
+
+function _fresh(make) {
+  const saved = _hydration
+  _hydration = null
+  _pendingBlock = null
+  try { return make() } finally { _hydration = saved }
+}
+
+// A factory may hand back another factory, as an {#await} branch's does.
+const _call = (f, ...args) => {
+  const r = f.$dom ?? (typeof f === 'function' ? f(...args) : f)
+  return typeof r === 'function' ? r() : r
+}
+
+/** `makeBlock` under the flag: a body its block is adopting binds the server's nodes and clones nothing. */
+export function hydBlock(fr, fn) {
+  const make = makeBlock(fr, fn)
+  return (v, i) => {
+    const h = _pendingBlock
+    if (!h) return make(v, i)
+    if (!fn) _pendingBlock = null
+    else fn(h.frag, v, i)
+    return h.frag
+  }
+}
+
+/**
+ * A `{@render}` or slot site under the flag: the snippet's first block adopts
+ * the content the server wrote between this site's boundaries, under the id
+ * the server's call gave it.
+ */
+export function hydRender(anchor, run) {
+  const b = anchor?.__hyd
+  if (!b) return run(anchor)
+  anchor.__hyd = null
+  const id = b.inst.id + '.' + b.key
+  const inst = b.page.instances.get(id) ?? _instance(id)
+  const frag = _takeRange(b.open, b.close)
+  b.open.remove()
+  return _adopt(_handle(b.page, inst, b.opts, frag.firstChild, frag), b.opts, `{@render} ${b.key} in ${b.inst.id}`, () => run(anchor))
+}
+
+/** `ifBlock` under the flag: the server's branch is adopted when the client takes the same one. */
+export function hydIf(anchor, condFn, blocks, noAnchor) {
+  const b = anchor?.__hyd
+  if (!b) return ifBlock(anchor, condFn, blocks, noAnchor)
+  anchor.__hyd = null
+  let server = Number(b.state)
+  const cond = () => {
+    const next = condFn() ?? null
+    if (server != null && (next ?? -1) !== server) {
+      _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#if} ${b.key} in ${b.inst.id} took branch ${server} on the server and ${next ?? -1} here; re-rendered the block`)
+      _takeRange(b.open, b.close)
+      server = null
+    }
+    if (server === -1) server = null
+    if (server == null) b.open.remove()
+    return next
+  }
+  const wrapped = blocks.map((f, i) => f && (() => {
+    if (server !== i) return _call(f)
+    server = null
+    const frag = _takeRange(b.open, b.close)
+    b.open.remove()
+    return _adopt(_handle(b.page, b.inst, b.opts, frag.firstChild, frag), b.opts, `{#if} ${b.key} in ${b.inst.id}`, () => _call(f))
+  }))
+  return ifBlock(anchor, cond, wrapped, noAnchor)
+}
+
+/** `$$eachBlock` under the flag: each server row is adopted by its key. */
+export function hydEach(anchor, mode, getArray, keyFn, makeItem, elseBlock) {
+  const b = anchor?.__hyd
+  if (!b) return $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock)
+  anchor.__hyd = null
+  const idOf = (item, i) => HYD.rowId(b.inst.id, keyFn ? keyFn(item, i) : i)
+  let rows = null   // row id → its row marker, for the first render only
+  let checked = false
+  const items = () => {
+    const list = getArray()
+    if (checked) return list
+    checked = true
+    const server = []
+    for (let n = b.open.nextSibling; n && n !== b.close; n = n.nextSibling) {
+      const m = n.nodeType === 8 ? parseMarker(n.data) : null
+      if (m?.kind === HYD.ROW && m.id.startsWith(b.inst.id + '[') && !m.id.slice(b.inst.id.length + 1).includes('[')) server.push([m.id, n])
+    }
+    let ids = []
+    try { ids = eachItems(list).map((item, i) => idOf(item, i)) } catch {}
+    if (server.length && ids.join('\n') === server.map(([id]) => id).join('\n')) {
+      // Every row's nodes are read before any row is inserted: an adopted row
+      // goes back in before the close marker, behind rows still waiting.
+      rows = new Map(server.map(([id, at], k) => {
+        const stop = server[k + 1]?.[1] ?? b.close, nodes = []
+        for (let n = at.nextSibling; n && n !== stop; n = n.nextSibling) nodes.push(n)
+        return [id, nodes]
+      }))
+      for (const [, at] of server) at.remove()
+    } else {
+      if (server.length || ids.length)
+        _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#each} ${b.key} in ${b.inst.id} wrote rows [${server.map(([id]) => id)}] on the server and [${ids}] here; re-rendered the block`)
+      _takeRange(b.open, b.close)
+    }
+    b.open.remove()
+    return list
+  }
+  const make = (getItem, getIndex) => {
+    const id = rows && untrack(() => idOf(getItem(), getIndex()))
+    const nodes = rows?.get(id)
+    if (!nodes) return makeItem(getItem, getIndex)
+    rows.delete(id)
+    const frag = document.createDocumentFragment()
+    frag.append(...nodes)
+    const inst = b.page.instances.get(id) ?? _instance(id)
+    return _adopt(_handle(b.page, inst, b.opts, frag.firstChild, frag), b.opts, `row ${id}`, () => makeItem(getItem, getIndex))
+  }
+  const out = $$eachBlock(anchor, mode, items, keyFn, make, elseBlock)
+  rows = null
+  return out
+}
+
+/** `awaitBlock` under the flag: the server's settled branch stays on screen and is adopted when the client settles the same way. */
+export function hydAwait(anchor, getPromise, pendingBlock, thenBlock, catchBlock, waits, deps = null) {
+  const b = anchor?.__hyd
+  if (!b) return awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlock, waits)
+  anchor.__hyd = null
+  let nodes = null, done = false
+  const grab = () => {
+    if (!nodes) { nodes = [..._takeRange(b.open, b.close).childNodes]; b.open.remove() }
+    const frag = document.createDocumentFragment()
+    frag.append(...nodes)
+    return frag
+  }
+  const pending = () => (done ? pendingBlock : grab())
+  // The server's settled value, read instead of the expression: evaluated, a
+  // fetch the server already made goes out again (`IDEAS/hydration.md` 3.1).
+  let first = true
+  const server = b.page.state
+  const sid = b.inst.id + ' ' + b.key
+  const read = () => {
+    if (!first) return getPromise()
+    first = false
+    if (server && Object.hasOwn(server, sid)) {
+      if (b.state === 'then' && deps) { deps(); return server[sid] }
+      if (b.state === 'then') {
+        _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#await} ${b.key} in ${b.inst.id} reads through a call or a member chain the compiler cannot separate from its fetch; evaluated it again`)
+        return getPromise()
+      }
+      _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#await} ${b.key} in ${b.inst.id} has server state but settled ${b.state} on the server; evaluated it again`)
+      return getPromise()
+    }
+    const p = getPromise()
+    if (server && p?.then) _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#await} ${b.key} in ${b.inst.id} has no server state; evaluated it again`)
+    return p
+  }
+  const settle = (state, f) => (v) => {
+    if (done) return f ? _call(f, v) : null
+    done = true
+    const frag = grab()
+    if (b.state !== state || !f) {
+      _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: {#await} ${b.key} in ${b.inst.id} settled ${b.state} on the server and ${state} here; re-rendered the block`)
+      return f ? _fresh(() => _call(f, v)) : null
+    }
+    return _adopt(_handle(b.page, b.inst, b.opts, frag.firstChild, frag), b.opts, `{#await} ${b.key} in ${b.inst.id}`, () => _call(f, v))
+  }
+  return awaitBlock(anchor, read, pending, settle('then', thenBlock), settle('catch', catchBlock), waits)
+}
+
+/**
+ * Adopt the page a `hydratable: true` server render wrote into `target`: the
+ * server's nodes stay, and the component's bindings attach to them. A mismatch
+ * at a component root re-renders the whole target (FJS-D2260).
+ *
+ * `options.state` is the server render's `state`: a flagged `{#await}` reads
+ * its entry instead of evaluating its expression, and one with no entry
+ * evaluates it and, in dev, says so.
+ *
+ * @param {Element} target
+ * @param {Function} component
+ * @param {object} [props]
+ * @param {{ state?: Record<string, unknown> }} [options]
+ */
+export function hydrate(target, component, props, options) {
+  const label = document.createComment('')
+  target.append(label)
+  _hydration = _collectMarkers(target)
+  _hydration.state = options?.state ?? null
+  _hydSeed = _hydration.state ? { state: _hydration.state, label } : null
+  try {
+    return mount(label, component, { props })
+  } catch (e) {
+    if (!(e instanceof HydrationMismatch)) throw e
+    if (e.dev) console.warn(`${e.message}; re-rendered the page`)
+    _hydration = null
+    target.replaceChildren(label)
+    return mount(label, component, { props })
+  } finally {
+    _hydration = _pendingBlock = _hydSeed = null
+  }
+}
+
+// Outlives a mismatch: the page re-rendered in its place still has the
+// server's values, and loading them again is the request hydration saves.
+let _hydSeed = null
+
+/**
+ * A flagged awaited `const`'s server value, as `{ value }`, or null to load
+ * it. Read before its component claims its markers, so the instance id comes
+ * from the anchor: a call site's claim, or the root's place after the label.
+ */
+export function hydAsync(anchor, key, opts) {
+  if (!_hydSeed) return null
+  const id = anchor?.__claim?.id ?? (anchor?.previousSibling === _hydSeed.label ? '0' : null)
+  const sid = id + ' ' + key
+  if (id !== null && Object.hasOwn(_hydSeed.state, sid)) return { value: _hydSeed.state[sid] }
+  _hydWarn(opts, `[Mesa hydrate] ${opts?.file}: the awaited const at ${key} in ${id ?? 'a re-rendered child'} has no server state; loaded it again`)
+  return null
+}
+
 export function mount(label, component, option) {
   if (!_isBrowser)
     throw new Error(
@@ -5509,7 +5871,12 @@ export function makeAsyncState(upstream = [], unshown = null) {
     for (const u of upstream) if (u.pending) any = true
     return any
   }
+  let waiters = null
   return {
+    /** Resolves once the first load has landed, either way. */
+    settled() {
+      return untrack(loading) ? new Promise((r) => (waiters ??= []).push(r)) : Promise.resolve()
+    },
     get loading() {
       return loading()
     },
@@ -5532,12 +5899,14 @@ export function makeAsyncState(upstream = [], unshown = null) {
         setLoading(false)
         setPending(false)
         setStatus('success')
+        if (waiters) { for (const r of waiters) r(); waiters = null }
       } else {
         if (unshown) console.error(`[Mesa] UNHANDLED_FAILURE: the load of '${unshown}' rejected and nothing shows it; read $async.${unshown}.error or wrap its read in a <mesa:boundary> with a failed snippet.`, err)
         setLoading(false)
         setPending(false)
         setError(err)
         setStatus('error')
+        if (waiters) { for (const r of waiters) r(); waiters = null }
       }
     }
   }
@@ -5648,7 +6017,7 @@ export function makeCallState(handled = false) {
 // would otherwise subscribe that effect to them.
 //
 // `name` is the const's, held in `_unanswered` until the first run settles.
-export function asyncDerived(getAsyncState, fn, deps, setValue, name) {
+export function asyncDerived(getAsyncState, fn, deps, setValue, name, seed = null) {
   let controller = null
   const entry = name ? { name, owner: _owner } : null
   const answered = () => { if (entry) _unanswered.delete(entry) }
@@ -5658,6 +6027,14 @@ export function asyncDerived(getAsyncState, fn, deps, setValue, name) {
     if (_owner) onCleanup(answered)
   }
   const run = () => {
+    if (seed) {
+      const { value } = seed
+      seed = null
+      setValue(value)
+      answered()
+      getAsyncState()._update('done')
+      return
+    }
     controller?.abort()
     controller = new AbortController()
     const state = getAsyncState()
@@ -6317,6 +6694,155 @@ export function island(anchor, Comp, props, meta) {
   return Comp(close, props)
 }
 
+/**
+ * Run `fn` when a `client:*` directive's trigger fires; answers a teardown.
+ * The one schedule for both paths: Sierra's islands loader mounts on it, and a
+ * flagged page's `hydIsland` attaches on it. `static` never runs: it means no
+ * JS even for a reactive component (VISION §18.5).
+ *
+ * @param {string} directive — `load`, `idle`, `visible`, `media` or `static`
+ * @param {string} [media]   — the query `client:media` waits on
+ * @param {Node}   target    — `visible` observes the next element after it
+ * @param {() => void} fn
+ * @returns {() => void}
+ */
+export function schedule(directive, media, target, fn) {
+  switch (directive) {
+    case 'static':
+      return () => {}
+
+    case 'load':
+      fn()
+      return () => {}
+
+    case 'idle': {
+      if (typeof requestIdleCallback === 'function') {
+        const id = requestIdleCallback(fn)
+        return () => cancelIdleCallback(id)
+      }
+      // Safari <17 has no requestIdleCallback; a timeout is later than idle
+      // would be, and never never.
+      const id = setTimeout(fn, 1)
+      return () => clearTimeout(id)
+    }
+
+    case 'visible': {
+      if (typeof IntersectionObserver !== 'function') { fn(); return () => {} }
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) { io.disconnect(); fn(); return }
+        }
+      })
+      // A comment cannot be observed, and with no element after the marker
+      // nothing ever becomes visible, so it runs rather than strand the subtree.
+      let el = target?.nextSibling
+      while (el && el.nodeType !== 1) el = el.nextSibling
+      if (!el) { fn(); return () => {} }
+      io.observe(el)
+      return () => io.disconnect()
+    }
+
+    case 'media': {
+      if (!media || typeof matchMedia !== 'function') { fn(); return () => {} }
+      const mq = matchMedia(media)
+      if (mq.matches) { fn(); return () => {} }
+      const onChange = (e) => { if (e.matches) { mq.removeEventListener('change', onChange); fn() } }
+      mq.addEventListener('change', onChange)
+      return () => mq.removeEventListener('change', onChange)
+    }
+
+    default:
+      console.warn(`[Mesa] unknown client:${directive} — running it at once`)
+      fn()
+      return () => {}
+  }
+}
+
+/**
+ * A `client:*` component in a `hydratable` client compile (`FJS-D2174`): the
+ * server bounds its site, the page's hydrate leaves the range as it is, and
+ * the component claims it when its trigger fires. Until then a parent's
+ * pushes and `bind:` wait on the anchor, so the child starts from the
+ * parent's latest props. A mismatch then re-renders the range (`FJS-D2260`).
+ * Rendered fresh (nothing to adopt), it loads at once: a trigger guards
+ * server nodes, and there are none.
+ *
+ * @param {Comment} anchor
+ * @param {() => Function | Promise<Function>} load — the component, from its
+ *   own chunk when the compiler could split it off
+ * @param {object} props
+ * @param {{component: string, directive: string, media?: string}} meta
+ */
+export function hydIsland(anchor, load, props, meta) {
+  const owner = { _fn: null, _deps: new Set(), _cleanups: [], _children: [], _owner: _owner, _notify() {}, _run() {} }
+  if (_owner) _owner._children.push(owner)
+  const withContext = captureContext()
+  const seed = _hydSeed
+  const site = anchor.__hyd
+  if (site) {
+    anchor.__hyd = null
+    anchor.__claim = { page: site.page, id: site.inst.id + '.' + site.key }
+  }
+  const claimed = !!anchor.__claim
+  const wait = anchor.__island = { props, binds: [] }
+  let stopped = false
+
+  const mountIt = (Comp) => {
+    const comps = _compStack.length, ctxs = _contextStack.length
+    try {
+      Comp(anchor, wait.props)
+    } catch (e) {
+      if (!(e instanceof HydrationMismatch) || !site) throw e
+      _unwindComponents(comps, ctxs)
+      for (const c of owner._children.splice(0)) _disposeNode(c, true)
+      anchor.__claim = null
+      _takeRange(site.open, site.close)
+      _hydWarn({ dev: e.dev || site.opts?.dev }, `${e.message}; re-rendered the client:${meta.directive} <${meta.component}>`)
+      _fresh(() => Comp(anchor, wait.props))
+    }
+    registerComponentAnchor(anchor)
+    for (const [name, set] of wait.binds) bindProp(anchor, name, set)
+  }
+  const run = (Comp) => {
+    if (stopped || !anchor.isConnected) return
+    anchor.__island = null
+    const prevOwner = _owner, prevListener = _listener, prevSeed = _hydSeed
+    _owner = owner
+    _listener = null
+    _hydSeed = seed
+    try {
+      withContext(() => mountIt(Comp))
+    } finally {
+      _owner = prevOwner
+      _listener = prevListener
+      _hydSeed = prevSeed
+    }
+  }
+  const attach = () => {
+    if (stopped) return
+    Promise.resolve(load()).then(run, (e) => {
+      console.error(`[Mesa] client:${meta.directive} <${meta.component}> did not load: ${e?.message ?? e}`)
+    })
+  }
+
+  const cancel = claimed ? schedule(meta.directive, meta.media, site?.open ?? anchor, attach) : (attach(), null)
+  owner._cleanups.push(() => { stopped = true; cancel?.() })
+}
+
+/** `pushProps` for a `client:*` child under the flag: held until it attaches. */
+export function islandPush(anchor, newProps) {
+  const wait = anchor.__island
+  if (wait && newProps) wait.props = { ...wait.props, ...newProps }
+  else pushProps(anchor, newProps)
+}
+
+/** `bindProp` for a `client:*` child under the flag: held until it attaches. */
+export function islandBind(anchor, name, setParent) {
+  const wait = anchor.__island
+  if (wait) wait.binds.push([name, setParent])
+  else bindProp(anchor, name, setParent)
+}
+
 
 /**
  * Store a value in a signal. The value is stored as-is — including functions.
@@ -6440,7 +6966,7 @@ export function postUpdate(tracked, setter, delta) {
 
 export function child(node, _isText) { return node.firstChild }
 export function sibling(node)        { return node.nextSibling }
-export function pop(_node)           {}   // no-op client-side; SSR hydration uses this
+export function pop(_node)           {}   // no-op: hydration adopts by key (`claim`), not by this cursor
 
 // ── template() factory ────────────────────────────────────────────────────────
 

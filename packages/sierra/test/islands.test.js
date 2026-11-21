@@ -16,7 +16,7 @@ import { dirname, join } from 'path'
 import { fileURLToPath } from 'url'
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 
-import { islandEntrySource, injectIslandScript, injectIntoPages, relativeApiCalls, buildIslandBundle } from '../src/build/island-bundle.js'
+import { islandEntrySource, injectIslandScript, injectIntoPages, islandPageSources, relativeApiCalls, buildIslandBundle } from '../src/build/island-bundle.js'
 import { build } from 'vite'
 import { prerenderRoutes, islandModule } from '../src/build/prerender.js'
 import { tmpDir } from './tmp.js'
@@ -138,7 +138,7 @@ describe('injectIntoPages', () => {
       ['index.html', new Set(['Counter'])],
       ['plain/index.html', new Set()],
     ])
-    const touched = await injectIntoPages(dir, pages, '/assets/i.js')
+    const touched = await injectIntoPages(dir, islandPageSources(pages, '/assets/i.js'))
 
     expect(touched).toEqual(['index.html'])
     // The whole point of islands: a page with no interactive component ships
@@ -523,6 +523,75 @@ describe('island loader', () => {
 
     expect(win.document.body.innerHTML).toContain('live:live')
     expect(win.document.body.innerHTML).not.toContain('live:frozen')
+  })
+
+  // ── A click before the mount (FJS-4428) ─────────────────────────────────────
+  //
+  // The prerendered button is on screen before its chunk is; a click in that gap
+  // reached markup with no handler, and the visitor's first press did nothing.
+
+  /** A component rendering `html`, counting clicks on its first element. */
+  const clickable = (html, counter) => (anchor) => {
+    const t = win.document.createElement('template')
+    t.innerHTML = html
+    const el = t.content.firstElementChild
+    el.addEventListener('click', () => counter.n++)
+    anchor.before(el)
+  }
+
+  /** A lazy entry that resolves when the test says so. */
+  const held = (Component) => {
+    const entry = () => { entry.requested = true; return new Promise((r) => { entry.release = () => r({ default: Component }) }) }
+    return entry
+  }
+
+  const click = (el) => el.dispatchEvent(new win.MouseEvent('click', { bubbles: true, cancelable: true }))
+  const settle = () => new Promise((r) => setTimeout(r, 20))
+
+  test('a click before an idle island mounts wakes it and lands once on the live element', async () => {
+    const button = '<button type="button"><svg><circle></circle></svg></button>'
+    win.document.body.innerHTML = `<header>${marker({ component: 'S', directive: 'idle' }, button)}</header>`
+    const counter = { n: 0 }
+    const entry = held(clickable(button, counter))
+
+    loader.hydrateIslands({ S: entry }, { root: win.document.body })
+    // On the icon, as a finger lands; twice, as a visitor does when nothing happens.
+    click(win.document.querySelector('circle'))
+    click(win.document.querySelector('circle'))
+    expect(entry.requested).toBe(true)
+
+    entry.release()
+    await settle()
+    expect(counter.n).toBe(1)
+  })
+
+  test('a caught click whose element is not there after the mount is dropped, with a warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    win.document.body.innerHTML = marker({ component: 'S', directive: 'idle' }, '<button type="button">x</button>')
+    const counter = { n: 0 }
+    const entry = held(clickable('<div>other</div>', counter))
+
+    loader.hydrateIslands({ S: entry }, { root: win.document.body })
+    click(win.document.querySelector('button'))
+    entry.release()
+    await settle()
+
+    expect(counter.n).toBe(0)
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/<S>.*click.*dropped/s)
+    warn.mockRestore()
+  })
+
+  test('a click on a link before the mount is left to the browser, not replayed', async () => {
+    win.document.body.innerHTML = marker({ component: 'S', directive: 'idle' }, '<a href="#there">go</a>')
+    const counter = { n: 0 }
+    const entry = held(clickable('<a href="#there">go</a>', counter))
+
+    loader.hydrateIslands({ S: entry }, { root: win.document.body })
+    click(win.document.querySelector('a'))
+    entry.release()
+    await settle()
+
+    expect(counter.n).toBe(0)
   })
 
   test('a chunk that fails to load leaves the island as prerendered, loudly', async () => {

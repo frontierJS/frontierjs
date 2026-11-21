@@ -256,11 +256,25 @@ export function authClaimSites(schema) {
       if (a.kind === 'allow' || a.kind === 'deny' || a.kind === 'scope')
         walk(a.expr, { model: model.name, kind: a.kind, op: a.operation ?? a.name ?? null, field: null })
     for (const f of model.fields ?? [])
-      for (const a of f.attributes ?? [])
+      for (const a of f.attributes ?? []) {
         if (a.kind === 'fieldAllow')
           walk(a.expr, { model: model.name, kind: 'fieldAllow', op: a.operation ?? null, field: f.name })
+        // A generated default stamps the tenancy claim, which the app named in
+        // its `tenancy { }` block rather than here.
+        const claim = stampedClaim(a)
+        if (claim)
+          sites.push({ name: claim, model: model.name, kind: a.kind, op: null, field: f.name })
+      }
   }
   return sites
+}
+
+// The claim a hand-written `@default(auth().x)`, `@createdBy(auth().x)` or
+// `@updatedBy(auth().x)` stamps. A bare `auth()` or a bare stamp names none.
+function stampedClaim(a) {
+  if (a.kind === 'createdBy' || a.kind === 'updatedBy') return a.explicit ? a.authField : null
+  if (a.kind !== 'default' || a.generated) return null
+  return a.value?.kind === 'call' && a.value.fn === 'auth' ? (a.value.field ?? null) : null
 }
 
 // Every `auth().x` a schema names, for the one-line notice an inactive set owes.
@@ -1271,6 +1285,11 @@ export function checkFieldPolicies(schema, relationMap, claims = null) {
   for (const model of schema.models ?? []) {
     for (const field of model.fields ?? []) {
       for (const attr of field.attributes ?? []) {
+        // A misspelled default or stamp writes NULL: a required column then
+        // refuses every create naming the column, an optional one stays empty.
+        const claim = stampedClaim(attr)
+        if (claim)
+          checkExpr(model, { type: 'auth', field: claim }, relationMap, `@${attr.kind} on ${model.name}.${field.name}`, claims, schema)
         if (attr.kind !== 'fieldAllow') continue
         const ops = attr.operations?.length === 1 ? attr.operations[0] : 'all'
         checkExpr(model, attr.expr, relationMap, `@allow(${ops}, …) on ${model.name}.${field.name}`, claims, schema)

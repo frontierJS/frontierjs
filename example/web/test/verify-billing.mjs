@@ -40,7 +40,9 @@ import { advancePeriod, settleInvoice, voidInvoice, startSubscription, DUNNING_D
 import { fireCommitment } from '@frontierjs/junction/commitments'
 import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 

@@ -90,6 +90,16 @@ describe('an unknown argument is refused, not dropped', () => {
     expect(await db.note.count()).toBe(4)
   })
 
+  it('upsertMany with update: [] counts the rows it inserted, never the taken ones it skipped', async () => {
+    const db = await seeded()
+    expect((await db.note.upsertMany({ data: [{ id: 1, body: 'again' }], conflictTarget: ['id'], update: [] })).count).toBe(0)
+    expect((await db.note.upsertMany({ data: [{ id: 1, body: 'again' }, { id: 9, body: 'new' }], conflictTarget: ['id'], update: [] })).count).toBe(1)
+    // An audience asking for rows takes the RETURNING form, a second path that can skip.
+    ;(db as never as { $tapEvents(f: (e: unknown) => void): void }).$tapEvents(() => {})
+    expect((await db.note.upsertMany({ data: [{ id: 2, body: 'again' }, { id: 10, body: 'new' }], conflictTarget: ['id'], update: [], announce: 'rows' })).count).toBe(1)
+    expect(await db.note.count()).toBe(5)
+  })
+
   it('a named aggregate is a key the caller coins and is still accepted', async () => {
     const db = await seeded()
     const out: any = await db.note.aggregate({ _total: { count: true } } as any)

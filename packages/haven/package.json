@@ -67,6 +67,7 @@
     "frames": "bun web/test/frames.mjs",
     "ledger": "bun scripts/ledger.mjs",
     "townhall": "bun scripts/townhall.mjs",
+    "quarter": "bun scripts/quarter.mjs",
     "agents": "bun agents/agents.js",
     "verify:explore": "bun web/test/verify-explore.mjs",
     "verify:browser": "bun web/test/verify-browser.mjs",

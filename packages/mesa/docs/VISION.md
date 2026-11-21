@@ -2779,20 +2779,19 @@ at module load time.
 > code on the server: `$.onMount` ran once per render against a `window` that outlived the
 > request, and path watches built signals nothing disposed.
 
-> **RULE 20** — There is no hydration. A server render is HTML and nothing else: the
-> comment anchors compiled output relies on are stripped from it, no reactive graph is
-> serialized, and no client adopts server-rendered DOM. What ships is the island seam
-> (§18.6) — `island()` in the runtime wraps a `client:*` call site in comment markers on
-> the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
-> `mount()` into it. Async data is the loader's to fetch again.
+> **RULE 20** — Hydration is opt-in, behind `hydratable: true` on the compile and the
+> render (`FJS-D2286`). Unflagged, a server render is HTML and nothing else: compiled
+> anchors are stripped, nothing reactive is serialized, and the island seam (§18.6)
+> ships — `island()` wraps a `client:*` call site in comment markers and a loader
+> outside Mesa (Sierra's) clears the range and does a fresh `mount()`.
 >
-> That is today's behavior, not the destination: hydration is the planned replacement
-> for islands-replace (`FJS-D2172`). The client will adopt server DOM whole-page first,
-> through markers keyed by reactive edge (`FJS-D2173`); `client:*` stays as the timing
-> of that adoption (`FJS-D2174`); settled `{#await}` values ship in the page
-> (`FJS-D2175`); the string mode writes the anchors behind a flag (`FJS-D2176`); and
-> adoption fails closed when the DOM and the compiled walk disagree (`FJS-D2177`).
-> Until that lands, everything above holds. The plan is `IDEAS/hydration.md`.
+> Flagged, the string mode writes a marker per live binding keyed by source offset
+> (`FJS-D2173`, `FJS-D2176`), settled `{#await}` and `$async` values ship in the page
+> (`FJS-D2175`), and `hydrate()` adopts the whole page (`FJS-D2172`); a `client:*`
+> child keeps its server nodes and attaches when its directive fires (`FJS-D2174`).
+> A disagreement between the DOM and the compiled walk re-renders the smallest
+> enclosing block (`FJS-D2260`), and a tree the string mode cannot lower is refused
+> (`FJS-D2177`). What it does not cover yet is `STATIC_RENDERING.md` § Status.
 
 ### 19.4 `renderComponent` / `renderFile` — Source-In Process
 

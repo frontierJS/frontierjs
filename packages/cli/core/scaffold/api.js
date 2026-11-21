@@ -302,7 +302,6 @@ export function makeApiAccessTest() {
 // Each refusal sits beside a caller who IS allowed the same thing. A schema that
 // refused everybody would pass every refusal on its own.
 
-/// <reference path="../../db/schema.d.ts" />
 import { afterAll, describe, expect, test } from 'bun:test'
 import { randomBytes } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -327,9 +326,9 @@ afterAll(() => env.close())
 // copy, and each fresh copy restarts the sequence that keeps emails unique.
 const users = env.factories.user.asSystem()
 
-// The reference at the top is what types these: db/schema.d.ts registers the
-// schema's client, and createTestEnv answers it. \`bun run typecheck\` writes
-// the file first, so a fresh clone has it.
+// db/schema.d.ts is what types these: it registers the schema's client, and
+// createTestEnv answers it. \`bun run typecheck\` writes the file first, so a
+// fresh clone has it.
 const system   = env.system
 const actingAs = (principal: unknown) => env.actingAs(principal)
 

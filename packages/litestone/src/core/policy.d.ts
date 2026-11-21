@@ -7,7 +7,13 @@ export function buildClaimSet(schema?: any, declared?: any): {
     has: (n: any) => boolean;
     list: () => any[];
 };
-export function authClaimSites(schema?: any): any[];
+export function authClaimSites(schema?: any): {
+    name: any;
+    model: any;
+    kind: any;
+    op: any;
+    field: any;
+}[];
 export function authClaimsUsed(schema?: any): Set<any>;
 export function compileDerived(model?: any, fieldName?: any, node?: any, fromOf?: () => any): any;
 export function compileFromWhere(target?: any, label?: any, node?: any, schema?: any, owner?: any): {

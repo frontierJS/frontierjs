@@ -705,6 +705,15 @@ async function compileTreeOnTarget(rootPath, opts, source) {
   let tree = await compileTree(rootPath, visited, opts, source)
   if (opts.compileOptions?.target === 'server' && tree.unlowered.length) {
     const unlowered = tree.unlowered
+    // The DOM path writes no hydration markers, so a fallen-back page would
+    // reach the client as one whose every lookup misses (FJS-D2177).
+    if (opts.compileOptions.hydratable) {
+      throw new Error(
+        '[Mesa renderComponent] hydratable: the string mode refused ' +
+        unlowered.map((u) => `${u.file} (${u.refused})`).join('; ') +
+        ', and the DOM path it would fall back to writes no markers to adopt. Lower the file, or drop hydratable.'
+      )
+    }
     visited = new Map()
     // The first pass reported every compile problem and every dependency.
     tree = await compileTree(rootPath, visited, { ...opts, compileOptions: { ...opts.compileOptions, target: undefined }, problems: undefined, deps: undefined }, source)
@@ -794,7 +803,7 @@ async function treeIsCurrent(entry) {
  * Execute a compiled component in the Mesa runtime and return its HTML.
  * Also extracts named module exports (e.g. `export const subject`).
  */
-async function executeComponent(mod, props, { label, sources, mode } = {}) {
+async function executeComponent(mod, props, { label, sources, mode, hydratable } = {}) {
   const fn  = mod.default
 
   if (typeof fn !== 'function') {
@@ -807,9 +816,9 @@ async function executeComponent(mod, props, { label, sources, mode } = {}) {
   // noticing — nothing exercised it. Delegating also picks up root disposal,
   // which this copy never had: rendering N pages left N live effect sets
   // subscribed to any module-scope signal they read.
-  let html, head
+  let html, head, state
   try {
-    ({ html, head } = await renderToParts(fn, props, mode === 'server' ? { label, target: 'server' } : { label }))
+    ({ html, head, state } = await renderToParts(fn, props, mode === 'server' ? { label, target: 'server', ...(hydratable ? { hydratable } : {}) } : { label }))
   } catch (err) {
     throw attributeToSource(err, sources)
   }
@@ -821,7 +830,7 @@ async function executeComponent(mod, props, { label, sources, mode } = {}) {
     if (key !== 'default') namedExports[key] = mod[key]
   }
 
-  return { html, head, namedExports }
+  return { html, head, namedExports, ...(state ? { state } : {}) }
 }
 
 // ── Email document wrapper ────────────────────────────────────────────────────
@@ -1034,6 +1043,14 @@ async function generateUnoCSS(html, unoConfig) {
  *                                             in the output. Off by default: RULE 26
  *                                             strips `client:*` unless a meta-framework
  *                                             asks for markers. See runtime.js `island()`.
+ * @param {string}  [options.label] — what to call this render in a failure message and
+ *                                     a `hydratable` store warning: a page's path, where
+ *                                     every page renders one synthetic file. Default: the file's name.
+ * @param {boolean} [options.hydratable=false] — Write the markers a client adopts the
+ *                                             server's DOM by (`FJS-D2286`), on every
+ *                                             module in the tree as `islands` is. Off,
+ *                                             the output is byte-identical to a render
+ *                                             that never heard of it (`FJS-D2176`).
  * @param {string}  [options.tmpDir]        — Directory for the temp modules the
  *                                             renderer compiles to. Defaults to
  *                                             Mesa's own package root, which is
@@ -1094,6 +1111,9 @@ async function generateUnoCSS(html, unoConfig) {
  *                           flattened — the build-time view of what the markers
  *                           in `.html` refer to, which is what a loader needs to
  *                           map a component name onto a module to import.
+ *     .state    {object|undefined} — a `hydratable` render's settled `{#await}`
+ *                           values by `'<instance id> <binding key>'`, raw: the
+ *                           caller serializes them for `hydrate(..., { state })`.
  *
  *   target js:
  *     .modules  {Map<string,string>} — Map<originalPath, compiledJS>
@@ -1109,6 +1129,8 @@ export async function renderComponent(source, options = {}) {
     unocss               = null,
     compileOptions       = {},
     islands              = false,
+    hydratable           = false,
+    label,
     tmpDir               = null,
     alias                = null,
     transformSource      = null,
@@ -1133,7 +1155,7 @@ export async function renderComponent(source, options = {}) {
   // back by itself; `compileOptions: { target: undefined }` asks for the DOM
   // path outright. `js` hands its modules to a caller that may mount them, so
   // it keeps the DOM compile.
-  const _compileOptions = { islands, ...(target === 'js' ? {} : { target: 'server' }), ...compileOptions }
+  const _compileOptions = { islands, ...(hydratable ? { hydratable } : {}), ...(target === 'js' ? {} : { target: 'server' }), ...compileOptions }
 
   // Resolve once per call and create it if the caller named a directory that
   // does not exist yet — a build pointing at `outDir/.mesa-tmp` should not have
@@ -1227,7 +1249,7 @@ export async function renderComponent(source, options = {}) {
   treeStyles  = [...(entry.styles ?? [])]
 
   // 2. Execute the component
-  const rendered = await executeComponent(entry.mod, data, { label: path.basename(rootPath), sources: entry.sources, mode: entry.mode })
+  const rendered = await executeComponent(entry.mod, data, { label: label ?? path.basename(rootPath), sources: entry.sources, mode: entry.mode, hydratable: !!_compileOptions.hydratable })
   html         = rendered.html
   preWrapHTML  = rendered.html   // saved for plain-text generation after try block
   namedExports = rendered.namedExports
@@ -1300,6 +1322,7 @@ export async function renderComponent(source, options = {}) {
     islands: treeIslands ?? [],
     styles:  treeStyles ?? [],
     unlowered: [...(entry.unlowered ?? [])],
+    ...(rendered.state ? { state: rendered.state } : {}),
   }
 
   if (target === 'email') {

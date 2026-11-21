@@ -1,0 +1,4 @@
+<script>
+  export let children
+</script>
+<div data-tag="shell">{@render children?.()}</div>

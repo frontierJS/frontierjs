@@ -432,7 +432,7 @@ export const CHECKS = {
   // and the call's options are a literal this rule can read to the end.
   'app-root': ({ root }) => {
     if (!isAppRoot(root)) return { skipped: 'not an app root' }
-    const files = scripts(root, 'api').filter(p => !/[\\/]test[\\/]/.test(relative(join(root, 'api'), p)))
+    const files = scripts(root, 'api').filter(p => !/(^|[\\/])test[\\/]/.test(relative(join(root, 'api'), p)))
     if (!files.some(p => /\.(service|job)\.[cm]?[jt]s$/.test(basename(p)))) return { skipped: 'no service or job file on disk' }
 
     const findings = []

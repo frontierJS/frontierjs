@@ -1,0 +1,47 @@
+<script>
+  // Quarter.mesa — the framework quarter, through the last house of the
+  // square (`IDEAS/haven.md` 9.2): a building per package, each wearing its
+  // name, laid out two by two on one screen. The cell below a building's door
+  // is where its wall is read; what the wall says is `PROJECT_STATE.md` as
+  // `scripts/quarter.mjs` baked it, and `components/Wall.mesa` says it. The
+  // picture this draws is `quarter.frame.txt`, which `scenes.test.js` pins.
+  import Scene from '@/components/Scene.mesa'
+  import Piece from '@/components/Piece.mesa'
+  import Door  from '@/components/Door.mesa'
+  import { frame } from '@/pieces/frame.js'
+  import { lamp }  from '@/pieces/lamp.js'
+  import { signpost } from '@/pieces/signpost.js'
+  import { building } from '@/pieces/quarter.js'
+  import { BUILDINGS } from '@/lib/hash/quarter.js'
+
+  // Two columns of two, the second row far enough down that the first's wall
+  // cell, and the wall's words under it, are clear of the second's roof.
+  const [litestone, junction, mesa, caravan] = BUILDINGS.map(building)
+
+  const PALETTE = {
+    f: { fg: '#6b7280' },
+    a: { fg: '#6b7280' },
+    b: { fg: '#b45309' },
+    c: { fg: '#7c3aed' },
+    d: { fg: '#92400e' },
+    w: { fg: '#a16207' },
+    s: { fg: '#e5e7eb' },
+    S: { fg: '#6b7280' },
+    y: { fg: ['#fde047', '#fbbf24', '#fef08a'], ms: 900, wave: true },
+    e: { fg: '#a16207' },
+    l: { fg: '#9ca3af' },
+  }
+</script>
+
+<Scene slug="quarter" palette={PALETTE} spawn={{ x: 46, y: 23 }}>
+  <Piece of={frame} />
+  <Door  x={46} y={25} to="/" />
+  <Piece of={signpost('v[square]')} x={52} y={22} />
+  <Piece of={litestone} x={8}  y={2} />
+  <Piece of={junction}  x={62} y={2} />
+  <Piece of={mesa}      x={8}  y={13} />
+  <Piece of={caravan}   x={62} y={13} />
+  <Piece of={lamp} x={46} y={9} />
+  <Piece of={lamp} x={46} y={19} />
+  <slot />
+</Scene>

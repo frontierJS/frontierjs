@@ -6974,7 +6974,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>
-  $setAuth(user: Record<string, unknown>): LitestoneClient
+  $setAuth(user: object | null): LitestoneClient
   $scopedBy(scope: Record<string, unknown>): LitestoneClient
 
   // Is this key filterable / sortable? Asked rather than copied — every

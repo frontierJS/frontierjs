@@ -1,0 +1,37 @@
+[
+  {
+    "pkg": "litestone",
+    "sign": "LITESTONE QUARRY",
+    "lines": [
+      "shipped — v1.1.9, which is also npm latest (checked 2026-10-08)."
+    ]
+  },
+  {
+    "pkg": "junction",
+    "sign": "JUNCTION CROSSROADS",
+    "lines": [
+      "Services + hook pipeline, HTTP and WebSocket transport, channels, the browser",
+      "client, and the batteries (mail, cache, scheduler, workers, webhooks, AI,",
+      "OpenAPI, manifest, devtools, health, the transactional outbox, the backfill).",
+      "File storage is not among them and is Litestone's (FJS-D260); junction's…"
+    ]
+  },
+  {
+    "pkg": "mesa",
+    "sign": "MESA WORKSHOP",
+    "lines": [
+      "Shipped. A .mesa component compiler and the signal runtime its output runs on,",
+      "a static/SSR renderer, a Vite plugin at the @frontierjs/mesa/vite subpath, and",
+      "a REPL. The version is package.json's. History is git; open defects are",
+      "../../ISSUES.md; the package map and its traps are CLAUDE.md."
+    ]
+  },
+  {
+    "pkg": "caravan",
+    "sign": "CARAVAN STABLES",
+    "lines": [
+      "@frontierjs/caravan v0.1.4 — a SQLite-backed job queue and cron scheduler,",
+      "exposed as a Junction plugin that attaches app.jobs."
+    ]
+  }
+]

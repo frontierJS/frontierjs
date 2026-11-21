@@ -112,6 +112,7 @@
     "test:installable": "node test/browser/installable.mjs",
     "test:push-worker": "node test/browser/push-worker.mjs",
     "test:connect-app": "bun test/browser/connect-app.mjs",
+    "test:hydrate": "node test/fixtures/hydrate-site/verify.mjs --build",
     "test:widgets": "cd test/fixtures/widget-site && node ../../../src/tools/cli.js widgets --config config/sierra.config.js && node test/verify.mjs",
     "test:watch": "vitest",
     "typecheck": "node ../../scripts/typecheck.mjs",

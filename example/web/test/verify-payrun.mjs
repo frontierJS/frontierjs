@@ -38,7 +38,9 @@ import { plainDateIn, addToDate }          from '@frontierjs/toolbelt/datetime'
 
 import { sweepPayroll }                from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 // Days, not instants (`FJS-D288`). UTC is the calendar every drive here runs

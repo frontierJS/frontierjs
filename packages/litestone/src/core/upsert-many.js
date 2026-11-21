@@ -315,14 +315,14 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
         // RETURNING on a logged model, so the entry names rows by their real id —
         // see createMany. ON CONFLICT DO NOTHING returns nothing for a skipped row.
         if (_usNeedRows) s += ` RETURNING *`
-        entry = { cols, updateCols, sql: s, stmt: writeDb.prepare(s) }
+        entry = { cols, updateCols, sql: s, stmt: writeDb.prepare(s), skips: !setPairs.length }
         stmts.set(key, entry)
         return entry
       }
 
       for (const [_i, row] of rows.entries()) {
         if (_usHidden[_i]) throw asBatchRowError(_usHidden[_i], _i, rows.length, row)
-        const { cols, updateCols, stmt } = stmtFor(Object.keys(row), _usMinted[_i])
+        const { cols, updateCols, stmt, skips } = stmtFor(Object.keys(row), _usMinted[_i])
         const _usSeal = sealInsertGuard(row)
         // The guard's params bind LAST, because `ON CONFLICT … WHERE` is the
         // tail of the statement — after the VALUES and after the seal's own
@@ -339,7 +339,7 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
               (_usUpd ? _usUpdated : _usCreated).push(written)
               ;(_usUpd ? _usUpdatedW : _usCreatedW).push(_usUpd ? Object.fromEntries(updateCols.map((/** @type {any} */ c) => [c, true])) : row)
             }
-            else if (_usSeal || _usGuardSql) _usWrote = false
+            else _usWrote = false
             // A later row repeating this key conflicts with the row just written.
             if (written) present.add(keyOf(row))
             // One refused row refuses the batch: the throw rolls the unit back.
@@ -347,17 +347,14 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
               checkPostUpdatePolicy(modelName, read(written, { mode: 'single', hydrateFrom: true }), ctx)
           } else {
             stmt.run(...args)
-            if (_usSeal || _usGuardSql) _usWrote = rowsChanged(writeDb) > 0
+            if (_usSeal || _usGuardSql || skips) _usWrote = rowsChanged(writeDb) > 0
           }
         } catch (e) { throw asBatchRowError(heldFor(asConstraintError(e, row), _usDeferred.get(_i)), _i, rows.length, row) }
-        // Named like a constraint failure rather than counted: a batch that
-        // reports writing a row it did not write is worse than one that stops,
-        // and `ON CONFLICT DO NOTHING` is the only other way to get here.
-        //
-        // A row the update GUARD skipped is the third way and is not a
-        // refusal: `updateMany` narrows its WHERE and counts what it moved, so
-        // this counts what it moved too. Which is also why the count has to be
-        // read from SQLite rather than assumed — the reason this branch exists.
+        // A row the statement did not write is a seal refusal, a taken key that
+        // `ON CONFLICT DO NOTHING` skipped, or a conflict the update GUARD
+        // passed over. Only the first refuses; the others go uncounted, as
+        // `updateMany` counts what it moved — so the count is read from
+        // SQLite on every path that can skip, never assumed.
         if (!_usWrote) {
           const refusal = sealRefusal(_usSeal?.parents, 'create')
           if (refusal) throw asBatchRowError(refusal, _i, rows.length, row)

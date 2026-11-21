@@ -50,12 +50,14 @@ import { parseLength } from '@frontierjs/toolbelt/units'
 import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { results, report } from './lib/report.mjs'
 import { requireServers, PORTS } from './lib/preflight.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
 const API = process.env.FRONTIER_API_URL ?? `http://localhost:${PORTS.api}`
 
 await requireServers([['api (bun run api)', `${API}/api/health`]])
 
 const { got, t } = results()
+seedShop()
 const sys = db.asSystem()
 
 // The middle of London, and the center every assertion here is about.

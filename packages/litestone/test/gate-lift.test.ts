@@ -277,7 +277,7 @@ describe('upsertMany grades its conflict half as an update (FJS-1700)', () => {
     const r  = await db.$setAuth(USER).setting.upsertMany({
       data: [{ key: 'k', value: 'x' }, { key: 'n', value: 'new' }], conflictTarget: ['key'], update: [],
     })
-    expect(r.count).toBeGreaterThanOrEqual(1)
+    expect(r.count).toBe(1)
     expect((await db.asSystem().setting.findFirst({ where: { key: 'k' } })).value).toBe('kept')
   })
 })

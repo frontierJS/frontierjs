@@ -27,7 +27,7 @@ import {
   rewriteExpr, rewriteTextResult, extractKeywords, eventAttribute, applyEventModifiers,
   unwrapExp, parseEachHeader, eachFrame, templateSource, componentAttributes, styleSource, classSource,
   bindSetter, elementBindTarget, snippetParam, parseRenderTag, constScope, constDeclaration, boundaryWatchSet,
-  withoutWatchedCalls, withAwaitParam, fieldRead, LOC_ATTR, locateThrown, locateReported,
+  withoutWatchedCalls, withAwaitParam, fieldRead, LOC_ATTR, locateThrown, locateReported, writtenOnce,
 } from './compiler.js'
 
 // ─── expressions ──────────────────────────────────────────────────────────────
@@ -234,6 +234,7 @@ function lowerComponent(ctx, n) {
     kind: 'component',
     name: n.name,
     call: accessor && accessor !== n.name ? accessor : n.name,
+    start: n.start,
     loc: ctx.posOf(n.start),
     props,
     spreads,
@@ -296,6 +297,7 @@ function lowerRender(ctx, n) {
   else { callee = `$$snippet_${r.name}`; guard = true }
   return {
     kind: 'render',
+    start: n.start,
     loc: ctx.posOf(n.start),
     callee: expr(ctx, r.name, callee),
     guard,
@@ -322,7 +324,7 @@ function lowerConst(ctx, n) {
 
 function lowerText(ctx, n) {
   const loc = ctx.posOf(n.start)
-  if (!n.value.includes('{')) return { kind: 'text', parts: [{ kind: 'static', value: n.value }], static: true }
+  if (!n.value.includes('{')) return { kind: 'text', start: n.start, parts: [{ kind: 'static', value: n.value }], static: true }
   // pathOnly is the PROSE rule (FJS-D213), the same switch the DOM builder reads.
   const pe = ctx.parseText(n.value, { pathOnly: ctx.config?.pathInterpolation === true })
   const parts = pe.parts.map((p) => {
@@ -330,7 +332,7 @@ function lowerText(ctx, n) {
     if (p.type === 'exp') return { kind: 'binding', expr: read(ctx, p.value), to: 'text' }
     return { kind: 'unlowered', what: 'js-text', loc, node: p }
   })
-  return { kind: 'text', parts, static: parts.every((p) => p.kind === 'static') }
+  return { kind: 'text', start: n.start, parts, static: parts.every((p) => p.kind === 'static') }
 }
 
 function lowerIf(ctx, n) {
@@ -340,6 +342,7 @@ function lowerIf(ctx, n) {
   })
   return {
     kind: 'if',
+    start: n.start,
     loc: ctx.posOf(n.start),
     branches,
     else: n.elsePart ? lowerChildren(ctx, n.elsePart) : null,
@@ -368,6 +371,7 @@ function lowerAwait(ctx, n) {
   }
   return {
     kind: 'await',
+    start: n.start,
     loc: ctx.posOf(n.start),
     value,
     pending: n.parts.main?.length ? lowerChildren(ctx, n.parts.main) : null,
@@ -402,6 +406,7 @@ function lowerEach(ctx, n) {
 
   return {
     kind: 'each',
+    start: n.start,
     loc: ctx.posOf(n.start),
     items,
     item: isDestructure ? { pattern: destructurePattern, names: patNames, fn: frame.patFn } : { name: itemName },
@@ -426,6 +431,7 @@ function lowerDynamicElement(ctx, n) {
   return {
     kind: 'dynamic-element',
     tag,
+    start: n.start,
     loc: ctx.posOf(n.start),
     ...lowered,
     ...stampOf(ctx, n),
@@ -537,6 +543,7 @@ function lowerNode(ctx, n) {
       return {
         kind: 'element',
         tag: n.name,
+        start: n.start,
         loc: ctx.posOf(n.start),
         ...lowerAttributes(ctx, n),
         ...stampOf(ctx, n),
@@ -611,7 +618,29 @@ function lowerChildren(ctx, body, block = true) {
     }
     closeConsts?.()
   }
+  textRuns(ctx, out)
   return out
+}
+
+/**
+ * The DOM builder drops comments and snippets from a body and joins the text
+ * either side into ONE Text node, so the server must key every piece of that
+ * run by the run's first offset or a binding in its second half is a key the
+ * client never asks for.
+ */
+function textRuns(ctx, out) {
+  let first = null
+  for (const ir of out) {
+    if (ir.kind === 'text') {
+      first ??= ir
+      ir.start = first.start
+      ir.live ??= false
+      if (ir.parts.some((p) => p.kind === 'binding' && !writtenOnce(p.expr.code, ctx.analysis?.opaqueValues))) first.live = true
+      continue
+    }
+    if (ir.kind === 'snippet' || (ir.kind === 'comment' && !ctx.config?.preserveComments)) continue
+    first = null
+  }
 }
 
 // ─── walking ──────────────────────────────────────────────────────────────────

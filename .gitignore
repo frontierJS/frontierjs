@@ -16,6 +16,10 @@ out/
 # re-include a file whose parent directory is excluded.
 !packages/*/src/build/
 !packages/*/src/build/**
+# …and a guide's build/ chapter is prose: Sierra's 7 build pages stayed out of
+# git while its README linked them, so the website build failed on any clone.
+!packages/*/docs/**/build/
+!packages/*/docs/**/build/**
 *.js.map
 *.d.ts.map
 # Sierra's build-time route table, written beside dev's routes.js so a build

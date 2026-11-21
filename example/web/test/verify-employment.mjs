@@ -47,7 +47,9 @@ import { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE }
   from '../../api/src/domain/payroll'
 import { sweepPayroll } from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 // Days, not instants (`FJS-D288`). `TZ` is what a drive gets to name, and UTC

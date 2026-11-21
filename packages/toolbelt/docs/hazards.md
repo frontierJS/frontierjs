@@ -379,3 +379,10 @@ The full hazard catalog for `@frontierjs/toolbelt`, moved out of `CLAUDE.md`. Th
   origin. The two numbers are the codec's too: a link past `SHARE_MAX` is
   refused with a sentence rather than copied broken, and an inflate past
   `SHARE_INFLATED_MAX` is null, since a 108 KB link inflates to 80 MB.
+- **A value a kit COMPUTES at module scope ships in every bundle that imports
+  the kit, used or not.** `"sideEffects": false` drops a whole unused module,
+  not one top-level call inside a module that is used: `inflect`'s
+  `SINGULAR_OF` kept the irregular table in a Sierra widget that imported only
+  `kebab` (`FJS-4494`, 299 bytes). Wrap the computation in a
+  `/* @__PURE__ */ (() => ...)()`; a mark on the outer call alone still keeps
+  its argument.

@@ -124,12 +124,11 @@ export function makePackageJson(spec) {
     // sees `@guarded`/`@secret` columns, the browser never does, and one file for
     // both would tell browser code a column exists that every response strips.
     //
-    // `--augment junction` is the half that crosses the wire — it writes the
-    // module augmentation that types `client.service('leads')` as the row this
-    // schema declares, which is otherwise the one place the seed stops
-    // propagating (FJS-018). Only on the web file: the augmentation names
-    // @frontierjs/junction/client, which is the browser's module.
-    const dbTypes = ['litestone types --schema db/schema.lite --audience system --out db/schema.d.ts']
+    // `--augment junction` registers each file with the junction module its
+    // audience reads: the system file types `app.db` and `$.db` (FJS-D877), the
+    // web file types `client.service('leads')` as the row this schema declares
+    // (FJS-018). Without it on the system file both clients answer `{}` rows.
+    const dbTypes = ['litestone types --schema db/schema.lite --audience system --augment junction --out db/schema.d.ts']
     if (useWeb) dbTypes.push('litestone types --schema db/schema.lite --audience client --augment junction --out web/src/lib/db.d.ts')
     scripts['db:types'] = dbTypes.join(' && ')
   }

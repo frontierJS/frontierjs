@@ -58,6 +58,7 @@ export const SCENES = [
   { name: 'Market', slug: 'market', path: '/market/' },
   { name: 'Lodge',  slug: 'lodge',  path: '/lodge/' },
   { name: 'PostOffice', slug: 'postoffice', path: '/postoffice/' },
+  { name: 'Quarter', slug: 'quarter', path: '/quarter/' },
 ]
 
 let loader = null

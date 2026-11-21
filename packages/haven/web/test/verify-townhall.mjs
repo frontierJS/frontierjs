@@ -32,10 +32,12 @@ import { terminal, until } from './terminal.mjs'
 import { stageOf } from './stage.mjs'
 import { arrival } from '../src/lib/scene/stage.js'
 import { nameOf } from '../src/lib/hash/townhall.js'
+import WALLS from '../src/lib/hash/quarter.data.json'
 
 const WEB  = join(import.meta.dir, '..')
 const hall = await stageOf('TownHall')
 const square = await stageOf('Square')
+const quarter = await stageOf('Quarter')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 let failed = 0
@@ -99,13 +101,13 @@ async function open(member, home) {
 }
 
 /** Walks `term`'s figure from `from` to `to`, a step at a time under the room's move rate. */
-async function walk(term, from, to, stage = hall) {
+async function walk(term, from, to, stage = hall, gap = 120) {
   if (!term.screen().includes('-- NORMAL')) { term.shell.stdin.write('\x1b'); await sleep(80) }
   const cells = route(from, to, stage)
   for (let i = 1; i < cells.length; i++) {
     const a = cells[i - 1], b = cells[i]
     term.shell.stdin.write(KEY[`${b.x - a.x},${b.y - a.y}`])
-    await sleep(120)
+    await sleep(gap)
   }
   return cells.length > 1 && cells.at(-1).x === to.x && cells.at(-1).y === to.y
 }
@@ -162,6 +164,45 @@ check(await walk(s, left, { x: top.x, y: 1 }), 'Sam walks up the hall past the b
 check(await until(() => s.screen().includes(`${near.idea.padEnd(6)}+1`)), `the board of the most wanted carries ${near.idea} at +1`, s.screen())
 
 check(await quit(s) === 0 && await quit(a) === 0, 'both terminals exit 0 on Ctrl+C')
+
+// ─── the framework quarter ────────────────────────────────────────────
+
+// A wall is the baked `PROJECT_STATE.md` headline (`Wall.mesa`), read on the
+// cell below the building's door and gone one step off it.
+const qdoor  = square.doors.find((d) => d.to === '/quarter/')
+const qback  = quarter.doors.find((d) => d.to === '/')
+const qin    = arrival(quarter, { from: '/', x: qdoor.x, y: qdoor.y })
+const litewall = quarter.marks.find((m) => m.piece?.pkg === 'litestone').spot('wall')
+const lite   = WALLS.find((w) => w.pkg === 'litestone')
+const mesawall = quarter.marks.find((m) => m.piece?.pkg === 'mesa').spot('wall')
+const mesa   = WALLS.find((w) => w.pkg === 'mesa')
+const aside  = { x: litewall.x, y: litewall.y + 3 }
+
+// The square is 224 cells wide and a move past 10 a second is dropped by the
+// server and the terminal takes about half a second a step across it, so the
+// long walk is paced under that and its arrival awaited before the next key: a
+// figure still short of the door would take every later key in the wrong room.
+const SLOW = 220
+const q = terminal(API, sam.token, square, { HOME: homes[0] })
+await until(() => q.screen().includes('j/k moves, Enter opens'))
+q.shell.stdin.write('\r')
+await until(() => q.screen().includes('The square · '))
+await walk(q, square.spawn, qdoor, square, SLOW)
+check(await until(() => q.screen().includes('The framework quarter'), 240_000), "Sam walks from the square through the FRAMEWORK house's door into the quarter", q.screen())
+check(!q.screen().includes('PROJECT_STATE.md'), 'at the door no wall is read', q.screen())
+
+check(await walk(q, qin, litewall, quarter), 'Sam walks to the cell below the Litestone quarry\'s door')
+check(await until(() => q.screen().includes(`${lite.sign} · packages/litestone/PROJECT_STATE.md`) && q.screen().includes(lite.lines[0])),
+  "there the building's sign, its PROJECT_STATE.md path and the baked headline are on the screen", q.screen())
+
+check(await walk(q, litewall, aside, quarter) && await until(() => !q.screen().includes('PROJECT_STATE.md')), 'three cells off, the wall is gone', q.screen())
+
+check(await walk(q, aside, mesawall, quarter) && await until(() => q.screen().includes(`${mesa.sign} · packages/mesa/PROJECT_STATE.md`) && q.screen().includes(mesa.lines[0])),
+  "the Mesa workshop's wall says its own words, not the quarry's", q.screen())
+check(!q.screen().includes(lite.lines[0]), "and the quarry's are not left on the screen", q.screen())
+
+check(await walk(q, mesawall, qback, quarter) && await until(() => q.screen().includes('The square · '), 30_000), 'the door back is the square again', q.screen())
+check(await quit(q) === 0, 'the quarter terminal exits 0 on Ctrl+C')
 
 // ─── done ─────────────────────────────────────────────────────────────
 

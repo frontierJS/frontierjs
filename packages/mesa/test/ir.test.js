@@ -13,9 +13,9 @@ const ir = async (source, filename) => (await compile(source, { ...quiet, filena
 
 const stat = (value) => ({ kind: 'static', value })
 const el = (tag, loc, children, extra = {}) => ({
-  kind: 'element', tag, loc, attrs: [], handlers: [], directives: [], styles: [], classes: [], ref: null, attachments: [], binds: [], children, selfClosing: false, ...extra,
+  kind: 'element', tag, start: expect.any(Number), loc, attrs: [], handlers: [], directives: [], styles: [], classes: [], ref: null, attachments: [], binds: [], children, selfClosing: false, ...extra,
 })
-const text = (...parts) => ({ kind: 'text', parts, static: parts.every((p) => p.kind === 'static') })
+const text = (...parts) => ({ kind: 'text', start: expect.any(Number), live: expect.any(Boolean), parts, static: parts.every((p) => p.kind === 'static') })
 
 const COUNTER = `<script>
   let count = 0
@@ -63,6 +63,7 @@ describe('lower()', () => {
           }),
           {
             kind: 'if',
+            start: expect.any(Number),
             loc: 'Counter.mesa:10:3',
             branches: [{
               test: { raw: 'count > 2', code: '$$runtime.get($$sig_count) > 2', reads: ['count'] },
@@ -72,6 +73,8 @@ describe('lower()', () => {
           },
           el('ul', 'Counter.mesa:15:3', [{
             kind: 'each',
+        start: expect.any(Number),
+            start: expect.any(Number),
             loc: 'Counter.mesa:16:5',
             items: { raw: 'items', code: '$$runtime.get($$sig_items)', reads: ['items'] },
             item: { name: 'it' },
@@ -244,6 +247,7 @@ describe('lower()', () => {
     expect(tree.children).toEqual([
       el('ul', 'E.mesa:4:1', [{
         kind: 'each',
+        start: expect.any(Number),
         loc: 'E.mesa:5:3',
         items: { raw: 'rows', code: '$$runtime.get($$sig_rows)', reads: ['rows'] },
         item: { pattern: '[a, b]', names: ['a', 'b'], fn: '$$pat1' },

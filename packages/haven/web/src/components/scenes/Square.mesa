@@ -59,6 +59,7 @@ rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
   const workshop   = house('WORKSHOP')
   const townhall   = house('TOWN HALL')
   const postOffice = house('POST OFFICE')
+  const quarter    = house('FRAMEWORK')
 
   const houseB = piece('house', String.raw`
    ~'
@@ -175,7 +176,8 @@ rrrrrrrrrrrrrr
   <Door  x={140} y={10} to="/townhall/" />
   <Piece of={postOffice} x={160} y={2} />
   <Door  x={170} y={10} to="/postoffice/" />
-  <Piece of={houseC} x={188} y={2} />
+  <Piece of={quarter} x={188} y={2} />
+  <Door  x={198} y={10} to="/quarter/" />
   <Piece of={tree} x={124} y={13} />
   <Piece of={tree} x={186} y={12} />
   <Piece of={lamp} x={138} y={14} />

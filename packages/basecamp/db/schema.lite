@@ -2138,6 +2138,7 @@ model App {
   @@unique([environmentId, slug])
   @@index([workspaceId])
   @@index([environmentId])
+  @@index([projectId])
   @@index([status])
   @@index([blueprintId])
   @@index([backupDestinationId])

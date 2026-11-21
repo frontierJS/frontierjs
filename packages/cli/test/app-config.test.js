@@ -30,7 +30,8 @@ describe('the config is a dependency, not a copy', () => {
     const ts = JSON.parse(appTsconfig({ useWeb: true }))
     expect(ts.extends).toBe('@frontierjs/config/tsconfig')
     expect(ts.compilerOptions.paths['@/*']).toEqual(['./web/src/*'])
-    expect(ts.include).toEqual(['api/**/*', 'web/**/*'])
+    // db/schema.d.ts registers the schema's client for app.db and $.db (FJS-4507).
+    expect(ts.include).toEqual(['api/**/*', 'db/schema.d.ts', 'web/**/*'])
     // Everything about HOW it is checked lives in the dependency.
     expect(ts.compilerOptions.strict).toBeUndefined()
     expect(ts.compilerOptions.target).toBeUndefined()
@@ -38,7 +39,7 @@ describe('the config is a dependency, not a copy', () => {
 
   test('an api-only app gets no web paths it does not have', () => {
     const ts = JSON.parse(appTsconfig({ useWeb: false }))
-    expect(ts.include).toEqual(['api/**/*'])
+    expect(ts.include).toEqual(['api/**/*', 'db/schema.d.ts'])
     expect(ts.compilerOptions).toBeUndefined()
   })
 
@@ -54,13 +55,13 @@ describe('the config is a dependency, not a copy', () => {
     expect(ts.compilerOptions.paths['@/*'])
       .toEqual(['./web/src/*', './site/src/*', './widgets/src/*', './extension/src/*'])
     expect(ts.include)
-      .toEqual(['api/**/*', 'web/**/*', 'site/**/*', 'widgets/**/*', 'extension/**/*'])
+      .toEqual(['api/**/*', 'db/schema.d.ts', 'web/**/*', 'site/**/*', 'widgets/**/*', 'extension/**/*'])
   })
 
   test('a site-only app maps @ to site/, never to a web/ it does not have', () => {
     const ts = JSON.parse(appTsconfig({ useWeb: false, useSite: true }))
     expect(ts.compilerOptions.paths['@/*']).toEqual(['./site/src/*'])
-    expect(ts.include).toEqual(['api/**/*', 'site/**/*'])
+    expect(ts.include).toEqual(['api/**/*', 'db/schema.d.ts', 'site/**/*'])
   })
 
   test('a widgets-only app with no api includes only widgets', () => {

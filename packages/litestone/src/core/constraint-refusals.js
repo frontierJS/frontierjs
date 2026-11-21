@@ -506,7 +506,8 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // Inside the unit, once the row is written: what the caller is owed, or
   // null. A parent still hidden answers before the create rule is asked
   // again, as SQLite's refusal of a missing one would; with every parent
-  // readable, the rule is graded on them for real (FJS-1712).
+  // readable, the answer is the rule graded on them before the write
+  // (FJS-1712, FJS-4521).
   async function settleDeferred(deferred) {
     const { refusal, denied, row, chains } = deferred
     const still = []
@@ -527,7 +528,10 @@ export function makeConstraintRefusals(shape, ctx, deps) {
       Object.defineProperty(out, 'hidden', { value: new Set(still.map(s => s.relation)), enumerable: false })
       return out
     }
-    return ctx.hasPolicies ? checkCreate(row, null, chains) ?? null : null
+    if (!ctx.hasPolicies) return null
+    const prior = refusal?.prior
+    if (!prior) return checkCreate(row, null, chains) ?? null
+    return prior.error ?? prior.parent ?? null
   }
 
   // checkCreatePolicy, with one answer for a parent the create names. Under row
@@ -538,7 +542,19 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // validation and ahead of earlier rows of a batch, a payload that also fails
   // validation told a missing parent from a hidden one (FJS-1704). `hidden` is
   // hiddenParents' refusal for the row, whose parents the policy reads as missing.
+  //
+  // A row with a hidden parent is also graded with that parent read, and the
+  // verdict kept on the refusal as `prior` for settleDeferred. Graded again
+  // once the row has landed, a rule asking who may read the parent, or who
+  // its members are, counts the row itself, and a caller joins a private room
+  // by creating the membership (FJS-4521).
   function checkCreate(row, hidden, chains = null) {
+    if (hidden?.hidden && !hidden.prior) {
+      let prior
+      try { prior = { parent: checkCreate(row, null, chains) } }
+      catch (error) { prior = { error } }
+      Object.defineProperty(hidden, 'prior', { value: prior, enumerable: false })
+    }
     const v = checkCreatePolicy(modelName, row, ctx, hidden?.hidden, chains)
     if (!v) return
     const p = _parentKeys.find(k => k.relation === v.parent)

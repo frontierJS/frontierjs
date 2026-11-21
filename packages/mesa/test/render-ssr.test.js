@@ -616,6 +616,12 @@ describe('renderToHTML — target: server (FJS-D1634)', () => {
     expect(r.unlowered[0].refused).toMatch(/<mesa:mounted>/)
   })
 
+  it('a hydratable render refuses a tree holding a refused file, naming it, instead of falling back (FJS-D2177)', async () => {
+    const f = file('HydRaw.mesa', `<script>const mounting = $.mounted(async () => {})</script><mesa:mounted>{#snippet pending()}<span>in</span>{/snippet}<p>out</p></mesa:mounted>`)
+    await expect(renderFile(f, { target: 'fragment', compileOptions: { target: 'server', hydratable: true } }))
+      .rejects.toThrow(/hydratable: the string mode refused .*HydRaw\.mesa.*<mesa:mounted>/)
+  })
+
   it('a refused file without one falls back the same way', async () => {
     const f = file('Raw.mesa', `<script>const mounting = $.mounted(async () => {})</script><mesa:mounted>{#snippet pending()}<span>in</span>{/snippet}<p>out</p></mesa:mounted>`)
     const r = await renderFile(f, { target: 'fragment', compileOptions: { target: 'server' } })

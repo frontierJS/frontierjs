@@ -177,6 +177,31 @@ check(rowOf(s, '( hi sam, it is ana )') > rowOf(s, '( hello from sam )') && rowO
   'the new bubble is under the old, and the old one stays', s.term.screen())
 check(colOf(s, '( hi sam, it is ana )') > 50 && colOf(a, '( hi sam, it is ana )') < 50, "hers on the right of Sam's screen and the left of her own", '')
 
+// ─── a game across the table ──────────────────────────────────────────
+
+await s.type('/checkers')
+// Each board is drawn from its own side: files a to h for red, h to a for black.
+check(await until(() => s.term.screen().includes('  a b c d e f g h') && a.term.screen().includes('  h g f e d c b a')), 'Sam begins checkers and the board is drawn on both screens, each from its own side', s.term.screen() + a.term.screen())
+check(/Your move/.test(s.term.screen()) && /sam to move/.test(a.term.screen()), "red is Sam's, and each screen says whose move it is", s.term.screen() + a.term.screen())
+const startRows = await env.system.game.findMany({})
+check(startRows.length === 1 && startRows[0].redId === sam.id && startRows[0].turn === 'r', 'the game is one row, Sam red to move', JSON.stringify(startRows))
+
+await a.type('/move b6 a5')
+check(await until(() => /Not your move/.test(a.term.screen())), "Ana moving out of turn is told it is not her move", a.term.screen())
+check((await env.system.game.findFirst({})).board === startRows[0].board, 'and the board is as it was', '')
+
+await s.type('/move a3 b4')
+check(await until(() => /ana to move/.test(s.term.screen()) && /Your move/.test(a.term.screen())), 'Sam moves and the turn passes on both screens', s.term.screen() + a.term.screen())
+await a.type('/move b6 a5')
+check(await until(() => /Your move · b6-a5/.test(s.term.screen())), "Ana's reply reaches Sam's screen", s.term.screen())
+await s.type('/move b4 b5')
+check(await until(() => /one square diagonally/.test(s.term.screen())), 'a move that is not a step is told why', s.term.screen())
+
+await a.type('/resign')
+check(await until(() => /You won · resigned/.test(s.term.screen()) && /sam won · resigned/.test(a.term.screen())), 'Ana resigns and the game is over on both screens', s.term.screen() + a.term.screen())
+const over = await env.system.game.findFirst({})
+check(over.winnerId === sam.id && over.last === 'resigned', 'the row says Sam won, resigned', JSON.stringify(over))
+
 // ─── a third member ───────────────────────────────────────────────────
 
 const rows = await env.system.room.findMany({ where: { slug: { startsWith: 'booth-' } } })

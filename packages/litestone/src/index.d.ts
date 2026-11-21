@@ -914,7 +914,9 @@ export interface LitestoneClient {
   }
   $tapQuery(fn: (event: QueryEvent) => void): () => void
   $tapEvents(fn: (event: WriteEvent, ctx: LitestoneCtx) => void): () => void
-  $setAuth(user: LitestoneAuth): LitestoneClient
+  // `object`, not LitestoneAuth: an index signature refuses any interface
+  // declared without one, which is every app's own user type. null unscopes.
+  $setAuth(user: object | null): LitestoneClient
   asSystem(): LitestoneClient
   sql: unknown
   [model: string]: unknown

@@ -13,6 +13,19 @@ export function islandEntrySource(islands?: any, { loaderSpecifier, theme, analy
     prefix?: string;
 }): string;
 /**
+ * Source for one route's hydrate entry: the prelude, then the wrapper the
+ * server rendered this route from, adopting the page's root with the props
+ * the page carries.
+ *
+ * The props are read from the page, not built in: the entry is shared by every
+ * page of a dynamic route, and each page was rendered from its own `load()`.
+ */
+export function hydrateEntrySource(wrapperFile?: any, { theme, analytics, prefix }?: {
+    theme?: any;
+    analytics?: any;
+    prefix?: string;
+}): string;
+/**
  * The lines of an island's source that name the API by a relative path.
  *
  * A prerendered site is its own origin, so a relative `/api/...` resolves
@@ -62,6 +75,28 @@ export function buildIslandBundle(opts: {
     fileName: string;
 }>;
 /**
+ * Build every route's hydrate entry in ONE Vite build, so a module two routes
+ * share -- a store, the runtime -- is one chunk and one instance.
+ *
+ * Each route's wrapper is written to disk exactly as the server rendered it.
+ * Recomposed here instead, a difference of one byte moves every marker key
+ * after it, and the client adopts nothing.
+ *
+ * @param {object} opts
+ * @param {Array<{ rel: string, wrapper: string }>} opts.routes — each written
+ *   page and the wrapper source it was rendered from
+ * @returns {Promise<{ entries: number, pages: Map<string, string> }>} each page's script URL
+ */
+export function buildHydrateBundle(opts: {
+    routes: Array<{
+        rel: string;
+        wrapper: string;
+    }>;
+}): Promise<{
+    entries: number;
+    pages: Map<string, string>;
+}>;
+/**
  * Put `<script type="module" src=…>` before `</body>`.
  *
  * Returns the html unchanged if the tag is already there, so re-running a build
@@ -69,11 +104,17 @@ export function buildIslandBundle(opts: {
  */
 export function injectIslandScript(html?: any, src?: any): any;
 /**
- * Inject the island script into every prerendered page that has an island.
+ * The islands loader as each page's script: one script for every page that has
+ * an island.
  *
  * Pages without one are left alone — that is the whole point of islands, and a
  * static page with no interactive component should ship no JavaScript at all.
+ */
+export function islandPageSources(islandPages?: any, src?: any): Map<any, any>;
+/**
+ * Put each page's script tag on it.
  *
+ * @param {Map<string, string>} pageSources — output file → script URL
  * @returns {Promise<string[]>} the files that were modified
  */
-export function injectIntoPages(outDir?: any, islandPages?: any, src?: any): Promise<string[]>;
+export function injectIntoPages(outDir: any, pageSources: Map<string, string>): Promise<string[]>;

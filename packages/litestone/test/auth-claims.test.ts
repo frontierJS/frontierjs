@@ -81,6 +81,34 @@ model Note {
     expect(await build(withField('auth().isStaff == true'))).toBeTruthy()
   })
 
+  // A misspelled default stamps NULL, so a required column refuses every create
+  // with a ValidationError naming the column rather than the claim (FJS-4505).
+  test('a field @default(auth().x)', async () => {
+    const withDefault = (claim: string) => `${AUTH_USER}
+model Note {
+  id      Int     @id @default(autoincrement())
+  staff   Boolean @default(auth().${claim})
+}`
+    const err = await refusal(withDefault('isStff'))
+    expect(err).toContain("'isStff' is not a claim")
+    expect(err).toContain('@default on Note.staff')
+    expect(await build(withDefault('isStaff'))).toBeTruthy()
+  })
+
+  // A misspelled stamp writes nothing, so the column is silently left empty on
+  // every write (FJS-4513).
+  test.each(['createdBy', 'updatedBy'])('a field @%s(auth().x)', async (kind) => {
+    const withStamp = (claim: string) => `${AUTH_USER}
+model Note {
+  id      Int     @id @default(autoincrement())
+  by      Boolean? @${kind}(auth().${claim})
+}`
+    const err = await refusal(withStamp('isStff'))
+    expect(err).toContain("'isStff' is not a claim")
+    expect(err).toContain(`@${kind} on Note.by`)
+    expect(await build(withStamp('isStaff'))).toBeTruthy()
+  })
+
   test("the refusal names the set and the way out", async () => {
     const err = await refusal(model(`  @@allow(read, auth().cartToken == ownerId)`))
     expect(err).toContain('Claims:')

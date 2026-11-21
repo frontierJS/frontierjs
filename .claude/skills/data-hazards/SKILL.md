@@ -36,6 +36,7 @@ Detail: `references/gates-policies-and-claims.md`
 - **`auth().x` is graded against a DECLARED set, and only where there is one** (`FJS-666`, `FJS-667`, `FJS-668`)
 - **A `@@gate` refuses, a `@@allow` filters — so a wrong policy is an empty screen, not an error.**
 - **A freeze that depends on STATE is not expressible, and `@@gate` is where you notice.**
+- **A write that must cover a COMPLETE set is not expressible, and `$transaction` plus a count is THE spelling** (`FJS-D1284`, `FJS-3066`)
 - **`asSystem()` grades at 8, and `9` is LOCKED — not reachable through the ORM by any client.**
 - **A cache keyed on the ctx OBJECT is shared across principals** (`FJS-722`)
 - **You cannot run without gates.**
@@ -95,6 +96,7 @@ Detail: `references/columns-and-clocks.md`
 - **Litestone emits columns verbatim camelCase and `DateTime` as ISO-8601 TEXT.**
 - **Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing.**
 - **A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes** (`FJS-D963`, `FJS-D1434`)
+- **A `File` column's stored object is its row's own, so the same bytes on two rows are two objects** (`FJS-D1293`, `FJS-3050`)
 
 ## The audit trail and the log
 Detail: `references/the-audit-trail-and-the-log.md`
@@ -106,6 +108,7 @@ Detail: `references/the-audit-trail-and-the-log.md`
 - **`@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws.**
 - **"Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`.**
 - **An entry names ONE row, so a read of a page files an entry per row** (`FJS-D1744`)
+- **The trail records reads only at the READER's grain; a count of use is an `@@anonymous` model the app writes** (`FJS-D1104`)
 
 ## Reads and windows
 Detail: `references/reads-and-windows.md`

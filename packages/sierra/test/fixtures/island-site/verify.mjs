@@ -31,7 +31,10 @@ import { existsSync } from 'node:fs'
 import { findChrome } from '../../../../mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
-const DIST = join(HERE, 'dist/client')
+// `--hydratable` drives vite.hydrate.config.js's build: one tree adopted on
+// load, each client:* subtree attaching on its trigger (FJS-D2174).
+const HYDRATABLE = process.argv.includes('--hydratable')
+const DIST = join(HERE, HYDRATABLE ? 'dist/hydrate' : 'dist/client')
 
 const CHROME = findChrome()
 if (!CHROME) { console.error('No Chrome on this machine — install Chrome or Chromium, or point $FRONTIER_CHROME at a binary'); process.exit(1) }
@@ -40,7 +43,7 @@ const TYPES  = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/c
 if (!existsSync(join(DIST, 'index.html'))) {
   console.error(
     `No build at ${DIST}.\n` +
-    `Run: npx vite build --config test/fixtures/island-site/vite.config.js`
+    `Run: npx vite build --config test/fixtures/island-site/${HYDRATABLE ? 'vite.hydrate.config.js' : 'vite.config.js'}`
   )
   process.exit(1)
 }
@@ -50,8 +53,10 @@ if (!existsSync(join(DIST, 'index.html'))) {
 // for requestIdleCallback, hence the delay before clicking.
 const PROBE = `
 (async () => {
+  const HYDRATABLE = ${HYDRATABLE};
   const out = { errors: [] };
   window.addEventListener('error', e => out.errors.push(String(e.message)));
+  window.addEventListener('unhandledrejection', e => out.errors.push(String(e.reason?.message ?? e.reason)));
 
   const $ = id => document.getElementById(id);
   const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -62,9 +67,15 @@ const PROBE = `
   // markup and reads as a product failure.
   const refs = {};
   for (const id of ['counter', 'later', 'seen', 'narrow', 'wide', 'below', 'outer', 'inner']) refs[id] = $(id);
+  // A hydrated page keeps its nodes, so there the signal is the subtree's
+  // chunk arriving, and a few frames for the claim that follows it.
   const mounted = async (id, ms = 4000) => {
+    const name = id[0].toUpperCase() + id.slice(1);
     for (let w = 0; w < ms; w += 25) {
-      if ($(id) && $(id) !== refs[id]) return true;
+      if (HYDRATABLE ? fetched().includes(name) : $(id) && $(id) !== refs[id]) {
+        if (HYDRATABLE) await sleep(100);
+        return true;
+      }
       await sleep(25);
     }
     return false;
@@ -74,7 +85,7 @@ const PROBE = `
   // per-island splitting: a chunk must not be fetched until its directive
   // fires, and a directive that never fires must cost nothing at all.
   const fetched = () => performance.getEntriesByType('resource')
-    .map(e => (e.name.match(/island-([A-Za-z0-9]+)-/) || [])[1])
+    .map(e => (e.name.match(HYDRATABLE ? /hydrate-([A-Z][A-Za-z0-9]*)-/ : /island-([A-Za-z0-9]+)-/) || [])[1])
     .filter(Boolean).sort();
 
   // The scroll happens FIRST, and this is not a stylistic choice. Under
@@ -173,7 +184,8 @@ const PROBE = `
   // Everything the loader said, in order. A subsumed island used to reach
   // mount() with a detached anchor and get logged as a load failure — correct
   // behavior, reported as breakage.
-  out.islandLog = (window.__islandLog ?? []).filter(m => m.includes('[Sierra islands]'));
+  out.islandLog = (window.__islandLog ?? []).filter(m => m.includes('[Sierra islands]') || (HYDRATABLE && m.includes('[Mesa')));
+  if (HYDRATABLE) out.nodesKept = Object.keys(refs).filter(id => $(id) !== refs[id]);
 
   document.title = 'RESULT' + JSON.stringify(out);
 })();
@@ -208,9 +220,16 @@ const HOOK = `<script>
 
 const probeFile = join(DIST, '__verify_probe.html')
 const html = await readFile(join(DIST, 'index.html'), 'utf8')
+// Headless Chrome under a virtual-time budget runs no frames after load and so
+// grants idle periods at random: a client:idle subtree attached in 1 of 4 runs,
+// a rAF loop raised it to 3 of 5, and a longer wait changed nothing. The
+// hydrated run stands in a timer for requestIdleCallback, the runtime's own
+// fallback where the browser has none, so the drive tests the subtree's
+// attach rather than headless scheduling.
+const IDLE = HYDRATABLE ? `<script>window.requestIdleCallback = (fn) => setTimeout(fn, 50); window.cancelIdleCallback = clearTimeout</script>` : ''
 await writeFile(
   probeFile,
-  html.replace('<head>', `<head>${HOOK}`)
+  html.replace('<head>', `<head>${HOOK}${IDLE}`)
       .replace('</body>', `<script type="module">${PROBE}</script></body>`)
 )
 
@@ -280,6 +299,13 @@ const expected = {
   notFetchedYet: [],
   fetchedAtEnd:  ['Below', 'Counter', 'Inner', 'Later', 'Narrow', 'Outer', 'Seen', 'Styled'],
 }
+if (HYDRATABLE) {
+  // Every server node is the node the page ends with, and the root's own
+  // <style id="sierra-root"> is the fourth tag.
+  expected.nodesKept = []
+  expected.styleTags = 4
+  expected.uniqueStyleIds = 4
+}
 
 let failed = 0
 for (const [k, want] of Object.entries(expected)) {
@@ -305,10 +331,13 @@ for (const [label, ids] of [['at load', got.styleIds], ['after a late mount', go
 
 // A page with no island must ship no script — the point of islands, and the
 // thing most easily regressed by "just inject it everywhere".
-const plain = await readFile(join(DIST, 'plain/index.html'), 'utf8')
-const plainClean = !plain.includes('<script type="module"')
-if (!plainClean) failed++
-console.log(`${plainClean ? '  ✓' : '  ✗'} island-free page ships no module script`)
+// A hydrated page adopts its whole tree, so only the islands build owes this.
+if (!HYDRATABLE) {
+  const plain = await readFile(join(DIST, 'plain/index.html'), 'utf8')
+  const plainClean = !plain.includes('<script type="module"')
+  if (!plainClean) failed++
+  console.log(`${plainClean ? '  ✓' : '  ✗'} island-free page ships no module script`)
+}
 
 console.log(failed === 0 ? '\nislands verified in a real browser\n' : `\n${failed} assertion(s) failed\n`)
 process.exit(failed === 0 ? 0 : 1)

@@ -1013,7 +1013,7 @@ Done when: two members finish a game at a tavern table, a house one of them
 drew stands in a scene where the other walks into it, and a bolt one fires
 knocks the other back on both screens and removes neither.
 
-- [ ] 9.1 Tavern games. Dice first: `/roll 2d6` is a Message the server rolls,
+- [x] 9.1 Tavern games. Dice first: `/roll 2d6` is a Message the server rolls,
   so nobody can roll their own number. Then checkers on a table piece: sit
   down and the board draws over the table, a move is a call, and the game is
   a row a service owns. This is live shared state at a small scale, which is
@@ -1039,6 +1039,15 @@ knocks the other back on both screens and removes neither.
   is a storm over its roof and a release is a festival day in the square.
   Walking the quarter is walking the repo. The state is baked in at deploy:
   `PROJECT_STATE.md` headlines and the last CI result (`FJS-D996`).
+  - 2026-11-21: the first half landed, the box stays open. `/quarter/` is a
+    scene of four buildings (Litestone, Junction, Mesa, Caravan), reached by
+    the square's FRAMEWORK door and a door back. Standing on a building's
+    wall cell, `Wall.mesa` shows its sign, `packages/<pkg>/PROJECT_STATE.md`
+    and the headline baked by `bun run quarter` into `quarter.data.json`;
+    one step away it is gone. Proved by `scenes.test.js` and a walk-in on a
+    real pty in `verify:townhall`. Left: the CI storm and the release
+    festival (the live-signal half, owner's forks), the other packages'
+    buildings, and an interior per building.
 - [ ] 9.3 Plots. A member claims an empty lot, places their house in 5.7's
   editor, and the house is a Room they own — a row of placements and a
   palette, never a stranger's glyphs (`FJS-D995` as `FJS-D997` amends it). Strangers drawing art is a

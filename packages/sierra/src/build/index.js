@@ -23,7 +23,7 @@ import { localDbPlugin, localDbWorkerPlugins } from './local-db-plugin.js'
 import { virtualSierraPlugin, storagePrefix } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
-import { buildIslandBundle, injectIntoPages } from './island-bundle.js'
+import { buildIslandBundle, buildHydrateBundle, injectIntoPages, islandPageSources } from './island-bundle.js'
 import { pruneUnreachable, bundleUnreachable } from './prune-unreachable.js'
 import { autoImportPlugin } from './auto-import-plugin.js'
 import { markdownLayoutsPlugin } from './markdown-layouts.js'
@@ -76,6 +76,10 @@ import { beginBuildImports, importAppModule } from './app-import.js'
  *   database: `bun --bun vite`, the same reason `build:site` has always needed
  *   it.
  * @property {{ shadowDOM?: boolean }} [mesa]
+ * @property {boolean} [hydratable] — a `static` build only: each page hydrates
+ *   from one client root that adopts the prerendered markup, instead of
+ *   mounting islands over it, so `$context` and a module store reach every
+ *   component on the page. The route's `load()` data is embedded in the page.
  * @property {{ components?: string[], modules?: Record<string, string[]|object|string> }} [autoImport]
  * @property {string[]} [markdownLayouts] — directories whose `.mesa`/`.md` files
  *   are the names a `.md` file's `layout:` may say, a later directory winning a
@@ -144,6 +148,18 @@ export function createSierraViteConfig(config = {}) {
     throw new Error(`[Sierra] preview: a review build is a static site's, and this target is ${target}`)
   }
   const preview = config.preview === true
+  // Under `mesa` the flag reaches every compile, and a flagged DOM compile
+  // adopts its target's children as server markup -- an SPA or dev page has
+  // none, so it would mount nothing it can explain.
+  if (mesaOptions.hydratable !== undefined) {
+    throw new Error(
+      `[Sierra] mesa.hydratable: hydration is the top-level \`hydratable: true\` key, beside ` +
+      `\`islands\`, which Sierra hands only to the static render and the bundle that adopts it`
+    )
+  }
+  if (config.hydratable && target !== 'static') {
+    throw new Error(`[Sierra] hydratable: a page hydrates from what a static build prerendered, and this target is ${target}`)
+  }
 
   // Shared state between plugins
   /** @type {SierraContext} */
@@ -179,12 +195,12 @@ export function createSierraViteConfig(config = {}) {
     // hand the island build plugins that have already run configResolved for a
     // different config, and including postBuildPlugin itself would recurse:
     // its closeBundle is what starts the island build.
-    sierraPlugins.push(postBuildPlugin(config, sierraContext, () => [
+    sierraPlugins.push(postBuildPlugin(config, sierraContext, (extra = {}) => [
       // The island build is handed `root` explicitly, so the alias plugin
       // resolves `@` there exactly as it does in the main build.
       appAliasPlugin(),
       envFlagsPlugin(),
-      mesaPlugin({ ...mesaOptions, routesDir }, sierraContext, { holdHints: target === 'static', preview }),
+      mesaPlugin({ ...mesaOptions, ...extra, routesDir }, sierraContext, { holdHints: target === 'static', preview }),
     ]))
   }
 
@@ -591,7 +607,11 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // Islands are the only way a `target: 'static'` page can be
           // interactive — it ships no other script — so the marker pass is on
           // for this target rather than being another flag to find.
-          islands: config.islands !== false,
+          // A flagged page is one tree adopted from its root, so it writes no
+          // island markers: a `client:*` component inside it renders as part
+          // of that tree.
+          islands: config.islands !== false && config.hydratable !== true,
+          hydratable: config.hydratable === true,
           // What one route may take before the build stops waiting rather than
           // hanging with nothing written and nothing said (`FJS-549`).
           ...(config.prerender?.timeout !== undefined ? { timeout: config.prerender.timeout } : {}),
@@ -668,7 +688,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
               prefix: storagePrefix(config, root),
             })
             if (bundle) {
-              const touched = await injectIntoPages(outDir, pre.islandPages, bundle.src)
+              const touched = await injectIntoPages(outDir, islandPageSources(pre.islandPages, bundle.src))
               console.log(
                 `\n  [Sierra] Islands: ${pre.islands.length} component(s) → ${bundle.fileName}` +
                 `\n    mounted on ${touched.length} page(s): ${pre.islands.map(i => i.component).join(', ')}`
@@ -693,6 +713,36 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
             err.message =
               `[Sierra] Island bundling FAILED — the prerendered pages rendered, but ` +
               `their islands would not mount, so the site would ship inert.\n` +
+              `    ${err.message}`
+            throw err
+          }
+        }
+        // Hydration: one entry per route wrapper, each adopting the page the
+        // server rendered from that same wrapper. Thrown on failure for the
+        // reason the island build is (`FJS-821`): the pages would ship inert.
+        if (pre.hydrate?.length) {
+          const assetsBefore = await listAssets(outDir)
+          try {
+            const { build: viteBuild } = await import('vite')
+            const bundle = await buildHydrateBundle({
+              routes: pre.hydrate,
+              root, outDir, base: config.base ?? '/',
+              plugins: islandPlugins({ hydratable: true }),
+              viteBuild,
+              theme: config.theme ?? null,
+              analytics: config.analytics ?? null,
+              prefix: storagePrefix(config, root),
+            })
+            const touched = await injectIntoPages(outDir, bundle.pages)
+            console.log(
+              `\n  [Sierra] Hydration: ${bundle.entries} route entr${bundle.entries === 1 ? 'y' : 'ies'}` +
+              ` → adopted on ${touched.length} page(s)`
+            )
+          } catch (err) {
+            await removeOrphanIslandChunks(outDir, assetsBefore)
+            err.message =
+              `[Sierra] Hydration bundling FAILED — the prerendered pages rendered, but ` +
+              `nothing would adopt them, so the site would ship inert.\n` +
               `    ${err.message}`
             throw err
           }

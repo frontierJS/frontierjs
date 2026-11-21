@@ -1382,6 +1382,10 @@ class Parser {
       case 'updatedBy': {
         // @updatedBy              → stamps ctx.auth.id on every update
         // @updatedBy(auth().field) → stamps ctx.auth[field] on every update
+        //
+        // Only the written form is `explicit`: the bare one names no claim, and
+        // grading it would list auth().id as ungraded in every schema without
+        // an @@auth model.
         if (this.check(TK.LPAREN)) {
           this.eat(TK.LPAREN)
           this.eatIdent('auth')
@@ -1389,7 +1393,7 @@ class Parser {
           this.eat(TK.DOT)
           const authField = this.eat(TK.IDENT).value
           this.eat(TK.RPAREN)
-          return { kind: 'updatedBy', authField }
+          return { kind: 'updatedBy', authField, explicit: true }
         }
         return { kind: 'updatedBy', authField: 'id' }
       }
@@ -1408,7 +1412,7 @@ class Parser {
           this.eat(TK.DOT)
           const authField = this.eat(TK.IDENT).value
           this.eat(TK.RPAREN)
-          return { kind: 'createdBy', authField }
+          return { kind: 'createdBy', authField, explicit: true }
         }
         return { kind: 'createdBy', authField: 'id' }
       }

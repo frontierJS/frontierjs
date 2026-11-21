@@ -16,6 +16,8 @@ import { piece } from '../src/pieces/index.js'
 import { worldOf, worldJson, pieceId } from '../src/lib/scene/world.js'
 import { DAY_MS } from '#shared/sky.js'
 import HALL from '../src/lib/hash/townhall.data.json'
+import WALLS from '../src/lib/hash/quarter.data.json'
+import { BUILDINGS, headlineOf, wrapWall, wallsOf, WALL_COLS, WALL_ROWS } from '../src/lib/hash/quarter.js'
 
 const STEPS = [[0, 1], [0, -1], [1, 0], [-1, 0]]
 // Three quarters into the day is full night, when a `night` door is one.
@@ -214,6 +216,47 @@ test('town hall: every delegate has floor either side of their head and a row to
     const open = [[-1, 0], [1, 0], [0, -1]].map(([dx, dy]) => stage.walkable(h.x + dx, h.y + dy))
     expect({ idea: m.piece.idea, open }).toEqual({ idea: m.piece.idea, open: [true, true, true] })
   }
+})
+
+// ─── the framework quarter ────────────────────────────────────────────
+
+// A wall is baked from the package's own file, so a stale snapshot says what a
+// package was. The data file is re-read from the tree here and compared.
+test('quarter: quarter.data.json is what each package\'s PROJECT_STATE.md says now', () => {
+  const states = Object.fromEntries(BUILDINGS.map(({ pkg }) => [pkg, readFileSync(join(WEB, '../..', pkg, 'PROJECT_STATE.md'), 'utf8')]))
+  expect(WALLS).toEqual(wallsOf(states))
+  for (const w of WALLS) expect({ pkg: w.pkg, rows: w.lines.length > 0 }).toEqual({ pkg: w.pkg, rows: true })
+})
+
+test('quarter: a building for every package in BUILDINGS, once each, with a wall cell a figure can stand on', () => {
+  const stage = scenes.get('/quarter/')
+  const standing = stage.marks.filter((m) => m.piece?.pkg)
+  expect(standing.map((m) => m.piece.pkg).sort()).toEqual(BUILDINGS.map((b) => b.pkg).sort())
+  for (const m of standing) {
+    const w = m.spot('wall')
+    expect({ pkg: m.piece.pkg, standable: stage.walkable(w.x, w.y), reachable: stage.walkable(w.x, w.y + 1) }).toEqual({ pkg: m.piece.pkg, standable: true, reachable: true })
+  }
+})
+
+test('quarter: the square opens onto it, and the door back is beside the one in', () => {
+  const square = scenes.get('/')
+  expect(square.doors.filter((d) => d.to === '/quarter/').length).toBe(1)
+  expect(scenes.get('/quarter/').doors.some((d) => d.to === '/')).toBe(true)
+})
+
+test('a headline is the Status line, else the first paragraph that is prose', () => {
+  expect(headlineOf('# T\n\n**Tests:** 1 pass\n**Status:** shipped — **v1**, on `npm`.\n')).toBe('shipped — v1, on npm.')
+  const bare = '# T\n\nLast verified by running: 2026-08-29.\n\n## Snapshot\n\n| a | b |\n| - | - |\n\n> a quoted note that is not the headline of anything at all\n\nA job queue and a [cron](x) scheduler, as a plugin that attaches app.jobs.\n'
+  expect(headlineOf(bare)).toBe('A job queue and a cron scheduler, as a plugin that attaches app.jobs.')
+  expect(headlineOf('# T\n\n- one\n')).toBe('')
+})
+
+test('a wall wraps to its columns and rows, the last row cut with an ellipsis', () => {
+  const rows = wrapWall('word '.repeat(200).trim())
+  expect(rows.length).toBe(WALL_ROWS)
+  expect(rows.every((r) => r.length <= WALL_COLS)).toBe(true)
+  expect(rows.at(-1).endsWith('…')).toBe(true)
+  expect(wrapWall('short words')).toEqual(['short words'])
 })
 
 // ─── the workshop ─────────────────────────────────────────────────────

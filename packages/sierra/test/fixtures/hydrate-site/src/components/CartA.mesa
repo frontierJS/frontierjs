@@ -1,0 +1,5 @@
+<script>
+  import { cart } from '../lib/cart.js'
+  $: cart
+</script>
+<button id="cart-a" onclick={() => cart.count++}>A: {cart.count}</button>

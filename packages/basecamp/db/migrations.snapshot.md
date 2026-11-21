@@ -23,3 +23,6 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261116163827_release_id_pivot.sql` | `0baf097ccdd28c59` |
 | `migrations/main/20261117224510_copy_release_id.sql` | `c3caee5633a09393` |
 | `migrations/audit/20261120003131_trail_record_id.sql` | `3905ccccc22d5f44` |
+| `migrations/main/20261119155649_ntfy_token_generator.sql` | `be8137671455ac7d` |
+| `migrations/main/20261119201608_app_project_id.sql` | `ed432e6c4148fead` |
+| `migrations/main/20261121060148_app_project_id_index.sql` | `5e856a024e48610d` |

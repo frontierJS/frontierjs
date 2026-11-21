@@ -442,8 +442,10 @@ export function generateTypeScript(schema, opts = {}) {
   if (augment === 'junction') {
     // Written only when asked for, because a module augmentation names a package:
     // emitted unconditionally it is a type error in every app that installed
-    // litestone alone.
-    lines.push(
+    // litestone alone. The browser's module takes the client audience's map
+    // only: an app's api/ and web/ files sit in one tsc program, and two
+    // registrations with different rows are TS2320 there (FJS-D454, FJS-4507).
+    if (audience !== 'system') lines.push(
       `// ── @frontierjs/junction/client ──────────────────────────────────────────────`,
       ``,
       `// The alias is what breaks the name collision — inside the augmentation`,
@@ -671,7 +673,7 @@ export interface CursorResult<T> {`,
     ``,
     `  // Auth scoping`,
     `  asSystem(): __Sudo<LitestoneClient>`,
-    `  $setAuth(user: Record<string, unknown>): LitestoneClient`,
+    `  $setAuth(user: object | null): LitestoneClient`,
     `  $scopedBy(scope: Record<string, unknown>): LitestoneClient`,
     ``,
     `  // Is this key filterable / sortable? Asked rather than copied — every`,

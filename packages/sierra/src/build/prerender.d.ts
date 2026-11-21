@@ -74,7 +74,7 @@ export function documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass,
  * fewer request — these pages ship no JS, so the style block is the only thing
  * standing between HTML and first paint.
  */
-export function wrapDocument(bodyHTML?: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, }?: {
+export function wrapDocument(bodyHTML?: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, hydrateJson, }?: {
     lang?: string;
     stylesheets?: any[];
     bodyClass?: string;
@@ -85,7 +85,22 @@ export function wrapDocument(bodyHTML?: any, { title, description, css, styles, 
     bodyAttrs?: {};
     head?: string;
     bodyEnd?: string;
+    hydrateJson?: any;
 }): string;
+/**
+ * A page's hydrate props as the JSON a `<script type="application/json">` can
+ * carry. A value JSON would change on the way -- a Map to `{}`, an `undefined`
+ * dropped -- renders on the client differently from the server, so it is
+ * refused by its key path rather than adopted wrong.
+ *
+ * A Date is the one exception: it travels as its ISO string, and its key path
+ * goes in `datePaths` for the client entry to turn back into a Date before the
+ * route runs. A path is a list of keys, so a key holding a dot stays one key.
+ *
+ * @param {Record<string, unknown>} props
+ * @param {string} where — the page, for the message
+ */
+export function hydrateJson(props: Record<string, unknown>, where: string): string;
 /** '/blog/hello/' → 'blog/hello/index.html' */
 export function outputFileFor(urlPath?: any): string;
 /**
@@ -153,3 +168,9 @@ export function hasSkipLink(html?: any): boolean;
  * focused link, so a keyboard user who tabs to it before the CSS sees it.
  */
 export const SKIP_LINK_GUARD: "<style id=\"sierra-skip-link\">@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}</style>";
+/**
+ * The hydrate root lays out as if it were not there, so a layout written for
+ * `body > main` keeps its box. A rule, not a `style=` attribute, which a
+ * strict CSP drops.
+ */
+export const HYDRATE_ROOT_STYLE: "<style id=\"sierra-root\">[data-sierra-root]{display:contents}</style>";

@@ -1,0 +1,11 @@
+---
+title: About
+render: static
+---
+<script>
+  import CartA from '../components/CartA.mesa'
+</script>
+<main id="main" tabindex="-1">
+  <h1>about</h1>
+  <CartA />
+</main>

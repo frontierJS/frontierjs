@@ -1,0 +1,4 @@
+<script>
+  const theme = $context.theme
+</script>
+<p id="reader">theme: {theme}</p>

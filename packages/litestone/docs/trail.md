@@ -345,6 +345,37 @@ a log on the roster written in a *separate* transaction still lines up in time.
 It also cannot be tightened later. Rows written while the model was
 attributable stay attributable, so declare it before the first row (`FJS-D349`).
 
+### Counting use without recording the reader
+
+`reads: true` is the READER's grain: one entry per read, naming the caller, a
+clock and the request's correlation id, which every provider the request
+called also received. It answers *who read Joe's lens, and when*. It cannot
+answer *Joe's lens was used 12 times this month* without also keeping a
+timeline of every search for each reader, and `@@anonymous` turns a model's
+logging off completely, reads included. The trail has no grain between the two
+(`FJS-D1104`). A count at the DATA OWNER's grain is an `@@anonymous` model the
+service increments where it reads:
+
+```lite
+model LensUse {
+  id     String @id @default(uuid())
+  lensId String
+  month  String              // '2026-11', written by the service: a period, never a clock
+  n      Int    @default(0)
+  @@unique([lensId, month])
+  @@anonymous
+}
+```
+
+- **Leave `reads: true` off the counted model.** An attributed read entry
+  beside the counter gives back the reader and the clock the counter
+  leaves out.
+- **Nothing refuses the counter beside an attributed read.** The runtime check
+  refuses a logged WRITE in the same transaction, and a read entry is not one.
+- **One reader means the count is that reader's history.** When a single
+  grantee can read the row, the count is how often that grantee searched the
+  topic. Choosing a period cannot fix that; only having more readers can.
+
 ## Retention
 
 The `retention` value on a trail database prunes old entries on startup:

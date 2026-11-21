@@ -439,6 +439,64 @@ export function makeComponent(init?: any): ($option?: {}) => {
     $apply(props?: object): void;
     destroy(): void;
 };
+/**
+ * A flagged component root's half of adoption: its instance, or null when
+ * nothing is being adopted. `opts.scope` is the component's own scope id, so a
+ * page written by another build of it fails closed (FJS-D2177); `opts.unkeyed`
+ * names root nodes its code reads with no key.
+ */
+export function claim(anchor?: any, opts?: any): {
+    frag: any;
+    dev: boolean;
+    /** The one root node of a single-element template, which carries no key. */
+    root(tpl: any): any;
+    take(key: any): any;
+};
+/** A flagged block body's half: the handle its block is adopting it with, or null. */
+export function adopting(file?: any, unkeyed?: any): any;
+/** `makeBlock` under the flag: a body its block is adopting binds the server's nodes and clones nothing. */
+export function hydBlock(fr?: any, fn?: any): (v: any, i: any) => any;
+/**
+ * A `{@render}` or slot site under the flag: the snippet's first block adopts
+ * the content the server wrote between this site's boundaries, under the id
+ * the server's call gave it.
+ */
+export function hydRender(anchor?: any, run?: any): any;
+/** `ifBlock` under the flag: the server's branch is adopted when the client takes the same one. */
+export function hydIf(anchor?: any, condFn?: any, blocks?: any, noAnchor?: any): void;
+/** `$$eachBlock` under the flag: each server row is adopted by its key. */
+export function hydEach(anchor?: any, mode?: any, getArray?: any, keyFn?: any, makeItem?: any, elseBlock?: any): void;
+/** `awaitBlock` under the flag: the server's settled branch stays on screen and is adopted when the client settles the same way. */
+export function hydAwait(anchor?: any, getPromise?: any, pendingBlock?: any, thenBlock?: any, catchBlock?: any, waits?: any, deps?: any): void;
+/**
+ * Adopt the page a `hydratable: true` server render wrote into `target`: the
+ * server's nodes stay, and the component's bindings attach to them. A mismatch
+ * at a component root re-renders the whole target (FJS-D2260).
+ *
+ * `options.state` is the server render's `state`: a flagged `{#await}` reads
+ * its entry instead of evaluating its expression, and one with no entry
+ * evaluates it and, in dev, says so.
+ *
+ * @param {Element} target
+ * @param {Function} component
+ * @param {object} [props]
+ * @param {{ state?: Record<string, unknown> }} [options]
+ */
+export function hydrate(target: Element, component: Function, props?: object, options?: {
+    state?: Record<string, unknown>;
+}): {
+    $dom: Comment;
+    find(sel: any): any;
+    destroy(): void;
+};
+/**
+ * A flagged awaited `const`'s server value, as `{ value }`, or null to load
+ * it. Read before its component claims its markers, so the instance id comes
+ * from the anchor: a call site's claim, or the root's place after the label.
+ */
+export function hydAsync(anchor?: any, key?: any, opts?: any): {
+    value: any;
+};
 export function mount(label?: any, component?: any, option?: any): {
     $dom: Comment;
     find(sel: any): any;
@@ -633,6 +691,8 @@ export function inspect(...args: any[]): {
  */
 export function localWatchProxy(obj?: any, signalMap?: any): any;
 export function makeAsyncState(upstream?: any[], unshown?: any): {
+    /** Resolves once the first load has landed, either way. */
+    settled(): Promise<any>;
     readonly loading: any;
     readonly pending: any;
     readonly error: any;
@@ -671,7 +731,7 @@ export function makeCallState(handled?: boolean): {
     };
     run(fn: any, self: any, args: any): Promise<any>;
 };
-export function asyncDerived(getAsyncState?: any, fn?: any, deps?: any, setValue?: any, name?: any): void;
+export function asyncDerived(getAsyncState?: any, fn?: any, deps?: any, setValue?: any, name?: any, seed?: any): void;
 export function push_component(devName?: any, devFile?: any, devStatic?: any): void;
 export function pop_component(): void;
 /**
@@ -754,6 +814,43 @@ export function island(anchor: Comment, Comp: Function, props: object, meta: {
     directive: string;
     media?: string;
 }): any;
+/**
+ * Run `fn` when a `client:*` directive's trigger fires; answers a teardown.
+ * The one schedule for both paths: Sierra's islands loader mounts on it, and a
+ * flagged page's `hydIsland` attaches on it. `static` never runs: it means no
+ * JS even for a reactive component (VISION §18.5).
+ *
+ * @param {string} directive — `load`, `idle`, `visible`, `media` or `static`
+ * @param {string} [media]   — the query `client:media` waits on
+ * @param {Node}   target    — `visible` observes the next element after it
+ * @param {() => void} fn
+ * @returns {() => void}
+ */
+export function schedule(directive: string, media?: string, target: Node, fn: () => void): () => void;
+/**
+ * A `client:*` component in a `hydratable` client compile (`FJS-D2174`): the
+ * server bounds its site, the page's hydrate leaves the range as it is, and
+ * the component claims it when its trigger fires. Until then a parent's
+ * pushes and `bind:` wait on the anchor, so the child starts from the
+ * parent's latest props. A mismatch then re-renders the range (`FJS-D2260`).
+ * Rendered fresh (nothing to adopt), it loads at once: a trigger guards
+ * server nodes, and there are none.
+ *
+ * @param {Comment} anchor
+ * @param {() => Function | Promise<Function>} load — the component, from its
+ *   own chunk when the compiler could split it off
+ * @param {object} props
+ * @param {{component: string, directive: string, media?: string}} meta
+ */
+export function hydIsland(anchor: Comment, load: () => Function | Promise<Function>, props: object, meta: {
+    component: string;
+    directive: string;
+    media?: string;
+}): void;
+/** `pushProps` for a `client:*` child under the flag: held until it attaches. */
+export function islandPush(anchor?: any, newProps?: any): void;
+/** `bindProp` for a `client:*` child under the flag: held until it attaches. */
+export function islandBind(anchor?: any, name?: any, setParent?: any): void;
 /**
  * Store a value in a signal. The value is stored as-is — including functions.
  *

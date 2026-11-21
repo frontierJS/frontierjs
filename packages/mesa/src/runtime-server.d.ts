@@ -42,7 +42,18 @@ export function head(out?: any): any;
  * so the branch's effects belong to the render and its `$context` reads find
  * their providers.
  */
-export function awaitBlock(out?: any, scope?: any, value?: any, then?: any, fail?: any): void;
+export function awaitBlock(out?: any, scope?: any, value?: any, then?: any, fail?: any, id?: any, key?: any): void;
+/** Open the collection a flagged render's awaits write into. */
+export function collectState(page?: any): void;
+/** Close it, handing back what the render settled. */
+export function takeState(): any;
+/** A flagged module's watched store, at import. */
+export function store(obj?: any, name?: any): void;
+/** A flagged component watches the store during this render. */
+export function watched(obj?: any): void;
+/** A flagged awaited `const`: its value, once it lands in this render, under
+ *  the id its call site gave this instance and the const's own key. */
+export function asyncState(out?: any, key?: any, state?: any, get?: any): void;
 /** Replace each promise `awaitBlock` pushed with its branch, the branch's own
  *  awaits first; a branch's `<mesa:head>` joins the render's head. Null when
  *  nothing waits, so the render does not yield (`settleAwaits` says why). */
@@ -65,8 +76,20 @@ export function isAnchorComment(data?: any): any;
  * (`IDEAS/server-render-without-dom.md` Q2 B, Q1 A).
  */
 export function html(value?: any): string;
+/** The id a call site handed this instance, or `parent` when none did. */
+export function hid(out?: any, parent?: any): any;
+/** Run a component or snippet call with the id its call site gives it. */
+export function call(out?: any, parent?: any, site?: any, fn?: any): void;
+/** A live text run, escaped already, and its marker. */
+export function textMark(value?: any, id?: any, key?: any): string;
 export const SPREAD_REFUSED: Set<string>;
 export const ISLAND_OPEN: "mesa-island ";
 export const ISLAND_CLOSE: "/mesa-island";
 /** HTML's void elements: no close tag, and nothing a child could be. */
 export const VOID: Set<string>;
+export const rowId: (parent: any, key: any) => string;
+export function instance(id?: any, scope?: any): string;
+export function mark(id?: any, key?: any): string;
+export function blockOpen(id?: any, key?: any, state?: any): string;
+export function row(id?: any): string;
+export function blockClose(id?: any, key?: any): string;

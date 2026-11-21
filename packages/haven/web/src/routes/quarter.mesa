@@ -1,0 +1,9 @@
+<script>
+  // The framework quarter -- through the house at the square's east end. A
+  // building's wall is `Wall.mesa`'s.
+  import WalkIn from '@/components/WalkIn.mesa'
+  import Wall from '@/components/Wall.mesa'
+  import Quarter from '@/components/scenes/Quarter.mesa'
+</script>
+
+<WalkIn slug="quarter"><Quarter><Wall /></Quarter></WalkIn>

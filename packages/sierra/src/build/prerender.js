@@ -378,9 +378,15 @@ export function wrapDocument(bodyHTML, {
   title, description, css, styles, lang = DEFAULT_LANG, stylesheets = [],
   bodyClass = '', htmlClass = '',
   meta = [], links = [], jsonLd = [], bodyAttrs = {}, head = '', bodyEnd = '',
+  hydrateJson = null,
 } = {}) {
   const parts = documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass, bodyAttrs, head, bodyEnd })
   const skipLink = hasSkipLink(bodyHTML) ? '' : `${SKIP_LINK}\n`
+  // `hydrate()` adopts every child of its target as the server's, so the root
+  // holds the render and nothing else: the skip link, the data and `bodyEnd`
+  // sit outside it, where the client's tree never looks for them.
+  const body = hydrateJson === null ? bodyHTML
+    : `<div data-sierra-root>${bodyHTML}</div>\n<script type="application/json" data-sierra-data>${hydrateJson}</script>`
 
   // One <style id="mHASH"> per component when the renderer supplies the split,
   // rather than one anonymous blob.
@@ -399,6 +405,7 @@ export function wrapDocument(bodyHTML, {
         .map((s) => `  <style id="${esc(s.id)}">${s.css.trim()}</style>`)
         .join('\n')
     : (css && css.trim() ? `\n  <style>${css.trim()}</style>` : '')
+  const rootStyle = hydrateJson === null ? '' : `\n  ${HYDRATE_ROOT_STYLE}`
 
   // The app's stylesheets come FIRST, so a component's own scoped rules — which
   // are the more specific statement — are not overridden by the design system.
@@ -421,13 +428,69 @@ export function wrapDocument(bodyHTML, {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${parts.head}
+  <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${rootStyle}${parts.head}
 </head>
 <body${parts.bodyAttr}>
-${skipLink}${bodyHTML}${parts.bodyEnd}
+${skipLink}${body}${parts.bodyEnd}
 </body>
 </html>
 `
+}
+
+/**
+ * The hydrate root lays out as if it were not there, so a layout written for
+ * `body > main` keeps its box. A rule, not a `style=` attribute, which a
+ * strict CSP drops.
+ */
+export const HYDRATE_ROOT_STYLE = '<style id="sierra-root">[data-sierra-root]{display:contents}</style>'
+
+/**
+ * A page's hydrate props as the JSON a `<script type="application/json">` can
+ * carry. A value JSON would change on the way -- a Map to `{}`, an `undefined`
+ * dropped -- renders on the client differently from the server, so it is
+ * refused by its key path rather than adopted wrong.
+ *
+ * A Date is the one exception: it travels as its ISO string, and its key path
+ * goes in `datePaths` for the client entry to turn back into a Date before the
+ * route runs. A path is a list of keys, so a key holding a dot stays one key.
+ *
+ * @param {Record<string, unknown>} props
+ * @param {string} where — the page, for the message
+ */
+export function hydrateJson(props, where) {
+  const seen  = new Set()
+  const datePaths = []
+  const label = (keys) => keys.reduce((s, k) => typeof k === 'number' ? `${s}[${k}]` : `${s}.${k}`, 'props')
+  const check = (v, keys) => {
+    if (v === null || typeof v === 'string' || typeof v === 'boolean') return
+    if (typeof v === 'number') {
+      if (Number.isFinite(v)) return
+      throw refuse(keys, `${v}, which JSON writes as null`)
+    }
+    if (typeof v !== 'object') throw refuse(keys, `a ${typeof v}, which JSON ${typeof v === 'bigint' ? 'cannot write' : 'drops'}`)
+    if (v instanceof Date) {
+      if (Number.isNaN(v.getTime())) throw refuse(keys, 'an Invalid Date, which JSON writes as null')
+      datePaths.push(keys)
+      return
+    }
+    if (seen.has(v)) throw refuse(keys, 'a value that contains itself')
+    const proto = Object.getPrototypeOf(v)
+    if (!Array.isArray(v) && proto !== Object.prototype && proto !== null)
+      throw refuse(keys, `a ${v.constructor?.name ?? 'class instance'}, which JSON writes as a plain object`)
+    seen.add(v)
+    if (Array.isArray(v)) v.forEach((x, i) => check(x, [...keys, i]))
+    else for (const [k, x] of Object.entries(v)) check(x, [...keys, k])
+    seen.delete(v)
+  }
+  const refuse = (keys, what) => new Error(
+    `[Sierra] hydratable: ${where} — ${label(keys)} is ${what}. The page carries its data as JSON for ` +
+    `the client to render from, so the two would differ. Return a JSON value or a Date from load().`
+  )
+  check(props, [])
+  // `<` would let a value close the script, and U+2028/U+2029 end a line in
+  // older script parsers.
+  return JSON.stringify(datePaths.length ? { ...props, datePaths } : props)
+    .replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029')
 }
 
 /** '/blog/hello/' → 'blog/hello/index.html' */
@@ -466,6 +529,8 @@ export async function prerenderRoutes(opts) {
   const {
     tree, root, routesDir = 'src/routes', outDir = 'dist/client', aliases = {},
     warn = () => {}, renderComponent, islands = false, tmpDir = null,
+    // Write markers a client adopts, and embed what it adopts with (2.5).
+    hydratable = false,
     // The build's own preparation of a Mesa source and its compile options,
     // handed to the renderer so it compiles what the bundle did (`FJS-1491`).
     transformSource = null, compileOptions = {},
@@ -535,6 +600,7 @@ export async function prerenderRoutes(opts) {
   // used for two different modules is a real collision — reported, not merged.
   const islandsByName = new Map()
   const islandPages   = new Map()   // output file → component names on it
+  const hydratePages  = []          // { rel, wrapper } for each flagged page written
 
   // Not every static route is a page to publish. A draft is what the route
   // table leaves out of `published`, and a route declaring `redirect:` is
@@ -639,7 +705,9 @@ export async function prerenderRoutes(opts) {
           data:     { data, staticPage: { node, pathname: urlPath, params, data } },
           cwd:      dirname(pageFile),
           filename: join(dirname(pageFile), '__prerender__.mesa'),
+          label:    urlPath,
           islands,
+          ...(hydratable ? { hydratable: true } : {}),
           // The document is assembled here from `rendered.styles`, one
           // <style id> per component, so Mesa must not also prepend the whole
           // lot as one anonymous blob — that is the same CSS twice on the page.
@@ -682,7 +750,7 @@ export async function prerenderRoutes(opts) {
         }
       }
 
-      const doc = wrapDocument(rendered.html, {
+      const docOpts = {
         title:  head?.title ?? node.meta?.title ?? node.meta?.frontmatter?.title,
         description: head?.description ?? node.meta?.description ?? node.meta?.frontmatter?.description,
         css:    rendered.css,
@@ -697,7 +765,7 @@ export async function prerenderRoutes(opts) {
         links:   [].concat(docLinks ?? [], head?.links ?? []),
         jsonLd:  [].concat(docJsonLd ?? [], head?.jsonLd ?? []),
         lang:   node.meta?.lang ?? lang,
-      })
+      }
 
       const file = join(outDirAbs, outputFileFor(urlPath))
       // Belt to `fillPath`'s braces: what a URL SAYS is checked there, and
@@ -711,13 +779,19 @@ export async function prerenderRoutes(opts) {
           `of the tree writes a file anywhere the build can reach.`
         )
 
-      out.pages.push({ urlPath, file, doc, islands: rendered.islands ?? [], reads: collect() })
+      // The client rebuilds `staticPage` from this: `page.route` readers want
+      // the route's identity and frontmatter, and the node's other fields are
+      // the build's.
+      const hydrate = hydratable
+        ? { wrapper, props: { data, staticPage: { node: { id: node.id, path: node.path, meta: node.meta ?? {} }, pathname: urlPath, params }, state: rendered.state ?? {} } }
+        : null
+      out.pages.push({ urlPath, file, html: rendered.html, docOpts, hydrate, islands: rendered.islands ?? [], reads: collect() })
     }
     return out
   }
 
   /** Write one held page, refusing a second page for the same file. */
-  async function writePage({ urlPath, file, doc, islands: pageIslands }, node) {
+  async function writePage({ urlPath, file, html, docOpts, hydrate, islands: pageIslands }, node) {
     const rel = relative(outDirAbs, file)
     // Two getStaticPaths() entries that fill to one file. Refused rather than
     // warned, alongside the empty-param case in fillPath: one file is one
@@ -740,6 +814,15 @@ export async function prerenderRoutes(opts) {
     }
     writtenFrom.set(rel, urlPath)
 
+    // Serialized here and not at render: only a page that passed the static
+    // safety check (FJS-081) is written, and its data is exactly what that
+    // check read, so embedding it publishes nothing the HTML did not.
+    const doc = wrapDocument(html, {
+      ...docOpts,
+      ...(hydrate ? { hydrateJson: hydrateJson(hydrate.props, `${node.id} (${urlPath})`) } : {}),
+    })
+    if (hydrate) hydratePages.push({ rel, wrapper: hydrate.wrapper })
+
     await mkdir(dirname(file), { recursive: true })
     await writeFile(file, doc, 'utf8')
     written.push(rel)
@@ -748,8 +831,9 @@ export async function prerenderRoutes(opts) {
     // Record which islands this page carries. Mesa tags each entry with the
     // file the call site was written in and the import specifier it came
     // from, which together resolve a marker's component NAME to a module —
-    // the one thing a bundle needs and a marker cannot carry.
-    for (const entry of pageIslands) {
+    // the one thing a bundle needs and a marker cannot carry. A hydrated
+    // page's client:* subtrees are chunks of its own hydrate entry.
+    for (const entry of hydrate ? [] : pageIslands) {
       if (!entry.specifier) {
         warn(`${urlPath}: <${entry.component} client:${entry.directive}> has no import specifier ` +
              `— it cannot be bundled and will stay inert. Import it from a .mesa file.`)
@@ -805,7 +889,9 @@ export async function prerenderRoutes(opts) {
         exposed:    recorder.exposed,
         columnsOf:  recorder.columnsOf,
         taps:       recorder.taps,
-        readsData:  route.readsData,
+        // A flagged page carries what its awaits settled, which is data the
+        // build has to be able to see as surely as load()'s.
+        readsData:  route.readsData || route.pages.some((p) => Object.keys(p.hydrate?.props.state ?? {}).length > 0),
       })
       if (!verdict.ok && declared) violations.push(verdict.message)
       // Not a violation — a `load()` that only fetches an absolute URL is
@@ -877,6 +963,7 @@ export async function prerenderRoutes(opts) {
     fallback,
     islands: [...islandsByName.values()],
     islandPages,
+    hydrate: hydratePages,
     pageReads,
     // What the check PROVED, not only what it rejected. A check nobody has seen
     // run is a rule nobody trusts, and this table is also the per-route

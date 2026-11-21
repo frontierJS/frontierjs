@@ -5,6 +5,9 @@
 import { test, expect, describe } from 'bun:test'
 
 import { wrap, bubble, transcript, COLUMN } from '../src/lib/games/booth.js'
+import { boardRows, status } from '../src/lib/games/checkers.js'
+import { START, applyMove, mustCapture, parseMove, squareIndex, winnerOf } from '#shared/checkers.ts'
+import { MAX_DICE, parseRoll } from '#shared/dice.ts'
 import { createStage, arrival } from '../src/lib/scene/stage.js'
 import { table } from '../src/pieces/table.js'
 import { candle } from '../src/pieces/candle.js'
@@ -155,5 +158,92 @@ describe('the booth\'s light', () => {
     const wick = candle.cells.find((c) => c.key === 'k')
     expect(tip).toEqual(['l', 'i', 'j'])
     expect(candle.cells.find((c) => c.key === 'i').dx).toBe(wick.dx)
+  })
+})
+
+// A board from `{ c3: 'r' }`, every other square empty.
+const put = (pieces) => {
+  const b = Array(64).fill('.')
+  for (const [sq, c] of Object.entries(pieces)) b[squareIndex(sq)] = c
+  return b.join('')
+}
+const go = (board, side, ...squares) => applyMove(board, side, squares.map(squareIndex))
+
+describe('checkers rules', () => {
+  test('a fresh board has twelve a side on the dark squares, red to start', () => {
+    expect([...START].filter(c => c === 'r').length).toBe(12)
+    expect([...START].filter(c => c === 'b').length).toBe(12)
+    expect(START[squareIndex('a1')]).toBe('r')
+    expect(START[squareIndex('h8')]).toBe('b')
+    expect(go(START, 'r', 'a3', 'b4')[squareIndex('b4')]).toBe('r')
+  })
+
+  test('a man steps forward only, onto an empty square, and only its own side moves', () => {
+    expect(() => go(START, 'r', 'a3', 'a4')).toThrow()
+    expect(() => go(START, 'r', 'a1', 'b2')).toThrow()
+    expect(() => go(START, 'r', 'b6', 'a5')).toThrow('not your piece')
+    expect(() => go(put({ b4: 'r' }), 'r', 'b4', 'a3')).toThrow()
+  })
+
+  test('a capture is compulsory and a chain must go on while it can', () => {
+    const board = put({ a1: 'r', b2: 'b', d4: 'b', h8: 'b', c1: 'r' })
+    expect(mustCapture(board, 'r')).toBe(true)
+    expect(() => go(board, 'r', 'c1', 'd2')).toThrow('must take it')
+    expect(() => go(board, 'r', 'a1', 'c3')).toThrow('must keep capturing')
+    const after = go(board, 'r', 'a1', 'c3', 'e5')
+    expect(after[squareIndex('e5')]).toBe('r')
+    expect(after[squareIndex('b2')]).toBe('.')
+    expect(after[squareIndex('d4')]).toBe('.')
+  })
+
+  test('a man that reaches the far rank is crowned, and a king goes both ways', () => {
+    const crowned = go(put({ b6: 'r', c7: 'b', h2: 'b' }), 'r', 'b6', 'd8')
+    expect(crowned[squareIndex('d8')]).toBe('R')
+    expect(crowned[squareIndex('c7')]).toBe('.')
+    expect(go(put({ d4: 'R' }), 'r', 'd4', 'c3')[squareIndex('c3')]).toBe('R')
+  })
+
+  test('a side with nothing left to move has lost', () => {
+    expect(winnerOf(put({ a1: 'r' }), 'b')).toBe('r')
+    expect(winnerOf(START, 'b')).toBeNull()
+  })
+
+  test('/move reads squares however they are separated, and nothing else', () => {
+    expect(parseMove('c3 d4')).toEqual(['c3', 'd4'].map(squareIndex))
+    expect(parseMove('c3-d4')).toEqual(['c3', 'd4'].map(squareIndex))
+    expect(parseMove('C3xE5xG7')).toEqual(['c3', 'e5', 'g7'].map(squareIndex))
+    for (const bad of ['c3', 'z9 a1', 'c3 d9', 'castle']) expect(parseMove(bad)).toBeNull()
+  })
+})
+
+describe('the board a member sees', () => {
+  test('is drawn from their own side, their pieces o and the other\'s x', () => {
+    const game = { board: START, redId: 1, blackId: 2, turn: 'r', winnerId: null, last: null }
+    const red = boardRows(game, 'r')
+    const black = boardRows(game, 'b')
+    expect(red[0]).toBe('  a b c d e f g h')
+    expect(red[1].startsWith('8 ')).toBe(true)
+    expect(red[1]).toContain('x')
+    expect(red[8]).toContain('o')
+    expect(black[0]).toBe('  h g f e d c b a')
+    expect(black[1].startsWith('1 ')).toBe(true)
+    expect(black[1]).toContain('x')
+  })
+
+  test('says whose move it is and who won', () => {
+    const game = { board: START, redId: 1, blackId: 2, turn: 'r', winnerId: null, last: null }
+    const nicks = { 1: 'sam', 2: 'ana' }
+    expect(status(null, { me: 1, nicks })).toContain('/checkers begins one')
+    expect(status(game, { me: 1, nicks })).toContain('Your move')
+    expect(status(game, { me: 2, nicks })).toBe('sam to move')
+    expect(status({ ...game, winnerId: 2, last: 'resigned' }, { me: 2, nicks })).toContain('You won')
+  })
+})
+
+describe('a roll spec', () => {
+  test('is count d sides within the limits, and nothing else', () => {
+    expect(parseRoll('2d6')).toEqual({ count: 2, sides: 6 })
+    expect(parseRoll('d20')).toEqual({ count: 1, sides: 20 })
+    for (const bad of ['', '6', '0d6', `${MAX_DICE + 1}d6`, '2d1', '2d101', '2d6 + 1', 'roll']) expect(parseRoll(bad)).toBeNull()
   })
 })

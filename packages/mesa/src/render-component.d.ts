@@ -21,6 +21,14 @@
  *                                             in the output. Off by default: RULE 26
  *                                             strips `client:*` unless a meta-framework
  *                                             asks for markers. See runtime.js `island()`.
+ * @param {string}  [options.label] — what to call this render in a failure message and
+ *                                     a `hydratable` store warning: a page's path, where
+ *                                     every page renders one synthetic file. Default: the file's name.
+ * @param {boolean} [options.hydratable=false] — Write the markers a client adopts the
+ *                                             server's DOM by (`FJS-D2286`), on every
+ *                                             module in the tree as `islands` is. Off,
+ *                                             the output is byte-identical to a render
+ *                                             that never heard of it (`FJS-D2176`).
  * @param {string}  [options.tmpDir]        — Directory for the temp modules the
  *                                             renderer compiles to. Defaults to
  *                                             Mesa's own package root, which is
@@ -81,6 +89,9 @@
  *                           flattened — the build-time view of what the markers
  *                           in `.html` refer to, which is what a loader needs to
  *                           map a component name onto a module to import.
+ *     .state    {object|undefined} — a `hydratable` render's settled `{#await}`
+ *                           values by `'<instance id> <binding key>'`, raw: the
+ *                           caller serializes them for `hydrate(..., { state })`.
  *
  *   target js:
  *     .modules  {Map<string,string>} — Map<originalPath, compiledJS>
@@ -95,6 +106,8 @@ export function renderComponent(source: string, options?: {
     unocss?: object;
     compileOptions?: object;
     islands?: boolean;
+    label?: string;
+    hydratable?: boolean;
     tmpDir?: string;
     alias?: object;
     transformSource?: Function;

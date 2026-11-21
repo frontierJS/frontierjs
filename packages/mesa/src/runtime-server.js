@@ -12,6 +12,8 @@
  * the non-breaking space, an attribute value escapes `&` and `"`.
  */
 
+import * as P from './hydration-protocol.js'
+
 const TEXT = /[&<>\u00A0]/g
 const TEXT_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\u00A0': '&nbsp;' }
 const ATTR = /[&"]/g
@@ -404,13 +406,76 @@ export function head(out) {
  * so the branch's effects belong to the render and its `$context` reads find
  * their providers.
  */
-export function awaitBlock(out, scope, value, then, fail) {
+export function awaitBlock(out, scope, value, then, fail, id, key) {
   if (!value?.then) { then?.(out, value); return }
   const buf = []
+  const into = id == null ? null : _state
   out.push(Promise.resolve(value).then(
-    (v) => { if (then) scope(() => then(buf, v)); return buf },
+    (v) => { if (into) into[id + ' ' + key] = v; if (then) scope(() => then(buf, v)); return buf },
     (e) => { if (fail) scope(() => fail(buf, e)); return buf },
   ))
+}
+
+// A flagged render's settled `{#await}` values, by instance id and binding key
+// (`IDEAS/hydration.md` 3.1): the client reads its entry instead of fetching the
+// value a second time. Renders run one at a time (`render.js` `_queue`), so one
+// collection is open at most.
+let _state = null
+
+/** Open the collection a flagged render's awaits write into. */
+export function collectState(page) {
+  _state = {}
+  _page = page
+  for (const [obj, rec] of _stores) { rec.start = _snap(obj); rec.seen = false }
+}
+
+/** Close it, handing back what the render settled. */
+export function takeState() {
+  for (const [obj, rec] of _stores) {
+    const end = _snap(obj)
+    if (end === rec.pristine) rec.writer = null
+    else if (end !== rec.start) rec.writer = _page
+  }
+  const state = _state
+  _state = _page = null
+  return state ?? {}
+}
+
+// ─── carry-over (FJS-D2285) ───────────────────────────────────────────────────
+//
+// A build renders every page in one process, so a module store one page's
+// route wrote still holds that value when the next page starts, and the next
+// page publishes it as its own. Registered at import, before any route writes,
+// so the value it was imported with is the one to compare against.
+
+const _stores = new Map()
+let _page = null
+const _snap = (v) => { try { return JSON.stringify(v) } catch { return null } }
+
+/** A flagged module's watched store, at import. */
+export function store(obj, name) {
+  if (obj === null || typeof obj !== 'object' || _stores.has(obj)) return
+  _stores.set(obj, { name, pristine: _snap(obj), start: null, seen: false, writer: null })
+}
+
+/** A flagged component watches the store during this render. */
+export function watched(obj) {
+  const rec = _stores.get(obj)
+  if (!rec || rec.seen || _page === null) return
+  rec.seen = true
+  if (rec.writer !== null && rec.start !== rec.pristine)
+    console.warn(`[Mesa] hydratable: store '${rec.name}' starts page ${_page} holding a value page ${rec.writer} wrote. ` +
+      'A build renders every page in one process, so this page publishes that value as its own. ' +
+      "Write the store from this page's own data, or reset it before the page renders.")
+}
+
+/** A flagged awaited `const`: its value, once it lands in this render, under
+ *  the id its call site gave this instance and the const's own key. */
+export function asyncState(out, key, state, get) {
+  const into = _state
+  if (!into) return
+  const id = out.$$hid ?? '0'
+  state.settled().then(() => { if (_state === into && state.error === null) into[id + ' ' + key] = get() })
 }
 
 /** Replace each promise `awaitBlock` pushed with its branch, the branch's own
@@ -473,4 +538,36 @@ function dropAnchors(node) {
     if (n.nodeType === 8) { if (isAnchorComment(n.data)) n.remove() }
     else if (n.nodeType === 1) dropAnchors(n)
   }
+}
+
+// ─── hydration markers ────────────────────────────────────────────────────────
+//
+// What a `hydratable` render writes (`FJS-D2286`, `IDEAS/hydration.md` Phase 1),
+// spelled by `hydration-protocol.js`, which the client parses with. An id is
+// the parent's id, a call site's source offset and a row key, so a block
+// rendering a different number of children moves no id outside itself.
+
+/** The id a call site handed this instance, or `parent` when none did. */
+export function hid(out, parent) {
+  const id = out.$$hid
+  out.$$hid = undefined
+  return id ?? parent
+}
+
+/** Run a component or snippet call with the id its call site gives it. */
+export function call(out, parent, site, fn) {
+  out.$$hid = parent + '.' + site
+  try { fn() } finally { out.$$hid = undefined }
+}
+
+export const rowId = P.rowId
+export const instance = (id, scope) => `<!--${P.INSTANCE} ${id} ${scope || '-'}-->`
+export const mark = (id, key) => `<!--${P.MARK} ${id} ${key}-->`
+export const blockOpen = (id, key, state) => `<!--${P.OPEN} ${id} ${key}${state == null ? '' : ' ' + state}-->`
+export const row = (id) => `<!--${P.ROW} ${id}-->`
+export const blockClose = (id, key) => `<!--${P.CLOSE} ${id} ${key}-->`
+
+/** A live text run, escaped already, and its marker. */
+export function textMark(value, id, key) {
+  return value === '' ? `<!--${P.MARK} ${id} ${key} ${P.EMPTY}-->` : value + mark(id, key)
 }

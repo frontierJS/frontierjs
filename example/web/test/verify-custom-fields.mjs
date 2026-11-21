@@ -73,7 +73,9 @@ import { withCustomFields, shownFields } from '../../web/src/lib/custom-fields.j
 import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.ts'
 import { results, report } from './lib/report.mjs'
 import { PORTS, TEST_SINK_ENV }           from './lib/preflight.mjs'
+import { seedShop }                       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 
 // `Customer` declares `@@extensible(fields, declaredBy: CustomField, max: …)`

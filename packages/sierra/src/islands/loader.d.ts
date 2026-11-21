@@ -40,15 +40,6 @@ export function resolveComponent(entry?: any): Promise<any>;
  */
 export function mountIsland(island?: any, Component?: any): any;
 /**
- * Schedule `fn` according to a `client:*` directive.
- *
- * Returns a teardown for the ones that wait on something, so a caller can
- * cancel. `static` never runs: it means "no JS even if the component is
- * reactive" (VISION §18.5), so the prerendered markup is the final answer and
- * mounting would be the opposite of what was asked for.
- */
-export function schedule(directive?: any, media?: any, target?: any, fn?: any): () => void;
-/**
  * Mount every island on the page from a name → component registry.
  *
  * The registry is generated at build time by Sierra's island entry — component
@@ -68,3 +59,4 @@ export function hydrateIslands(registry: Record<string, Function>, { root }?: {
     component: string;
     directive: string;
 }>;
+export { schedule };

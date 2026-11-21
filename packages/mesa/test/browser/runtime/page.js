@@ -14,7 +14,7 @@
  * at all, which reads as "the click did nothing" — `mountBare` exists so a
  * spec can assert exactly that.
  */
-import { mount } from '@frontierjs/mesa/runtime'
+import { mount, hydrate } from '@frontierjs/mesa/runtime'
 import { installProbes, captureWarnings } from '/mesa/test/browser/probes.js'
 
 const stage = document.getElementById('stage')
@@ -101,3 +101,18 @@ window.mesaStyles = () =>
   [...document.querySelectorAll('style')].map((s) => s.textContent).join('\n')
 
 window.__mesaReady = true
+
+/** Serve a hydrate fixture's server page into the stage, tag what the server
+ *  wrote, and adopt it: a spec then asks whether the tagged nodes survived. */
+window.mesaHydrate = async (specifier, props = {}) => {
+  window.mesaUnmount()
+  resetWarnings()
+  const res = await fetch('/ssr' + specifier.replace(/^\/mesa/, '') + '?props=' + encodeURIComponent(JSON.stringify(props)))
+  if (!res.ok) throw new Error(await res.text())
+  stage.innerHTML = await res.text()
+  for (const el of stage.querySelectorAll('[data-tag]')) el.__serverNode = el.dataset.tag
+  const mod = await import(specifier)
+  current = hydrate(stage, mod.default, props)
+  await new Promise((r) => (globalThis.__fjsClock?.native ?? globalThis).setTimeout(r, 0))
+  return true
+}

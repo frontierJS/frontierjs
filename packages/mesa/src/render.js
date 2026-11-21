@@ -40,7 +40,7 @@
 
 import { setRenderEnvironment, createRoot, flushSync, settleAwaits, startRender } from './runtime.js'
 import { missingPeer, NO_LOADING } from './optional-peer.js'
-import { isAnchorComment } from './runtime-server.js'
+import { isAnchorComment, collectState, takeState } from './runtime-server.js'
 import { clock, quietSource } from './clock.js'
 
 const { Window } = await import('happy-dom').catch(missingPeer('happy-dom', 'renderToHTML'))
@@ -271,6 +271,9 @@ export function renderFailure(cause, label) {
  * @param {string}   [options.label] — what to call this component in a failure
  *                                     message. Diagnostic only; nothing reads it
  *                                     otherwise.
+ * @param {boolean} [options.hydratable] — refuse a factory not compiled with
+ *                                     `hydratable: true` (`FJS-D2286`), whose
+ *                                     page has no markers to adopt.
  * @param {'server'} [options.target] — the component was compiled with
  *                                     `target: 'server'` (`FJS-D1634`): it writes
  *                                     string pushes, so it runs with no window
@@ -291,7 +294,11 @@ export function renderToHTML(ComponentFactory, props = {}, options = {}) {
  * title or an og: tag. `head` is `''` on the DOM path, whose `<mesa:head>`
  * lands in a `document.head` no serializer reads.
  *
- * @returns {Promise<{ html: string, head: string }>}
+ * `state` is there on a `hydratable` string render: each settled `{#await}`
+ * value by `'<instance id> <binding key>'`, raw, for the caller to serialize
+ * and hand to `hydrate()` (`IDEAS/hydration.md` 3.1).
+ *
+ * @returns {Promise<{ html: string, head: string, state?: Record<string, unknown> }>}
  */
 export function renderToParts(ComponentFactory, props = {}, options = {}) {
   // An idle renderer starts at once, so a render with no `{#await}` has
@@ -305,6 +312,14 @@ export function renderToParts(ComponentFactory, props = {}, options = {}) {
 let _queue = null
 
 async function _render(ComponentFactory, props, options) {
+  // Markers are written by a compile, not by a render: a factory compiled
+  // without them would hand back a page the client cannot adopt, and say nothing.
+  if (options.hydratable && typeof ComponentFactory === 'function' && !ComponentFactory.hydratable) {
+    throw new Error(
+      `[Mesa renderToHTML] hydratable: ${ComponentFactory.name || 'this component'} was not compiled hydratable, so it ` +
+      "writes no markers. Compile it with { target: 'server', hydratable: true }, or drop the option."
+    )
+  }
   if (typeof ComponentFactory !== 'function') {
     throw new Error(
       '[Mesa renderToHTML] Expected the default export of a compiled .mesa file, got ' +
@@ -379,7 +394,9 @@ async function _renderString(ComponentFactory, props, options) {
     )
   }
   let started = null
+  let state = null
   const prev = clock.use(quietSource)
+  if (options.hydratable) collectState(options.label ?? ComponentFactory.name)
   try {
     started = startRender(ComponentFactory, props)
     if (started.waiting) await started.waiting
@@ -388,13 +405,14 @@ async function _renderString(ComponentFactory, props, options) {
     throw renderFailure(e, options.label)
   } finally {
     clock.use(prev)
+    if (options.hydratable) state = takeState()
   }
   const { out, dispose } = started
   const html = out.join('').trim()
   // `<mesa:head>` wrote beside the body (`runtime-server.js` `head`).
   const head = out.head ? out.head.join('') : ''
   dispose()
-  return { html, head }
+  return state ? { html, head, state } : { html, head }
 }
 
 // ─── Full page wrapper ────────────────────────────────────────────────────────

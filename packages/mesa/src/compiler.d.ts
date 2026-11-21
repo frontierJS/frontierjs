@@ -408,6 +408,10 @@ export class makeVirtualEachBlock {
  */
 export function withAwaitParam(ctx?: any, param?: any, fn?: any): any;
 export function makeAwaitBlock(data?: any, label?: any): xNode;
+export class makeAwaitBlock {
+    constructor(data?: any, label?: any);
+    unkeyed: number;
+}
 /**
  * `slot=` and `<slot>` are the HTML spelling of a snippet with no arguments,
  * rewritten to one here, before any target reads the tree, so every runtime
@@ -621,6 +625,27 @@ export function emitTransforms(ctx?: any): void;
  * order (the server's string mode) asks this rather than guessing.
  */
 export function writtenOnce(expr?: any, opaqueValues?: any): boolean;
+/**
+ * A live binding's name in a hydratable render: its source offset in the
+ * `.mesa` file. The server's string mode walks the IR and the DOM builder
+ * walks the AST, so a counter local to either walk names a different binding
+ * on each side; the offset is the one thing both hold.
+ */
+export function bindingKey(offset?: any): any;
+/**
+ * Under the flag on a DOM compile, the traversal variable a keyed node lands
+ * in, so the adopting pass can take it from the server's page by key: a name
+ * resolved only after the build, since labels are named while writing.
+ */
+export function hydrationVar(ctx?: any, holder?: any, offset?: any): void;
+/**
+ * Record a block boundary or an instance call site by its offset, so the
+ * corpus test can compare the walks: a block or call site only the server
+ * keys is a boundary the client never looks for.
+ */
+export function hydrationSite(ctx?: any, kind?: any, offset?: any): void;
+/** Name a live binding and record it on the compile, so `test/binding-keys.test.js` can compare the walks. */
+export function liveBinding(ctx?: any, offset?: any): any;
 /** Remove every position marker. Line count is unchanged — they are inline. */
 export function stripSourceMarks(code?: any): any;
 /**
@@ -817,6 +842,7 @@ export function parseAttributes(source?: any, option?: {}): ({
 export function contentFallback(value?: any, snippet?: any): string;
 export function slotProp(name?: any): any;
 export function classSource(attr?: any, name?: any): any;
+export const REACHED_ELEMENT: Set<string>;
 export const version: "2.0.0";
 export const MESA_ELEMENTS: string[];
 export const PRESERVE_WHITESPACE: Set<string>;

@@ -2775,8 +2775,10 @@ describe('a move the engine makes, asked for by a person', () => {
     // no button, where *not senior enough* renders as a disabled one that says
     // ask an administrator — advice that would be wrong here.
     const server = await aServer('online')
-    const db     = (env.actingAs as any)({ id: 'someone', workspaceId: ws.id, memberRole: 'owner' })
-    const moves  = await db.server.transitions(server)
+    // An owner as membershipClaim resolves one: the grid is graded beside the
+    // ladder, so a principal without its grants is refused every gridded move.
+    const asOwner = { id: 'someone', workspaceId: ws.id, memberRole: 'owner', capabilities: grantsFor('owner') }
+    const moves   = await (env.actingAs as any)(asOwner).server.transitions(server)
 
     const report = moves.find((t: any) => t.name === 'reportStopped')
     expect(report.system).toBe(true)
@@ -2785,6 +2787,9 @@ describe('a move the engine makes, asked for by a person', () => {
 
     // A person's move on the same row is unaffected and still graded.
     expect(moves.find((t: any) => t.name === 'drain')).toMatchObject({ system: false, allowed: true })
+
+    const ungranted = await (env.actingAs as any)({ ...asOwner, capabilities: [] }).server.transitions(server)
+    expect(ungranted.find((t: any) => t.name === 'drain')).toMatchObject({ allowed: false, refusedBy: 'capability' })
   })
 
   test('checkIn is the machine\'s move and the from-set comes from the schema', async () => {

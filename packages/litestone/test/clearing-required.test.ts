@@ -207,3 +207,27 @@ describe('an optional list', () => {
     expect(err.errors[0].path).toEqual(['must'])
   })
 })
+
+// A list with no `?` is filled `[]` by the column's DEFAULT when left out, and
+// that fill reached the row ungraded: junction's boundary seeds the same `[]`
+// and refuses it, so only callers below the boundary stored what the schema
+// refuses (FJS-4503).
+describe('a required list under @minItems', () => {
+  const PICK = 'model Pick {\n  id Int @id @default(autoincrement())\n  name String\n  tags String[] @minItems(2, "Pick at least two tags")\n  loose String[]\n  preset String[] @default(["a", "b"]) @minItems(2)\n}'
+
+  test('left out is graded as the [] it would store, under its own message', async () => {
+    const d = await createClient({ schema: PICK, db: ':memory:' })
+    const err = await refusal(() => d.asSystem().pick.create({ data: { name: 'a' } }))
+    expect(err).toBeInstanceOf(ValidationError)
+    expect(err.errors).toEqual([{ path: ['tags'], message: 'Pick at least two tags' }])
+    expect(await d.asSystem().pick.count()).toBe(0)
+  })
+
+  test('two items create, and a list with no minimum or a default of its own still fills', async () => {
+    const d = await createClient({ schema: PICK, db: ':memory:' })
+    const p = await d.asSystem().pick.create({ data: { name: 'a', tags: ['x', 'y'] } })
+    expect(p.tags).toEqual(['x', 'y'])
+    expect(p.loose).toEqual([])
+    expect(p.preset).toEqual(['a', 'b'])
+  })
+})

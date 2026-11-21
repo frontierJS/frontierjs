@@ -303,9 +303,9 @@ test('a --no-auth scaffold leaves a database that holds its schema', () => {
 
 // FJS-D454 — the API holds a system client and sees `@guarded` columns; the
 // browser never does. One shared types file would tell browser code a column
-// exists that every response strips, and the junction augmentation names the
-// browser's module, so it belongs on the client file alone.
-test('db:types writes one types file per audience, and only the browser one augments junction', () => {
+// exists that every response strips. Each augments junction: the system file
+// types app.db and $.db (FJS-D877, FJS-4507), the browser file client.service().
+test('db:types writes one types file per audience, each augmenting junction', () => {
   const app = scaffold('typed')
   const { scripts } = JSON.parse(readFileSync(join(app, 'package.json'), 'utf8'))
   const [api, web, ...rest] = scripts['db:types'].split(' && ')
@@ -313,7 +313,7 @@ test('db:types writes one types file per audience, and only the browser one augm
   expect(rest).toEqual([])
   expect(api).toContain('--audience system')
   expect(api).toContain('--out db/schema.d.ts')
-  expect(api).not.toContain('--augment')
+  expect(api).toContain('--augment junction')
   expect(web).toContain('--audience client')
   expect(web).toContain('--augment junction')
   expect(web).toContain('--out web/src/lib/db.d.ts')

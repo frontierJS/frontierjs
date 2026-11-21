@@ -1,0 +1,30 @@
+---
+title: Hydrate
+render: static
+---
+<script>
+  import Reader from '../components/Reader.mesa'
+  import CartA from '../components/CartA.mesa'
+  import CartB from '../components/CartB.mesa'
+  import Quote from '../components/Quote.mesa'
+  import { cart } from '../lib/cart.js'
+  export let data = null
+  $context.theme = 'dark'
+  cart.count = data.count
+  // The drive reads this: a string here means the page's dates list was not applied.
+  if (typeof window !== 'undefined') window.__published = data.published
+</script>
+<main id="main" tabindex="-1">
+  <p id="greeting">{data.greeting}</p>
+  <Reader />
+  <Quote />
+  <CartA />
+  <div class="scroller">
+    <div class="spacer"></div>
+    <CartB />
+  </div>
+</main>
+<style>
+  .scroller { height: 120px; overflow: auto }
+  .spacer { height: 800px }
+</style>

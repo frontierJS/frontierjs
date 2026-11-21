@@ -10,8 +10,8 @@
     "static.firstLoadCssBrotli": 0,
     "static.firstLoadJsBrotli": 0,
     "static.firstLoadRequests": 1,
-    "static.totalBrotli": 8321,
+    "static.totalBrotli": 8878,
     "widget.files": 1,
-    "widget.totalBrotli": 6546
+    "widget.totalBrotli": 6591
   }
 }

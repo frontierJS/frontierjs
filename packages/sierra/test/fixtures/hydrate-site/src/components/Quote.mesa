@@ -1,0 +1,6 @@
+<script>
+  // A data: URL answers at build time and in the browser alike, so a request
+  // the client makes is counted by the probe's fetch recorder, not lost to a 404.
+  const quote = () => fetch('data:application/json,{"text":"quote from the server"}').then((r) => r.json())
+</script>
+<div>{#await quote()}{:then q}<p id="quote">{q.text}</p>{/await}</div>

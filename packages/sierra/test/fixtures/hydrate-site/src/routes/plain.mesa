@@ -1,0 +1,8 @@
+---
+title: Plain
+render: static
+---
+<main id="main" tabindex="-1">
+  <h1>plain</h1>
+  <p>no cart on this page</p>
+</main>

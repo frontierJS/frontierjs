@@ -135,6 +135,19 @@ export function makeWriteData(shape, ctx, {
   const { modelName, fieldPolicy, enumFields, jsonFields, generatedFields, computedFields, boolFields, fromFields } = shape
   const _hasFrom = Object.keys(fromFields).length > 0
   const _pathDefaultOf = new Map((shape.pathDefaults ?? []).map(p => [p.field, p]))
+  // A list with no `?` and no @default of its own is filled `[]` by the DDL
+  // when a create leaves it out, below validate(), which grades only the keys
+  // it is handed. Junction's boundary seeds the same `[]` and refuses it, so
+  // without this asSystem() stored a list its @minItems refuses (FJS-4503).
+  const _emptyListFills = (shape.model?.fields ?? []).filter(f =>
+    f.type?.array && !f.type.optional && f.type.kind !== 'relation' && f.type.kind !== 'implicitM2M'
+    && f.attributes?.some(a => a.kind === 'minItems')
+    && !f.attributes.some(a => a.kind === 'default' || a.kind === 'transient')).map(f => f.name)
+  const withListFills = (data) => {
+    let filled = data
+    for (const k of _emptyListFills) if (!(k in data)) filled = { ...filled, [k]: [] }
+    return filled
+  }
 
 
   // A MINTED column is spelt `@guarded @system` (`FJS-D1133`): naming it in
@@ -880,7 +893,7 @@ export function makeWriteData(shape, ctx, {
     // here once, with their wording built at the throw site, so an authored
     // `@minItems(2, "Pick at least two tags")` reached the browser through
     // `x-messages` and was ignored by the server (FJS-194).
-    if (model && shape.hasValidation) validate(transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
+    if (model && shape.hasValidation) validate(requireAll ? withListFills(transformed) : transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
 
     // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.enc.key && hasFieldPolicy) protectEncryptedFields(transformed)

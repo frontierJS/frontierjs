@@ -94,6 +94,13 @@ export type SierraConfig = {
     mesa?: {
         shadowDOM?: boolean;
     };
+    /**
+     * — a `static` build only: each page hydrates
+     * from one client root that adopts the prerendered markup, instead of
+     * mounting islands over it, so `$context` and a module store reach every
+     * component on the page. The route's `load()` data is embedded in the page.
+     */
+    hydratable?: boolean;
     autoImport?: {
         components?: string[];
         modules?: Record<string, string[] | object | string>;

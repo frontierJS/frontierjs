@@ -30,6 +30,7 @@ import { readFileSync } from 'node:fs'
 import { join, resolve, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { compileSource } from '../../../src/compiler.js'
+import { renderFile } from '../../../src/render-component.js'
 
 // resolve() rather than the URL path as-is: `new URL('../../..')` keeps its
 // trailing slash, and the containment check below compares against `base + '/'`.
@@ -95,12 +96,17 @@ const PAGE = `<!doctype html>
  *  here is what runs in an app; extracting them would mean this harness places
  *  styles nothing else places, and a scoped-style bug would be invisible
  *  exactly where it lives (`css` is a destination, not a switch). */
+// A `hydrate-` fixture is compiled hydratable on both sides, children too: a
+// child compiled without the flag renders beside the server's copy of itself.
+const hydratable = (file) => /\/hydrate-[^/]*\.mesa$/.test(file)
+
 async function compileMesa(file, dev) {
   const src = await readFile(file, 'utf8')
   const warnings = []
   const ctx = await compileSource(src, {
     filename: file,
     dev,
+    ...(hydratable(file) ? { hydratable: true } : {}),
     warning: (w) => warnings.push(w.message ?? String(w)),
   })
   // The compiler COLLECTS most diagnostics rather than throwing, so a module
@@ -134,6 +140,16 @@ export function createMesaServer({ onWarning } = {}) {
 
     try {
       if (path === '/' || path === '/index.html') return send(200, PAGE, TYPES['.html'])
+
+      // The server half of a hydrate fixture: its string-mode page, which the
+      // browser adopts with hydrate().
+      if (path.startsWith('/ssr/')) {
+        const fixture = safeJoin(PKG, path.slice(5))
+        if (!fixture || !hydratable(fixture)) return send(404, `no hydrate fixture at ${path}`)
+        const props = JSON.parse(url.searchParams.get('props') ?? '{}')
+        const { html } = await renderFile(fixture, { target: 'fragment', props, compileOptions: { target: 'server', hydratable: true } })
+        return send(200, html, TYPES['.html'])
+      }
 
       const file = path.startsWith('/mesa/')     ? safeJoin(PKG, path.slice(6))
                  : path.startsWith('/toolbelt/') ? safeJoin(TOOLBELT, path.slice(10))

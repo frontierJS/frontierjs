@@ -35,7 +35,7 @@
  * come too late, which is why the DOM builder makes its own at build time.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce, LOC_ATTR } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce, liveBinding, bindingKey, hydrationSite, LOC_ATTR } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
 import { esc, attrs as attrString, VOID } from '../runtime-server.js'
@@ -362,7 +362,16 @@ export function buildHost(ctx, t) {
   const scope = !t.paintsCss ? null : string ? ctx.css?.id : ir.styles?.scope
   const styled = !!ctx.css?.active?.()
 
-  const seq = { el: 0, t: 0, m: 0, s: 0, arr: 0 }
+  const seq = { el: 0, t: 0, m: 0, s: 0, arr: 0, id: 0 }
+  // A hydratable render's markers (FJS-D2286) are written by the flagged string
+  // mode alone, so an unflagged render keeps its bytes (FJS-D2176). `idVar`
+  // names the structural id of whatever instance or row the code being
+  // emitted renders under.
+  const hyd = string && !!ctx.config?.hydratable
+  let idVar = '$$id0'
+  const withId = (name, fn) => { const outer = idVar; idVar = name; try { fn() } finally { idVar = outer } }
+  const keyOf36 = (n) => q1(bindingKey(n.start))
+  const opaque = ctx.analysis?.opaqueValues
   const lines = []
   // The string mode gathers a run of static text and holes and writes it as
   // ONE push — a template literal, or a plain string when nothing is live.
@@ -403,7 +412,34 @@ export function buildHost(ctx, t) {
   const emitChildren = (children, parent, ind) => {
     for (const c of spacesIn(t, children)) spaces.add(c)
     for (const c of children) if (c.kind === 'snippet') emitSnippet(c, c.varName, ind)
-    for (const c of children) if (c.kind !== 'snippet' && !dropped.has(c)) emitNode(c, parent, ind)
+    if (!hyd) {
+      for (const c of children) if (c.kind !== 'snippet' && !dropped.has(c)) emitNode(c, parent, ind)
+      return
+    }
+    // A live text run is written whole, so its marker follows the one Text
+    // node the DOM builder makes of it, and an empty run is said to be empty.
+    // A text that follows anything but an element or a block's close would
+    // merge into the text before it when the browser parses the page.
+    let prev = null
+    const transparent = (c) => c.kind === 'snippet' || c.kind === 'const' || (c.kind === 'comment' && !ctx.config?.preserveComments)
+    for (let i = 0; i < children.length; i++) {
+      const c = children[i]
+      if (c.kind === 'snippet' || dropped.has(c)) continue
+      if (c.kind === 'text' && c.live) {
+        const pieces = [c]
+        while (i + 1 < children.length && (transparent(children[i + 1]) || (children[i + 1].kind === 'text' && children[i + 1].start === c.start))) {
+          const next = children[++i]
+          if (next.kind === 'text') pieces.push(next)
+          else if (next.kind !== 'snippet' && !dropped.has(next)) emitNode(next, parent, ind)
+        }
+        if (prev && !['element', 'dynamic-element', 'if', 'each', 'await'].includes(prev.kind)) push(ind, '<!>')
+        emitLiveRun(pieces, ind)
+        prev = c
+        continue
+      }
+      emitNode(c, parent, ind)
+      if (!transparent(c)) prev = c
+    }
   }
 
   // The DOM path's shape: an anchor, then one getter per argument, and the
@@ -413,7 +449,13 @@ export function buildHost(ctx, t) {
   const emitSnippet = (n, name, ind, content = false) => {
     const fn = `(${['__anchor', ...n.params].join(', ')}) => {`
     line(ind, `const ${name} = ${content ? `$$runtime.content(${fn}` : fn}`)
-    if (string) {
+    if (hyd) {
+      const id = `$$id${++seq.id}`
+      line(ind + 1, `const ${id} = $$host.hid(__anchor, ${idVar});`)
+      line(ind + 1, 'const $$out = __anchor;')
+      withId(id, () => emitChildren(n.children, '$$out', ind + 1))
+      flush()
+    } else if (string) {
       line(ind + 1, 'const $$out = __anchor;')
       emitChildren(n.children, '$$out', ind + 1)
       flush()
@@ -426,10 +468,19 @@ export function buildHost(ctx, t) {
   }
 
   const emitRender = (n, parent, ind) => {
+    hydrationSite(ctx, 'site', n.start)
     const m = string ? '$$out' : marker(parent, ind)
     dep(n.callee)
     const args = [m, ...n.args.map((a) => { dep(a); return `() => (${a.code})` })].join(', ')
-    if (n.guard) line(ind, `{ const $$sf = ${n.callee.code}; if ($$sf) $$sf(${args}); }`)
+    if (hyd) {
+      // Bounded, so the client finds the content by this site's key without
+      // reading the element around it, which the server never keyed.
+      const call = (fn) => `$$host.call($$out, ${idVar}, ${keyOf36(n)}, () => ${fn}(${args}))`
+      hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(n)})`)
+      if (n.guard) line(ind, `{ const $$sf = ${n.callee.code}; if ($$sf) ${call('$$sf')}; }`)
+      else line(ind, `${call(n.callee.code)};`)
+      hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
+    } else if (n.guard) line(ind, `{ const $$sf = ${n.callee.code}; if ($$sf) $$sf(${args}); }`)
     else line(ind, `${n.callee.code}(${args});`)
   }
 
@@ -520,6 +571,10 @@ export function buildHost(ctx, t) {
       push(ind + 1, '</'); hole(ind + 1, dyn); push(ind + 1, '>')
       line(ind, '}')
     } else if (!VOID.has(n.tag)) { emitChildren(n.children, '$$out', ind); push(ind, `</${n.tag}>`) }
+    if (pieces.some((p) => !writtenOnce(p.entry[1], opaque)) || n.handlers.length || n.binds.length || n.attachments.length || n.ref) {
+      const key = liveBinding(ctx, n.start)
+      if (hyd) hole(ind, `$$host.mark(${idVar}, ${q1(key)})`)
+    }
     if (n.ref) line(ind, `${n.ref}(null);`)
     for (const h of n.handlers) dep(h.expr)
     for (const a of n.attachments) dep(a.expr)
@@ -575,14 +630,19 @@ export function buildHost(ctx, t) {
 
   // `{:pending}` is never written: a server render waits (`FJS-D1647`).
   const emitAwait = (n, ind) => {
+    hydrationSite(ctx, 'block', n.start)
     dep(n.value)
     line(ind, `$$host.awaitBlock($$out, $$runtime.captureScope(), (${n.value.code}),`)
-    for (const b of [n.then, n.catch]) {
+    for (const [state, b] of [['then', n.then], ['catch', n.catch]]) {
+      if (!b && hyd) { line(ind + 1, `($$out) => { $$out.push($$host.blockOpen(${idVar}, ${keyOf36(n)}, '${state}'), $$host.blockClose(${idVar}, ${keyOf36(n)})); },`); continue }
       if (!b) { line(ind + 1, 'null,'); continue }
       line(ind + 1, `($$out${b.param ? `, ${b.param}` : ''}) => {`)
+      if (hyd) hole(ind + 2, `$$host.blockOpen(${idVar}, ${keyOf36(n)}, '${state}')`)
       emitChildren(b.children, '$$out', ind + 2)
+      if (hyd) hole(ind + 2, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
       line(ind + 1, '},')
     }
+    if (hyd) line(ind + 1, `${idVar}, ${keyOf36(n)},`)
     line(ind, ');')
   }
 
@@ -658,6 +718,23 @@ export function buildHost(ctx, t) {
     }
   }
 
+  const emitLiveRun = (pieces, ind) => {
+    const body = pieces.flatMap(trimmedParts).map((p) => {
+      if (p.kind === 'static') return tq(esc(htmlEntitiesToText(p.value)))
+      dep(p.expr)
+      return '${$$host.esc(' + p.expr.code + ')}'
+    }).join('')
+    hole(ind, `$$host.textMark(\`${body}\`, ${idVar}, ${q1(liveBinding(ctx, pieces[0].start))})`)
+  }
+
+  const trimmedParts = (n) => n.parts.map((p, i) => {
+    if (p.kind !== 'static') return p
+    let value = p.value
+    if (i === 0 && startsPre.has(n)) value = value.replace(LEADING_NEWLINE, '')
+    if (i === n.parts.length - 1 && endsPre.has(n)) value = value.replace(TRAILING_NEWLINE, '')
+    return { ...p, value }
+  })
+
   const emitText = (n, parent, ind) => {
     const parts = n.parts.map((p, i) => {
       if (p.kind !== 'static') return p
@@ -667,6 +744,7 @@ export function buildHost(ctx, t) {
       return { ...p, value }
     })
     if (string) {
+      if (parts.some((p) => p.kind === 'binding' && !writtenOnce(p.expr.code, ctx.analysis?.opaqueValues))) liveBinding(ctx, n.start)
       for (const p of parts) {
         if (p.kind !== 'static') { dep(p.expr); hole(ind, `$$host.esc(${p.expr.code})`); continue }
         push(ind, esc(htmlEntitiesToText(p.value)))
@@ -722,7 +800,22 @@ export function buildHost(ctx, t) {
   }
 
   const emitIf = (n, parent, ind) => {
+    hydrationSite(ctx, 'block', n.start)
     n.branches.forEach((b) => dep(b.test))
+    if (hyd) {
+      const opened = (i) => hole(ind + 1, `$$host.blockOpen(${idVar}, ${keyOf36(n)}, ${i})`)
+      n.branches.forEach((b, i) => {
+        line(ind, `${i ? '} else if' : 'if'} (${b.test.code}) {`)
+        opened(i)
+        emitChildren(b.children, '$$out', ind + 1)
+      })
+      line(ind, '} else {')
+      opened(n.else ? n.branches.length : -1)
+      if (n.else) emitChildren(n.else, '$$out', ind + 1)
+      line(ind, '}')
+      hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
+      return
+    }
     if (string) {
       n.branches.forEach((b, i) => {
         line(ind, `${i ? '} else if' : 'if'} (${b.test.code}) {`)
@@ -767,6 +860,7 @@ export function buildHost(ctx, t) {
   }
 
   const emitEach = (n, parent, ind) => {
+    hydrationSite(ctx, 'block', n.start)
     const m = string ? null : marker(parent, ind)
     dep(n.items)
     const itemParam = n.item.name ?? '$$item'
@@ -783,19 +877,28 @@ export function buildHost(ctx, t) {
     // them were compiled to call them.
     if (string) {
       const arr = `$$arr${seq.arr}`, i = `$$i${seq.arr++}`
+      if (hyd) hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(n)})`)
       line(ind, `{ const ${arr} = $$runtime.eachItems(${n.items.code});`)
       line(ind + 1, `${n.else ? `if (${arr}.length) ` : ''}for (let ${i} = 0; ${i} < ${arr}.length; ${i}++) {`)
       line(ind + 2, `const ${itemParam} = () => ${arr}[${i}]${n.index ? `, ${n.index} = () => ${i}` : ''};`)
       if (n.item.pattern) {
         line(ind + 2, `const ${n.item.fn} = () => { const ${n.item.pattern} = ${itemParam}(); return { ${n.item.names.join(', ')} }; };`)
       }
-      emitChildren(edgeTrimmed(n.children), '$$out', ind + 2)
+      const row = `$$id${++seq.id}`
+      // The row's key as the DOM path's keyFn reads it, so a row keeps its id
+      // when the list reorders.
+      if (hyd) {
+        line(ind + 2, `const ${row} = $$host.rowId(${idVar}, ${n.key ? `(${keyFn})(${arr}[${i}], ${i})` : i});`)
+        hole(ind + 2, `$$host.row(${row})`)
+      }
+      withId(hyd ? row : idVar, () => emitChildren(edgeTrimmed(n.children), '$$out', ind + 2))
       if (n.else) {
         line(ind + 1, '} else {')
         emitChildren(n.else, '$$out', ind + 2)
       }
       line(ind + 1, '}')
       line(ind, '}')
+      if (hyd) hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
       return
     }
     line(ind, `$$host.eachBlock(${m}, () => (${n.items.code}), ${keyFn}, (${params}) => {`)
@@ -820,6 +923,7 @@ export function buildHost(ctx, t) {
   // the loader reads around the child's pushes; the DOM path's `island()`
   // takes the same meta.
   const emitComponent = (n, parent, ind) => {
+    hydrationSite(ctx, 'site', n.start)
     const m = string ? '$$out' : marker(parent, ind)
     const keyOf = (name) => (IDENT.test(name) ? name : q1(name))
     const values = n.props.map((p) => {
@@ -847,11 +951,18 @@ export function buildHost(ctx, t) {
     const obj = n.spreads.length
       ? `Object.assign({}, ${n.spreads.map((e) => `(${e.code})`).join(', ')}, ${literal})`
       : literal
+    const called = (code) => (hyd ? `$$host.call($$out, ${idVar}, ${keyOf36(n)}, () => ${code});` : `${code};`)
+    // Under the flag a `client:*` site is bounded like a `{@render}` site, so
+    // a mismatch when its trigger attaches it re-renders that range alone
+    // (`FJS-D2260`): the page's hydrate has returned by then.
+    const bounded = hyd && n.island && !ir.islands
+    if (bounded) hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(n)})`)
     if (string && n.island && ir.islands) {
       const meta = { component: n.name, directive: n.island.directive }
       if (n.island.media) meta.media = n.island.media
-      line(ind, `$$host.island(${m}, ${n.call}, ${obj}, ${JSON.stringify(meta)});`)
-    } else line(ind, `${n.call}(${m}, ${obj});`)
+      line(ind, called(`$$host.island(${m}, ${n.call}, ${obj}, ${JSON.stringify(meta)})`))
+    } else line(ind, called(`${n.call}(${m}, ${obj})`))
+    if (bounded) hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
     if (string) {
       if (n.ref) line(ind, `${n.ref}(null);`)
       return
@@ -900,7 +1011,13 @@ export function buildHost(ctx, t) {
     }
   }
 
-  if (string) {
+  if (hyd) {
+    line(0, "const $$id0 = $$host.hid(__anchor, '0');")
+    line(0, 'const $$out = __anchor;')
+    hole(0, `$$host.instance($$id0, ${q1(ctx.css?.id ?? '')})`)
+    emitChildren(ir.children, '$$out', 0)
+    flush()
+  } else if (string) {
     line(0, 'const $$out = __anchor;')
     emitChildren(ir.children, '$$out', 0)
     flush()

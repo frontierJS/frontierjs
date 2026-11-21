@@ -23,6 +23,7 @@ import { parse, generateTypeScript } from '../../litestone/src/index.js'
 
 const HERE    = import.meta.dir
 const JUNCTION = resolve(HERE, '../index.ts')
+const JUNCTION_CLIENT = resolve(HERE, '../src/client/index.ts')
 const LITESTONE = resolve(HERE, '../../litestone/src/index.d.ts')
 const TSC     = resolve(HERE, '../../../node_modules/.bin/tsc')
 
@@ -34,6 +35,7 @@ const SCHEMA = `
     id     Int    @id
     text   String
     bookId Int?
+    note   String? @guarded
     book   Book?  @relation(fields: [bookId], references: [id])
   }
   model Book {
@@ -43,7 +45,7 @@ const SCHEMA = `
   }
 `
 
-function compile(usage: string, opts: { generated: boolean }): { ok: boolean; out: string } {
+function compile(usage: string, opts: { generated: boolean; browser?: boolean }): { ok: boolean; out: string } {
   const dir = mkdtempSync(join(tmpdir(), 'junction-app-db-'))
   try {
     const files = ['use.ts']
@@ -51,6 +53,11 @@ function compile(usage: string, opts: { generated: boolean }): { ok: boolean; ou
       const dts = generateTypeScript(parse(SCHEMA).schema, { audience: 'system', augment: 'junction' })
       writeFileSync(join(dir, 'db.d.ts'), dts)
       files.unshift('db.d.ts')
+    }
+    if (opts.browser) {
+      const dts = generateTypeScript(parse(SCHEMA).schema, { audience: 'client', augment: 'junction' })
+      writeFileSync(join(dir, 'web-db.d.ts'), dts)
+      files.unshift('web-db.d.ts')
     }
     writeFileSync(join(dir, 'use.ts'), usage)
     writeFileSync(join(dir, 'tsconfig.json'), JSON.stringify({
@@ -70,6 +77,7 @@ function compile(usage: string, opts: { generated: boolean }): { ok: boolean; ou
         noEmit:                     true,
         paths: {
           '@frontierjs/junction':  [JUNCTION],
+          '@frontierjs/junction/client': [JUNCTION_CLIENT],
           '@frontierjs/litestone': [LITESTONE],
         },
       },
@@ -155,6 +163,20 @@ describe('the registered client reaches $.db', () => {
 
   test('an app that augments AppDb reads typed rows through it, and not through ctx.locals', () => {
     const { ok, out } = compile(TYPED, { generated: true })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, TSC_MS)
+
+  // FJS-4507 -- a scaffold's db/schema.d.ts and web/src/lib/db.d.ts sit in one
+  // tsc program, and a @guarded column makes their rows differ. Both registering
+  // the browser's ServiceTypes is TS2320 there.
+  test('the system and browser files compile in one program', () => {
+    const browser = `
+      import type { ServiceTypes } from '@frontierjs/junction/client'
+      // @ts-expect-error -- the browser's row has no @guarded column
+      export const note: ServiceTypes['verses']['note'] = null
+    `
+    const { ok, out } = compile(TYPED + browser, { generated: true, browser: true })
     expect(out).toBe('')
     expect(ok).toBe(true)
   }, TSC_MS)

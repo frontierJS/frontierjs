@@ -28,7 +28,9 @@ import { prorate, changePlan, issueInvoice, periodLines, startSubscription } fro
 import { allocate }   from '@frontierjs/toolbelt/units'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
 

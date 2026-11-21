@@ -33,7 +33,9 @@
 
 import { db } from '../../api/src/core/db.ts'
 import { results, report } from './lib/report.mjs'
+import { seedShop }       from './lib/seed.mjs'
 
+seedShop()
 const sys = db.asSystem()
 const { got, t } = results()
 

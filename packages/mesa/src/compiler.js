@@ -5911,6 +5911,7 @@ export function buildBlock(data, option = {}) {
             // still carries whatever it evaluates to, because `null` there means
             // remove and `undefined` there means leave alone.
             const exp = rewriteTextResult(pe, ctx.accessors ?? null, { coerceNullish: true })
+            if (!writtenOnce(exp, ctx.analysis?.opaqueValues)) { liveBinding(ctx, n.start); hydrationVar(ctx, textNode, n.start) }
             binds.push(
               xNode('bindText', { el: textNode.bindName(), exp, srcStart: n.start }, (w, nd) => {
                 w.writeLine(`$$runtime.bindText(${nd.el}, () => (${mark(nd.srcStart)}${nd.exp}));`)
@@ -6235,6 +6236,7 @@ export function buildBlock(data, option = {}) {
           // a <Button>Cancel</Button> stayed disabled forever while a plain
           // <button> with the identical expression followed it.
           const label = ownAnchor(n.name)
+          hydrationVar(ctx, label, n.start)
           const component = ctx.makeComponent(n)
           binds.push(insertComponent(component, label))
           return
@@ -6253,6 +6255,7 @@ export function buildBlock(data, option = {}) {
             const spreadExpr = rawExpr.slice(3)   // strip leading ...
             const exp = ctx.accessors ? rewriteExpr(spreadExpr, ctx.accessors) : spreadExpr
             ctx.detectDependency(spreadExpr)
+            if (!writtenOnce(exp, ctx.analysis?.opaqueValues)) { liveBinding(ctx, n.start); hydrationVar(ctx, el, n.start) }
             binds.push(
               xNode('spreadAttributes', { el: el.bindName(), exp }, (w, nd) => {
                 w.writeLine(`$$runtime.spreadAttributes(${nd.el}, () => (${nd.exp}));`)
@@ -6262,6 +6265,10 @@ export function buildBlock(data, option = {}) {
           }
 
           const b = ctx.bindProp(p, n, el)
+          if ((LIVE_ATTRIBUTE.has(b?.bind?.$type) && !writtenOnce(b.bind.exp, ctx.analysis?.opaqueValues)) || REACHED_ELEMENT.has(b?.bind?.$type)) {
+            liveBinding(ctx, n.start)
+            hydrationVar(ctx, el, n.start)
+          }
           if (b?.first) binds.body.splice(firstBind, 0, b.bind)
           else if (b?.bind) binds.push(b.bind)
         })
@@ -6299,7 +6306,9 @@ export function buildBlock(data, option = {}) {
         }
       } else if (n.type === 'each') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeEachBlock(n, { label: ownAnchor('each') }).source)
+        const eachAnchor = ownAnchor('each')
+        hydrationVar(ctx, eachAnchor, n.start)
+        binds.push(ctx.makeEachBlock(n, { label: eachAnchor }).source)
       } else if (n.type === 'virtual-each') {
         // $$virtualEach() appends rows into its anchor, so the anchor is the
         // enclosing element; at a root that is a Comment, where appending
@@ -6311,13 +6320,17 @@ export function buildBlock(data, option = {}) {
         binds.push(ctx.makeVirtualEachBlock(n, { label: { name: tpl.bindName() } }))
       } else if (n.type === 'if') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeifBlock(n, ownAnchor('if')))
+        const ifAnchor = ownAnchor('if')
+        hydrationVar(ctx, ifAnchor, n.start)
+        binds.push(ctx.makeifBlock(n, ifAnchor))
       } else if (n.type === 'key') {
         if (isRoot) requireFragment = true
         binds.push(ctx.makeKeyBlock(n, ownAnchor('key')))
       } else if (n.type === 'await') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeAwaitBlock(n, ownAnchor('await')))
+        const awaitAnchor = ownAnchor('await')
+        hydrationVar(ctx, awaitAnchor, n.start)
+        binds.push(ctx.makeAwaitBlock(n, awaitAnchor))
       } else if (n.type === 'systag') {
         if (n.value.startsWith('@render ')) {
           if (isRoot) requireFragment = true
@@ -6545,6 +6558,7 @@ function insertComponent(component, label) {
 // ─── 7. PARTS ─────────────────────────────────────────────────────────────────
 
 export function makeifBlock(data, label) {
+  hydrationSite(this, 'block', data.start)
   const getBlock = (b) => {
     if (b.singleBlock)
       return xNode('make-block', { block: b.singleBlock }, (w, n) => {
@@ -6898,6 +6912,14 @@ export function constDeclaration(ctx, tagValue) {
 
 export function makeRenderTag(data, label) {
   const ctx = this
+  hydrationSite(ctx, 'site', data.start)
+  hydrationVar(ctx, label, data.start)
+  const hyd = ctx.config?.hydratable && !TARGETS[ctx.config.target]
+  // Under the flag the call goes through hydRender, which hands the snippet
+  // the server's content for this site to adopt.
+  const site = (callee, anchor, args) => hyd
+    ? `$$runtime.hydRender(${anchor}, ($$a) => ${callee}($$a${args ? ', ' + args : ''}))`
+    : `${callee}(${args ? `${anchor}, ${args}` : anchor})`
   const { expr, name: snippetName, optional: isOptional, rawArgs: rawCallArgs, args } = parseRenderTag(data.value)
 
   // Rewrite any reactive variable reads in the args, then hand each one over as
@@ -6916,21 +6938,21 @@ export function makeRenderTag(data, label) {
   return xNode('render-tag', { label, snippetName, callArgs, isLocalSnippet, varAccessor, isOptional }, (w, n) => {
     if (n.isLocalSnippet) {
       // Local {#snippet} — call directly
-      const allArgs = n.callArgs ? `${n.label.name}, ${n.callArgs}` : n.label.name
-      w.writeLine(`$$snippet_${n.snippetName}(${allArgs});`)
+      w.writeLine(`${site(`$$snippet_${n.snippetName}`, n.label.name, n.callArgs)};`)
     } else if (n.varAccessor) {
       // Prop or variable holding a snippet function — read the signal, then call
       const getter = n.varAccessor.endsWith('()') ? n.varAccessor : `${n.varAccessor}`
-      const allArgs = n.callArgs ? `${n.label.name}, ${n.callArgs}` : n.label.name
+      const call = site('$$sf', n.label.name, n.callArgs)
       if (n.isOptional) {
-        w.writeLine(`{ const $$sf = ${getter}; if ($$sf) $$sf(${allArgs}); }`)
+        w.writeLine(`{ const $$sf = ${getter}; if ($$sf) ${call}; }`)
       } else {
-        w.writeLine(`{ const $$sf = ${getter}; $$sf(${allArgs}); }`)
+        w.writeLine(`{ const $$sf = ${getter}; ${call}; }`)
       }
     } else {
       // Unknown name — assume local snippet (will fail at runtime if wrong)
-      const allArgs = n.callArgs ? `${n.label.name}, ${n.callArgs}` : n.label.name
-      w.writeLine(`$$snippet_${n.snippetName}?.(${allArgs});`)
+      w.writeLine(hyd
+        ? `${site(`$$snippet_${n.snippetName}`, n.label.name, n.callArgs).replace('($$a) => $$snippet_' + n.snippetName + '(', '($$a) => $$snippet_' + n.snippetName + '?.(')};`
+        : `$$snippet_${n.snippetName}?.(${n.callArgs ? `${n.label.name}, ${n.callArgs}` : n.label.name});`)
     }
   })
 }
@@ -7052,6 +7074,7 @@ export function eachFrame(ctx, header, rowSource) {
 }
 
 export function makeEachBlock(data, option) {
+  hydrationSite(this, 'block', data.start)
   this.require('rootCD')
 
   const header = parseEachHeader(data.value)
@@ -7303,15 +7326,29 @@ export function withAwaitParam(ctx, param, fn) {
 }
 
 export function makeAwaitBlock(data, label) {
+  hydrationSite(this, 'block', data.start)
   const rx = data.value.match(/^#await\s+(.+)$/s)
   assert(rx, 'Wrong #await expression')
   const rawExp = rx[1].trim()
   const exp = this.accessors ? rewriteExpr(rawExp, withoutWatchedCalls(this.accessors)) : rawExp
   this.detectDependency(rawExp)
+  // An adopted await reads the server's value instead of its expression, and
+  // still has to re-run when what the expression reads changes.
+  let deps
+  if (this.config?.hydratable && !TARGETS[this.config.target]) {
+    const reads = awaitReads(rawExp, (name) => !!this.accessors?.[name])
+    deps = reads === null ? null : this.accessors ? rewriteExpr(reads, withoutWatchedCalls(this.accessors)) : reads
+  }
 
-  const pendingBlock = data.parts.main?.length
-    ? this.buildBlock({ body: data.parts.main }, { allowSingleBlock: false }).block
-    : null
+  // A server render writes only the settled branch (FJS-D1647), so no pending
+  // binding is ever in the markup a hydratable client adopts.
+  this.unkeyed = (this.unkeyed ?? 0) + 1
+  let pendingBlock
+  try {
+    pendingBlock = data.parts.main?.length
+      ? this.buildBlock({ body: data.parts.main }, { allowSingleBlock: false }).block
+      : null
+  } finally { this.unkeyed-- }
 
   const thenValue = data.parts.thenValue?.match(/^:then\s*(.*)/s)?.[1]?.trim() || null
   const thenBlock = data.parts.then?.length
@@ -7331,7 +7368,7 @@ export function makeAwaitBlock(data, label) {
 
   return xNode(
     'await:bind',
-    { label, exp, pendingBlock, thenBlock, catchBlock, thenValue, catchValue },
+    { label, exp, pendingBlock, thenBlock, catchBlock, thenValue, catchValue, deps },
     (w, n) => {
       w.writeLine(`$$runtime.awaitBlock(${n.label.name}, () => (${n.exp}),`)
       w.indent++
@@ -7352,10 +7389,56 @@ export function makeAwaitBlock(data, label) {
       w.write(',')
       w.write(true)
       n.catchBlock ? (w.write(catchArgs(n.catchValue)), w.add(n.catchBlock)) : w.write('null')
+      if (n.deps !== undefined) w.write(`,`), w.write(true), w.write(n.deps === null ? 'true, null' : `true, () => (${n.deps})`)
       w.indent--
       w.writeLine(');')
     }
   )
+}
+
+// What an `{#await}` expression reads, as `(a, b)`, with every call left out:
+// the calls are the fetch the server already made. Null when a read cannot be
+// told apart from a call -- a call inside a call's arguments, a member chain or
+// a method on a reactive name, a function, an assignment -- and the client then
+// evaluates the expression itself.
+function awaitReads(exp, reactive) {
+  let ast
+  try { ast = acorn.parseExpressionAt(exp, 0, { ecmaVersion: 'latest' }) } catch { return null }
+  if (exp.slice(ast.end).trim()) return null
+  const reads = new Set()
+  const rootOf = (n) => { while (n.type === 'MemberExpression') n = n.object; return n }
+  const REFUSED = new Set(['ArrowFunctionExpression', 'FunctionExpression', 'ClassExpression', 'AssignmentExpression',
+    'UpdateExpression', 'AwaitExpression', 'YieldExpression', 'TaggedTemplateExpression', 'ImportExpression', 'ThisExpression'])
+  const visit = (n, inArgs) => {
+    if (!n || typeof n.type !== 'string') return true
+    if (REFUSED.has(n.type)) return false
+    if (n.type === 'Identifier') { reads.add(n.name); return true }
+    if (n.type === 'Literal' || n.type === 'Super' || n.type === 'MetaProperty') return true
+    if (n.type === 'CallExpression' || n.type === 'NewExpression') {
+      if (inArgs) return false
+      const callee = n.callee
+      if (callee.type === 'MemberExpression') {
+        const root = rootOf(callee)
+        if (root.type !== 'Identifier' || reactive(root.name)) return false
+      } else if (callee.type !== 'Identifier') return false
+      return n.arguments.every((a) => visit(a, true))
+    }
+    if (n.type === 'MemberExpression') {
+      const root = rootOf(n)
+      if (root.type !== 'Identifier' || reactive(root.name)) return false
+      return !n.computed || visit(n.property, inArgs)
+    }
+    if (n.type === 'Property') return (!n.computed || visit(n.key, inArgs)) && visit(n.value, inArgs)
+    for (const key of Object.keys(n)) {
+      if (key === 'type' || key === 'start' || key === 'end') continue
+      const v = n[key]
+      const kids = Array.isArray(v) ? v : [v]
+      for (const k of kids) if (k && typeof k.type === 'string' && !visit(k, inArgs)) return false
+    }
+    return true
+  }
+  if (!visit(ast, false)) return null
+  return reads.size ? `(${[...reads].join(', ')})` : 'undefined'
 }
 
 // ─── slots are snippets (FJS-D668) ────────────────────────────────────────────
@@ -8066,6 +8149,7 @@ function checkModuleScriptBound(ctx) {
 
 export function makeComponent(node, option = {}) {
   const ctx = this
+  hydrationSite(ctx, 'site', node.start)
   // If the component name is a reactive variable (derived const, let signal, etc.),
   // the call must go through its accessor to get the current component function value.
   // e.g. `const Component = entry?.component` → accessor = '$$runtime.get(Component)'
@@ -8193,6 +8277,19 @@ export function makeComponent(node, option = {}) {
       island.media = String(clientAttr.value).replace(/^["']|["']$/g, '')
     }
   }
+  // Under the flag a `client:*` child is one subtree of the page's tree whose
+  // bindings attach on its trigger (`FJS-D2174`); the server marks it like any
+  // child, so only the client call differs.
+  if (clientAttr && !island && ctx.config?.hydratable && !TARGETS[ctx.config.target]) {
+    const directive = clientAttr.name.slice('client:'.length)
+    const meta = { component: node.name, directive }
+    if (directive === 'media' && clientAttr.value) meta.media = String(clientAttr.value).replace(/^["']|["']$/g, '')
+    const lazy = !option.self && ctx.lazyIslands?.get(node.name)
+    const load = lazy
+      ? `() => import(${JSON.stringify(lazy.specifier)}).then((m) => m[${JSON.stringify(lazy.member)}])`
+      : `() => ${componentName}`
+    island = { hyd: true, meta, load }
+  }
 
   const placedAt = ctx.locOf(node.start)
 
@@ -8213,8 +8310,10 @@ export function makeComponent(node, option = {}) {
 
       // Call: ComponentFn(anchor, props)
       // As an island: $$runtime.island(anchor, ComponentFn, props, meta)
-      const open  = n.island ? `$$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
-      const close = n.island ? `, ${JSON.stringify(n.island)});` : ');'
+      const open  = n.island?.hyd ? `$$runtime.hydIsland(${n.anchorName}, ${n.island.load}, `
+        : n.island ? `$$runtime.island(${n.anchorName}, ${n.componentName}, ` : `${n.componentName}(${n.anchorName}, `
+      const close = n.island?.hyd ? `, ${JSON.stringify(n.island.meta)});`
+        : n.island ? `, ${JSON.stringify(n.island)});` : ');'
       w.writeLine(`${open}${propsObj}${close}`)
 
       // Register anchor so pushProps, bindProp and bind:this can find the
@@ -8225,8 +8324,12 @@ export function makeComponent(node, option = {}) {
       }
 
       // bind:prop — subscribe to the child's prop signal and write back out.
+      // A deferred client:* child has no registry until its trigger fires, so
+      // its binds and pushes go through calls that wait on the anchor.
+      const bind = n.island?.hyd ? 'islandBind' : 'bindProp'
+      const push = n.island?.hyd ? 'islandPush' : 'pushProps'
       for (const b of n.twoWayProps) {
-        w.writeLine(`$$runtime.bindProp(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
+        w.writeLine(`$$runtime.${bind}(${n.anchorName}, '${b.name}', (v) => ${b.setter}(v));`)
       }
 
       // bind:this — the child's exported interface (props + `export function`
@@ -8247,7 +8350,7 @@ export function makeComponent(node, option = {}) {
       // never LEAVE a spread.
       if (n.hasReactive || n.hasSpreads) {
         const pushObj = buildPropsObj(n.allProps, n.hasSpreads ? n.spreadProps : [])
-        w.writeLine(`$$runtime.createEffect(() => { $$runtime.pushProps(${n.anchorName}, ${pushObj}); });`)
+        w.writeLine(`$$runtime.createEffect(() => { $$runtime.${push}(${n.anchorName}, ${pushObj}); });`)
       }
     }
   )
@@ -9576,7 +9679,9 @@ function emitImports(ctx) {
   const raw = script.source
 
   // ── 1. Imports (passthrough) ──────────────────────────────────────────────
+  const lazy = new Set([...(ctx.lazyIslands?.values() ?? [])].map((l) => l.decl))
   imports.forEach((node) => {
+    if (lazy.has(node)) return
     const src = raw.slice(node.start, node.end)
     // Ensure a trailing semicolon so execCompiled and hoistTemplates can
     // reliably detect and strip/skip import lines.
@@ -9747,10 +9852,13 @@ function emitImportedWatchProxies(ctx, { importProxyRoots }) {
   const { module: mod } = ctx
 
   // Imported store proxies — static, set up once
+  const flaggedServer = ctx.config?.hydratable && TARGETS[ctx.config.target]?.mode === 'string'
   importProxyRoots.forEach((root) => {
     mod.head.push(xNode.raw(`const $$proxy_${root} = $$runtime.watchProxy(${root});`))
+    if (flaggedServer) mod.head.push(xNode.raw(`$$host.watched(${root});`))
     ctx.accessors[root] = `$$proxy_${root}`
   })
+  ctx.watchedStores = flaggedServer ? [...importProxyRoots] : []
 }
 
 /** Phase of emitScript: warn on a path watch a whole-object watch subsumes. */
@@ -10312,11 +10420,20 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
           ? raw.slice(v.initNode.argument.start, v.initNode.argument.end)
           : init
       const rewrittenArg = rewriteExpr(argRaw, ctx.accessors)
+      // Under the flag the server records the value and the client starts from
+      // it. A load whose deps are tracked only by running it is left to run.
+      const flagged = ctx.config?.hydratable && v.initNode && (!v.isDerived || v.deps.length)
+      const key = flagged ? `'$${bindingKey(v.initNode.start)}'` : null
+      const serverFlagged = flagged && TARGETS[ctx.config.target]?.mode === 'string'
+      const seed = flagged && !TARGETS[ctx.config.target]
+        ? `, $$runtime.hydAsync(__anchor, ${key}, ${JSON.stringify({ file: ctx.config.filename ? String(ctx.config.filename).split('/').pop() : 'component', ...(ctx.config.dev ? { dev: true } : {}) })})`
+        : ''
       mod.code.push(
         xNode.raw(
-          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), ${v.isDerived ? `[${depFns}]` : 'null'}, ${sigW}, '${v.name}');`
+          `$$runtime.asyncDerived(() => ${stateVar}, async ($$signal) => (${rewrittenArg}), ${v.isDerived ? `[${depFns}]` : 'null'}, ${sigW}, '${v.name}'${seed});`
         )
       )
+      if (serverFlagged) mod.code.push(xNode.raw(`$$host.asyncState(__anchor, ${key}, ${stateVar}, () => $$runtime.get(${sigR}));`))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', '${v.isDerived ? 'async-derived' : 'async'}');`))
     } else if (v.kind === 'const' && v.isDerived) {
       // Derived const — createMemo so it recomputes lazily when any dep changes.
@@ -10834,6 +10951,91 @@ function _domTraversal(code) {
 }
 
 
+// ─── Hydration: adopt the server's nodes by key ──────────────────────────────
+// Under the flag, a component root and every block body traverse a cloned
+// template only when nothing is being adopted; when `claim()` or `adopting()`
+// returns a handle, each keyed variable is the server's node from the marker
+// map (`IDEAS/hydration.md` 2.2). A node the code reads with no key would be
+// undefined on that path, so the handle refuses it by name and the enclosing
+// block, or the page, renders afresh (FJS-D2260). The block calls become their
+// adopting forms, which hand an unflagged anchor straight to the block itself.
+const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['makeBlock', 'hydBlock']]
+
+function _adoptRoots(code, ctx) {
+  const byName = new Map()
+  for (const { holder, key } of ctx.hydrationVars ?? []) {
+    const name = typeof holder.bindName === 'function' ? holder.bindName() : holder.name
+    if (name) byName.set(name, key)
+  }
+  const file = JSON.stringify(ctx.config.filename ? String(ctx.config.filename).split('/').pop() : 'component')
+  const uses = (name, body) => body.match(new RegExp('(?<![\\w$])' + name.replace(/\$/g, '\\$') + '(?![\\w$])', 'g')) ?? []
+  // The rest of one body, up to the line that closes it: a later body reuses
+  // its walk's names, which would read here as unkeyed nodes this one reads.
+  const bodyEnd = (str, from, ind) => {
+    const width = ind.replace(/^[^]*\n/, '').length
+    const close = new RegExp('\\n[ \\t]{0,' + Math.max(width - 1, 0) + '}[})]', 'g')
+    close.lastIndex = from
+    return close.exec(str)?.index ?? str.length
+  }
+  const bodyAfter = (str, from, ind) => {
+    let body = str.slice(from, bodyEnd(str, from, ind))
+    // A nested block body declares its own walk, under the same names.
+    const nested = /makeBlock\(\$\$tpl\d+, \(\$\$parentElement[^)\n]*\) => \{\n/g
+    for (let k; (k = nested.exec(body));) {
+      const start = k.index + k[0].length
+      body = body.slice(0, k.index) + body.slice(bodyEnd(body, start, body.slice(start).match(/^[ \t]*/)[0]))
+      nested.lastIndex = k.index
+    }
+    return body
+  }
+  // A text or attribute the body writes once, at its own level, already reads
+  // right on the page, so that write lands on a node nobody shows.
+  const plan = (walk, body, ind) => {
+    const lines = walk.split('\n').filter(Boolean)
+    const declared = lines.map((l) => l.match(/^\s*(?:let|var) (\S+) = /)?.[1]).filter(Boolean)
+    const read = declared.filter((n) => !byName.has(n) && uses(n, body).length)
+    const once = read.filter((n) => {
+      const name = n.replace(/\$/g, '\\$')
+      const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', )', 'gm')) ?? []
+      return uses(n, body).length === writes.length
+    })
+    const unkeyed = read.filter((n) => !once.includes(n))
+    const adopt = [
+      ...declared.filter((n) => byName.has(n)).map((n) => `${n} = $$h.take(${JSON.stringify(byName.get(n))});`),
+      ...once.map((n) => `${n} = document.createElement('i');`),
+    ]
+    return { lines, declared, unkeyed, adopt }
+  }
+  let out = code.replace(
+    /^(\s*)const \$\$parentElement = (\$\$tpl\d+)\(\);\n((?:\s+(?:var [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/mg,
+    (whole, ind, tpl, walk, at, str) => {
+      const { unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind.replace(/^[^]*\n/, ''))
+      const opts = `{ file: ${file}${ctx.css?.id ? `, scope: ${JSON.stringify(ctx.css.id)}` : ''}${ctx.config.dev ? ', dev: true' : ''}${unkeyed.length ? `, unkeyed: ${JSON.stringify(unkeyed.join(', '))}` : ''} }`
+      const root = byName.has('$$parentElement') ? `$$h.take(${JSON.stringify(byName.get('$$parentElement'))})` : `$$h.root(${tpl})`
+      return `${ind}const $$h = $$runtime.claim(__anchor, ${opts});\n` +
+        `${ind}const $$parentElement = $$h ? ${root} : ${tpl}();\n` +
+        `${ind}if (!$$h) {\n${walk}${ind}} else {\n${adopt.map((l) => ind + '  ' + l + '\n').join('')}${ind}}\n`
+    }
+  ).replace(/^(\s*)\$\$runtime\.append\(__anchor, \$\$parentElement\);/mg, (_, ind) => `${ind}if (!$$h) $$runtime.append(__anchor, $$parentElement);`)
+  // A block body: the callback a makeBlock hands its template's clone.
+  out = out.replace(
+    /makeBlock\((\$\$tpl\d+), \((\$\$parentElement(?:, [^)\n]*)?)\) => \{\n((?:[ \t]+(?:(?:let|var) [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/g,
+    (whole, tpl, params, walk, at, str) => {
+      const ind = (walk.match(/^[ \t]*/)?.[0]) || '  '
+      const { lines, declared, unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind)
+      const head = `makeBlock(${tpl}, (${params}) => {\n`
+      adopt.unshift(`$$parentElement = $$h.root(${tpl}) ?? $$parentElement;`)
+      return head +
+        `${ind}const $$h = $$runtime.adopting(${file}${unkeyed.length ? ', ' + JSON.stringify(unkeyed.join(', ')) : ''});\n` +
+        (declared.length ? `${ind}let ${declared.join(', ')};\n` : '') +
+        `${ind}if (!$$h) {\n${lines.map((l) => l.replace(/^(\s*)(?:let|var) /, '$1') + '\n').join('')}${ind}} else {\n${adopt.map((l) => ind + '  ' + l + '\n').join('')}${ind}}\n`
+    }
+  )
+  for (const [from, to] of ADOPTING_CALLS) out = out.split(`$$runtime.${from}(`).join(`$$runtime.${to}(`)
+  return out
+}
+
+
 // ─── render() grouping: collect bindText/bindAttribute into one render block ──
 // Converts consecutive:
 //   $$runtime.bindText(el0, () => expr0);
@@ -10947,6 +11149,58 @@ const _opaqueRe = (opaqueValues) => opaqueValues?.length
  */
 export function writtenOnce(expr, opaqueValues) {
   return !_isReactive(expr, _opaqueRe(opaqueValues))
+}
+
+/**
+ * A live binding's name in a hydratable render: its source offset in the
+ * `.mesa` file. The server's string mode walks the IR and the DOM builder
+ * walks the AST, so a counter local to either walk names a different binding
+ * on each side; the offset is the one thing both hold.
+ */
+export function bindingKey(offset) {
+  return offset.toString(36)
+}
+
+// The attribute writes an element's marker keys: the ones the server's string
+// mode serializes. A `bind:` writes nothing there (FJS-D1643).
+const LIVE_ATTRIBUTE = new Set(['bindAttribute', 'bindClass', 'bindStyle', 'bindClassPassthrough'])
+
+// What the client reaches an element for although the server writes nothing
+// live on it: without a marker a hydrating client has no way to the node a
+// handler, a `bind:`, an `{@attach}` or `bind:this` belongs on.
+export const REACHED_ELEMENT = new Set([
+  'bindEvent', 'bindEventDelegated', 'bindInput', 'bindGroup', 'bindMask', 'bindMask-reactive', 'attach', 'bindThis',
+])
+
+/**
+ * Under the flag on a DOM compile, the traversal variable a keyed node lands
+ * in, so the adopting pass can take it from the server's page by key: a name
+ * resolved only after the build, since labels are named while writing.
+ */
+export function hydrationVar(ctx, holder, offset) {
+  if (!ctx.config?.hydratable || TARGETS[ctx.config.target]) return
+  if (!ctx.hydrationVars) ctx.hydrationVars = []
+  ctx.hydrationVars.push({ holder, key: bindingKey(offset) })
+}
+
+/**
+ * Record a block boundary or an instance call site by its offset, so the
+ * corpus test can compare the walks: a block or call site only the server
+ * keys is a boundary the client never looks for.
+ */
+export function hydrationSite(ctx, kind, offset) {
+  if (ctx.unkeyed) return
+  if (!ctx.hydrationSites) ctx.hydrationSites = new Set()
+  ctx.hydrationSites.add(kind + ' ' + bindingKey(offset))
+}
+
+/** Name a live binding and record it on the compile, so `test/binding-keys.test.js` can compare the walks. */
+export function liveBinding(ctx, offset) {
+  const key = bindingKey(offset)
+  if (ctx.unkeyed) return key
+  if (!ctx.liveBindings) ctx.liveBindings = new Set()
+  ctx.liveBindings.add(key)
+  return key
 }
 
 function _renderGroup(code, opaqueValues) {
@@ -11994,6 +12248,37 @@ function detectStaticAndIslands(ctx) {
       else if (n.parts && typeof n.parts === 'object') for (const v of Object.values(n.parts)) if (Array.isArray(v)) walkForIslands(v)
     }
   })(ctx.DOM?.body)
+
+  if (ctx.config?.hydratable && !TARGETS[ctx.config.target]) ctx.lazyIslands = lazyIslandImports(ctx)
+}
+
+/**
+ * Under the flag, the imports a client compile turns into `import()` so a
+ * `client:*` component is its own chunk, fetched on its trigger (`FJS-D2174`).
+ * A static import left beside the `import()` puts the code back in the page's
+ * bundle, so a name qualifies only when the source names it nowhere but its one
+ * import and its `client:*` tags. Over-counting keeps the static import, which
+ * costs the split and never a missing component.
+ * @returns {Map<string, { specifier: string, member: string, decl: object }>}
+ */
+function lazyIslandImports(ctx) {
+  const lazy = new Map()
+  const src = (ctx.source ?? '').replace(/<!--[\s\S]*?-->/g, '')
+  const count = (re) => (src.match(re) ?? []).length
+  for (const name of new Set(ctx.islands.map((i) => i.component))) {
+    const decl = (ctx.analysis?.imports ?? []).find((d) => d.specifiers?.some((s) => s.local?.name === name))
+    const spec = decl?.specifiers.length === 1 ? decl.specifiers[0] : null
+    if (!spec || spec.type === 'ImportNamespaceSpecifier' || typeof decl.source?.value !== 'string') continue
+    const opens = count(new RegExp(`<${name}(?![\\w$.-])`, 'g'))
+    const closes = count(new RegExp(`</${name}(?![\\w$.-])`, 'g'))
+    const sites = ctx.islands.filter((i) => i.component === name).length
+    const word = new RegExp(`(?<![\\w$.])${name}(?![\\w$])`, 'g')
+    const words = count(word) - (decl.source.value.match(word) ?? []).length
+    if (opens !== sites || words !== 1 + opens + closes) continue
+    const member = spec.type === 'ImportDefaultSpecifier' ? 'default' : (spec.imported?.name ?? spec.imported?.value)
+    lazy.set(name, { specifier: decl.source.value, member, decl })
+  }
+  return lazy
 }
 
 /** Stage of compile: extracts and processes the component CSS. */
@@ -12090,6 +12375,10 @@ async function assembleOutput(ctx, hook) {
         moduleScript.split('\n').forEach(line => w.write(true, line))
         w.write(true, '')
       }
+      // What `renderToHTML({ hydratable: true })` asks before it trusts the
+      // markers to be there (FJS-D2286).
+      if (config.hydratable && TARGETS[config.target]?.mode === 'string') w.write(true, `${_compName}.hydratable = true`)
+      for (const root of ctx.watchedStores ?? []) w.write(true, `$$host.store(${root}, '${root}')`)
       // Named function export
       w.write(true, `export default function ${_compName}(__anchor, __props) {`)
       w.indent++
@@ -12140,7 +12429,8 @@ async function assembleOutput(ctx, hook) {
       }
     })
     for (const k in ctx.glob ?? {}) resolveDependencies(ctx.glob[k])
-    return _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning }))), ctx.analysis?.opaqueValues).replace(/^const \$\$set_/mg, (m) => '  ' + m)
+    const built = _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning }))), ctx.analysis?.opaqueValues).replace(/^const \$\$set_/mg, (m) => '  ' + m)
+    return ctx.config.hydratable && !TARGETS[ctx.config.target] ? _adoptRoots(built, ctx) : built
   })
 
   // Position markers are OFF unless asked for, and the caller that asks is the

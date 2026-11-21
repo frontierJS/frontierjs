@@ -187,7 +187,9 @@ export function appTsconfig({
 
   // compilerOptions holds its place so the file reads extends, options, include;
   // JSON.stringify drops it while it is still undefined.
-  const base   = { extends: '@frontierjs/config/tsconfig', compilerOptions: undefined, include: useApi ? ['api/**/*'] : [] }
+  // db/schema.d.ts registers the schema's client; outside the program, `app.db`
+  // and `$.db` type as nothing the schema declares (FJS-4507).
+  const base   = { extends: '@frontierjs/config/tsconfig', compilerOptions: undefined, include: useApi ? ['api/**/*', 'db/schema.d.ts'] : [] }
   const config = surfaces.reduce((c, s) => tsconfigWithSurface(c, s), base)
   return JSON.stringify(config, null, 2) + '\n'
 }

@@ -1,0 +1,4 @@
+<script>
+  const theme = $context.theme
+</script>
+<em data-tag="kid">theme: {theme}</em>

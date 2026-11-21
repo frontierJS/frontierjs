@@ -1,0 +1,52 @@
+<script>
+  // Wall.mesa — the framework quarter's walls (`IDEAS/haven.md` 9.2). Standing
+  // on the cell below a building's door, beside its `wall` spot, the building
+  // says what its package's `PROJECT_STATE.md` leads with, as
+  // `scripts/quarter.mjs` baked it into `quarter.data.json`. A wall is read
+  // client-side from that file alone: nothing is asked of the server, so a
+  // stranger's machine and a checkout read the same words.
+  //
+  // A route places it (`routes/quarter.mesa`), never the scene file: a scene's
+  // picture is pinned.
+  import { at } from '#cell'
+  import WALLS from '@/lib/hash/quarter.data.json'
+
+  const scene = $context.scene
+
+  let view = scene.view
+  let me   = scene.seer
+  $.onDestroy(scene.subscribe(() => { view = scene.view; me = scene.seer }))
+
+  const BY_PKG = new Map(WALLS.map((w) => [w.pkg, w]))
+
+  // Every building's wall cell on the stage, read off the marks when first
+  // asked: the scene's pieces claim before anything in its slot draws.
+  var found = null
+  const walls = () => (found ??= scene.marks
+    .filter((m) => m.kind === 'piece' && m.piece.pkg)
+    .map((m) => ({ pkg: m.piece.pkg, ...m.spot('wall') })))
+
+  const beside = (c) => c && walls().find((w) => Math.abs(w.x - c.x) <= 1 && Math.abs(w.y - c.y) <= 1)
+
+  /** What the wall beside `c` says: the building's name, then the package's headline. */
+  function speech(c) {
+    const w = beside(c)
+    const wall = w && BY_PKG.get(w.pkg)
+    if (!wall) return null
+    return { w, lines: [`${wall.sign} · packages/${wall.pkg}/PROJECT_STATE.md`, ...(wall.lines.length ? wall.lines : ['(its state file has no words to lead with)'])] }
+  }
+
+  /** The words in the view's cells, kept inside it. */
+  function placed(v, c) {
+    const said = speech(c)
+    if (!said) return []
+    return said.lines
+      .map((text, i) => ({ key: `w:${i}`, text: text.slice(0, v.w), x: said.w.x, y: said.w.y + 1 + i }))
+      .filter((o) => o.y >= v.y && o.y < v.y + v.h)
+      .map((o) => ({ ...o, x: Math.max(0, Math.min(o.x - v.x, v.w - o.text.length)), y: o.y - v.y }))
+  }
+</script>
+
+{#each placed(view, me) as o (o.key)}
+  <p class="surface" {@attach at(o.x, o.y, 12)}>{o.text}</p>
+{/each}

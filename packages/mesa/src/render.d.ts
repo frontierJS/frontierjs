@@ -60,6 +60,9 @@ export function renderFailure(cause?: any, label?: any): Error;
  * @param {string}   [options.label] — what to call this component in a failure
  *                                     message. Diagnostic only; nothing reads it
  *                                     otherwise.
+ * @param {boolean} [options.hydratable] — refuse a factory not compiled with
+ *                                     `hydratable: true` (`FJS-D2286`), whose
+ *                                     page has no markers to adopt.
  * @param {'server'} [options.target] — the component was compiled with
  *                                     `target: 'server'` (`FJS-D1634`): it writes
  *                                     string pushes, so it runs with no window
@@ -72,6 +75,7 @@ export function renderToHTML(ComponentFactory: Function, props?: object, options
     full?: boolean;
     keepAnchors?: boolean;
     label?: string;
+    hydratable?: boolean;
     target?: "server";
 }): Promise<string>;
 /**
@@ -81,11 +85,16 @@ export function renderToHTML(ComponentFactory: Function, props?: object, options
  * title or an og: tag. `head` is `''` on the DOM path, whose `<mesa:head>`
  * lands in a `document.head` no serializer reads.
  *
- * @returns {Promise<{ html: string, head: string }>}
+ * `state` is there on a `hydratable` string render: each settled `{#await}`
+ * value by `'<instance id> <binding key>'`, raw, for the caller to serialize
+ * and hand to `hydrate()` (`IDEAS/hydration.md` 3.1).
+ *
+ * @returns {Promise<{ html: string, head: string, state?: Record<string, unknown> }>}
  */
 export function renderToParts(ComponentFactory?: any, props?: {}, options?: {}): Promise<{
     html: string;
     head: string;
+    state?: Record<string, unknown>;
 }>;
 export function wrapPage(bodyHTML?: any, options?: {}): string;
 /**

@@ -1283,7 +1283,7 @@ tag only on pages that have one:
 | `client:media="(min-width: 600px)"` | when the query matches, then and there or on change |
 | `client:static` | **never** — "no JS even if the component is reactive"; its chunk is not fetched |
 
-Four things worth knowing:
+Things worth knowing:
 
 - **Mounting replaces the prerendered markup**; it does not adopt it. Mesa has no
   hydration, so there is nothing to adopt with. For equal props the markup is identical,
@@ -1299,6 +1299,11 @@ Four things worth knowing:
   query never matches is never downloaded at all. Verified against resource timing in a
   real browser. The shared entry (Mesa runtime + loader) is loaded by any page with an
   island.
+- **A press before the mount mounts the island now and lands once it is live.** Every
+  directive but `client:static` leaves a gap while the chunk loads; a pointer-down or click
+  on the prerendered markup starts the mount, and the first click is pressed again on the
+  same element of the live render. A link, form control or submit button is left to the
+  browser, and a click whose element is not in the live markup is dropped with a warning.
 - **A component name is the key.** The marker carries a name, so two different modules
   used under the same component name collide; the build warns and mounts the first.
 

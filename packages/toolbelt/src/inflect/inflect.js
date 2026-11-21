@@ -135,9 +135,12 @@ const IE_SINGULAR = new Set([
   'softie', 'sweetie', 'techie', 'toughie', 'townie', 'walkie', 'weenie', 'wheelie',
 ])
 
-const SINGULAR_OF = Object.fromEntries(
+// Unmarked, a bundler keeps these calls and the IRREGULAR table they read in a
+// bundle that imports only `kebab` (FJS-4494: a Sierra widget). A mark on the
+// outer call alone still keeps its argument.
+const SINGULAR_OF = /* @__PURE__ */ (() => Object.fromEntries(
   Object.entries(IRREGULAR).map(([one, many]) => [many, one])
-)
+))()
 
 /*
  * The table is lowercase and the callers are not: litestone inflects a

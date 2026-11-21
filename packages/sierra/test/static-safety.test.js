@@ -25,7 +25,7 @@
 import { describe, test, expect, beforeEach } from 'vitest'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { mkdirSync, writeFileSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync } from 'fs'
 
 import {
   installSchemas, gateReadLevel, createReadRecorder,
@@ -539,6 +539,47 @@ describe('prerenderRoutes — the read set comes from load()', () => {
 
   test('no client means a data-reading route is refused', async () => {
     await expect(run(scaffold('product'), null))
+      .rejects.toThrow(/could not observe/)
+  }, RENDER_TIMEOUT)
+
+  // A flagged page carries each settled {#await} value whole, where its HTML
+  // shows only the fields the template prints. The recorder spans the render as
+  // well as load(), so a read the await makes is graded as load()'s is.
+  function awaitScaffold(modelRead) {
+    const root = tmpDir('sierra-safety-await-')
+    mkdirSync(resolve(root, 'src/routes/report'), { recursive: true })
+    writeFileSync(resolve(root, 'src/routes/report/index.mesa'),
+      `---\nrender: static\n---\n<script>\n  const rows = async () => { globalThis.__READ__?.('${modelRead}'); return { n: 1, token: 't' } }\n</script>\n` +
+      `{#await rows()}{:then r}<h1>{r.n}</h1>{/await}\n`)
+    return root
+  }
+  async function runFlagged(root, db) {
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
+    const { scan } = await import('../src/scanner/index.js')
+    const tree = await scan('src/routes', { cwd: root })
+    const outDir = tmpDir('sierra-safety-out-')
+    const res = await prerenderRoutes({
+      tree, root, outDir, renderComponent, hydratable: true,
+      schemaDefs: DEFS, schemaModels: MODELS, db,
+    })
+    return { res, outDir }
+  }
+
+  test('a flagged {#await} reading an ungated model builds, and its value is in the page', async () => {
+    const { res, outDir } = await runFlagged(awaitScaffold('product'), fakeClient())
+    expect(res.safety.rows[0].published).toEqual([{ model: 'Product', level: 0 }])
+    const html = readFileSync(resolve(outDir, 'report/index.html'), 'utf8')
+    const json = JSON.parse(html.match(/<script type="application\/json" data-sierra-data>(.*?)<\/script>/)[1])
+    expect(Object.values(json.state)).toEqual([{ n: 1, token: 't' }])
+  }, RENDER_TIMEOUT)
+
+  test('a flagged {#await} reading a GATED model is refused as load() data is', async () => {
+    await expect(runFlagged(awaitScaffold('invoice'), fakeClient()))
+      .rejects.toThrow(/cannot be published as static HTML[^]*Invoice|Invoice[^]*cannot be published as static HTML/)
+  }, RENDER_TIMEOUT)
+
+  test('a flagged page carrying {#await} state with no client wired is refused as unobservable', async () => {
+    await expect(runFlagged(awaitScaffold('product'), null))
       .rejects.toThrow(/could not observe/)
   }, RENDER_TIMEOUT)
 

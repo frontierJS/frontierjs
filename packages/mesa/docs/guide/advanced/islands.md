@@ -53,10 +53,10 @@ The directive is never passed to the component as a prop. The schedule is the
 loader's job. Sierra's loader honors all of these. Mesa itself only writes the
 markers.
 
-## Mounting is replacement
+## Mounting is replacement, unless the page is hydrated
 
-There is no hydration. The loader clears everything between the two comments and
-mounts the component fresh into that range:
+Without the `hydratable` flag, the loader clears everything between the two
+comments and mounts the component fresh into that range:
 
 ```js
 import { mount } from '@frontierjs/mesa/runtime'
@@ -73,6 +73,12 @@ If you write a loader, call `mount`. Calling the component directly renders the
 right markup and registers no event delegation, so the island looks right and
 answers no clicks.
 
+A page compiled and rendered with `hydratable: true` has no islands to mount.
+`hydrate()` adopts the whole page, and a `client:*` child keeps its server
+nodes until its directive fires; then its chunk loads and it attaches
+(`FJS-D2174`). `client:static` never attaches. The bullets below on async data
+and shared state describe the unflagged path.
+
 ## Details worth knowing
 
 - **Props are written as rendered.** `start={2 + 3}` arrives in the marker as
@@ -86,9 +92,9 @@ answers no clicks.
 - **They are comments, not an element.** An element would be moved out of a
   `<tbody>` by the HTML parser and would take part in flex and grid layout. A
   loader reads them with a `TreeWalker`, not `querySelectorAll`.
-- **Async data is the loader's to fetch again.** Nothing from the server render
+- **Async data is the loader's to fetch again** (unflagged). Nothing from the server render
   is serialized except the props.
-- **Islands do not share state.** Each mounts alone, so `$context` from a
+- **Islands do not share state** (unflagged). Each mounts alone, so `$context` from a
   provider outside it reads `undefined`, and a store two islands import starts
   from its client default, not from what the server rendered. Pass what an
   island needs as props, or make the shared region one island

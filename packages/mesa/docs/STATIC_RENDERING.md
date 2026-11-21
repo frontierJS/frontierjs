@@ -2,8 +2,8 @@
 
 Mesa renders components to HTML strings in Node. It is used for static site
 generation, for email, and for any build step that needs markup without a
-browser. There is no hydration yet — output is inert HTML plus whatever scripts
-you attach to the page shell.
+browser. Output is inert HTML plus whatever scripts you attach to the page
+shell, unless the render is flagged `hydratable: true` (§ Status).
 
 ---
 
@@ -138,8 +138,8 @@ await renderToHTML(Comp)                          // <div><b>yes</b></div>
 await renderToHTML(Comp, {}, { keepAnchors: true }) // <div><!----><b>yes</b></div>
 ```
 
-There is no hydration (RULE 20). If it is built (`IDEAS/hydration.md`), it
-will need those anchors to locate blocks, and `keepAnchors` is the switch. The rule for what is an anchor lives in one place —
+Hydration does not read these anchors: a `hydratable: true` render writes its
+own keyed markers (RULE 20). The rule for what is an anchor lives in one place —
 `isAnchorComment` in `runtime-server.js` — and is narrow (`mesa-root` and a `$`
 prefix): `<!--[if mso]>` conditional comments survive, because email templates
 emit them through `{@html}` on purpose, and island markers survive because a
@@ -239,16 +239,32 @@ Covered by `render-ssr.test.js` (25 tests) and `render-component.test.js` (29).
 children by both protocols (see above), so layouts written either way prerender
 correctly.
 
-**Not built:** hydration, per-worker windows. Islands are REPLACED rather than
-hydrated: mesa writes the markers (§ *Island markers*) and sierra's
+**Hydration, behind `hydratable: true`** (`FJS-D2286`). The flag goes on the
+compile and on the render; `renderToHTML` refuses a factory compiled without
+it, and a flagged `renderComponent` refuses a tree holding a file the string
+mode cannot lower. A flagged render writes a marker after each live binding,
+keyed by source offset, plus an instance marker per component and a boundary
+per block, and returns the settled `{#await}` and `$async` values as
+`result.state`. `hydrate(target, Component, props, { state })` adopts the DOM:
+blocks adopt their server branch, a mismatch re-renders the smallest enclosing
+block (`FJS-D2260`), and a `client:*` child keeps its nodes until its
+directive fires. Sierra's top-level `hydratable` key does this for a `static`
+build: the route renders inside `<div data-sierra-root>`, its `load()` data
+and server state ride in one `<script type="application/json"
+data-sierra-data>`, and the page needs a db wired if it carries state, as any
+data read does. Not covered: a `$async` const inside `<mesa:boundary>` loads
+on the client (`FJS-4517`), `bind:this` on a deferred child (`FJS-4518`), and
+the corpus files `FJS-4515` counts, which re-render rather than adopt.
+
+**Not built:** per-worker windows. Without the flag, islands are REPLACED:
+mesa writes the markers (§ *Island markers*) and sierra's
 `src/islands/loader.js` mounts each one, which `site/` does in its built output.
 
-**Islands do not share state.** Each mounts as its own root with its props and
-nothing else, so a `$context` provider above one is absent on the client and a
-store two islands import starts from its client default (`FJS-4313`). Pass
-what an island needs as props, or make the shared region one island. Whether
-Mesa hydrates, and in what shape, is unruled: `IDEAS/hydration.md` holds the
-questions.
+**Unflagged islands do not share state.** Each mounts as its own root with its
+props and nothing else, so a `$context` provider above one is absent on the
+client and a store two islands import starts from its client default
+(`FJS-4313`). Pass what an island needs as props, make the shared region one
+island, or hydrate the page.
 
 `renderToHTML` was broken for months before this was written — it called a
 calling convention the compiler had stopped emitting, and nothing imported or

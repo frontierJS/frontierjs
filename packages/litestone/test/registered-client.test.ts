@@ -104,6 +104,16 @@ describe('the generated client reaches createClient()', () => {
     expect(at('system')).not.toContain('AppDb')
     expect(at('client', 'junction')).not.toContain('AppDb')
   })
+
+  // FJS-4507 -- an app's two files share one tsc program, so each junction
+  // module is registered by one audience: two ServiceTypes registrations whose
+  // rows differ are TS2320.
+  test('the browser\'s ServiceTypes is registered by the client audience alone', () => {
+    const parsed = parse(SCHEMA).schema
+    const at     = (audience: 'client' | 'system') => generateTypeScript(parsed, { audience, augment: 'junction' })
+    expect(at('client')).toContain(`declare module '@frontierjs/junction/client'`)
+    expect(at('system')).not.toContain(`declare module '@frontierjs/junction/client'`)
+  })
 })
 
 // FJS-2779 -- a read is typed by what it asked for. include and select were
@@ -398,6 +408,35 @@ const TENANT_CLIENT = `
 describe('the tenancy claim column is optional in Create (FJS-4202)', () => {
   test('a principal omits it, asSystem() must name it', () => {
     const { ok, out } = compile('system', TENANTED, TENANT_CLIENT)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
+// FJS-4508 -- $setAuth takes any object or null at runtime. Typed as an index
+// signature, it refused an interface without one (junction's SessionContext),
+// so `$setAuth(ctx.user)` failed tsc, and `$setAuth(null)` is how junction's
+// bearer.ts unscopes a client.
+const SCOPED = `
+  import { createClient, type LitestoneClient } from '@frontierjs/litestone'
+
+  interface Session { id: string; userType: string; role?: string }
+
+  export async function run(user: Session, root: LitestoneClient) {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const scoped = db.$setAuth(user).employee
+    const bare   = db.$setAuth(null)
+    const claims = db.$setAuth({ id: 1, capabilities: ['x'] })
+    const plain  = root.$setAuth(user).$setAuth(null)
+    // @ts-expect-error -- a principal is an object
+    db.$setAuth('alice')
+    return { scoped, bare, claims, plain }
+  }
+`
+
+describe('$setAuth takes a principal of any declared shape, or null (FJS-4508)', () => {
+  test('an interface without an index signature, null and a claims literal all compile', () => {
+    const { ok, out } = compile('system', SCHEMA, SCOPED)
     expect(out).toBe('')
     expect(ok).toBe(true)
   })

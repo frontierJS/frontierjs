@@ -661,4 +661,36 @@ describe('a parent the row being written opens', () => {
     expect(await db.asSystem().glassBreak.count()).toBe(0)
     db.$close()
   })
+
+  // The rule is graded on the rows there before the write. Asked once the row
+  // has landed, *may she read the patient* is answered by the row asking, and
+  // an outsider admits herself (FJS-4521).
+  for (const rule of [`check(patient, 'read')`, 'patient.glassBreaks.some(actorId == auth().id)']) {
+    test(`a create rule the row itself would satisfy refuses: ${rule}`, async () => {
+      const db: any = await createClient({ db: ':memory:',
+        schema: GLASS.replace('@@allow(create, auth().clinician == true)', `@@allow(create, ${rule})`) })
+      const sys = db.asSystem()
+      await sys.patient.create({ data: { id: 1, clinicId: 10, carerId: 7 } })
+      await sys.glassBreak.create({ data: brk(1, 1, 5) })
+      const outsider = db.$setAuth({ id: 1, clinicId: 10 })
+      const said = (e: any) => [e.name, e.status, e.message]
+      const attempts = (patientId: number) => [
+        () => outsider.glassBreak.create({ data: brk(9, patientId) }),
+        () => outsider.glassBreak.createMany({ data: [brk(9, patientId)] }),
+        () => outsider.glassBreak.upsert({ where: { id: 9 }, create: brk(9, patientId), update: {} }),
+        () => outsider.glassBreak.upsertMany({ data: [brk(9, patientId)], conflictTarget: ['id'] }),
+      ]
+      const hidden: any[] = [], missing: any[] = []
+      for (const a of attempts(1))   hidden.push(await refusal(a()))
+      for (const a of attempts(999)) missing.push(await refusal(a()))
+      expect(hidden.map(e => e.name)).toEqual(Array(4).fill('AccessDeniedError'))
+      expect(hidden.map(said)).toEqual(missing.map(said))
+      expect(await sys.glassBreak.count()).toBe(1)
+      expect(await outsider.patient.findUnique({ where: { id: 1 } })).toBe(null)
+      // One who already holds a break may file another.
+      const holder = db.$setAuth({ id: 5, clinicId: 10 })
+      expect((await holder.glassBreak.create({ data: brk(10, 1, 5) })).patientId).toBe(1)
+      db.$close()
+    })
+  }
 })
