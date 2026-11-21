@@ -101,7 +101,7 @@ and puts a stand-in `claude` first on the PATH for `:ask`. A change to
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 advisories.js AGENTS.md amend.js api.js app-config.js app.js App.mesa app-schema.js archive.js 
 argv.js ask-claude.js ask-context.js ask.js ask-plugin.js assets.js basecamp.js basecamps.js bench.baseline.json bench.js 
-blast.js bootstrap.js build-check.js bun-fence.js cat.js chain.json checks.js check-worker.js 
+blast.js bootstrap.js build-check.js bun-fence.js cat.js cgroups.js chain.json checks.js check-worker.js 
 children.js ci-log.js ci.mjs CLAUDE.md claude-usage.js clipboard.js close.js cloud.js cloudflare-dns.md 
 cloudflare.js cloudflare.test.js codegraph.js codegraph-page.js color.js command-parse.js 
 compiler.js config.js config.json console.js Console.mesa crest.js crud-templates.js data.js 
@@ -120,7 +120,7 @@ register-atlas.js register-check.js registers.js registry.js release.js release-
 repo-map.js repo-rings.js repo-terms.html repo-work.js repro.js requires.js revert.js runnables.js 
 runtime.js scaffold-build.mjs schema-apply.js schema.lite scope.js scope.test.js seams.js server.js 
 shell.js shortcuts.js signatures.js site-surface.js stand-in.mjs tell.js tell-worker.js terms.js 
-text.js tidy.js tldr.js tree.js tty.js typecheck.js typecheck.mjs ui.js utils.js vaultwarden.js 
+text.js tidy.js tldr.js top-history.js tree.js tty.js typecheck.js typecheck.mjs ui.js utils.js vaultwarden.js 
 vendor.js verbosity.js vite-ask-client.js vite-ask.js VOCABULARY.md web.js widget-surface.js 
 wireframe.js wireframe.md wireframe.test.js workbench.ts zip.js 
 -->

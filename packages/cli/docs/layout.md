@@ -735,7 +735,17 @@ core/
                 (the tree up to the nearest launcher — a Claude session, an
                 interactive shell, the desktop), not by process name or pgid.
                 Pure `buildHitlist()` over two /proc reads, so the test hands it
-                a made-up table; reaped children's CPU comes back through cutime
+                a made-up table; reaped children's CPU comes back through cutime. Also
+                the head line's `forks N/min` (the /proc/stat `processes` delta)
+  cgroups.js    the user's cgroups under `user@<uid>.service` (memory, swap,
+                peak, pids, pressure) and the limit systemd-oomd holds the
+                parent to; the app-group block of `fli top --hitlist`. Every
+                read degrades to null; the cgroup root is injectable
+  top-history.js  `fli top --record`/`--at`/`--history`: a flight recorder
+                that appends one compact JSON line per 10 s to
+                `~/.local/share/fli/top/history/<date>.jsonl`, the oomd kills
+                it reads from the journal, the replay in the hitlist's layout,
+                and the systemd user unit that keeps it running
   health-target.js  where an app answers health and whether anything serves it —
                 the plugin call in the API source, `plugins: { health: true }` in
                 junction.config.js, or a route literal graded against the

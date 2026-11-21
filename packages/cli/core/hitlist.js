@@ -23,6 +23,7 @@
 import { readdirSync, readFileSync, readlinkSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { homedir } from 'node:os'
+import { readAppGroups, unescapeUnit } from './cgroups.js'
 
 const SHELLS = new Set(['bash', 'sh', 'dash', 'zsh', 'fish', 'ksh'])
 // A wrapper runs one real command; the job is named after that command.
@@ -83,6 +84,16 @@ const cpuTotals = () => {
   return { total, idle: (n[3] ?? 0) + (n[4] ?? 0) }
 }
 
+/** The `processes` counter in /proc/stat: every fork since boot. Null where the line is absent. */
+export const forkCount = () => {
+  const m = readOr('/proc/stat', '').match(/^processes (\d+)/m)
+  return m ? Number(m[1]) : null
+}
+
+/** Forks per minute between two counter reads `ms` apart; null when either is unread or time did not pass. */
+export const forksPerMin = (before, after, ms) =>
+  before == null || after == null || !(ms > 0) ? null : Math.max(after - before, 0) / ms * 60000
+
 const meminfo = () => {
   const m = {}
   for (const line of readOr('/proc/meminfo', '').split('\n')) {
@@ -92,43 +103,67 @@ const meminfo = () => {
   return m
 }
 
-const pressure = what => {
-  const m = readOr(`/proc/pressure/${what}`, '').match(/some avg10=([\d.]+)/)
-  return m ? Number(m[1]) : null
+const psi = what => {
+  const text = readOr(`/proc/pressure/${what}`, '')
+  const some = text.match(/some avg10=([\d.]+)/)
+  const full = text.match(/full avg10=([\d.]+)/)
+  return { some: some ? Number(some[1]) : null, full: full ? Number(full[1]) : null }
 }
 
+const confCache = {}
 const getconf = (name, fallback) => {
+  if (confCache[name] != null) return confCache[name]
   const r = spawnSync('getconf', [name], { encoding: 'utf8' })
-  return Number(r.stdout?.trim()) || fallback
+  return (confCache[name] = Number(r.stdout?.trim()) || fallback)
 }
 
-/** Two reads `ms` apart, and the machine-wide numbers around them. */
-export async function sample(ms = 1000) {
-  const cpu0 = cpuTotals()
-  const before = readProcs()
-  const t0 = performance.now()
-  await new Promise(r => setTimeout(r, ms))
-  const after = readProcs({ withDetail: true })
-  const elapsedMs = performance.now() - t0
-  const cpu1 = cpuTotals()
+/** Everything one look at the machine reads: the process table, the CPU and fork counters, the clock. */
+export function reading({ detail = true } = {}) {
+  return { t: performance.now(), wall: Date.now(), procs: readProcs({ withDetail: detail }), cpu: cpuTotals(), forks: forkCount() }
+}
+
+/**
+ * Two readings and the machine-wide numbers between them, in the shape
+ * `buildHitlist` takes. `sample()` is two readings a second apart; the recorder
+ * hands each reading on as the next one's start, so its window is the whole
+ * interval and it reads the process table once per sample instead of twice.
+ */
+export function finishSample(a, b, { groups = readAppGroups() } = {}) {
+  const elapsedMs = b.t - a.t
   const mem = meminfo()
-  const total = cpu1.total - cpu0.total
+  const total = b.cpu.total - a.cpu.total
+  const mp = psi('memory'), cp = psi('cpu'), ip = psi('io')
   return {
-    before, after, elapsedMs,
+    before: a.procs, after: b.procs, elapsedMs,
+    ts: b.wall,
     clkTck: getconf('CLK_TCK', 100),
     pageSize: getconf('PAGESIZE', 4096),
     sys: {
       cores: Number(readOr('/proc/cpuinfo', '').match(/^processor\s*:/gm)?.length) || 1,
       load: readOr('/proc/loadavg', '0 0 0').split(' ').slice(0, 3).map(Number),
       uptime: Number(readOr('/proc/uptime', '0').split(' ')[0]),
-      cpuPct: total > 0 ? (1 - (cpu1.idle - cpu0.idle) / total) * 100 : 0,
+      cpuPct: total > 0 ? (1 - (b.cpu.idle - a.cpu.idle) / total) * 100 : 0,
       memPct: mem.MemTotal ? (1 - mem.MemAvailable / mem.MemTotal) * 100 : 0,
       swapPct: mem.SwapTotal ? (1 - mem.SwapFree / mem.SwapTotal) * 100 : null,
-      stall: { cpu: pressure('cpu'), memory: pressure('memory'), io: pressure('io') },
+      memTotal: mem.MemTotal ?? null,
+      memUsed: mem.MemTotal ? mem.MemTotal - mem.MemAvailable : null,
+      swapTotal: mem.SwapTotal ?? null,
+      swapUsed: mem.SwapTotal ? mem.SwapTotal - mem.SwapFree : null,
+      stall: { cpu: cp.some, memory: mp.some, io: ip.some },
+      stallFull: { cpu: cp.full, memory: mp.full, io: ip.full },
+      forkPerMin: forksPerMin(a.forks, b.forks, elapsedMs),
     },
+    groups,
     selfPid: process.pid,
     home: homedir(),
   }
+}
+
+/** Two reads `ms` apart, and the machine-wide numbers around them. */
+export async function sample(ms = 1000) {
+  const a = reading({ detail: false })
+  await new Promise(r => setTimeout(r, ms))
+  return finishSample(a, reading())
 }
 
 // ─── naming a process ────────────────────────────────────────────────────────
@@ -185,7 +220,7 @@ export function shortPath(cwd, home = homedir()) {
  * The jobs in a sample, hottest first, with the machine numbers.
  * Pure over what `sample()` returns, so a test hands it a made-up process table.
  */
-export function buildHitlist({ before, after, elapsedMs, clkTck, pageSize, sys, selfPid, home }) {
+export function buildHitlist({ before, after, elapsedMs, clkTck, pageSize, sys, selfPid, home, groups = null, ts = null }) {
   const secs = Math.max(elapsedMs, 1) / 1000
   const children = new Map()
   for (const p of after.values()) {
@@ -196,10 +231,15 @@ export function buildHitlist({ before, after, elapsedMs, clkTck, pageSize, sys, 
   // A child seen before the window and gone after it was reaped inside it; its
   // whole lifetime lands in the parent's cutime, and only the in-window part is
   // this sample's.
+  // The reaper is the parent only while the parent lives: an orphan is reparented
+  // to the nearest subreaper (systemd --user) and its whole life lands THERE, so
+  // a gone child is charged to its nearest ancestor that is still around.
   const goneBefore = new Map()
   for (const b of before.values()) {
     if (after.has(b.pid)) continue
-    goneBefore.set(b.ppid, (goneBefore.get(b.ppid) ?? 0) + b.ticks + b.childTicks)
+    let reaper = b.ppid
+    for (let hops = 0; !after.has(reaper) && before.has(reaper) && hops < 64; hops++) reaper = before.get(reaper).ppid
+    goneBefore.set(reaper, (goneBefore.get(reaper) ?? 0) + b.ticks + b.childTicks)
   }
   const cpuOf = new Map()
   const ownOf = new Map() // without reaped children, so the hot worker is named for itself
@@ -325,19 +365,23 @@ export function buildHitlist({ before, after, elapsedMs, clkTck, pageSize, sys, 
     })
   }
   out.sort((a, b) => b.cpu - a.cpu)
-  return { sys, kernelHot: kernelHot.sort((a, b) => b.cpu - a.cpu), jobs: out }
+  return { ts, sys, kernelHot: kernelHot.sort((a, b) => b.cpu - a.cpu), jobs: out, groups }
 }
 
 // ─── the screen ──────────────────────────────────────────────────────────────
 
 const fmtBytes = n => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(1)}G` : `${Math.round(n / 1024 ** 2)}M`)
 const fmtAge = s => (s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}` : s < 86400 ? `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 86400)}d`)
+/** Forks per minute past which a machine is spawning something in a loop (a quiet desktop sits under 500). */
+export const FORK_HIGH = 2000
+export const fmtRate = n => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n)))
 const clipEnd = (s, n) => (s.length <= n ? s.padEnd(n) : s.slice(0, Math.max(n - 1, 0)) + '…')
 const clipMid = (s, n) => (s.length <= n ? s.padEnd(n) : n < 8 ? s.slice(-n) : '…' + s.slice(-(n - 1)))
 
 /** The hitlist as lines for a terminal `width` wide; `c` is chalk (or identity functions). */
-export function renderHitlist({ sys, kernelHot, jobs }, { width = 120, c, top = 10, minCpu = 3 } = {}) {
+export function renderHitlist({ sys, kernelHot, jobs, groups = null }, { width = 120, c, top = 10, minCpu = 3, sort = 'cpu', title = null } = {}) {
   const lines = []
+  if (title) lines.push(c.bold(title))
   const bad = (cond, s) => (cond ? c.red(s) : s)
   const warn = (cond, s) => (cond ? c.yellow(s) : s)
 
@@ -348,6 +392,7 @@ export function renderHitlist({ sys, kernelHot, jobs }, { width = 120, c, top = 
     bad(sys.memPct > 90, `mem ${Math.round(sys.memPct)}%`),
   ]
   if (sys.swapPct != null) head.push(bad(sys.swapPct > 90, `swap ${Math.round(sys.swapPct)}%${sys.swapPct > 90 ? ' FULL' : ''}`))
+  if (sys.forkPerMin != null) head.push(bad(sys.forkPerMin > FORK_HIGH, `forks ${fmtRate(sys.forkPerMin)}/min${sys.forkPerMin > FORK_HIGH ? ' HIGH' : ''}`))
   const stalls = Object.entries(sys.stall).filter(([, v]) => v != null && v >= 5).map(([k, v]) => `${k} ${Math.round(v)}%`)
   if (stalls.length) head.push(c.yellow(`stalled: ${stalls.join(' ')}`))
   lines.push(head.join(c.dim(' · ')))
@@ -357,7 +402,8 @@ export function renderHitlist({ sys, kernelHot, jobs }, { width = 120, c, top = 
   const otherKernel = kernelHot.filter(k => !k.reclaim)
   if (otherKernel.length) lines.push(c.dim(`kernel threads: ${otherKernel.slice(0, 4).map(k => `${k.comm} ${Math.round(k.cpu)}%`).join(', ')}`))
 
-  const hot = jobs.filter(j => j.cpu >= minCpu).slice(0, top)
+  const ordered = sort === 'rss' ? [...jobs].sort((a, b) => b.rssBytes - a.rssBytes) : jobs
+  const hot = ordered.filter(j => j.cpu >= minCpu).slice(0, top)
   lines.push('')
   if (!hot.length) {
     lines.push(c.green(`nothing is busy — no job above ${minCpu}% of a core`))
@@ -376,7 +422,7 @@ export function renderHitlist({ sys, kernelHot, jobs }, { width = 120, c, top = 
       )
     })
 
-    const bg = jobs.filter(j => j.cpu >= 0.5 && !hot.includes(j)).slice(0, 6)
+    const bg = ordered.filter(j => j.cpu >= 0.5 && !hot.includes(j)).slice(0, 6)
     if (bg.length) lines.push(c.dim(`── also ── ${bg.map(j => `${j.label.split(' ')[0]} ${Math.round(j.cpu)}%`).join(' · ')}`))
 
     lines.push('')
@@ -389,7 +435,30 @@ export function renderHitlist({ sys, kernelHot, jobs }, { width = 120, c, top = 
     if (fromClaude) notes.push(`${fromClaude} started by ${sessions.size} Claude session${sessions.size > 1 ? 's' : ''}`)
     if (sys.swapPct != null && sys.swapPct > 90) notes.push('swap is full, so memory is part of it')
     lines.push(notes.join(' · '))
-    hot.slice(0, 3).forEach((j, i) => lines.push(c.dim(`stop #${i + 1}: `) + j.stop))
+    hot.slice(0, 3).forEach((j, i) => { if (j.stop) lines.push(c.dim(`stop #${i + 1}: `) + j.stop) })
+  }
+  if (groups) lines.push(...renderGroups(groups, { width, c }))
+  return lines
+}
+
+/** The app-group block: what systemd-oomd would kill, heaviest first, and how near the kill line is. */
+export function renderGroups({ parent, groups, oomd, flag }, { width = 120, c, top = 5 } = {}) {
+  const lines = ['']
+  const pct = v => (v == null ? '   -' : `${Math.round(v)}%`.padStart(4))
+  const bytes = v => (v == null ? '-' : fmtBytes(v)).padStart(6)
+  if (parent) {
+    const lim = oomd ? `${oomd.limitPct}% for ${oomd.durationSec}s${oomd.source === 'assumed' ? ' (assumed)' : ''}` : '?'
+    const text = `${parent.unit} memory pressure ${parent.some10 ?? '?'}% (oomd kills past ${lim})`
+    lines.push(flag === 'over' ? c.red(`${text} — OVER THE LIMIT`) : flag === 'near' ? c.yellow(`${text} — near the limit`) : c.dim(text))
+  }
+  const rows = (groups ?? []).slice(0, top)
+  if (!rows.length) return lines.length > 1 ? lines : []
+  lines.push(c.dim(`${'MEM'.padStart(6)} ${'SWAP'.padStart(6)} ${'PIDS'.padStart(6)} ${'PSI'.padStart(4)}  APP GROUP`))
+  const nameW = Math.max(width - 28, 20)
+  for (const g of rows) {
+    const hot = g.some10 != null && oomd && g.some10 >= oomd.limitPct
+    const name = c.bold(clipEnd(g.friendly, 18).trimEnd()) + c.dim(`  ${clipEnd(unescapeUnit(g.unit), Math.max(nameW - 20, 8)).trimEnd()}`)
+    lines.push(`${bytes(g.memBytes)} ${bytes(g.swapBytes)} ${String(g.pids ?? '-').padStart(6)} ${hot ? c.red(pct(g.some10)) : pct(g.some10)}  ${name}`)
   }
   return lines
 }
