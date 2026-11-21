@@ -24,7 +24,7 @@
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Table      from '@frontierjs/ui/components/display/Table.mesa'
-  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markUnread, markAllRead } from './rows.js'
+  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markUnread, markAllRead, when, whenExactly } from './rows.js'
 
   export let notifications = null // the app's Notification resource — required
   export let directives = INBOX   // what the list asks for; newest first by default
@@ -106,7 +106,7 @@
             {#if bodyOf(n)}<div class="text-sm text-muted">{bodyOf(n)}</div>{/if}
           {/if}
         </td>
-        <td class="text-sm text-muted"><time datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time></td>
+        <td class="text-sm text-muted"><time datetime={n.createdAt} title={whenExactly(n)}>{when(n)}</time></td>
         <td>
           {#if isUnread(n)}<Pill tone="primary">new</Pill>{/if}
           <Button treatment="ghost" size="sm" onclick={() => toggle(n)}>

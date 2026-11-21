@@ -569,19 +569,20 @@ function value(p, ctx) {
     return { type: 'list', items }
   }
 
-  // A field reference (any other identifier), or one hop across a relation.
+  // A field reference (any other identifier), or a column across to-one relations.
   //
-  // `order.userId` is a column on the model this one belongs to, and the
-  // compiler owns the join (`FJS-D221`). One hop, because transitive is N joins
-  // the author cannot see, per policy, per query — so `a.b.c` is refused HERE
-  // rather than compiled into something slow, which makes the bound
-  // discoverable from the mistake instead of from a decision record.
+  // `order.customer.userId` is a column on a model this one reaches by
+  // belongsTo, and the compiler owns the joins (`FJS-D221`). Two hops is the
+  // bound (`FJS-D1027`), because each is a join the author cannot see, per
+  // policy, per query — so a third is refused HERE rather than compiled into
+  // something slow, which makes the bound discoverable from the mistake instead
+  // of from a decision record. The last name may instead be a to-many tested
+  // with `.some(…)`, which ends the chain.
   //
-  // Inside `rel.some(…)` a name is a column of the rows being tested, and the
-  // relation has already spent the one hop — so a dot there is refused the way
-  // `a.b.c` is, and for the same reason. `this.col` is the one dot it takes: a
-  // column of the row the rule is declared on, which the EXISTS correlates on
-  // and so crosses nothing (`FJS-D2239`).
+  // Inside `rel.some(…)` a name is a column of the rows being tested — the far
+  // end of the chain — so a dot there is refused. `this.col` is the one dot it
+  // takes: a column of the row the rule is declared on, which the EXISTS
+  // correlates on and so crosses nothing (`FJS-D2239`).
   if (t.type === TK.IDENT) {
     p.eat(TK.IDENT)
     if (!p.check(TK.DOT)) return { type: 'field', name: t.value }
@@ -590,30 +591,33 @@ function value(p, ctx) {
       const name = p.eat(TK.IDENT).value
       if (p.check(TK.DOT))
         throw p.fail(
-          `'this.${name}.…' crosses a relation from the row '${ctx.within}' belongs to. Inside ` +
-          `'${ctx.within}.some(…)' that is a second hop, and one hop is the bound.`, p.peek())
+          `'this.${name}.…' crosses a relation from inside '${ctx.within}.some(…)'. The bound is two ` +
+          `to-one hops then one '.some(…)', and '.some(…)' ends the chain.`, p.peek())
       return { type: 'this', name }
     }
-    if (ctx.within)
-      throw p.fail(
-        `'${t.value}.…' inside '${ctx.within}.some(…)' crosses a second relation. A name there is ` +
-        `a column on the rows '${ctx.within}' holds — one hop is the bound, and '${ctx.within}' spent it.`, p.peek())
-    p.eat(TK.DOT)
-    const field = p.eat(TK.IDENT).value
-    if (field === 'some' && p.check(TK.LPAREN)) return some(p, ctx, t.value)
-    if (p.check(TK.DOT)) {
-      // `interview.scorecards.some(…)` is a to-many test two relations away,
-      // and saying *crosses two relations* names the hops where the author was
-      // reaching for the test.
+    if (ctx.within) {
       if (p.peek(1)?.value === 'some' && p.peek(2)?.type === TK.LPAREN)
         throw p.fail(
-          `'${t.value}.${field}.some(…)' tests rows two relations away. '.some()' asks about a relation ` +
-          `on THIS model — put the rule on the model '${t.value}' points at, where it reads '${field}.some(…)'.`, p.peek())
+          `'${t.value}.some(…)' inside '${ctx.within}.some(…)' nests one to-many test in another. The bound ` +
+          `is two to-one hops then ONE '.some(…)'.`, p.peek())
       throw p.fail(
-        `'${t.value}.${field}.…' crosses two relations. A policy may name a column ONE hop away — ` +
-        `put the rule on the model '${t.value}' points at, or carry the value on this model.`, p.peek())
+        `'${t.value}.…' inside '${ctx.within}.some(…)' crosses a relation from the rows it tests. ` +
+        `A name there is a column of those rows — the bound is two to-one hops then one '.some(…)', and ` +
+        `'.some(…)' ends the chain.`, p.peek())
     }
-    return { type: 'path', rel: t.value, name: field }
+    const hops = [t.value]
+    for (;;) {
+      p.eat(TK.DOT)
+      const name = p.eat(TK.IDENT).value
+      if (name === 'some' && p.check(TK.LPAREN)) return some(p, ctx, hops)
+      if (!p.check(TK.DOT)) return chained({ type: 'path', rel: hops.at(-1), name }, hops)
+      hops.push(name)
+      if (hops.length === 3 && !(p.peek(1)?.value === 'some' && p.peek(2)?.type === TK.LPAREN))
+        throw p.fail(
+          `'${hops.join('.')}.…' crosses three relations. A policy may cross TWO to-one relations, then ` +
+          `name a column or run one '.some(…)' — put the rule on a model nearer the column, or carry the ` +
+          `value on this model.`, p.peek())
+    }
   }
 
   // The forms a flow assembles a value with (`FJS-D513`, `FJS-D1429`). A policy
@@ -736,11 +740,20 @@ function object(p, ctx) {
 // a path: its names belong to another model, and a walker that descended into
 // it as though they were this model's would check them against the wrong
 // field list.
-function some(p, ctx, rel) {
+function some(p, ctx, hops) {
+  const rel = hops.at(-1)
+  const at  = hops.join('.')
   p.eat(TK.LPAREN)
   if (p.check(TK.RPAREN))
-    throw p.fail(`'${rel}.some()' needs a condition — the columns it tests are the rows '${rel}' holds`, p.peek())
-  const where = parseExpression(p, { ...ctx, within: rel })
+    throw p.fail(`'${at}.some()' needs a condition — the columns it tests are the rows '${rel}' holds`, p.peek())
+  const where = parseExpression(p, { ...ctx, within: at })
   p.eat(TK.RPAREN)
-  return { type: 'some', rel, where }
+  return chained({ type: 'some', rel, where }, hops)
+}
+
+// `via` is the to-one hops before `rel`, absent for a relation on this model —
+// so a walker that does not follow it looks `rel` up on the wrong model and
+// finds nothing, rather than reading a column off the wrong table.
+function chained(node, hops) {
+  return hops.length > 1 ? { ...node, via: hops.slice(0, -1) } : node
 }

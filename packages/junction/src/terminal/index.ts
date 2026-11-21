@@ -66,11 +66,23 @@ function clamp(n: unknown, lo: number, hi: number, fallback: number) {
 // tmux refuses `.` and `:` in a session name.
 const safe = (session: string) => session.replace(/[^A-Za-z0-9_-]/g, '_')
 
+// A pane made narrower rewraps its lines, and tmux keeps the cursor on the row it
+// was on, so the rows a wrap adds push the top of the screen into history even
+// with the pane empty below the prompt: the start of a long prompt goes out of
+// sight. `resize-pane -T` pulls those rows back. It runs on every pane of the
+// session's window after anything that narrows one: the browser resizing the
+// terminal (client-resized), a pane resize, a split. A pane in copy mode, or
+// in a full-screen program's alternate screen (no history), is left as it is.
+const RESIZE_HOOKS = ['client-resized', 'after-resize-pane', 'after-split-window']
+const untrim = (tmux: string) =>
+  `run-shell -b "${tmux} -S '#{socket_path}' list-panes -t '#{session_name}' -F '##{pane_id}' | xargs -rn1 ${tmux} -S '#{socket_path}' resize-pane -T -t"`
+
 /** The argv a socket spawns: tmux attached-or-created when tmux is on PATH, a login shell when it is not. */
 export function shellArgv(socket: string, session: string, cwd: string): string[] {
   const tmux = Bun.which('tmux')
   if (!tmux) return [process.env.SHELL || '/bin/bash', '-l']
   return [tmux, '-L', socket, 'start-server', ';', 'set-option', '-s', 'default-terminal', 'tmux-256color', ';',
+          ...RESIZE_HOOKS.flatMap((hook) => ['set-hook', '-g', hook, untrim(tmux), ';']),
           'new-session', '-A', '-s', safe(session), '-c', cwd]
 }
 

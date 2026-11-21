@@ -172,7 +172,7 @@ function describeModel(model, access, pluralize) {
     policies,
     transitions: [...(access?.transitions ?? [])]
       .map(t => ({ field: t.field, name: t.name, from: states(t.from), to: states(t.to),
-                   gate: t.gate ?? null, system: Boolean(t.system), seals: Boolean(t.seals) }))
+                   gate: t.gate ?? null, system: Boolean(t.system), seals: Boolean(t.seals), allow: t.allow ?? null }))
       .sort((a, b) => `${a.field}.${a.name}`.localeCompare(`${b.field}.${b.name}`)),
     // WHICH children a document is made of. On the surface beside the moves,
     // because the two are one feature and either half alone changes nothing.
@@ -874,6 +874,16 @@ function compareAccess(b, m, f) {
           `transition \`${key}\` gate ${old.gate ?? 'none'} → ${t.gate ?? 'none'}`,
           { access: (t.gate && (!old.gate || t.gate > old.gate)) ? NARROWS : WIDENS })
 
+    // `@allow` is the gate asked of the row (`FJS-D1025`): gaining one
+    // narrows who may make the move and losing one widens it. A predicate
+    // that changes is neither in general, so it is graded UNKNOWN.
+    if ((old.allow ?? null) !== (t.allow ?? null))
+      add(f, !old.allow ? CONTRACT : t.allow ? CONTRACT : EXPAND, at,
+          !old.allow ? `transition \`${key}\` gains @allow(${t.allow}) — a caller this does not admit on the row can no longer make it`
+            : !t.allow ? `transition \`${key}\` loses @allow(${old.allow}) — any caller at the move's level may make it`
+            : `transition \`${key}\` @allow(${old.allow}) becomes @allow(${t.allow})`,
+          { access: !old.allow ? NARROWS : !t.allow ? WIDENS : UNKNOWN })
+
     // `@system` is graded on its own axis and not through the gate, because it
     // is not a level: gaining it takes the move away from every caller at once,
     // which is the widest narrowing a state machine can make, and losing it
@@ -1201,7 +1211,7 @@ export function renderReleaseSnapshot(surface, { source = 'schema.lite' } = {}) 
     }
     for (const t of m.transitions)
       extra.push(`transition ${t.field}.${t.name}: ${t.from} → ${t.to}` +
-                 `${t.system ? ' @system' : ''}${t.seals ? ' @seals' : ''}${t.gate ? ` @gate(${t.gate})` : ''}`)
+                 `${t.system ? ' @system' : ''}${t.seals ? ' @seals' : ''}${t.gate ? ` @gate(${t.gate})` : ''}${t.allow ? ` @allow(${t.allow})` : ''}`)
     for (const r of m.sealed ?? []) extra.push(`relation ${r} @sealed`)
 
     if (extra.length) {

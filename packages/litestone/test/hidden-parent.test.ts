@@ -383,6 +383,60 @@ describe('a create rule reading a parent the caller cannot read', () => {
     expect(await answer(me.teamMember.create({ data: { id: 9, teamId: 3, userId: 42 } }))).toBe('created')
     db.$close()
   })
+
+  // Two hops read the grandparent past its rules too, so a hidden workspace
+  // behind a team the caller reads is read as missing, or the payload guesses
+  // the workspace's column one create at a time (FJS-D1027).
+  test('a grandparent the caller cannot read answers as missing, through a path and a .some', async () => {
+    const CHAIN = (rule: string) => `
+      model Workspace {
+        id      Int     @id
+        ownerId Int
+        private Boolean @default(false)
+        teams   Team[]
+        members Seat[]
+        @@allow(all, private == false)
+      }
+      model Seat {
+        id          Int       @id
+        workspaceId Int
+        workspace   Workspace @relation(fields: [workspaceId], references: [id])
+        userId      Int
+        @@allow(all, true)
+      }
+      model Team {
+        id          Int       @id
+        workspaceId Int
+        workspace   Workspace @relation(fields: [workspaceId], references: [id])
+        members     TeamMember[]
+        @@allow(all, true)
+      }
+      model TeamMember {
+        id     Int  @id
+        teamId Int
+        team   Team @relation(fields: [teamId], references: [id])
+        userId Int
+        @@allow(read, true)
+        @@allow(create, ${rule})
+      }
+    `
+    const answers = async (rule: string) => {
+      const db: any = await createClient({ db: ':memory:', schema: CHAIN(rule) })
+      await db.asSystem().workspace.createMany({ data: [{ id: 1, ownerId: 42, private: true }, { id: 2, ownerId: 42 }] })
+      await db.asSystem().seat.createMany({ data: [{ id: 1, workspaceId: 1, userId: 42 }, { id: 2, workspaceId: 2, userId: 42 }] })
+      await db.asSystem().team.createMany({ data: [{ id: 1, workspaceId: 1 }, { id: 2, workspaceId: 2 }] })
+      const me = db.$setAuth({ id: 1 })
+      const out = []
+      for (const teamId of [1, 2])
+        for (const userId of [41, 42])
+          out.push(await answer(me.teamMember.create({ data: { id: 10 * teamId + userId % 10, teamId, userId } })))
+      db.$close()
+      return out
+    }
+    const READ_AS_MISSING = ['AccessDeniedError', 'AccessDeniedError', 'AccessDeniedError', 'created']
+    expect(await answers('team.workspace.ownerId == userId')).toEqual(READ_AS_MISSING)
+    expect(await answers('team.workspace.members.some(userId == this.userId)')).toEqual(READ_AS_MISSING)
+  })
 })
 
 // A key the app names under `system:` is its statement, as a stamp is

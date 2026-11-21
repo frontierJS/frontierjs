@@ -190,6 +190,9 @@ function describeModel(/** @type {any} */ model, /** @type {any[]} */ derivedNam
         // after it the model's @immutable columns and its @sealed children are
         // frozen for everybody, asSystem() included.
         gate: t.gate ?? null, system: Boolean(t.system), seals: Boolean(t.seals),
+        // `@allow` is the gate asked of the row (`FJS-D1025`), carried as its
+        // predicate text so a release diff and the report can name it.
+        allow: t.allow ? policyExprToString(t.allow) : null,
       })
   }
 
@@ -467,7 +470,7 @@ export function renderAccessSnapshot(/** @type {any} */ access, /** @type {{ sou
     for (const m of withTransitions) {
       for (const t of m.transitions) {
         const lvl = t.gate == null ? '—' : `${t.gate} ${levelLabel(t.gate)}`
-        const by  = t.system ? '**application**' : 'caller'
+        const by  = (t.system ? '**application**' : 'caller') + (t.allow ? ` where \`${t.allow.replace(/\|/g, '\\|')}\`` : '')
         out.push(`| \`${m.name}\` | \`${t.field}\` | \`${t.name}\` | ${t.from.join(', ')} → ${t.to} | ${by} | ${lvl} | ${t.seals ? '**yes**' : '—'} |`)
       }
     }

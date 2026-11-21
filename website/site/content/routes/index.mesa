@@ -41,9 +41,7 @@ render: static
     <h1>The Frontier<br><span class="accent">awaits.</span></h1>
 
     <p class="lede">
-      One source of truth: the schema. Database, API, UI, validation, authorization,
-      pagination, live updates, migrations, typed clients and forms are
-      <strong>derived, not written</strong>.
+      A development ecosystem for not the faint of heart.
     </p>
 
     <div class="cluster ctas">

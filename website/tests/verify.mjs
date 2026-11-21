@@ -431,7 +431,7 @@ t('demos.noRuntimeFetch',
   !bodyOf('why/landscape').includes('Loading') && !bodyOf('why/landscape').includes('projects.json'))
 
 // ─── the package guides ───────────────────────────────────────────────────
-// /docs/mesa/ and /docs/litestone/ are GENERATED from packages/<pkg>/docs/guide/,
+// /docs/mesa/, /docs/litestone/ and /docs/junction/ are GENERATED from packages/<pkg>/docs/guide/,
 // so the failures are silent ones: a page the README lists that never built, a
 // rewritten link that still points at a `.md` file the site does not serve, a
 // renderer that ate the first sample. Each list is read independently of
@@ -443,6 +443,7 @@ const hrefOf = (h, cls) => h.match(new RegExp(`<a class="${cls}[^"]*" href="([^"
 const GUIDES = [
   { id: 'mesa',      title: 'Mesa guide',      landingLink: 'reactivity/let' },
   { id: 'litestone', title: 'Litestone guide', landingLink: 'schema/models-and-fields' },
+  { id: 'junction',  title: 'Junction guide',  landingLink: 'services/a-service' },
 ]
 
 for (const { id, title, landingLink } of GUIDES) {

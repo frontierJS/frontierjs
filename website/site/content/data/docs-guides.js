@@ -4,13 +4,17 @@
 // and `tutor` the fli lesson that already walks it, where one does.
 //
 // An entry with a `page` ('schema/models-and-fields') is written: it names a
-// page of the Litestone guide, links there, and has no stub. A `page` the guide
-// README does not list, or a `from` path that no longer exists, fails the build
-// rather than publishing a link that 404s.
+// page of a package guide, links there, and has no stub. The guide is Litestone's
+// unless `guide: 'junction'` says otherwise. A `page` the guide README does not
+// list, or a `from` path that no longer exists, fails the build rather than
+// publishing a link that 404s.
+//
+// `pkg` names the workspace folder whose brand icon (brand/assets/icons) the
+// sidebar draws beside the entry; docs-nav.js refuses one with no icon file.
 
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { litestoneGuide } from './package-guide.js'
+import { litestoneGuide, junctionGuide } from './package-guide.js'
 
 const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
 const BLOB = 'https://github.com/frontierjs/frontierjs/blob/main'
@@ -34,49 +38,19 @@ const SECTIONS = [
   ] },
 
   { section: 'API', lede: 'The Service realm: what Junction serves for each model, and how to add to it.', guides: [
-    { slug: 'service', title: 'A service',
-      lede: 'The API a model gets for free, and where your own behavior goes.',
-      covers: ['What a service answers with no code', 'Hooks: before, after and error, in pipeline order', 'Custom methods', 'What is on ctx, and what is not'],
-      from: ['packages/junction/README.md'] },
-    { slug: 'routes', title: 'Raw routes and middleware',
-      lede: 'The HTTP that is not a service: a webhook receiver, a health check, a file stream.',
-      covers: ['A raw route and its params', 'Middleware, in order', 'CSRF, idempotency keys and rate limits'],
-      from: ['packages/junction/README.md'] },
-    { slug: 'transactions', title: 'Transactions and effects',
-      lede: 'Writes that commit together, and effects that wait for the commit.',
-      covers: ['Transactions across services', 'ctx.afterCommit for effects that must not run early', 'ctx.enqueue for effects that must not be lost'],
-      from: ['packages/junction/README.md'] },
-    { slug: 'live', title: 'Live updates',
-      lede: 'A write reaching every client that is allowed to see it, with no polling.',
-      covers: ['Channels and the broadcast a write makes', 'The gate deciding which socket is told', 'Subscribing from the browser'],
-      from: ['packages/junction/README.md'],
-      tutor: 'live' },
-    { slug: 'jobs', title: 'Jobs and schedules',
-      lede: 'Work that outlives the request, on a queue that is a SQLite file.',
-      covers: ['A job, named by its own filename', 'Enqueueing from a service', 'Retries, and cron schedules'],
-      from: ['packages/caravan/README.md'],
-      tutor: 'jobs' },
-    { slug: 'auth', title: 'Auth',
+    { slug: 'service', title: 'A service', pkg: 'junction', guide: 'junction', page: 'services/a-service' },
+    { slug: 'routes', title: 'Raw routes and middleware', pkg: 'junction', guide: 'junction', page: 'transport/raw-routes' },
+    { slug: 'transactions', title: 'Transactions and effects', pkg: 'junction', guide: 'junction', page: 'writes/transactions' },
+    { slug: 'live', title: 'Live updates', pkg: 'junction', guide: 'junction', page: 'transport/live-updates' },
+    { slug: 'jobs', title: 'Jobs and schedules', pkg: 'caravan', guide: 'junction', page: 'plugins/caravan' },
+    { slug: 'auth', title: 'Auth', pkg: 'auth',
       lede: 'Sign-in, sessions and the principal every call runs as.',
       covers: ['Adding @frontierjs/auth and the schema it brings', 'Sessions from a cookie, and bearer tokens', 'Running as somebody else, and as the system'],
       from: ['packages/auth/README.md'] },
-    { slug: 'notifications', title: 'Notifications',
-      lede: 'Telling somebody something once, across every transport they are reached on.',
-      covers: ['A notification and its transports', 'Choosing transports per recipient', 'The in-app transport and its channel'],
-      from: ['packages/notifications/README.md'],
-      tutor: 'notify' },
-    { slug: 'email', title: 'Email',
-      lede: 'Sending mail from a service, with templates that render in every client.',
-      covers: ['Sending from a service', 'Writing a template with email-kit', 'Previewing and testing mail'],
-      from: ['packages/junction/README.md', 'packages/email-kit/README.md'] },
-    { slug: 'integrations', title: 'Integrations',
-      lede: 'Third-party APIs and their webhooks, each named once with its credentials and failure policy.',
-      covers: ['Declaring a counterparty with Conduit', 'Calling it from a service', 'Receiving its webhooks', 'Using a published connector'],
-      from: ['packages/conduit/README.md'] },
-    { slug: 'agents', title: 'Agents and MCP',
-      lede: 'An MCP server for your app, derived from the schema, with the gate as its permission model.',
-      covers: ['Mounting the MCP surface', 'Which tools a caller sees, and why', 'Signing an agent in'],
-      from: ['packages/mcp/README.md'] },
+    { slug: 'notifications', title: 'Notifications', pkg: 'notifications', guide: 'junction', page: 'plugins/notifications' },
+    { slug: 'email', title: 'Email', pkg: 'email-kit', guide: 'junction', page: 'running/mail' },
+    { slug: 'integrations', title: 'Integrations', pkg: 'conduit', guide: 'junction', page: 'plugins/conduit' },
+    { slug: 'agents', title: 'Agents and MCP', pkg: 'mcp', guide: 'junction', page: 'plugins/mcp' },
   ] },
 
   { section: 'UI', lede: 'The Resource realm: the screens Sierra builds from Mesa components.', guides: [
@@ -151,12 +125,16 @@ const linkOf = (path) => {
   return { label: path, href: `${BLOB}/${path}` }
 }
 
-const guidePages = () => new Map(litestoneGuide.loadGuide().flatMap((s) => s.pages.map((p) => [`${p.dir}/${p.slug}`, p.href])))
+const GUIDES = { litestone: litestoneGuide, junction: junctionGuide }
+
+const guidePages = () => Object.fromEntries(Object.entries(GUIDES).map(([id, g]) =>
+  [id, new Map(g.loadGuide().flatMap((s) => s.pages.map((p) => [`${p.dir}/${p.slug}`, p.href])))]))
 
 const resolve = (g, pages) => {
   if (!g.page) return { ...g, href: `${BASE}${g.slug}/`, from: g.from.map(linkOf), tutor: g.tutor ?? null }
-  if (!pages.has(g.page)) throw new Error(`docs-guides: ${g.slug} names ${g.page}, which the Litestone guide README does not list`)
-  return { ...g, href: pages.get(g.page) }
+  const id = g.guide ?? 'litestone'
+  if (!pages[id].has(g.page)) throw new Error(`docs-guides: ${g.slug} names ${g.page}, which the ${id} guide README does not list`)
+  return { ...g, href: pages[id].get(g.page) }
 }
 
 /** [{ section, lede, guides: [{ slug, title, href, page? } | stub: { lede, covers, from: [{label, href}], tutor }] }] */

@@ -13,7 +13,7 @@ import { keyIn, tuplesOf } from './query.js'
 import { ValidationError } from './validate.js'
 import { AccessDeniedError } from './plugin.js'
 import { requireGrantSubset } from '../plugins/capability.js'
-import { checkCreatePolicy, inCallerTenant } from './policy.js'
+import { checkCreatePolicy, inCallerTenant, createChains, chainKey } from './policy.js'
 import { untrailed } from './trail-entries.js'
 import {
   SoftDeletedUniqueError, UniqueConflictError, uniqueConflictColumns, isUniqueConflict,
@@ -388,10 +388,11 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // mutates: this is an await and an allocation on every update otherwise.
   const gradesParents = () => !ctx.isSystem && _parentKeys.length > 0
 
-  async function hiddenParents(rows, stamped = [], system = null) {
+  async function hiddenParents(rows, stamped = [], system = null, creates = false) {
     const out = []
     const absent = new Set()
     Object.defineProperty(out, 'absent', { value: absent, enumerable: false })
+    Object.defineProperty(out, 'chains', { value: new Map(), enumerable: false })
     if (!gradesParents()) return out
     const lifted = new Set(system == null ? [] : [system].flat())
     for (const p of _parentKeys) {
@@ -426,7 +427,42 @@ export function makeConstraintRefusals(shape, ctx, deps) {
         Object.defineProperty(out[i], 'parents', { value: [found], enumerable: false })
       }
     }
+    if (creates && ctx.hasPolicies) await hiddenGrandparents(rows, stamped, lifted, out)
     return out
+  }
+
+  // A create rule reading through two to-one hops reads the grandparent past
+  // its own rules, so one the caller cannot read is handed to the create check
+  // as absent, as a hidden parent is (FJS-1712). It refuses nothing itself: the
+  // row names only its parent. `out.chains` holds, per row, the chainKeys
+  // whose grandparent is hidden.
+  let _createChains = null
+  async function hiddenGrandparents(rows, stamped, lifted, out) {
+    const chains = out.chains
+    for (const { first, second } of (_createChains ??= createChains(modelName, ctx))) {
+      const p    = _parentKeys.find(k => k.relation === first)
+      const rel  = p && ctx.shapes?.[p.target]?.relations?.[second]
+      const sink = p && ctx.cascadeSinkFor?.(p.target)
+      if (!sink || rel?.kind !== 'belongsTo') continue
+      const tbl = ctx.tables?.[modelToAccessor(rel.targetModel)]
+      if (!tbl || await hidesNothing(tbl, rel.targetModel)) continue
+      const verdict = new Map()
+      for (const [i, row] of rows.entries()) {
+        if (!row || typeof row !== 'object' || out.absent.has(i) || out[i]?.hidden.has(first)) continue
+        if (!p.fields.every(f => f in row) || p.fields.every(f => stamped[i]?.has(f) || lifted.has(f))) continue
+        const values = p.fields.map(f => row[f])
+        if (values.some(v => v == null || typeof v === 'object')) continue
+        const [parent] = parentRows(sink, p.references, values)
+        const keys = parent ? rel.foreignKeys.map(f => parent[f]) : []
+        if (!parent || keys.some(v => v == null)) continue
+        const at = JSON.stringify(keys)
+        if (!verdict.has(at))
+          verdict.set(at, await canRead(tbl, Object.fromEntries(rel.referencedKeys.map((r, j) => [r, keys[j]])), ctx.shapes?.[rel.targetModel]?.hasTemplates != null))
+        if (verdict.get(at)) continue
+        if (!chains.has(i)) chains.set(i, new Set())
+        chains.get(i).add(chainKey(first, second))
+      }
+    }
   }
 
   // ── a hidden parent the row itself may open (FJS-D1705) ───────────────────
@@ -472,7 +508,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // again, as SQLite's refusal of a missing one would; with every parent
   // readable, the rule is graded on them for real (FJS-1712).
   async function settleDeferred(deferred) {
-    const { refusal, denied, row } = deferred
+    const { refusal, denied, row, chains } = deferred
     const still = []
     for (const p of refusal?.parents ?? []) {
       const where = Object.fromEntries(p.references.map((r, j) => [r, p.values[j]]))
@@ -491,7 +527,7 @@ export function makeConstraintRefusals(shape, ctx, deps) {
       Object.defineProperty(out, 'hidden', { value: new Set(still.map(s => s.relation)), enumerable: false })
       return out
     }
-    return ctx.hasPolicies ? checkCreate(row, null) ?? null : null
+    return ctx.hasPolicies ? checkCreate(row, null, chains) ?? null : null
   }
 
   // checkCreatePolicy, with one answer for a parent the create names. Under row
@@ -502,8 +538,8 @@ export function makeConstraintRefusals(shape, ctx, deps) {
   // validation and ahead of earlier rows of a batch, a payload that also fails
   // validation told a missing parent from a hidden one (FJS-1704). `hidden` is
   // hiddenParents' refusal for the row, whose parents the policy reads as missing.
-  function checkCreate(row, hidden) {
-    const v = checkCreatePolicy(modelName, row, ctx, hidden?.hidden)
+  function checkCreate(row, hidden, chains = null) {
+    const v = checkCreatePolicy(modelName, row, ctx, hidden?.hidden, chains)
     if (!v) return
     const p = _parentKeys.find(k => k.relation === v.parent)
     if (!p) throw new AccessDeniedError(v.message, { model: modelName, operation: 'create' })

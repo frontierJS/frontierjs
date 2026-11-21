@@ -61,6 +61,22 @@ function plog(ctx, op, model, msg, extra = '') {
 const PREC = { ternary: 0, or: 1, and: 2, not: 3, compare: 4 }
 const prec = (node) => node?.type === 'arith' ? (node.op === '*' ? 6 : 5) : PREC[node?.type] ?? 7
 
+// The model a node's `rel` hangs off: this one, or the end of its to-one hops.
+// Null when a hop does not resolve, which startup refuses by name.
+function homeOf(relations, modelName, node) {
+  const relsOf = typeof relations === 'function' ? relations : (m) => relations?.[m]
+  let home = modelName
+  for (const hop of node.via ?? []) {
+    const rel = relsOf(home)?.[hop]
+    if (rel?.kind !== 'belongsTo') return null
+    home = rel.targetModel
+  }
+  return home
+}
+
+// A path's or some's relations as written — `phoneNumber.org.members`.
+const relPath = (n) => n.via ? `${n.via.join('.')}.${n.rel}` : n.rel
+
 export function policyExprToString(node) {
   if (!node) return '?'
 
@@ -91,8 +107,8 @@ export function policyExprToString(node) {
     case 'check':   return node.tenancy ? `check(${node.field}, tenancy)`
       : node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
     case 'field':   return node.name
-    case 'path':    return `${node.rel}.${node.name}`
-    case 'some':    return `${node.rel}.some(${policyExprToString(node.where)})`
+    case 'path':    return `${relPath(node)}.${node.name}`
+    case 'some':    return `${relPath(node)}.some(${policyExprToString(node.where)})`
     case 'this':    return `this.${node.name}`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
     case 'literal': {
@@ -298,12 +314,32 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     return model.fields.some(f => f.name === name)
   }
 
+  // Every hop before `rel` is a to-one, or the chain is two answers deep with
+  // no one row at the end of it.
+  const viaHome = (n, say) => {
+    let home = model.name
+    for (const hop of n.via ?? []) {
+      const rel = relationMap?.[home]?.[hop]
+      if (!rel) notRelation(hop, home, say)
+      if (rel.kind !== 'belongsTo')
+        say(`'${hop}' is ${rel.kind} on ${home}, and a policy crosses only to-one (belongsTo) relations ` +
+            `before its column or its '.some(…)'`)
+      home = rel.targetModel
+    }
+    return home
+  }
+  const notRelation = (name, home, say) => {
+    const rels = Object.keys(relationMap?.[home] ?? {}).sort()
+    say(`'${name}' is not a relation on ${home === model.name ? 'this model' : home}` +
+        (rels.length ? `. Relations: ${rels.join(', ')}` : ''))
+  }
+
   // A path's target field, or null when there is no schema to reach it through.
   // Shared so the general walk and the `in` section cannot come to disagree
   // about what a hop resolves to — the same shape `fieldNamed` has one model
   // closer.
   const pathTarget = (n) => {
-    const rel = relationMap?.[model.name]?.[n.rel]
+    const rel = relationMap?.[homeOf(relationMap, model.name, n)]?.[n.rel]
     if (rel?.kind !== 'belongsTo') return null
     const target = schema?.models?.find(m => m.name === rel.targetModel)
     return target ? { rel, target, field: target.fields.find(x => x.name === n.name) ?? null } : null
@@ -366,24 +402,20 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
               `rather than the value — a comparison against it would match nothing`)
       return
     }
-    // One hop across a relation (`FJS-D221`). Everything refused here is a case
-    // whose alternative is a SILENT wrong answer rather than an error, which is
-    // the whole reason a policy gets checked at startup: a bad predicate does
-    // not throw, it filters, and a filter that admits too much looks exactly
-    // like one doing its job.
+    // Up to two hops across relations (`FJS-D221`, `FJS-D1027`). Everything
+    // refused here is a case whose alternative is a SILENT wrong answer rather
+    // than an error: a bad predicate does not throw, it filters, and a filter
+    // that admits too much looks exactly like one doing its job.
     if (n.type === 'path') {
-      const rel = relationMap?.[model.name]?.[n.rel]
       const say = (msg) => { throw new Error(
         `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
+      const home = viaHome(n, say)
+      const rel  = relationMap?.[home]?.[n.rel]
 
       if (!rel && n.rel === 'this')
         say(`'this.${n.name}' names the row a rule is declared on from inside a 'rel.some(…)'. ` +
             `Here that row is the one being tested — write '${n.name}'`)
-      if (!rel) {
-        const rels = Object.keys(relationMap?.[model.name] ?? {}).sort()
-        say(`'${n.rel}' is not a relation on this model` +
-            (rels.length ? `. Relations: ${rels.join(', ')}` : ''))
-      }
+      if (!rel) notRelation(n.rel, home, say)
       // The same refusal `check()` makes, in the same words, so the two ways of
       // crossing a relation cannot come to accept different sets. A to-many
       // would be *does ANY child match*, which is a different question and one
@@ -399,11 +431,11 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
         const f = target.fields.find(x => x.name === n.name)
         if (!f) {
           const cols = target.fields.map(x => x.name).sort()
-          say(`'${n.name}' is not a field on ${rel.targetModel} — reached as '${n.rel}.${n.name}'. ` +
+          say(`'${n.name}' is not a field on ${rel.targetModel} — reached as '${relPath(n)}.${n.name}'. ` +
               `Fields: ${cols.join(', ')}`)
         }
         const none = noColumn(f)
-        if (none) say(`'${n.rel}.${n.name}' is ${none} on ${rel.targetModel}, so there is no column to correlate on`)
+        if (none) say(`'${relPath(n)}.${n.name}' is ${none} on ${rel.targetModel}, so there is no column to correlate on`)
         // A crossed encoded column would compare ciphertext against the
         // plaintext operand and match nothing — an empty screen with a 200,
         // which is this feature's own failure mode arriving through the fix
@@ -411,7 +443,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
         // has no counterpart across a hop.
         for (const kind of ['encrypted', 'hashed', 'secret'])
           if (f.attributes?.some(a => a.kind === kind))
-            say(`'${n.rel}.${n.name}' is @${kind} on ${rel.targetModel}, so the column holds an ` +
+            say(`'${relPath(n)}.${n.name}' is @${kind} on ${rel.targetModel}, so the column holds an ` +
                 `encoding rather than the value — a comparison across the hop would match nothing`)
       }
       return
@@ -420,24 +452,21 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     // RELATED model, so it is checked as a policy on that model — every refusal
     // above, made against the field list the names actually belong to.
     if (n.type === 'some') {
-      const rel = relationMap?.[model.name]?.[n.rel]
       const say = (msg) => { throw new Error(
         `${model.name}: ${msg} — in ${what} '${policyExprToString(expr)}'`) }
-      if (!rel) {
-        const rels = Object.keys(relationMap?.[model.name] ?? {}).sort()
-        say(`'${n.rel}' is not a relation on this model` +
-            (rels.length ? `. Relations: ${rels.join(', ')}` : ''))
-      }
+      const home = viaHome(n, say)
+      const rel  = relationMap?.[home]?.[n.rel]
+      if (!rel) notRelation(n.rel, home, say)
       if (rel.kind === 'belongsTo')
-        say(`'${n.rel}' is a to-one (belongsTo) relation, so there is one row and no 'some' to ask — ` +
-            `read its column as '${n.rel}.<column>'`)
+        say(`'${relPath(n)}' is a to-one (belongsTo) relation, so there is one row and no 'some' to ask — ` +
+            `read its column as '${relPath(n)}.<column>'`)
       // The join table is a second hop, which the bound refuses everywhere else.
       if (rel.kind !== 'hasMany')
         say(`'${n.rel}' is ${rel.kind}, and '.some()' crosses a to-many relation by its foreign key. ` +
             `Declare the join model and test it: '<joinRelation>.some(…)'`)
       const target = schema?.models?.find(m => m.name === rel.targetModel)
       if (target)
-        checkExpr(target, n.where, relationMap, `${model.name}.${n.rel}.some(…) in ${what}`, claims, schema, model)
+        checkExpr(target, n.where, relationMap, `${model.name}.${relPath(n)}.some(…) in ${what}`, claims, schema, model)
       return
     }
     // The same sentence about the OTHER side of the comparison. An absent claim
@@ -570,9 +599,9 @@ function nonNumeric(model, node, relationMap = null, schema = null) {
     if (!n || typeof n !== 'object') return null
     if (n.type === 'field') return columnWhy(model.fields.find(x => x.name === n.name), n.name)
     if (n.type === 'path') {
-      const rel = relationMap?.[model.name]?.[n.rel]
+      const rel = relationMap?.[homeOf(relationMap, model.name, n)]?.[n.rel]
       const target = rel && schema?.models?.find(m => m.name === rel.targetModel)
-      return columnWhy(target?.fields.find(x => x.name === n.name), `${n.rel}.${n.name}`)
+      return columnWhy(target?.fields.find(x => x.name === n.name), `${relPath(n)}.${n.name}`)
     }
     if (n.type === 'ternary') return why(n.then) ?? why(n.else)
     return null
@@ -1247,13 +1276,16 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
         }
         continue
       }
-      // A move's guard is no row policy and joins no bucket, but it compiles
-      // through the same compiler, so a name that is no column is refused here
+      // A move's guard and its @allow are no row policy and join no bucket,
+      // but they compile through the same compiler, so a name that is no column is refused here
       // rather than read by SQLite as a string constant.
       if (attr.kind === 'transitions') {
-        for (const [name, move] of Object.entries(attr.transitions ?? {}))
+        for (const [name, move] of Object.entries(attr.transitions ?? {})) {
           if (move.guard) checkExpr(model, move.guard.expr, relationMap,
             `@@transitions(${attr.field}) '${name}' ${move.guard.when}:`, claims, schema)
+          if (move.allow) checkExpr(model, move.allow, relationMap,
+            `@@transitions(${attr.field}) '${name}' @allow`, claims, schema)
+        }
         continue
       }
       if (attr.kind !== 'allow' && attr.kind !== 'deny') continue
@@ -1402,6 +1434,31 @@ function rulesFor(modelName, op, ctx, tenancyOnly = false) {
   return denies.length ? { allows: [], denies } : null
 }
 
+// The second hop of every chain a create rule on `modelName` reads, as
+// `{ first, second }` relation names: the parent this row names and the
+// grandparent read through it. The create check is handed the ones the caller
+// cannot read (`chainKey`), as it is handed a hidden first parent, or a rule
+// comparing a hidden grandparent's column with the payload answers by that
+// column (FJS-1712).
+export function createChains(modelName, ctx) {
+  const rules = rulesFor(modelName, 'create', ctx)
+  if (!rules) return []
+  const out = new Map()
+  const walk = node => {
+    if (!node || typeof node !== 'object') return
+    if (Array.isArray(node)) { for (const n of node) walk(n); return }
+    if (node.via && (node.type === 'path' || node.type === 'some')) {
+      const second = node.type === 'path' ? node.rel : node.via[1]
+      if (second != null) out.set(chainKey(node.via[0], second), { first: node.via[0], second })
+    }
+    for (const v of Object.values(node)) walk(v)
+  }
+  for (const { expr } of [...rules.allows, ...rules.denies]) walk(expr)
+  return [...out.values()]
+}
+
+export const chainKey = (first, second) => `${first}.${second}`
+
 // ─── What a verdict reads ────────────────────────────────────────────────────
 //
 // The models whose rows an `op` verdict on `modelName` reads: the model itself,
@@ -1473,16 +1530,27 @@ function walkReads(modelName, ctx, op) {
         [false, true].some(p => modelToTableName(m, p) === agg.aggRef.through.joinTable))
       if (join) { reach.add(join.name); read(join.name, join.fields.map(f => f.name)) }
     }
-    if (node.type === 'path' && rels[node.rel]) {
-      reach.add(rels[node.rel].targetModel)
-      read(model, rels[node.rel].foreignKeys)
-      read(rels[node.rel].targetModel, [rels[node.rel].referencedKeys, node.name])
+    // A write to any row a chain passes through moves the answer.
+    let home = model
+    for (const hop of (node.type === 'path' || node.type === 'some') ? node.via ?? [] : []) {
+      const r = relationsOf(ctx, home)[hop]
+      if (!r) break
+      reach.add(r.targetModel)
+      read(home, r.foreignKeys)
+      read(r.targetModel, r.referencedKeys)
+      home = r.targetModel
     }
-    if (node.type === 'some' && rels[node.rel]) {
-      reach.add(rels[node.rel].targetModel)
-      read(model, rels[node.rel].referencedKeys)
-      read(rels[node.rel].targetModel, rels[node.rel].foreignKeys)
-      walk(node.where, rels[node.rel].targetModel, operation, model)
+    const homeRels = relationsOf(ctx, home)
+    if (node.type === 'path' && homeRels[node.rel]) {
+      reach.add(homeRels[node.rel].targetModel)
+      read(home, homeRels[node.rel].foreignKeys)
+      read(homeRels[node.rel].targetModel, [homeRels[node.rel].referencedKeys, node.name])
+    }
+    if (node.type === 'some' && homeRels[node.rel]) {
+      reach.add(homeRels[node.rel].targetModel)
+      read(home, homeRels[node.rel].referencedKeys)
+      read(homeRels[node.rel].targetModel, homeRels[node.rel].foreignKeys)
+      walk(node.where, homeRels[node.rel].targetModel, operation, model)
       return
     }
     if (node.type === 'check' && rels[node.field]) {
@@ -1695,10 +1763,12 @@ export function policyVerdict(modelName, row, ctx, op) {
 // missing parent, where SQLite would refuse one, or the place it is thrown
 // tells it from a hidden one (FJS-1704).
 //
-// `hidden` names the relations whose parent the caller cannot read; a path or
-// a check() across one answers as across a missing parent (FJS-1712).
-export function checkCreatePolicy(modelName, data, ctx, hidden = null) {
-  if (hidden?.size) ctx = Object.assign(Object.create(ctx), { _hiddenParents: hidden })
+// `hidden` names the relations whose parent the caller cannot read, and
+// `chains` the `chainKey`s whose grandparent it cannot; a path or a check()
+// across either answers as across a missing parent (FJS-1712).
+export function checkCreatePolicy(modelName, data, ctx, hidden = null, chains = null) {
+  if (hidden?.size || chains?.size)
+    ctx = Object.assign(Object.create(ctx), { _hiddenParents: new Set([...(hidden ?? []), ...(chains ?? [])]) })
   const v = policyVerdict(modelName, withLiteralDefaults(data, shapeOf(ctx, modelName).literalDefaults), ctx, 'create')
   if (v.ok) return
   plog(ctx, 'create', modelName, `[31mDENIED[0m (${v.rule === 'deny' ? '@@deny fired' : 'no @@allow passed'})`)
@@ -1914,8 +1984,14 @@ function aggregateSql(entry, ctx, modelName) {
 // (`model LogLine` is `log_line`), and the column is `@map`'s, since an unknown
 // quoted identifier is a STRING CONSTANT to SQLite rather than an error
 // (`FJS-761`).
-function pathSql(node, ctx, modelName) {
+function pathSql(node, ctx, modelName, bound = false) {
   const schema = ctx.schema
+  if (node.via) {
+    const hops = chainHops(ctx, modelName, [...node.via, node.rel], node)
+    const last = hops.at(-1)
+    const { from, where } = chainSql(ctx, modelName, hops, bound)
+    return `(SELECT ${quoteIdent(last.alias)}.${quoteIdent(policyColumn(schema, last.rel.targetModel, node.name))} FROM ${from} WHERE ${where})`
+  }
   const rel = relationsOf(ctx, modelName)[node.rel]
   // Startup refuses both of these by name; a throw here means a predicate
   // reached the compiler some other way.
@@ -1951,6 +2027,7 @@ function pathSql(node, ctx, modelName) {
 // reads the parent's STORED column by that key, as the correlated half does.
 function someSql(node, params, ctx, modelName, op, visited, bound = null) {
   const schema = ctx.schema
+  if (node.via) return chainedSomeSql(node, params, ctx, modelName, op, visited, bound)
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'hasMany')
     throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
@@ -1968,6 +2045,100 @@ function someSql(node, params, ctx, modelName, op, visited, bound = null) {
   const cond  = compileSql(node.where, params, Object.assign(Object.create(ctx), { _outer: outer }), rel.targetModel, op, visited)
 
   return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE ${corr}${live} AND (${cond}))`
+}
+
+// ─── Chains (`FJS-D1027`) ──────────────────────────────────────────────────────
+//
+// Two to-one hops, then a column or a `.some(…)`. Every hop's table is aliased,
+// so a chain that passes back through the table the rule is declared on cannot
+// capture the outer row's name; the joins are on the relations' keys, every
+// pair of a composite one (`FJS-2790`), so each hop is a primary-key or
+// indexed-foreign-key lookup.
+
+const tableOf = (ctx, model) => {
+  const def = ctx.schema?.models?.find(m => m.name === model)
+  return def ? modelToTableName(def, false) : model
+}
+
+function chainHops(ctx, modelName, names, node) {
+  const hops = []
+  let from = modelName
+  for (const name of names) {
+    const rel = relationsOf(ctx, from)[name]
+    // Startup refuses this by name; a throw here means a predicate reached
+    // the compiler some other way.
+    if (rel?.kind !== 'belongsTo')
+      throw new Error(`${modelName}.${relPath(node)}: a policy chain crosses to-one (belongsTo) relations`)
+    hops.push({ rel, from, alias: `__h${hops.length + 1}` })
+    from = rel.targetModel
+  }
+  return hops
+}
+
+// `from` joins the hops; `where` ties the first to the row the rule is about —
+// its outer table, or `?` for each foreign key when `bound` (the JS half binds
+// the row's values in the order the keys are listed).
+function chainSql(ctx, modelName, hops, bound) {
+  const col = (model, f) => `${quoteIdent(policyColumn(ctx.schema, model, f))}`
+  const self = `${quoteIdent(tableOf(ctx, modelName))}`
+  const from = hops.map((h, i) => {
+    const t = `${quoteIdent(tableOf(ctx, h.rel.targetModel))} AS ${quoteIdent(h.alias)}`
+    if (!i) return t
+    const prev = hops[i - 1]
+    return `JOIN ${t} ON ` + h.rel.referencedKeys.map((r, j) =>
+      `${quoteIdent(h.alias)}.${col(h.rel.targetModel, r)} = ${quoteIdent(prev.alias)}.${col(h.from, h.rel.foreignKeys[j])}`).join(' AND ')
+  }).join(' ')
+  const first = hops[0]
+  const where = first.rel.referencedKeys.map((r, j) =>
+    `${quoteIdent(first.alias)}.${col(first.rel.targetModel, r)} = ` +
+    (bound ? '?' : `${self}.${col(modelName, first.rel.foreignKeys[j])}`)).join(' AND ')
+  return { from, where }
+}
+
+// `bound` is the row in hand (`evalSome`'s case): its first-hop foreign key is
+// pushed here, ahead of the condition's own parameters, because it is written
+// ahead of them. Where the to-many hangs off the key the last hop points at —
+// `invoice.organization.memberships`, both on `organization.id` — the last hop
+// is read as its foreign key and its table is never joined.
+function chainedSomeSql(node, params, ctx, modelName, op, visited, bound) {
+  const schema = ctx.schema
+  const hops = chainHops(ctx, modelName, node.via, node)
+  const home = hops.at(-1).rel.targetModel
+  const rel  = relationsOf(ctx, home)[node.rel]
+  if (!rel || rel.kind !== 'hasMany')
+    throw new Error(`${modelName}.${relPath(node)}.some(…): only a to-many (hasMany) relation is tested with some()`)
+
+  const col  = (model, f) => `${quoteIdent(policyColumn(schema, model, f))}`
+  const last = hops.at(-1)
+  const collapse = rel.referencedKeys.every(r => last.rel.referencedKeys.includes(r))
+  const kept = collapse ? hops.slice(0, -1) : hops
+  const self = `${quoteIdent(tableOf(ctx, modelName))}`
+  // The parent's key, column by column, as the to-many's foreign key reads it.
+  const parentKey = rel.referencedKeys.map(r => {
+    if (!collapse) return `${quoteIdent(last.alias)}.${col(home, r)}`
+    const fk = last.rel.foreignKeys[last.rel.referencedKeys.indexOf(r)]
+    if (kept.length) return `${quoteIdent(kept.at(-1).alias)}.${col(last.from, fk)}`
+    if (bound) { params.push(bound[fk] ?? null); return '?' }
+    return `${self}.${col(modelName, fk)}`
+  })
+  const corr = rel.foreignKeys.map((f, i) => `"__some".${col(rel.targetModel, f)} = ${parentKey[i]}`).join(' AND ')
+  const live = shapeOf(ctx, rel.targetModel).softDelete
+    ? ` AND "__some".${col(rel.targetModel, 'deletedAt')} IS NULL` : ''
+  const child = `${quoteIdent(tableOf(ctx, rel.targetModel))} AS "__some"`
+
+  let scope
+  if (kept.length) {
+    const { from, where } = chainSql(ctx, modelName, kept, !!bound)
+    if (bound) params.push(...kept[0].rel.foreignKeys.map(f => bound[f] ?? null))
+    scope = `${from} JOIN ${child} ON ${corr} WHERE ${where}`
+  } else {
+    scope = `${child} WHERE ${corr}`
+  }
+  // `this.col` is the row the rule is declared on, whichever hop the test
+  // reached — read from the outer table, or from the row in hand.
+  const outer = { model: modelName, table: tableOf(ctx, modelName), row: bound }
+  const cond  = compileSql(node.where, params, Object.assign(Object.create(ctx), { _outer: outer }), rel.targetModel, op, visited)
+  return `EXISTS (SELECT 1 FROM ${scope}${live} AND (${cond}))`
 }
 
 function compileSql(node, params, ctx, modelName, op, visited) {
@@ -2022,6 +2193,7 @@ function compileSql(node, params, ctx, modelName, op, visited) {
       if (!o) throw new Error(`${modelName}: 'this.${node.name}' is read only inside a 'rel.some(…)'`)
       const t   = quoteIdent(o.table)
       const col = `${t}.${quoteIdent(policyColumn(schema, o.model, fieldColumnName(ctx, o.model, node.name)))}`
+      if (o.row) { params.push(o.row[fieldColumnName(ctx, o.model, node.name)] ?? null); return '?' }
       if (!o.key) return col
       params.push(...o.key)
       return `(SELECT ${col} FROM ${t} WHERE ` +
@@ -2296,6 +2468,7 @@ function evalCheck(node, ctx, data, modelName, op) {
 // `ctx.readDb` routes to the write connection while a transaction is open, or a
 // parent and child created together would deny the child.
 function evalPath(node, ctx, data, modelName) {
+  if (node.via) return evalChain(node, ctx, data, modelName, 'path')
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'belongsTo') return null
 
@@ -2329,6 +2502,7 @@ function evalPath(node, ctx, data, modelName) {
 // for it too. On create that is the ordinary case — nothing can point at a row
 // that does not exist yet — so a create rule that needs a member fails closed.
 function evalSome(node, ctx, data, modelName, op) {
+  if (node.via) return evalChain(node, ctx, data, modelName, 'some', op)
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'hasMany')
     throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
@@ -2345,6 +2519,35 @@ function evalSome(node, ctx, data, modelName, op) {
   const hit    = db.query(sql).get(...params)?.hit
   if (ctx.policyDebug === 'verbose')
     plog(ctx, op ?? 'read', modelName, `\x1b[2m${node.rel}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
+  return !!hit
+}
+
+// A chain for one row: the SQL half's own subquery with the row's first-hop key
+// bound, so the halves walk the same joins. No first hop is no row at the end —
+// a path answers null and a `.some(…)` false, as the correlated half does. A
+// parent or grandparent the caller cannot read answers the same (FJS-1712).
+function evalChain(node, ctx, data, modelName, kind, op) {
+  const absent = kind === 'path' ? null : false
+  const first  = relationsOf(ctx, modelName)[node.via[0]]
+  if (first?.kind !== 'belongsTo') return absent
+  const key = first.foreignKeys.map(f => data?.[f])
+  if (key.some(v => v == null)) return absent
+  const second = kind === 'path' ? node.rel : node.via[1]
+  if (ctx._hiddenParents?.has(node.via[0])) return absent
+  if (second != null && ctx._hiddenParents?.has(chainKey(node.via[0], second))) return absent
+
+  const db = ctx.readDbFor?.(first.targetModel) ?? ctx.readDb
+  if (!ctx.schema || !db?.query) return null
+
+  if (kind === 'path') {
+    const sql = `SELECT ${pathSql(node, ctx, modelName, true)} AS v`
+    return db.query(sql).get(...key)?.v ?? null
+  }
+  const params = []
+  const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), data)} AS hit`
+  const hit    = db.query(sql).get(...params)?.hit
+  if (ctx.policyDebug === 'verbose')
+    plog(ctx, op ?? 'read', modelName, `\x1b[2m${relPath(node)}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
   return !!hit
 }
 
@@ -2455,7 +2658,8 @@ function affinityOf(node, ctx, modelName) {
   // null here would let `evalJs` compare with no affinity where the WHERE
   // applies one, which is `FJS-713` reached through a relation.
   if (node?.type === 'path') {
-    const rel = relationsOf(ctx, modelName)[node.rel]
+    const home = homeOf((m) => relationsOf(ctx, m), modelName, node)
+    const rel  = home && relationsOf(ctx, home)[node.rel]
     if (rel?.kind !== 'belongsTo') return null
     return affinityOf({ type: 'field', name: node.name }, ctx, rel.targetModel)
   }
@@ -2500,7 +2704,7 @@ export function pickWhere(model) {
     if (expr?.type === 'and') { pins(expr.left, out); pins(expr.right, out); return out }
     if (expr?.type !== 'compare' || expr.op !== '==') return out
     const [col, who] = expr.left?.type === 'path' ? [expr.left, expr.right] : [expr.right, expr.left]
-    if (col?.type === 'path' && who?.type === 'auth' && fkOf.has(col.rel))
+    if (col?.type === 'path' && !col.via && who?.type === 'auth' && fkOf.has(col.rel))
       out[`${fkOf.get(col.rel)}\0${col.name}`] = `auth().${who.field ?? 'id'}`
     return out
   }

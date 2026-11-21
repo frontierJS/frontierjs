@@ -548,7 +548,7 @@ export interface TableClient<
   /** `system: true` makes a move declared `@system` — the gate, the row policies and the audit actor all survive, where asSystem() drops all three. */
   transition(id: number | string, name: string, opts?: { system?: boolean }): Promise<TRow>
   /** `refusedBy` says which half said no: a screen renders *not senior enough*, *not this record* and *not you, ever* differently, and neither the status nor a non-null `gate` separates them. */
-  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'policy' | 'guard' | null }>>
+  transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'capability' | 'policy' | 'guard' | null }>>
   /**
    * `@@commitment` — the rows owing a declared transition by `by` (the client's
    * clock unless stated), and when each fell due. A read through `findMany`, so
@@ -1264,8 +1264,11 @@ export declare class TransitionGateError extends Error {
   model:      string
   field:      string
   transition: string
-  required:   number
-  got:        number
+  /** null when the move's `@allow` refused rather than its `@gate` (`FJS-D1025`). */
+  required:   number | null
+  got:        number | null
+  /** true when the move's `@allow` predicate refused this caller on this row. */
+  allow:      boolean
   status:     403
   retryable:  false
 }

@@ -153,3 +153,12 @@ export const litestoneGuide = packageGuide({
   lede:        'What a schema and its client can do, one quick page per idea. Each page ends with a link to the full doc.',
   description: 'What a Litestone schema and client can do, one quick page per idea: models, queries, access, protected data, migrations and more.',
 })
+
+export const junctionGuide = packageGuide({
+  pkg:         'junction',
+  name:        'Junction guide',
+  base:        '/docs/junction/',
+  heading:     'The Junction guide',
+  lede:        'What a service can do and how to add to it, one quick page per idea. Each page ends with a link to the full doc.',
+  description: 'What a Junction service can do, one quick page per idea: services, hooks, transport, live updates, writes, protection and plugins.',
+})

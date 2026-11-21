@@ -629,11 +629,16 @@ value, so a missing parent is `NULL`, an `@@allow` keeps no row and an `@@deny`
 fires. Both compilers answer that identically, and a scalar subquery over no row
 is `NULL` for free.
 
-**One hop.** `a.b.c` is a parse error naming the rule, because transitive is N
-joins the author cannot see, per policy, per query — and a policy that is slow
+**Two hops** (`FJS-D1027`). A path may cross two to-one relations —
+`@@allow(read, order.customer.userId == auth().id)` — and a `.some(…)` may follow
+up to two (below). A third hop is a parse error naming the bound, because each is
+a join the author cannot see, per policy, per query — and a policy that is slow
 is a policy an app routes around, which is how the copy comes back wearing a
-service method. Put the rule on the model the first hop reaches, or carry the
-value.
+service method. Each hop is a key lookup. On create, a parent or grandparent the
+caller cannot read answers as missing (`FJS-1712`). A hop does not skip a
+soft-deleted parent, and does not need to: a delete is refused while a child
+still names the parent, or it cascades to the child, or it clears the key. To
+revoke access, remove the membership row the `.some(…)` tests.
 
 Refused at startup, each naming the column:
 
@@ -697,11 +702,14 @@ membership row rather than a snapshot.
 SQLite indexes no foreign key on its own. Unindexed, every parent row read builds
 a throwaway index. `litestone advise` names the column (`foreign-key-without-index`).
 
-**Inside the parentheses a name is a column of the CHILD**, and the relation has
-spent the one hop. **`this.col` is a column of the row the rule is declared
+**After up to two to-one hops**: `@@allow(update, organization.memberships.some(userId
+== auth().id && role == 'finance'))`, or `phoneNumber.org.members.some(userId ==
+this.userId)`. **Inside the parentheses a name is a column of the CHILD**, and
+`.some(…)` ends the chain. **`this.col` is a column of the row the rule is declared
 on** (`FJS-D2239`) — *no reviewer is the author* compares a child with its own
 parent, so it crosses nothing. The `EXISTS` reads it off the outer row; the JS
-half reads the stored parent by the key it already binds.
+half reads the stored parent by the key it already binds, or, past a hop, the row
+in hand.
 
 ```lite
 model User { id Int @id  @@auth }
@@ -723,9 +731,10 @@ Refused, each naming the rule:
 
 | Written | Why |
 | --- | --- |
-| `members.some(team.private == false)` | a dot inside is a second hop |
+| `members.some(team.private == false)` | a dot inside: `.some(…)` ends the chain |
+| `members.some(team.some(…))` | one `.some(…)` per chain |
 | `members.some(check(team))` | a delegation from the child is a second hop |
-| `team.members.some(…)` | rows two relations away. Put the rule on the model `team` points at |
+| `a.b.c.members.some(…)` | three to-one hops before the test |
 | `members.some(private == false)` where `private` is the parent's | not a field on the child. The message lists the child's fields; the parent's is `this.private` |
 | `team.some(…)` on a to-one | one row, so there is no *some*. Read it as `team.<column>` |
 | `tags.some(…)` over an implicit many-to-many | the join table is a second hop. Declare the join model and test it |

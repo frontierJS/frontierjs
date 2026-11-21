@@ -23,7 +23,8 @@
   // counted in red teaches the reader to ignore red.
   //
   // Clicking a row marks it read and follows its `action.url` through the
-  // link, so the app's router takes it as it takes any other link.
+  // link, so the app's router takes it as it takes any other link. A row with
+  // no `action.url` opens `href`, where the whole of it is.
 
   import Badge             from '@frontierjs/ui/components/display/Badge.mesa'
   import Button            from '@frontierjs/ui/components/forms/Button.mesa'
@@ -31,7 +32,7 @@
   import DropdownItem      from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import DropdownGroup     from '@frontierjs/ui/components/overlay/DropdownGroup.mesa'
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
-  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead } from './rows.js'
+  import { INBOX, isUnread, titleOf, bodyOf, actionOf, markRead, markAllRead, when, whenExactly } from './rows.js'
 
   export let notifications = null     // the app's Notification resource — required
   export let directives = INBOX       // what the list asks for; newest first by default
@@ -61,14 +62,14 @@
   {#if unread.length}
     <DropdownGroup heading="Unread">
       {#each unread.slice(0, max) as n (n.id)}
-        <DropdownItem href={actionOf(n)?.url} onclick={() => open(n)}>
+        <DropdownItem href={actionOf(n)?.url || href || undefined} onclick={() => open(n)}>
           <span class="stack bell-note" title={bodyOf(n) ? `${titleOf(n)} — ${bodyOf(n)}` : titleOf(n)}>
             {#if item}
               {@render item(n)}
             {:else}
               <span class="bell-head">
                 <strong>{titleOf(n)}</strong>
-                <time class="bell-when text-sm text-muted" datetime={n.createdAt}>{new Date(n.createdAt).toLocaleString()}</time>
+                <time class="bell-when text-sm text-muted" datetime={n.createdAt} title={whenExactly(n)}>{when(n)}</time>
               </span>
               {#if bodyOf(n)}<span class="bell-body text-sm text-muted">{bodyOf(n)}</span>{/if}
             {/if}

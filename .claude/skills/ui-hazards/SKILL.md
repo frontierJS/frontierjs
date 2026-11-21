@@ -45,6 +45,7 @@ Detail: `references/resources-and-forms.md`
 - **`tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call.**
 - **A `tethered()` list over a model whose `@@gate` refuses the caller's `session.level` is never asked for: it sits empty with no `error`, and loads when the level changes.**
 - **A raw route is reached with `client.fetch(path)`, which carries the client's credentials.**
+- **`can(op, level)` is the gate alone; the row policy needs the row, read with `$can`, and a push drops that answer.** (`FJS-D2283`)
 
 ## Mesa
 Detail: `references/mesa.md`

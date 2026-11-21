@@ -1105,7 +1105,9 @@ export const RULES = [
       const readsOf = (node, acc = new Set()) => {
         if (!node || typeof node !== 'object') return acc
         if (Array.isArray(node)) { for (const n of node) readsOf(n, acc); return acc }
-        if (node.type === 'path' && node.rel) acc.add(node.rel)
+        // A chain reads its first parent through this row's key as one hop does.
+        if (node.type === 'path' && node.rel) acc.add(node.via?.[0] ?? node.rel)
+        if (node.type === 'some' && node.via) acc.add(node.via[0])
         if (node.type === 'check' && node.field) acc.add(node.field)
         for (const v of Object.values(node)) readsOf(v, acc)
         return acc
@@ -1257,7 +1259,8 @@ export const RULES = [
         a.kind === 'allow' && a.operations?.some(op => op === 'read' || op === 'all'))
       const pathsIn = (node, acc = []) => {
         if (!node || typeof node !== 'object') return acc
-        if (node.type === 'path' && node.rel) acc.push(node)
+        if (node.type === 'path' && node.rel)
+          acc.push(node.via ? { rel: node.via[0], name: [...node.via.slice(1), node.rel, node.name].join('.') } : node)
         for (const v of Object.values(node)) pathsIn(v, acc)
         return acc
       }
@@ -1326,7 +1329,7 @@ export const RULES = [
       const reads = (n, rel, fks) => {
         if (!n || typeof n !== 'object') return false
         if (n.type === 'or') return reads(n.left, rel, fks) && reads(n.right, rel, fks)
-        if ((n.type === 'path' || n.type === 'some') && n.rel === rel) return true
+        if ((n.type === 'path' || n.type === 'some') && (n.via?.[0] ?? n.rel) === rel) return true
         if (n.type === 'check' && n.field === rel) return true
         if (n.type === 'compare' && (pins(n.left, n.right, fks) || pins(n.right, n.left, fks))) return true
         return Object.values(n).some(v => Array.isArray(v) ? v.some(x => reads(x, rel, fks)) : reads(v, rel, fks))

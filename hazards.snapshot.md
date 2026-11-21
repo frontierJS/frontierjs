@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 200**.
+Graded: **13 of 202**.
 
-## data — 3 of 68
+## data — 3 of 69
 
 ### Schema and parse
 
@@ -89,6 +89,7 @@ Graded: **13 of 200**.
 | Tenancy is declared in the schema and there are two strategies. | **none** |
 | A row scoped through a parent that names NO parent is `asSystem()`'s alone | **none** |
 | A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only | **none** |
+| A default `backup` or `replicate` leaves out every place that declares no destination | **none** |
 
 ### Migrations and release
 
@@ -254,7 +255,7 @@ Graded: **13 of 200**.
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 57
+## ui — 4 of 58
 
 ### Routes, prerender and static
 
@@ -295,6 +296,7 @@ Graded: **13 of 200**.
 | `tethered().more()` catches its error into `.error`, so a loop on `hasMore` alone spins on a failing call. | **none** |
 | A `tethered()` list over a model whose `@@gate` refuses the caller's `session.level` is never asked for: it sits empty with no `error`, and loads when the level changes. | **none** |
 | A raw route is reached with `client.fetch(path)`, which carries the client's credentials. | **none** |
+| `can(op, level)` is the gate alone; the row policy needs the row, read with `$can`, and a push drops that answer. | **none** |
 
 ### Mesa
 

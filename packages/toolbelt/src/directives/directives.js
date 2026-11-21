@@ -191,6 +191,10 @@ const DIRECTIVES = Object.freeze([
   // the combinations litestone refuses are graded at the Data boundary, which
   // holds the walk; this table only carries the value.
   { param: '$recursive',     name: 'recursive',     read: asIs,    schema: OPAQUE },
+  // The per-row ask (`FJS-D2283`): each row the read returned answers
+  // `_can = { update, remove, moves }`, graded as the caller. A row policy is
+  // not a gate, so without it a screen offers Edit on a row the PATCH refuses.
+  { param: '$can',           name: 'can',           read: asBool,  schema: FLAG   },
 ].map(Object.freeze))
 
 /** Every `$` name that has a structured form. Derived — never restated. */
@@ -327,7 +331,7 @@ export function unknownDirectives(params) {
  *             populate?: unknown, count?: Record<string, true | { where: object }>, search?: string,
  *             withDeleted?: boolean, onlyDeleted?: boolean,
  *             withTemplates?: boolean, onlyTemplates?: boolean,
- *             asOf?: string, withExpired?: boolean, onlyExpired?: boolean }}
+ *             asOf?: string, withExpired?: boolean, onlyExpired?: boolean, can?: boolean }}
  */
 export function parseDirectives(params) {
   const d = {}

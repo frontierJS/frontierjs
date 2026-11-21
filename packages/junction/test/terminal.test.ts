@@ -14,7 +14,8 @@ import { createApp, defaultConfig } from '../index.ts'
 import { endShell, terminalSocket } from '../src/terminal/index.ts'
 
 const noop = () => ''
-const env  = () => process.env
+// A shell the test types into keeps its lines out of the operator's ~/.bash_history.
+const env  = () => ({ ...process.env, HISTFILE: '/dev/null' })
 
 describe('terminalSocket refuses to mount without a refusal', () => {
   const app = { ws() {} }

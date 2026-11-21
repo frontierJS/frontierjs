@@ -1347,7 +1347,7 @@ const MODEL = [
     'transitions',
     'model',
     'access',
-    '(<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)',
+    '(<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@allow(<predicate>)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)',
     "A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.",
     '@@transitions(status,\n    pay:    draft        -> paid,\n    ship:   paid         -> shipped,\n    cancel: [draft, paid] -> cancelled @gate(5))',
     {
@@ -1480,6 +1480,15 @@ const TRANSITION = [
     "The model's @@gate at move grain: the level a caller needs to MAKE this move, a floor on top of the model's update level. @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller reaches it and asSystem() bypasses. With @system it must stay below 8, because 8 says no caller and @system says the application makes the move through one. Not the model's @@gate, which grades the four operations on every row.",
     '@@transitions(state, void: [draft, issued] -> void @gate(5))',
     { context: TRANSITION_CONTEXT, extraFields: TRANSITION_FIELDS, seeAlso: ['transitions', 'transition:system'] }
+  ),
+  t(
+    'allow',
+    'transition',
+    'access',
+    '(<predicate>)',
+    "The model's @@allow at move grain: a row predicate the caller must satisfy to MAKE this move, graded on the row as it stands BEFORE the move, beside the move's @gate. It is the policy language, so it reads paths and one .some — finalize: open -> final @allow(org.members.some(userId == auth().id && role == 'finance')) limits a move to a role held in the row's organization without limiting any other write. Holds only on TRUE: an absent auth() is UNKNOWN and refuses. A refused move throws TransitionGateError with allow: true, as a refused @gate does, and asSystem() lifts it as it lifts the gate. transitions(row) grades it on the stored row, so a screen reading with $can hides the button. Not @@allow(update, …), which is a WHERE over every write and cannot tell a move from an edit (FJS-D1025).",
+    '@@transitions(state, issue: draft -> issued @allow(ownerId == auth().id))',
+    { context: TRANSITION_CONTEXT, extraFields: 'state DocState @default(draft)\n  ownerId String?', seeAlso: ['transitions', 'transition:gate', 'model:allow'] }
   ),
   t(
     'system',
@@ -1791,6 +1800,7 @@ export const DOCS = {
   'model:tenant': 'multi-tenancy.md',
   'model:transitions': 'schema.md',
   'transition:gate': 'schema.md',
+  'transition:allow': 'schema.md',
   'transition:system': 'schema.md',
   'transition:seals': 'modeling.md',
   'transition:stamps': 'schema.md',
@@ -1915,6 +1925,7 @@ export const TIERS = {
     'model:updatedBy',
     // transition words
     'transition:gate',
+    'transition:allow',
     'transition:system',
     'transition:seals',
     'transition:stamps'
@@ -2033,7 +2044,7 @@ export const AXES = {
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal', 'field:opaque',
-    'field:secret', 'field:allow', 'transition:gate', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
+    'field:secret', 'field:allow', 'transition:gate', 'transition:allow', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
     'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],

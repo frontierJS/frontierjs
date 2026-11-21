@@ -92,6 +92,8 @@ interface LitestoneTable {
   /** The caller's ordering plus whatever makes it total; `null` where no tie
    *  can be broken, which is a list that cannot carry a window. */
   orderTotal?:      (orderBy?: unknown) => unknown[] | null
+  /** Each move legal from the row's state, graded as the caller; [] on a model with no `@@transitions`. */
+  transitions?:     (row: Record<string, unknown>) => Promise<Array<{ name: string, allowed: boolean, refusedBy: string | null }>>
 }
 
 // Split into the client's own API and the table it answers per model, then
@@ -223,6 +225,7 @@ export interface ParsedQuery {
   withExpired?:    boolean   // $withExpired — no window filter at all
   onlyExpired?:    boolean   // $onlyExpired — only the rows NOT in force
   recursive?:      NonNullable<QueryDirectives['recursive']>   // $recursive — a tree read (`FJS-D1098`)
+  can?:            true      // $can — each row answers `_can` (`FJS-D2283`)
 }
 
 /**
@@ -336,6 +339,7 @@ export function parseListQuery(
     withExpired:   withExp  === true || undefined,
     onlyExpired:   onlyExp  === true || undefined,
     recursive:     recursiveOf(directives.recursive),
+    can:           directives.can === true || undefined,
   }
 }
 
@@ -1280,6 +1284,60 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
   }
 
   /**
+   * `$can` (`FJS-D2283`): each row the read returned answers `_can = { update,
+   * remove, moves }`, graded as the caller by the Data boundary's own graders.
+   * The browser holds the gate and not the row policy, so without it a screen
+   * offers Edit on a row the PATCH refuses (`FJS-2997`).
+   *
+   * Graded against the STORED row: a `$select` that dropped a column a policy
+   * reads would answer a refusal for a row the caller may change. Undecidable
+   * is permissive, as `transitions()` is — hiding a button that works is the
+   * worse failure, and the write is graded regardless.
+   */
+  async function withCan<T>(
+    ctx: ServiceContext, table: LitestoneTable, q: ParsedQuery, answer: T, rows: unknown[],
+  ): Promise<T> {
+    if (!q.can) return answer
+    const held = rows.filter((r): r is Record<string, unknown> =>
+      r != null && typeof r === 'object' && (r as Record<string, unknown>)[idField] != null)
+    if (!held.length) return answer
+
+    const db       = ctx.locals['__litestoneScopedDb'] as LitestoneClientApi | undefined
+    const accessor = db && '$checkWrite' in db ? accessorIfModel(db, model ?? ctx.service) : undefined
+    const stored   = q.select ? await storedRows(table, q, held) : null
+
+    const allows = async (op: 'update' | 'delete', row: Record<string, unknown>) => {
+      if (!db || !accessor) return true
+      try { return (await db.$checkWrite!(accessor, op, row, null)).ok }
+      catch { return true }
+    }
+    for (const row of held) {
+      const full = stored?.get(row[idField]) ?? row
+      const moves: Record<string, { allowed: boolean, refusedBy: string | null }> = {}
+      for (const m of await table.transitions?.(full) ?? []) moves[m.name] = { allowed: m.allowed, refusedBy: m.refusedBy }
+      row._can = { update: await allows('update', full), remove: await allows('delete', full), moves }
+    }
+    return answer
+  }
+
+  // One read of the rows a narrowed read returned, whole, under the same
+  // visibility flags, so a soft-deleted or templated row is found again.
+  async function storedRows(
+    table: LitestoneTable, q: ParsedQuery, rows: Record<string, unknown>[],
+  ): Promise<Map<unknown, Record<string, unknown>>> {
+    const args: Record<string, unknown> = { where: { [idField]: { in: rows.map(r => r[idField]) } } }
+    if (q.withDeleted)   args.withDeleted   = true
+    if (q.onlyDeleted)   args.onlyDeleted   = true
+    if (q.withTemplates) args.withTemplates = true
+    if (q.onlyTemplates) args.onlyTemplates = true
+    if (q.withExpired)   args.withExpired   = true
+    if (q.onlyExpired)   args.onlyExpired   = true
+    if (q.asOf)          args.asOf          = q.asOf
+    const full = await table.findMany(args) as Record<string, unknown>[]
+    return new Map(full.map(r => [r[idField], r]))
+  }
+
+  /**
    * The `@system` columns a hook on this call said the APPLICATION is supplying.
    *
    * `ctx.system.add('slots')` in a hook; `system: [...]` on the litestone call,
@@ -1584,10 +1642,8 @@ const columns = writableColumns(db, m.accessor)
         if (q.total === false) {
           const fetched = await table.search(q.search, { ...args, limit: q.limit + 1 })
           const more    = fetched.length > q.limit
-          return {
-            total: null, limit: q.limit, offset: q.offset,
-            data: more ? fetched.slice(0, q.limit) : fetched, hasMore: more,
-          }
+          const data    = more ? fetched.slice(0, q.limit) : fetched
+          return withCan(ctx, table, q, { total: null, limit: q.limit, offset: q.offset, data, hasMore: more }, data)
         }
 
         const rows  = await table.search(q.search, args)
@@ -1598,7 +1654,7 @@ const columns = writableColumns(db, m.accessor)
               select: { [idField]: true },
             })).length
 
-        return { total, limit: q.limit, offset: q.offset, data: rows }
+        return withCan(ctx, table, q, { total, limit: q.limit, offset: q.offset, data: rows }, rows)
       }
 
       const args: Record<string, unknown> = {
@@ -1627,13 +1683,14 @@ const columns = writableColumns(db, m.accessor)
         if (stated.offset == null) delete args.offset
         args.recursive = q.recursive
         const rows = await table.findMany(args) as unknown[]
-        return { total: rows.length, data: rows }
+        return withCan(ctx, table, q, { total: rows.length, data: rows }, rows)
       }
 
       // The window (`FJS-D145`) — a caller asking `$after` is growing a
       // window rather than stepping to a page. Both paths are `findWindow`'s,
       // because a service that assembles its own query answers the same two.
-      return await findWindow(table, args, q.after, modelLabel(ctx), q.total !== false)
+      const window = await findWindow(table, args, q.after, modelLabel(ctx), q.total !== false)
+      return withCan(ctx, table, q, window, window.data)
     },
 
     /**
@@ -1717,7 +1774,7 @@ const columns = writableColumns(db, m.accessor)
 
         const record = await table.findUnique(args)
         if (!record) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
-        return record
+        return withCan(ctx, table, q, record, [record])
       }
 
       const args: Record<string, unknown> = {
@@ -1735,7 +1792,7 @@ const columns = writableColumns(db, m.accessor)
 
       const record = await table.findFirst(args)
       if (!record) throw new NotFound(`${modelLabel(ctx)} not found`)
-      return record
+      return withCan(ctx, table, q, record, [record])
     },
 
     async create(ctx: ServiceContext): Promise<unknown> {

@@ -222,6 +222,7 @@ export function makeStateGuards(shape, ctx, deps) {
     // for by NAME through transition(). Two copies would be two answers to one
     // question the first time either learned something (Invariant 4).
     const gradeMove = async (fieldName, moveName, move) => {
+      let allowed = null
       // @gate(9) is a move declared for its from-state and made by nobody, the
       // system client included, as a 9 is on @@gate.
       if (move.gate === 9) throw new TransitionGateError(tableName, fieldName, moveName, 9, ctx.isSystem ? 8 : await transitionLevel())
@@ -229,7 +230,7 @@ export function makeStateGuards(shape, ctx, deps) {
       // Everything below is authority — who may make the move — which is what
       // `asSystem()` lifts. The move itself, its from-state and its
       // compare-and-swap, still holds (`FJS-D502`).
-      if (ctx.isSystem) return
+      if (ctx.isSystem) return null
 
       // A transition gate is a floor on top of @@gate's update level, which has
       // already passed to get here: shipping an order and refunding one are not
@@ -242,6 +243,22 @@ export function makeStateGuards(shape, ctx, deps) {
         const level = await transitionLevel()
         if (!levelPasses(move.gate, level))
           throw new TransitionGateError(tableName, fieldName, moveName, move.gate, level)
+      }
+
+      // ── @allow, the gate asked of the row (`FJS-D1025`) ─────────────────
+      // A row predicate over the PRE-state row, so a role held in the row's
+      // organization limits the move and no other write. It holds only on
+      // TRUE: an absent auth() is UNKNOWN and refuses. Returned so the write
+      // carries it in its compare-and-swap, which keeps a membership revoked
+      // between this read and the UPDATE from making the move.
+      if (move.allow) {
+        const frag  = compileMoveGuard(modelName, { when: 'while', expr: move.allow }, ctx)
+        const allow = {
+          sql: frag.sql, params: frag.params,
+          refuse: () => new TransitionGateError(tableName, fieldName, moveName, null, null, { allow: true }),
+        }
+        if (!guardHolds(allow, whereSql, whereParams)) throw allow.refuse()
+        allowed = allow
       }
 
       // ── The capability half of the same question ────────────────────────
@@ -264,6 +281,7 @@ export function makeStateGuards(shape, ctx, deps) {
         if (!named.includes(fieldName))
           throw new TransitionSystemError(tableName, fieldName, moveName)
       }
+      return allowed
     }
 
     // Find the first transitions-typed field in the data being written
@@ -348,7 +366,7 @@ export function makeStateGuards(shape, ctx, deps) {
         // could never have made this move is told that, rather than being told
         // somebody beat them to it, which is both wrong and a fact about the
         // row they were not owed.
-        await gradeMove(fieldName, requestedMove, named)
+        const allow = await gradeMove(fieldName, requestedMove, named)
 
         if (currentValue === named.to)
           throw new TransitionConflictError(tableName, fieldName, named.from, named.to,
@@ -359,7 +377,7 @@ export function makeStateGuards(shape, ctx, deps) {
             Object.values(transitions).filter(t => t.from.includes(currentValue)).map(t => t.to))
 
         return { transitionName: requestedMove, field: fieldName, from: currentValue, to: named.to, stamps: named.stamps ?? [], stampBy: named.stampBy ?? null, lastMover: spec.lastMover ?? null,
-                 guard: guardMove(fieldName, requestedMove, named, whereSql, whereParams) }
+                 guard: guardMove(fieldName, requestedMove, named, whereSql, whereParams), allow }
       }
 
       if (currentValue === newValue) return null   // no change — nothing to enforce
@@ -379,10 +397,10 @@ export function makeStateGuards(shape, ctx, deps) {
       }
 
       // The move is legal — is this caller allowed to make it?
-      await gradeMove(fieldName, matchedName, transitions[matchedName])
+      const allow = await gradeMove(fieldName, matchedName, transitions[matchedName])
 
       return { transitionName: matchedName, field: fieldName, from: currentValue, to: newValue, stamps: transitions[matchedName].stamps ?? [], stampBy: transitions[matchedName].stampBy ?? null, lastMover: spec.lastMover ?? null,
-               guard: guardMove(fieldName, matchedName, transitions[matchedName], whereSql, whereParams) }
+               guard: guardMove(fieldName, matchedName, transitions[matchedName], whereSql, whereParams), allow }
     }
     return null
   }
@@ -563,12 +581,13 @@ export function makeStateGuards(shape, ctx, deps) {
     }
     // Add WHERE field = currentValue for optimistic concurrency
     const g = transitionResult.guard
+    const a = transitionResult.allow
     return {
-      sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?` + (g ? ` AND ${g.sql}` : ''),
+      sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?` + (g ? ` AND ${g.sql}` : '') + (a ? ` AND ${a.sql}` : ''),
       // _ecp: a boolean state is stored 1/0, and a raw `false` binds as nothing
       // the column ever equals — the swap would match no row and every move on a
       // Boolean machine would report a conflict.
-      params: [...finalWhereParams, _ecp(transitionResult.from), ...(g ? g.params : [])],
+      params: [...finalWhereParams, _ecp(transitionResult.from), ...(g ? g.params : []), ...(a ? a.params : [])],
     }
   }
 

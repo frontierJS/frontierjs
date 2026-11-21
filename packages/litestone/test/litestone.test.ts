@@ -11041,8 +11041,8 @@ describe('@@transitions — parser', () => {
 
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.field).toBe('status')
-    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
-    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, system: false, seals: false, stamps: [], stampBy: null, guard: null })
+    expect(attr.transitions.pay).toEqual({ from: ['pending'], to: 'paid', gate: null, allow: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
+    expect(attr.transitions.refund).toEqual({ from: ['paid'], to: 'refunded', gate: 5, allow: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
     expect(attr.transitions.cancel.from).toEqual(['pending', 'paid'])
   })
 
@@ -11051,7 +11051,7 @@ describe('@@transitions — parser', () => {
 model Order { id Int @id  status S @default(pending)  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
-    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
+    expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, allow: null, system: false, seals: false, stamps: [], stampBy: null, guard: null })
   })
 
   test('@gate refuses a level name and names the digit it means (FJS-D239)', () => {
@@ -11071,7 +11071,7 @@ model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINIS
     ['gate out of range',  `@@transitions(s, a -> b @gate(12))`, 'integer 0–9'],
     ['unknown level name', `@@transitions(s, a -> b @gate(NOPE))`, 'expects a level 0–9'],
     ['no clauses',         `@@transitions(s)`,                   'at least one transition'],
-    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @system, @seals and @stamps are supported'],
+    ['unknown attribute',  `@@transitions(s, a -> b @wat(1))`,   'only @gate, @allow, @system, @seals and @stamps are supported'],
   ])('rejects: %s', (_label, attr, fragment) => {
     const r = parse(`enum S { a b }
 model M { id Int @id  s S  n Int  ${attr} }`)
@@ -14705,9 +14705,9 @@ describe('deriveAccess', () => {
   // an ungated move in every committed artefact (`FJS-613`).
   test('transitions carry their gate and their @system and their @seals, and an ungated move reports null', () => {
     expect(byName('Doc').transitions).toEqual([
-      { field: 'stage', name: 'review',  from: ['draft'],     to: 'review',    gate: null, system: false, seals: false },
-      { field: 'stage', name: 'publish', from: ['review'],    to: 'published', gate: 5,    system: false, seals: false },
-      { field: 'stage', name: 'retract', from: ['published'], to: 'draft',     gate: null, system: true,  seals: false },
+      { field: 'stage', name: 'review',  from: ['draft'],     to: 'review',    gate: null, system: false, seals: false, allow: null },
+      { field: 'stage', name: 'publish', from: ['review'],    to: 'published', gate: 5,    system: false, seals: false, allow: null },
+      { field: 'stage', name: 'retract', from: ['published'], to: 'draft',     gate: null, system: true,  seals: false, allow: null },
     ])
   })
 

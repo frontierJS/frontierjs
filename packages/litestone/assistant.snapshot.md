@@ -545,7 +545,7 @@ database logs {
 
 tier: **situational** · also called: multi-tenant, saas · see also: `tenant`
 
-How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().<claim>) stamp. Under `strategy database`, `place eu "./data/eu"` is a second directory a tenant is created in by name (`meta.place`); every copy path reads it. One block per schema — a second is refused rather than merged.
+How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().<claim>) stamp. Under `strategy database`, `place eu "./data/eu"` is a second directory a tenant is created in by name (`meta.place`); every copy path reads it, and `backup` and `replicate` copy the place only to the dir or url its optional `backup "<dest>"` clause names. One block per schema — a second is refused rather than merged.
 
 ```lite
 tenancy {
@@ -1753,7 +1753,7 @@ How this model belongs to a tenant under `tenancy { strategy row }`. `none` says
 @@tenant(none)
 ```
 
-#### `@@transitions` (<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)
+#### `@@transitions` (<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@allow(<predicate>)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)
 
 tier: **common** · legal in: in a model, in a trait · also called: workflow, status · see also: `gate`
 
@@ -1904,6 +1904,16 @@ The model's @@gate at move grain: the level a caller needs to MAKE this move, a 
 
 ```lite
 @@transitions(state, void: [draft, issued] -> void @gate(5))
+```
+
+#### `@allow` (<predicate>)
+
+tier: **common** · legal in: on a @@transitions transition · see also: `transitions`, `gate`, `allow`
+
+The model's @@allow at move grain: a row predicate the caller must satisfy to MAKE this move, graded on the row as it stands BEFORE the move, beside the move's @gate. It is the policy language, so it reads paths and one .some — finalize: open -> final @allow(org.members.some(userId == auth().id && role == 'finance')) limits a move to a role held in the row's organization without limiting any other write. Holds only on TRUE: an absent auth() is UNKNOWN and refuses. A refused move throws TransitionGateError with allow: true, as a refused @gate does, and asSystem() lifts it as it lifts the gate. transitions(row) grades it on the stored row, so a screen reading with $can hides the button. Not @@allow(update, …), which is a WHERE over every write and cannot tell a move from an edit (FJS-D1025).
+
+```lite
+@@transitions(state, issue: draft -> issued @allow(ownerId == auth().id))
 ```
 
 #### `@system`

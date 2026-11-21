@@ -268,6 +268,21 @@ describe('a move', () => {
     await db.$close()
   })
 
+  it('is graded by transitions(), so the button list does not offer what the write refuses', async () => {
+    // FJS-4488: FJS-D1032 = C rests on this list, and it once offered a move
+    // the boundary then refused as Invoice.issue.
+    const db = await client()
+    const id = await mk(db)
+    const issue = async (d: any) => (await d.invoice.transitions(id)).find((m: any) => m.name === 'issue')
+
+    const bare = await issue(db.$setAuth({ id: 1, capabilities: ['Invoice.update'] }))
+    expect([bare.allowed, bare.refusedBy]).toEqual([false, 'capability'])
+    const held = await issue(db.$setAuth({ id: 1, capabilities: ['Invoice.issue'] }))
+    expect([held.allowed, held.refusedBy]).toEqual([true, null])
+    expect((await issue(db.asSystem())).allowed).toBe(true)
+    await db.$close()
+  })
+
   it('does not exist for a move at gate 8, so nothing asks for one', async () => {
     // `FJS-506`: a move the ENGINE makes is nobody's grant — getLevel is clamped
     // to 7 and asSystem() skips the check, so offering it in a role editor offers

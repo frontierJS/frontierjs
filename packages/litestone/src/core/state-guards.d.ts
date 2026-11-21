@@ -21,6 +21,7 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
         stampBy?: undefined;
         lastMover?: undefined;
         guard?: undefined;
+        allow?: undefined;
     } | {
         transitionName: any;
         field: string;
@@ -33,6 +34,11 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
             sql: string;
             params: any[];
             refuse: () => TransitionGuardError;
+        };
+        allow: {
+            sql: string;
+            params: any[];
+            refuse: () => TransitionGateError;
         };
         declared?: undefined;
     }>;
@@ -65,4 +71,5 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
 };
 export const NOT_VISIBLE: unique symbol;
 import { TransitionGuardError } from './errors.js';
+import { TransitionGateError } from './errors.js';
 import { SealedDocumentError } from './errors.js';

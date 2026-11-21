@@ -1,4 +1,4 @@
-// test/doc-examples.test.ts — every runnable example in README.md and AGENTS.md is run, not read.
+// test/doc-examples.test.ts — every runnable example in README.md, AGENTS.md and docs/guide/ is run, not read.
 //
 // Invariant 16: a runnable example is verified (FJS-D860, FJS-3668). The fence
 // contract is toolbelt's `docfences`: a ```ts / ```typescript block runs as a
@@ -23,7 +23,7 @@
 // of file:line> runs one block.
 
 import { describe, test, beforeAll } from 'bun:test'
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir }                       from 'node:os'
 import { join }                         from 'node:path'
 import { fileURLToPath }                from 'node:url'
@@ -35,7 +35,13 @@ const PKG     = fileURLToPath(new URL('..', import.meta.url))
 const REPORT  = !!process.env.DOC_EXAMPLES_REPORT
 const ONLY    = process.env.DOC_EXAMPLES_ONLY
 const TIMEOUT = 20_000
-const FILES   = ['README.md', 'AGENTS.md']
+// The guide is a folder per section; its README is the page order and holds no example.
+const GUIDE   = join(PKG, 'docs/guide')
+const guidePages = existsSync(GUIDE)
+  ? readdirSync(GUIDE, { withFileTypes: true }).filter(e => e.isDirectory())
+      .flatMap(e => readdirSync(join(GUIDE, e.name)).filter(f => f.endsWith('.md')).map(f => `docs/guide/${e.name}/${f}`))
+  : []
+const FILES   = ['README.md', 'AGENTS.md', ...guidePages]
 const EXPORTS = new Set(Object.keys(junction))
 
 type Block = ReturnType<typeof docFences>[number] & { file: string }

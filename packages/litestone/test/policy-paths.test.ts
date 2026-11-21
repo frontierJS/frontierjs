@@ -2,8 +2,8 @@
 //
 // `@@allow(read, order.userId == auth().id)` used to be `Expected RPAREN, got
 // '.'`, so *the lines of my own orders* had nowhere to live but a copy of the
-// id on the child (`FJS-499`). `FJS-D221` rules the dotted form: one hop, the
-// compiler owns the join, two hops is a parse error.
+// id on the child (`FJS-499`). `FJS-D221` rules the dotted form, the compiler
+// owns the joins, and `FJS-D1027` bounds it at two to-one hops.
 //
 // The two compilers agreeing is asserted in `policy-interpreters.test.ts`,
 // beside the `check()` block it shares a shape with — one oracle, not two. What
@@ -89,11 +89,16 @@ describe('one hop is accepted', () => {
   })
 })
 
-describe('the hop is bounded at one, and the bound is discoverable from the mistake', () => {
-  it('two hops is a parse error naming the rule', async () => {
+describe('the hops are bounded at two, and the bound is discoverable from the mistake', () => {
+  it('a third hop is a parse error naming the rule', async () => {
+    const msg = await refusal(S(`@@allow(read, owner.docs.owner.userId == auth().id)`))
+    expect(msg).toContain('crosses three relations')
+    expect(msg).toContain('TWO to-one relations')
+  })
+
+  it('a second hop over a to-many is refused at startup', async () => {
     const msg = await refusal(S(`@@allow(read, owner.docs.id == auth().id)`))
-    expect(msg).toContain('crosses two relations')
-    expect(msg).toContain('ONE hop away')
+    expect(msg).toContain("'docs' is hasMany")
   })
 
   it('and one hop over the same relation is fine', async () => {
@@ -361,4 +366,226 @@ model Message {
       expect((await db.asSystem().channel.findMany()).map((c: any) => c.topic)).toEqual(['mine'])
     } finally { db.$close() }
   })
+})
+
+// ─── two hops (FJS-D1027) ─────────────────────────────────────────────────────
+//
+// Two to-one hops then a column, or up to two then one `.some(…)`. Each case
+// grades the SQL half (read, update, delete) and the JS half (create) on the
+// same rows, so the two compilers are asked the same question.
+
+const LINES = (rule: string) => `
+model Customer {
+  id     String  @id
+  userId String?
+  orders Order[]
+  @@allow(read, true)
+}
+model Order {
+  id         String    @id
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  lines      Line[]
+  @@index([customerId])
+  @@allow(read, true)
+}
+model Line {
+  id      String  @id
+  orderId String?
+  note    String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+  @@index([orderId])
+  ${rule}
+}
+`
+
+const ORGS = (invoiceRead: string) => `
+enum Role { admin finance support }
+model Organization {
+  id          String       @id
+  memberships Membership[]
+  invoices    Invoice[]
+  @@allow(read, true)
+}
+model Membership {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String
+  role           Role
+  @@index([organizationId])
+  @@allow(read, true)
+}
+model Invoice {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  amount         Int          @default(0)
+  @@index([organizationId])
+  @@allow(read, ${invoiceRead})
+  @@allow(update, organization.memberships.some(userId == auth().id && role == 'finance'))
+}
+`
+
+const QUO = `
+model Org {
+  id      String        @id
+  members Member[]
+  numbers PhoneNumber[]
+  @@allow(read, true)
+}
+model Member {
+  id     String @id
+  orgId  String
+  org    Org    @relation(fields: [orgId], references: [id])
+  userId String
+  @@index([orgId])
+  @@allow(read, true)
+}
+model PhoneNumber {
+  id      String         @id
+  orgId   String
+  org     Org            @relation(fields: [orgId], references: [id])
+  holders NumberMember[]
+  @@index([orgId])
+  @@allow(read, true)
+}
+model NumberMember {
+  id            String      @id
+  phoneNumberId String
+  phoneNumber   PhoneNumber @relation(fields: [phoneNumberId], references: [id])
+  userId        String
+  @@index([phoneNumberId])
+  @@allow(create, phoneNumber.org.members.some(userId == this.userId))
+  @@allow(read, phoneNumber.org.members.some(userId == this.userId))
+}
+`
+
+const lands = (p: Promise<unknown>) => p.then(() => true, () => false)
+
+describe('two to-one hops then a column', () => {
+  it('grants on read, update and delete (SQL) and on create (JS), and refuses the other user', async () => {
+    const db: any = await createClient({ schema: LINES(`@@allow(all, order.customer.userId == auth().id)`), db: ':memory:', encryptionKey: KEY })
+    const sys = db.asSystem()
+    await sys.customer.create({ data: { id: 'c1', userId: 'u1' } })
+    await sys.customer.create({ data: { id: 'c2', userId: 'u2' } })
+    await sys.order.create({ data: { id: 'o1', customerId: 'c1' } })
+    await sys.order.create({ data: { id: 'o2', customerId: 'c2' } })
+    await sys.line.create({ data: { id: 'l1', orderId: 'o1' } })
+    await sys.line.create({ data: { id: 'l2', orderId: 'o2' } })
+    await sys.line.create({ data: { id: 'l3', orderId: 'o1' } })
+    const u1 = db.$setAuth({ id: 'u1' })
+
+    expect((await u1.line.findMany()).map((x: any) => x.id).sort()).toEqual(['l1', 'l3'])
+    expect(await lands(u1.line.update({ where: { id: 'l1' }, data: { note: 'mine' } }))).toBe(true)
+    await lands(u1.line.update({ where: { id: 'l2' }, data: { note: 'theirs' } }))
+    expect((await sys.line.findUnique({ where: { id: 'l2' } })).note).toBe(null)
+    await lands(u1.line.delete({ where: { id: 'l2' } }))
+    expect(await sys.line.findUnique({ where: { id: 'l2' } })).toBeTruthy()
+    expect(await lands(u1.line.delete({ where: { id: 'l3' } }))).toBe(true)
+
+    expect(await lands(u1.line.create({ data: { id: 'n1', orderId: 'o1' } }))).toBe(true)
+    expect(await lands(u1.line.create({ data: { id: 'n2', orderId: 'o2' } }))).toBe(false)
+    // An order with no customer has no value at the end of the chain: NULL in
+    // both halves, which an @@allow fails closed on.
+    await sys.order.create({ data: { id: 'o3' } })
+    expect(await lands(u1.line.create({ data: { id: 'n3', orderId: 'o3' } }))).toBe(false)
+    db.$close()
+  })
+
+  it('a column across a to-ONE then .some over a to-one are refused', async () => {
+    expect(await refusal(LINES(`@@allow(read, order.customer.some(userId == auth().id))`))).toContain("'order.customer' is a to-one")
+    expect(await refusal(LINES(`@@allow(read, order.customer.usrId == auth().id)`))).toContain("reached as 'order.customer.usrId'")
+  })
+})
+
+describe('one to-one hop then .some (FJS-D2280)', () => {
+  it('a finance member updates, support and another org\'s finance are refused', async () => {
+    const db: any = await createClient({ schema: ORGS('true'), db: ':memory:', encryptionKey: KEY })
+    const sys = db.asSystem()
+    await sys.organization.create({ data: { id: 'a' } })
+    await sys.organization.create({ data: { id: 'b' } })
+    await sys.membership.create({ data: { id: 'm1', organizationId: 'a', userId: 'fin', role: 'finance' } })
+    await sys.membership.create({ data: { id: 'm2', organizationId: 'a', userId: 'sup', role: 'support' } })
+    await sys.membership.create({ data: { id: 'm3', organizationId: 'b', userId: 'other', role: 'finance' } })
+    await sys.invoice.create({ data: { id: 'i1', organizationId: 'a' } })
+    const bump = async (who: string, amount: number) => {
+      await lands(db.$setAuth({ id: who }).invoice.update({ where: { id: 'i1' }, data: { amount } }))
+      return (await sys.invoice.findUnique({ where: { id: 'i1' } })).amount
+    }
+    expect(await bump('sup', 5)).toBe(0)
+    expect(await bump('other', 6)).toBe(0)
+    expect(await bump('fin', 7)).toBe(7)
+    db.$close()
+  })
+})
+
+describe('two to-one hops then .some, with this.col', () => {
+  it('create (JS) and read (SQL) admit the org member and refuse the stranger', async () => {
+    const db: any = await createClient({ schema: QUO, db: ':memory:', encryptionKey: KEY })
+    const sys = db.asSystem()
+    await sys.org.create({ data: { id: 'g' } })
+    await sys.member.create({ data: { id: 'k1', orgId: 'g', userId: 'member' } })
+    await sys.phoneNumber.create({ data: { id: 'p1', orgId: 'g' } })
+    const as = db.$setAuth({ id: 'member' })
+    expect(await lands(as.numberMember.create({ data: { id: 'x1', phoneNumberId: 'p1', userId: 'stranger' } }))).toBe(false)
+    expect(await lands(as.numberMember.create({ data: { id: 'x2', phoneNumberId: 'p1', userId: 'member' } }))).toBe(true)
+    // The same rule through the WHERE, over a row the JS half refused.
+    await sys.numberMember.create({ data: { id: 'x3', phoneNumberId: 'p1', userId: 'stranger' } })
+    expect((await as.numberMember.findMany()).map((x: any) => x.id)).toEqual(['x2'])
+    db.$close()
+  })
+})
+
+describe('a chain reaches every hop by its key', () => {
+  // Rows are written on a raw connection: the plan is the question, and
+  // thousands of client creates would be the test's whole runtime.
+  const plan = async (schema: string, fill: (raw: Database) => void, who: string, model: string) => {
+    const dir  = mkdtempSync(join(tmpdir(), 'litestone-chain-'))
+    const file = join(dir, 'db.sqlite')
+    try {
+      const seen: any[] = []
+      const db: any = await createClient({ schema, db: file, encryptionKey: KEY, onQuery: (e: any) => seen.push(e) })
+      const raw = new Database(file)
+      try {
+        raw.transaction(() => fill(raw))()
+        raw.run('ANALYZE')
+        seen.length = 0
+        const rows = await db.$setAuth({ id: who })[model].findMany()
+        expect(rows.length).toBeGreaterThan(0)
+        const q = seen.find(e => e.operation === 'findMany')
+        return (raw.prepare('EXPLAIN QUERY PLAN ' + q.sql).all(...q.params) as any[]).map(r => r.detail).join(' | ')
+      } finally { raw.close(); db.$close() }
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  }
+
+  it('two hops then a column: no AUTOMATIC index', async () => {
+    const detail = await plan(LINES(`@@allow(read, order.customer.userId == auth().id)`), (raw) => {
+      for (let i = 0; i < 300; i++)  raw.run('INSERT INTO customer (id, userId) VALUES (?, ?)', ['c' + i, 'u' + (i % 7)])
+      for (let i = 0; i < 1000; i++) raw.run('INSERT INTO "order" (id, customerId) VALUES (?, ?)', ['o' + i, 'c' + (i % 300)])
+      for (let i = 0; i < 3000; i++) raw.run('INSERT INTO line (id, orderId) VALUES (?, ?)', ['l' + i, 'o' + (i % 1000)])
+    }, 'u1', 'line')
+    expect(detail).not.toContain('AUTOMATIC')
+    expect(detail).not.toMatch(/SCAN (customer|"?order"?|__h)/)
+  }, 60000)
+
+  it('one hop then .some, and two hops then .some: no AUTOMATIC index', async () => {
+    const orgs = (raw: Database) => {
+      for (let i = 0; i < 200; i++)  raw.run('INSERT INTO organization (id) VALUES (?)', ['g' + i])
+      for (let i = 0; i < 2000; i++) raw.run('INSERT INTO membership (id, organizationId, userId, role) VALUES (?, ?, ?, ?)', ['m' + i, 'g' + (i % 200), 'u' + (i % 50), 'finance'])
+      for (let i = 0; i < 3000; i++) raw.run('INSERT INTO invoice (id, organizationId, amount) VALUES (?, ?, 0)', ['i' + i, 'g' + (i % 200)])
+    }
+    const one = await plan(ORGS(`organization.memberships.some(userId == auth().id)`), orgs, 'u1', 'invoice')
+    expect(one).not.toContain('AUTOMATIC')
+    expect(one).toMatch(/SEARCH __some (EXISTS )?USING (COVERING )?INDEX/)
+
+    const two = await plan(QUO, (raw) => {
+      for (let i = 0; i < 200; i++)  raw.run('INSERT INTO org (id) VALUES (?)', ['g' + i])
+      for (let i = 0; i < 2000; i++) raw.run('INSERT INTO member (id, orgId, userId) VALUES (?, ?, ?)', ['k' + i, 'g' + (i % 200), 'u' + (i % 50)])
+      for (let i = 0; i < 600; i++)  raw.run('INSERT INTO phone_number (id, orgId) VALUES (?, ?)', ['p' + i, 'g' + (i % 200)])
+      for (let i = 0; i < 3000; i++) raw.run('INSERT INTO number_member (id, phoneNumberId, userId) VALUES (?, ?, ?)', ['x' + i, 'p' + (i % 600), 'u' + (i % 50)])
+    }, 'u1', 'numberMember')
+    expect(two).not.toContain('AUTOMATIC')
+    expect(two).toMatch(/SEARCH __some (EXISTS )?USING (COVERING )?INDEX/)
+  }, 60000)
 })

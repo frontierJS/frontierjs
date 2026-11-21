@@ -5,13 +5,13 @@ export function makeConstraintRefusals(shape?: any, ctx?: any, deps?: any): {
     movesOnto: (refusal: any, whereSql: any, whereParams: any) => boolean;
     requireParentGrants: (target: any, fields: any, references: any, values: any) => void;
     isArchivedParent: (tbl: any, target: any, where: any) => Promise<any>;
-    hiddenParents: (rows: any, stamped?: any[], system?: any) => Promise<any[]>;
+    hiddenParents: (rows: any, stamped?: any[], system?: any, creates?: boolean) => Promise<any[]>;
     gradesParents: () => boolean;
     deferrable: (refusal: any) => any;
     holdDenial: (err: any, hidden: any, absent: any) => any;
     heldFor: (err: any, deferred: any) => any;
     settleDeferred: (deferred: any) => Promise<any>;
-    checkCreate: (row: any, hidden: any) => ForeignKeyError;
+    checkCreate: (row: any, hidden: any, chains?: any) => ForeignKeyError;
     firstRefusal: (a: any, b: any) => any;
     refuseLockedCascade: (where: any) => void;
     refusedDelete: (err: any, whereSql: any, params: any) => any;

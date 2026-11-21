@@ -17,8 +17,27 @@
   // to the page, which is what lets it bubble to the page's keymap.
   //
   // The colors and font are read off the pane's own computed style, so the
-  // terminal follows the theme instead of naming one.
+  // terminal follows the theme instead of naming one. A theme that carries a
+  // terminal palette sets the `--terminal-*` tokens below (`--terminal-bg`,
+  // `--terminal-fg`, `--terminal-font`, `--terminal-font-size`, `--terminal-cursor`,
+  // `--terminal-selection` and the sixteen ANSI colors); one that sets none
+  // gets the sunken surface, the ink and xterm's own ANSI colors.
   import Button from '../forms/Button.mesa'
+
+  const ANSI = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
+
+  /** xterm's theme from the pane's tokens; a token left unset is left out, so xterm's default stands. */
+  function themeOf(style) {
+    const token = (name) => style.getPropertyValue(`--terminal-${name}`).trim()
+    const theme = { background: style.backgroundColor, foreground: style.color, cursor: token('cursor') || style.color }
+    if (token('selection')) theme.selectionBackground = token('selection')
+    for (const name of ANSI) {
+      const bright = `bright${name[0].toUpperCase()}${name.slice(1)}`
+      if (token(name)) theme[name] = token(name)
+      if (token(`bright-${name}`)) theme[bright] = token(`bright-${name}`)
+    }
+    return theme
+  }
 
   export let url = (_size) => ''          // ({ cols, rows, session }) => the ws:// URL, or '' for no shell
   export let protocols = undefined        // string[] or () => string[] — the subprotocol list
@@ -103,7 +122,9 @@
         fontSize: fontSize || parseFloat(style.fontSize) || 13,
         cursorBlink: true,
         scrollback: 5000,
-        theme: { background: style.backgroundColor, foreground: style.color, cursor: style.color },
+        // VS Code's default: a dim color a program picks is lifted until it reads against the ground.
+        minimumContrastRatio: 4.5,
+        theme: themeOf(style),
       })
       fit = new FitAddon()
       term.loadAddon(fit)
@@ -162,16 +183,16 @@
     flex: 1;
     block-size: 100%;
     min-block-size: var(--terminal-min-block, 0);
-    background: var(--surface-sunken);
-    color: var(--ink);
+    background: var(--terminal-bg, var(--surface-sunken));
+    color: var(--terminal-fg, var(--ink));
   }
   .terminal-screen {
     flex: 1;
     min-block-size: 0;
     padding: var(--space-3xs) var(--space-xs);
-    background: var(--surface-sunken);
-    color: var(--ink);
-    font: var(--text-sm) / 1.2 var(--font-mono);
+    background: var(--terminal-bg, var(--surface-sunken));
+    color: var(--terminal-fg, var(--ink));
+    font: var(--terminal-font-size, var(--text-sm)) / 1.2 var(--terminal-font, var(--font-mono));
     overflow: hidden;
   }
   .terminal-note {

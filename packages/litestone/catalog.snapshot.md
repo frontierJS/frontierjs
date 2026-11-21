@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**132 words** — 13 declarations · 76 field attributes · 39 model attributes · 4 transition words.
+**133 words** — 13 declarations · 76 field attributes · 39 model attributes · 5 transition words.
 
 ## Declarations
 
@@ -144,7 +144,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@require` | Decide who may | (create\|postUpdate\|update\|delete, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
 | `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
-| `@@transitions` | Decide who may | (<field>, [lastMover: <column>,] [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
+| `@@transitions` | Decide who may | (<field>, [lastMover: <column>,] [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@allow(<predicate>)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
 | `@@trail` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
@@ -160,6 +160,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | word | group | arity | legal | accepts | notes |
 | --- | --- | --- | --- | --- | --- |
 | `@gate` | Decide who may | (<0-9>) |  |  |  |
+| `@allow` | Decide who may | (<predicate>) |  |  |  |
 | `@system` | Decide who may |  |  |  |  |
 | `@seals` | Hide or lock a value |  |  |  |  |
 | `@stamps` | Record who and when | (<column>, …, [by: <column>]) |  |  |  |

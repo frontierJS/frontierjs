@@ -77,9 +77,10 @@ export function assertValues(ast, names) {
   const walk = (n) => {
     const type = n?.type
     if (type === 'path') {
-      if (!Object.hasOwn(names, n.rel) || !names[n.rel].includes(n.name)) {
+      if (n.via || !Object.hasOwn(names, n.rel) || !names[n.rel].includes(n.name)) {
         const known = Object.entries(names).flatMap(([rel, fields]) => fields.map(f => `${rel}.${f}`))
-        throw new ParseError(`${n.rel}.${n.name} is not a name it may use. It may use ${known.join(', ')}`)
+        const said  = [...(n.via ?? []), n.rel, n.name].join('.')
+        throw new ParseError(`${said} is not a name it may use. It may use ${known.join(', ')}`)
       }
       return
     }

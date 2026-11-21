@@ -478,6 +478,127 @@ model Access {
     await expect(at(`accesses.some(userId == this.authorId.id)`)).rejects.toThrow(/one hop/)
   })
 
+  // `FJS-D1027` — two to-one hops. The SQL half joins the hops in one scalar
+  // subquery and the JS half binds the row's first foreign key into the same
+  // text; a null anywhere along the chain is where they can part company.
+  it('agrees across a two-hop path, with a null at every link', async () => {
+    const schema = `
+model Customer { id String @id  userId String? @map("user_id")  orders Order[]  @@gate(0) }
+model Order {
+  id         String    @id
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  lines      Line[]
+  @@gate(0)
+}
+model Line {
+  id      String @id
+  orderId String?
+  order   Order? @relation(fields: [orderId], references: [id])
+  @@allow(read, EXPR)
+}
+`
+    const cases: [string, Record<string, string[]>][] = [
+      [`order.customer.userId == auth().id`,                 { u1: ['l1'], u2: ['l2'], none: [] }],
+      // A broken link anywhere is an absent value, so `== null` holds for it.
+      [`order.customer.userId == null`,                      { u1: ['l3', 'l4', 'l5'], u2: ['l3', 'l4', 'l5'], none: ['l3', 'l4', 'l5'] }],
+      [`order.customer.userId != null`,                      { u1: ['l1', 'l2'], u2: ['l1', 'l2'], none: ['l1', 'l2'] }],
+      [`order.customer.userId == auth().id || order == null`, { u1: ['l1', 'l5'], u2: ['l2', 'l5'], none: ['l5'] }],
+    ]
+    for (const [expr, want] of cases) {
+      const db: any = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:' })
+      const sys = db.asSystem()
+      for (const c of [{ id: 'c1', userId: 'u1' }, { id: 'c2', userId: 'u2' }, { id: 'c3', userId: null }])
+        await sys.customer.create({ data: c })
+      for (const o of [{ id: 'o1', customerId: 'c1' }, { id: 'o2', customerId: 'c2' }, { id: 'o3', customerId: 'c3' }, { id: 'o4', customerId: null }])
+        await sys.order.create({ data: o })
+      for (const l of [{ id: 'l1', orderId: 'o1' }, { id: 'l2', orderId: 'o2' }, { id: 'l3', orderId: 'o3' }, { id: 'l4', orderId: 'o4' }, { id: 'l5', orderId: null }])
+        await sys.line.create({ data: l })
+
+      const all = await sys.line.findMany()
+      for (const who of ['u1', 'u2', 'none']) {
+        const p   = who === 'none' ? null : { id: who }
+        const sql = (await db.$setAuth(p).line.findMany()).map((x: any) => x.id).sort()
+        const js  = []
+        for (const row of all) if ((await db.$readAs('line', row, p)) != null) js.push(row.id)
+        expect({ expr, who, sql, js: js.sort() }).toEqual({ expr, who, sql: want[who], js: want[who] })
+      }
+      db.$close()
+    }
+  }, 30000)
+
+  // A chained `.some(…)` compiles two ways: collapsed onto the child's own key
+  // where the to-many hangs off the key the last hop points at, and joined
+  // otherwise. `customer.orders` comes back to the table the rule is declared
+  // on, so an unaliased hop would compare the order with itself.
+  it('agrees across a chained to-many test, collapsed and joined', async () => {
+    const schema = `
+model Org { id String @id  members Member[]  customers Customer[]  @@gate(0) }
+model Member {
+  id        String    @id
+  orgId     String
+  org       Org       @relation(fields: [orgId], references: [id])
+  userId    String
+  role      String
+  deletedAt DateTime?
+  @@softDelete
+}
+model Customer {
+  id     String  @id
+  orgId  String?
+  org    Org?    @relation(fields: [orgId], references: [id])
+  orders Order[]
+  @@gate(0)
+}
+model Order {
+  id         String    @id
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  authorId   String?   @map("author_id")
+  @@map("orders")
+  @@allow(read, EXPR)
+}
+`
+    const cases: [string, Record<string, string[]>][] = [
+      [`customer.org.members.some(userId == auth().id)`,                     { u1: ['o1', 'o5'], u2: ['o1', 'o2', 'o5'], none: [] }],
+      [`customer.org.members.some(userId == auth().id && role == 'finance')`, { u1: ['o1', 'o5'], u2: ['o2'], none: [] }],
+      // No org at the end of the chain is no member, so the negation admits it.
+      [`!customer.org.members.some(userId == auth().id)`,                    { u1: ['o2', 'o3', 'o4'], u2: ['o3', 'o4'], none: ['o1', 'o2', 'o3', 'o4', 'o5'] }],
+      [`customer.org.members.some(userId == this.authorId)`,                 { u1: ['o1', 'o2', 'o5'], u2: ['o1', 'o2', 'o5'], none: ['o1', 'o2', 'o5'] }],
+      [`customer.orders.some(authorId == auth().id)`,                        { u1: ['o1', 'o3', 'o5'], u2: ['o1', 'o2', 'o5'], none: [] }],
+    ]
+    for (const [expr, want] of cases) {
+      const db: any = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:' })
+      const sys = db.asSystem()
+      for (const g of [{ id: 'g1' }, { id: 'g2' }]) await sys.org.create({ data: g })
+      for (const m of [
+        { id: 'm1', orgId: 'g1', userId: 'u1', role: 'finance' },
+        { id: 'm2', orgId: 'g1', userId: 'u2', role: 'support' },
+        { id: 'm3', orgId: 'g2', userId: 'u2', role: 'finance' },
+        { id: 'm4', orgId: 'g2', userId: 'u1', role: 'admin' },
+      ]) await sys.member.create({ data: m })
+      // A removed membership grants nothing, in either half.
+      await sys.member.remove({ where: { id: 'm4' } })
+      for (const c of [{ id: 'c1', orgId: 'g1' }, { id: 'c2', orgId: 'g2' }, { id: 'c3', orgId: null }])
+        await sys.customer.create({ data: c })
+      for (const o of [
+        { id: 'o1', customerId: 'c1', authorId: 'u1' }, { id: 'o2', customerId: 'c2', authorId: 'u2' },
+        { id: 'o3', customerId: 'c3', authorId: 'u1' }, { id: 'o4', customerId: null, authorId: 'u2' },
+        { id: 'o5', customerId: 'c1', authorId: 'u2' },
+      ]) await sys.order.create({ data: o })
+
+      const all = await sys.order.findMany()
+      for (const who of ['u1', 'u2', 'none']) {
+        const p   = who === 'none' ? null : { id: who }
+        const sql = (await db.$setAuth(p).order.findMany()).map((x: any) => x.id).sort()
+        const js  = []
+        for (const row of all) if ((await db.$readAs('order', row, p)) != null) js.push(row.id)
+        expect({ expr, who, sql, js: js.sort() }).toEqual({ expr, who, sql: want[who], js: want[who] })
+      }
+      db.$close()
+    }
+  }, 30000)
+
   it('agrees with a @@deny standing beside the @@allow', async () => {
     const schema = `
 model Doc {

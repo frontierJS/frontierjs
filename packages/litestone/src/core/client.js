@@ -30,7 +30,7 @@ import { buildZonedMap, makeZoned } from './zoned.js'
 import { makeLedgerNotes } from './ledger-notes.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
-import { CapabilityPlugin, } from '../plugins/capability.js'
+import { CapabilityPlugin, requireCapability } from '../plugins/capability.js'
 import { capabilityDeclarations } from './capabilities.js'
 import {
   buildPolicyMap, buildScopeMap, compileStatic,
@@ -2785,6 +2785,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // ride the same WHERE and have their own answers, and so does a guard
       // that failed after checkTransitions read it.
       if (cur && cur.v === t.from) {
+        if (t.allow && !guardHolds(t.allow, r.where.sql, r.where.params)) throw t.allow.refuse()
         if (t.guard && !guardHolds(t.guard, r.where.sql, r.where.params)) throw t.guard.refuse()
         versionMoved(); sealed()
       }
@@ -3275,17 +3276,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
       for (const [i, row] of data.entries()) out.push(await applyPathDefaults(row, pathStamped[i]))
       data = out
     }
-    const hidden = await hiddenParents(data, pathStamped, system)
+    const hidden = await hiddenParents(data, pathStamped, system, true)
     // As prepareCreate's: a held refusal and a deferred parent are taken up
     // only by createMany(); planCreateMany throws them ahead of the INSERT.
     const deferred = new Map()
     for (const [i, row] of data.entries()) {
       const graded = authStamped(row, modelName, ctx)
       let parent, denied = null, trial
-      try { parent = ctx.hasPolicies ? checkCreate(graded, hidden[i]) : undefined }
+      try { parent = ctx.hasPolicies ? checkCreate(graded, hidden[i], hidden.chains.get(i)) : undefined }
       catch (e) { trial = holdDenial(e, hidden[i], hidden.absent.has(i)); denied = e }
       trial ??= !parent && deferrable(hidden[i])
-      if (trial) deferred.set(i, { refusal: hidden[i] ?? null, denied, row: graded })
+      if (trial) deferred.set(i, { refusal: hidden[i] ?? null, denied, row: graded, chains: hidden.chains.get(i) })
       hidden[i] = denied ?? firstRefusal(parent, hidden[i])
     }
     // A logged model already takes RETURNING, so opting in costs it nothing.
@@ -3402,16 +3403,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     data = applyAuthDefaults(data, shape.authDefaults, ctx.auth, stamped)
     data = stampFromAuth(data, shape.createdBy, ctx.auth, stamped)
     data = await applyPathDefaults(data, stamped)
-    const _crGraded = await hiddenParents([data], [stamped], system)
+    const _crGraded = await hiddenParents([data], [stamped], system, true)
     const [_crHid] = _crGraded
     // After the auth stamps, never before — see authStamped (FJS-1402).
     let _crParent, denied = null, trial
-    try { _crParent = ctx.hasPolicies ? checkCreate(data, _crHid) : undefined }
+    try { _crParent = ctx.hasPolicies ? checkCreate(data, _crHid, _crGraded.chains.get(0)) : undefined }
     catch (e) { trial = holdDenial(e, _crHid, _crGraded.absent.has(0)); denied = e }
     trial ??= !_crParent && deferrable(_crHid)
     // Taken up only by create(), which asks again inside its unit; every other
     // reader of this plan throws the refusal ahead of the INSERT.
-    const deferred = trial ? { refusal: _crHid ?? null, denied, row: data } : null
+    const deferred = trial ? { refusal: _crHid ?? null, denied, row: data, chains: _crGraded.chains.get(0) } : null
     // A new row is version 1, whatever the payload says. Honouring a supplied
     // version would let a client start a row at 500 and make the first real
     // editor's read look stale.
@@ -5289,7 +5290,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           moves = declaredTransitions(fieldName, scopeValue).filter(m => m.from != null)
             .map(m => [m.to, { from: [m.from], to: m.to, gate: m.gate, system: false }])
         }
-        for (const [name, { from, to, gate, system, guard }] of moves) {
+        for (const [name, { from, to, gate, allow, system, guard }] of moves) {
           if (!from.includes(currentValue)) continue
 
           // `@system` is asked FIRST and it is the cheapest: no level to
@@ -5303,6 +5304,26 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           if (allowed && gate != null) {
             allowed   = levelPasses(gate, await levelFor())
             refusedBy = allowed ? null : 'gate'
+          }
+
+          // `@allow` is the gate asked of the row (`FJS-D1025`), graded on the
+          // STORED row as the write grades it and lifted by asSystem() as the
+          // gate is. It asks about this record, so it reports as a row policy.
+          // Undecidable is permissive, as for the guard below.
+          if (allowed && allow && !ctx.isSystem) {
+            try {
+              allowed = guardHolds(compileMoveGuard(modelName, { when: 'while', expr: allow }, ctx),
+                `${ident(col(idField)).sql} = ?`, [row[idField]])
+            } catch { allowed = true }
+            refusedBy = allowed ? null : 'policy'
+          }
+
+          // The grid, graded as the write grades it (state-guards' gradeMove):
+          // only a move the grid names, ANDed with the gate, dropped by asSystem().
+          if (allowed && !ctx.isSystem && shape.capabilities?.transitions.has(name)) {
+            try { requireCapability(modelName, name, ctx) }
+            catch (e) { if (!(e instanceof AccessDeniedError)) throw e; allowed = false }
+            refusedBy = allowed ? null : 'capability'
           }
 
           if (allowed && policies) {
@@ -5323,9 +5344,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
             refusedBy = allowed ? null : 'guard'
           }
 
-          // `refusedBy` says which half said no, because a screen has three
-          // different things to render: *not you, ever* (`system`), *you are
-          // not senior enough* (`gate`) and *not this record* (`policy`). A
+          // `refusedBy` says which half said no, because a screen renders each
+          // differently: *not you, ever* (`system`), *you are not senior
+          // enough* (`gate`), *you were not granted it* (`capability`), *not
+          // this record* (`policy`) and *not yet* (`guard`). A
           // status alone cannot carry that, and the caller would otherwise
           // guess from the gate being non-null — wrong for every ungated move a
           // policy refuses, and wrong for every `@system` one.

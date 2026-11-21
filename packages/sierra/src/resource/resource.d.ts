@@ -388,8 +388,10 @@ export function createResource(serviceName?: any, opts?: {}, ...extra: any[]): {
         update: number;
         delete: number;
     };
-    can: (operation: any, level: any) => any;
+    can: (operation: string, level?: number, row?: object) => boolean;
     transitions: (row: any, level: any) => {
+        allowed: boolean;
+        refusedBy: any;
         name: string;
         label: string;
         field: string;
@@ -397,8 +399,6 @@ export function createResource(serviceName?: any, opts?: {}, ...extra: any[]): {
         to: string;
         gate: number | null;
         system: boolean;
-        allowed: boolean;
-        refusedBy: "system" | "gate" | null;
         terminal: boolean;
     }[];
     commitments: (row: any, opts: any) => {

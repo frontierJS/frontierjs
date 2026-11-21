@@ -7,6 +7,8 @@
 // `notifications` resource and write through it here, so there is one place a
 // bare service call could creep in.
 
+import { dt, at } from '@frontierjs/mesa/browser'
+
 /** Newest first, stated by the CLIENT: the tether places a pushed row by the
  *  order its load asked for, and the service's own default is invisible to it,
  *  so a push would land at the bottom of a list read top-down. */
@@ -19,6 +21,12 @@ export const isUnread = (n) => !n.readAt
 export const titleOf = (n) => n.data?.title ?? n.type
 export const bodyOf = (n) => n.data?.body ?? ''
 export const actionOf = (n) => n.data?.action ?? null
+
+/** `'5m ago'`, with the fixed-pattern date on hover. Never
+ *  `toLocaleString()`: it orders a date however the browser's locale does, so
+ *  `3/4` is either month to the next reader. */
+export const when = (n) => dt.relativeToNow(n.createdAt, { style: 'narrow' })
+export const whenExactly = (n) => at(n.createdAt)
 
 const mark = (notifications, n, body) =>
   notifications.mutate(n.id, body, () => notifications.service.patch(n.id, body))

@@ -194,9 +194,14 @@ describe('the bound is one hop, and the mistake says where the rule goes', () =>
     expect(await refusal(TEAMS('', `@@allow(read, team.private == false)`))).toBe('')
   })
 
-  it('a dot inside the condition is a second hop, refused at parse', async () => {
+  it('a dot inside the condition is refused at parse, naming the bound', async () => {
     const msg = await refusal(TEAMS(`@@allow(read, members.some(team.private == false))`))
-    expect(msg).toContain('crosses a second relation')
+    expect(msg).toContain('two to-one hops then one')
+  })
+
+  it('a some inside a some is refused at parse, naming the bound', async () => {
+    const msg = await refusal(TEAMS(`@@allow(read, members.some(team.some(private == false)))`))
+    expect(msg).toContain('nests one to-many test in another')
   })
 
   it('check() inside the condition is a second hop too', async () => {
@@ -204,12 +209,8 @@ describe('the bound is one hop, and the mistake says where the rule goes', () =>
     expect(msg).toContain('second hop')
   })
 
-  it("two relations away names the to-many test, not the hops", async () => {
-    // jazzhr wrote `interview.scorecards.any(…)` and was told it crosses two
-    // relations — true of the path, silent about where the rule belongs.
-    const msg = await refusal(TEAMS('', `@@allow(read, team.members.some(userId == auth().id))`))
-    expect(msg).toContain('two relations away')
-    expect(msg).toContain("'members.some(…)'")
+  it('one to-one hop then a some is accepted (FJS-D1027)', async () => {
+    expect(await refusal(TEAMS('', `@@allow(read, team.members.some(userId == auth().id))`))).toBe('')
   })
 
   it('an unknown column names the CHILD model and its fields', async () => {

@@ -155,15 +155,23 @@ export class SyncConflictError extends Error {
   }
 }
 
+// A move's `@allow` refuses with this class too (`FJS-D1025`): it is the
+// gate's question asked of the row rather than of a level, so a screen and a
+// retry treat both alike. `allow` says which half refused; `required` and `got`
+// are null then, since no level answers it. The predicate is not in the
+// message: it names the roles that would pass, which the caller is not owed.
 export class TransitionGateError extends Error {
-  constructor(model, field, transitionName, required, got) {
-    super(`Transition '${transitionName}' on ${model}.${field} requires level ${required}, user has level ${got}`)
+  constructor(model, field, transitionName, required, got, { allow = false } = {}) {
+    super(allow
+      ? `Transition '${transitionName}' on ${model}.${field} is refused by its @allow on this row`
+      : `Transition '${transitionName}' on ${model}.${field} requires level ${required}, user has level ${got}`)
     this.name       = 'TransitionGateError'
     this.model      = model
     this.field      = field
     this.transition = transitionName
-    this.required   = required
-    this.got        = got
+    this.required   = allow ? null : required
+    this.got        = allow ? null : got
+    this.allow      = allow
     this.status     = 403   // own the mapping — junction reads err.status, no registration needed
     this.retryable  = false
   }

@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**132 words** — 13 declarations · 76 field attributes · 39 model attributes · 4 transition words.
+**133 words** — 13 declarations · 76 field attributes · 39 model attributes · 5 transition words.
 
 ## Index
 
@@ -49,7 +49,7 @@ and shows you the diff first.
 
 - *Hide or lock a value* — [`@seals`](#seals-transition)
 - *Record who and when* — [`@stamps`](#stamps-transition)
-- *Decide who may* — [`@gate`](#gate-transition) · [`@system`](#system-transition)
+- *Decide who may* — [`@gate`](#gate-transition) · [`@allow`](#allow-transition) · [`@system`](#system-transition)
 
 ## Declarations
 
@@ -85,7 +85,7 @@ database logs {
 
 ### `tenancy` `{ strategy database | row, … }` <a id="tenancy-declaration"></a>
 
-How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().&lt;claim&gt;) stamp. Under `strategy database`, `place eu "./data/eu"` is a second directory a tenant is created in by name (`meta.place`); every copy path reads it. One block per schema — a second is refused rather than merged.
+How this app separates tenants, declared once. `strategy database` is one SQLite file per tenant plus a registry; `strategy row` is one database and a tenant column, desugared into @@deny plus a @default(auth().&lt;claim&gt;) stamp. Under `strategy database`, `place eu "./data/eu"` is a second directory a tenant is created in by name (`meta.place`); every copy path reads it, and `backup` and `replicate` copy the place only to the dir or url its optional `backup "<dest>"` clause names. One block per schema — a second is refused rather than merged.
 
 ```lite
 tenancy {
@@ -1948,7 +1948,7 @@ model Example {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`tenancy`](#tenancy-declaration) · [`@@deny`](#deny-model)
 
-#### `@@transitions` `(<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
+#### `@@transitions` `(<field>, [lastMover: <column>,] [<name>:] <from>|[<from>,…] -> <to> [@gate(N)] [@allow(<predicate>)] [@system] [@seals] [@stamps(col, …, by: col)], …) | (<field>, declaredBy: Model, scope: <column>)` <a id="transitions-model"></a>
 
 A state machine on a CLOSED column — an enum, or a Boolean, which is the two-state machine every schema has (isPrimary, isPublished, isSuspended) and whose two directions are routinely different authorities. Enforced at the Data boundary. `declaredBy:` is the machine a tenant edits: the field is a state's key, the moves are rows of the declaring model — `fromId?` (null is an entry, where a row may start), `toId`, an optional `gate Int?`, and the `scope:` column's twin — each move is checked inside the UPDATE's own WHERE, a create names one of its scope's entries or takes the only one, and a move is named for its target. A boolean move states its own name, because `-> true` says which value is written and not what a person did. @gate(N) on a move is a floor on top of the model update level, and @gate(8) marks a move the ENGINE makes: getLevel is clamped to 7, so no caller passes and asSystem() bypasses. Reaches the client as x-transitions keyed by field — on the model, never on the enum $def, because only a model can carry a per-transition gate. @seals on a move is the moment the row becomes a DOCUMENT: after it the row's @sealed children may not be created, changed or removed. A seal is an event rather than a state, so the sealed set is computed — everything reachable from the move's target — and nothing restates it.
 
@@ -2214,6 +2214,28 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@@transitions`](#transitions-model) · [`@system`](#system-transition)
+
+#### `@allow` `(<predicate>)` <a id="allow-transition"></a>
+
+The model's @@allow at move grain: a row predicate the caller must satisfy to MAKE this move, graded on the row as it stands BEFORE the move, beside the move's @gate. It is the policy language, so it reads paths and one .some — finalize: open -&gt; final @allow(org.members.some(userId == auth().id && role == 'finance')) limits a move to a role held in the row's organization without limiting any other write. Holds only on TRUE: an absent auth() is UNKNOWN and refuses. A refused move throws TransitionGateError with allow: true, as a refused @gate does, and asSystem() lifts it as it lifts the gate. transitions(row) grades it on the stored row, so a screen reading with $can hides the button. Not @@allow(update, …), which is a WHERE over every write and cannot tell a move from an edit (FJS-D1025).
+
+```lite
+enum DocState {
+  draft
+  issued
+  void
+}
+
+model Example {
+  id Int @id
+  state DocState @default(draft)
+  ownerId String?
+  @@transitions(state, issue: draft -> issued @allow(ownerId == auth().id))
+}
+```
+
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@gate`](#gate-transition) · [`@@allow`](#allow-model)
 
 #### `@system` <a id="system-transition"></a>
 

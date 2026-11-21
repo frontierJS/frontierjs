@@ -2986,7 +2986,7 @@ function _parentsAllowsNeed(model, rules, who) {
     if (!node || typeof node !== 'object') return
     if (node.type === 'compare' && node.op === '==') {
       for (const [p, v] of [[node.left, node.right], [node.right, node.left]]) {
-        if (p?.type !== 'path') continue
+        if (p?.type !== 'path' || p.via) continue
         const value = v?.type === 'auth' ? (v.field ? who[v.field] : who.id)
                     : v?.type === 'literal' ? v.value : undefined
         if (value !== undefined) (out[p.rel] ??= {})[p.name] = value
@@ -3534,7 +3534,7 @@ function _ownedBy(schema, model, who) {
       const field = column(model, f.name)
       return field && fitting(field, value) ? [{ name: f.name, value }] : null
     }
-    if (f?.type !== 'path') return null
+    if (f?.type !== 'path' || f.via) return null
     const rel    = model.fields.find(x => x.name === f.rel && x.type.kind === 'relation' && !x.type.array)
     const parent = rel && schema.models.find(m => m.name === rel.type.name)
     const field  = column(parent, f.name)

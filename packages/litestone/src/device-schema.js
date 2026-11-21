@@ -363,10 +363,17 @@ function refuseCrossingPolicies(source, syncable, keptNames) {
       const walk = (node, owner) => {
         if (!node || typeof node !== 'object') return
         if (Array.isArray(node)) { for (const n of node) walk(n, owner); return }
-        const rels = relationsOf(owner)
-        const rel  = node.type === 'check' ? node.field
-                   : node.type === 'path' || node.type === 'some' ? node.rel : null
-        const target = rel != null ? rels.get(rel) : null
+        // A chain needs every model it passes through on the device, not only
+        // the last one.
+        const names = node.type === 'check' ? [node.field]
+                    : node.type === 'path' || node.type === 'some' ? [...(node.via ?? []), node.rel] : []
+        let target = null, at = owner
+        for (const name of names) {
+          target = at ? relationsOf(at).get(name) : null
+          if (!target || !keptNames.has(target)) break
+          at = byName.get(target)
+        }
+        const rel = names.join('.')
         if (target && !keptNames.has(target)) {
           const spelled = node.type === 'path' ? `reads ${rel}.${node.name}`
                         : node.type === 'check' ? `delegates to check(${rel})` : `reads ${rel}`

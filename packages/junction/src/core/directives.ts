@@ -83,6 +83,13 @@ export interface QueryDirectives {
    * and refuses `limit` under `nested`; it answers a flat list with no page.
    */
   recursive?:     boolean | { direction?: 'descendants' | 'ancestors', nested?: boolean, maxDepth?: number, via?: string }
+  /**
+   * The per-row ask (`FJS-D2283`): each row the read returned answers
+   * `_can = { update, remove, moves }`, graded as the caller at the Data
+   * boundary. It grades only rows already returned, so it says nothing about a
+   * row the caller cannot read.
+   */
+  can?:           boolean
 }
 
 // ─── Pagination ───────────────────────────────────────────────────────────

@@ -288,6 +288,11 @@ function _withoutFiles(data, files) {
   return out
 }
 
+// The `_can` key a `$can` read answers for each write a screen offers per row
+// (`FJS-D2283`). The two spellings of each are the service method and the
+// gate position, as canAtLevel takes either.
+const ROW_ANSWER = Object.freeze({ update: 'update', patch: 'update', remove: 'remove', delete: 'remove' })
+
 // Re-exported so `sierra/resource` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
@@ -905,20 +910,39 @@ export function createResource(serviceName, opts = {}, ...extra) {
   }
 
   /**
-   * Would the given level clear this model's gate for that operation?
-   * A UI affordance only — see canAtLevel. The server enforces regardless.
+   * Would the given level clear this model's gate for that operation — and,
+   * handed a row read with `$can`, would the row's policy let this caller
+   * change it? The gate is all the browser holds and a row policy is not a
+   * gate, so without the row a screen offers Edit on a row the PATCH refuses
+   * (`FJS-2997`). A row with no `_can` answers by the gate alone. A UI
+   * affordance only — see canAtLevel. The server enforces regardless.
+   *
+   * @param {string} operation
+   * @param {number} [level]
+   * @param {object} [row]
+   * @returns {boolean}
    */
-  function can(operation, level) {
-    return canAtLevel(gate, operation, level)
+  function can(operation, level, row) {
+    if (!canAtLevel(gate, operation, level)) return false
+    const key = ROW_ANSWER[operation]
+    return !key || row?._can?.[key] !== false
   }
 
   /**
    * The record's legal next states, each flagged with whether `level` may take
-   * it — the button list, straight off the schema. A UI affordance only; see
-   * transitionsAt. Returns [] when the model declares no `@@transitions`.
+   * it — the button list, straight off the schema. A row read with `$can` also
+   * carries the server's verdict per move, which grades the row policy and the
+   * grid this side cannot see, and a move it refused is refused here with its
+   * reason. A UI affordance only; see transitionsAt. Returns [] when the model
+   * declares no `@@transitions`.
    */
   function transitions(row, level) {
-    return transitionsAt(stateSpec, row, level)
+    const out   = transitionsAt(stateSpec, row, level)
+    const moves = row?._can?.moves
+    if (!moves) return out
+    return out.map(m => m.allowed && moves[m.name]?.allowed === false
+      ? { ...m, allowed: false, refusedBy: moves[m.name].refusedBy ?? null }
+      : m)
   }
 
   /**

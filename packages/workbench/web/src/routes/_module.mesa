@@ -14,7 +14,9 @@ siteName: Workbench
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { commandPalette } from '@frontierjs/ui/stores/commandPaletteStore'
   import { paletteItems, visible } from '@frontierjs/ui/nav'
-  import Bell from '../components/Bell.mesa'
+  import NotificationBell from '@frontierjs/notifications/resource/NotificationBell.mesa'
+  import Icon from '../components/Icon.mesa'
+  import { notifications } from '../resources/Notification.mesa'
   import NavBadge from '../components/chat/NavBadge.mesa'
   import UnreadBadge from '../components/chat/UnreadBadge.mesa'
   import { session, signOut } from '../lib/session.js'
@@ -146,7 +148,9 @@ siteName: Workbench
           <span class="spare">Search</span> <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
         {#if session.user.profileExternalId}<UnreadBadge />{/if}
-        <Bell />
+        <NotificationBell {notifications} tone="">
+          {#snippet icon()}<Icon name="notify" />{/snippet}
+        </NotificationBell>
         <a href="/settings/" class="text-sm text-muted" title="Settings"
            aria-current={page.pathname.startsWith('/settings/') ? 'page' : undefined}>{session.user.nick}</a>
       </span>

@@ -565,6 +565,8 @@ Each takes the **app's** `notifications` resource and holds none of its own, so 
 | `href`, `max`, `tone`, `icon` | bell | the "All notifications" link (`''` omits it), unread rows shown, the count's tone or `(unread) => tone`, the trigger's glyph |
 | `empty`, `onerror` | list | snippet `(only) => text` for the empty state; a handler for a failed write |
 
+A row's time reads `5m ago` with the fixed-pattern date on hover — `@frontierjs/mesa/browser`'s `dt`, never `toLocaleString()`, which orders a date however the browser's locale does. A bell row opens its `action.url`, or `href` when it carries none.
+
 Mount the bell only while someone is signed in — `tethered()` reads on creation. Restyle by wrapping: `item` is the row, and anything beyond it is a component you write over the same `notifications`. "Mark all read" is one `mutate` per unread row, not a bulk call, because an `updateMany` announces nothing.
 
 ---

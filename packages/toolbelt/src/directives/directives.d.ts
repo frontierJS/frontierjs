@@ -34,6 +34,8 @@ export interface Directives {
   scope?:         string[]
   /** A tree read: `true` (every descendant) or litestone's `recursive` option. Keys and refusals are the Data boundary's. */
   recursive?:     boolean | { direction?: 'descendants' | 'ancestors', nested?: boolean, maxDepth?: number, via?: string }
+  /** The per-row ask: each row answers `_can = { update, remove, moves }`, graded as the caller (`FJS-D2283`). */
+  can?:           boolean
 }
 
 /** Every `$` name that has a structured form. */

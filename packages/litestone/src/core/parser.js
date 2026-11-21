@@ -3322,6 +3322,7 @@ class Parser {
       // Optional per-move attributes, in either order.
       //
       //   @gate(N)  the minimum level allowed to MAKE this move
+      //   @allow(p) the row predicate a caller must satisfy to make it
       //   @system   the move is the APPLICATION's: a caller may ask for it and
       //             never make one, and the app states `{ system: true }` on the
       //             call. The move still runs on the caller's own client, so the
@@ -3338,6 +3339,7 @@ class Parser {
       // They compose: `@system @gate(5)` is a move the engine decides, on behalf
       // of a caller who must still be senior enough to ask for it.
       let gate   = null
+      let allow  = null
       let system = false
       let seals  = false
       let stamps  = []
@@ -3376,6 +3378,24 @@ class Parser {
           continue
         }
 
+        // @allow(<predicate>) — who may make THIS move, as a row policy over
+        // the PRE-state row and its paths (`FJS-D1025`). Beside @gate because
+        // it is the same question asked of a row instead of a level, so it is
+        // refused the same way, with TransitionGateError, and asSystem() lifts
+        // it as it lifts the gate.
+        if (attr.value === 'allow') {
+          if (allow !== null)
+            throw new ParseError(`@@transitions(${field}) '${name}': @allow stated twice — join the conditions with && in one @allow`, attr)
+          if (!this.check(TK.LPAREN))
+            throw new ParseError(
+              `@@transitions(${field}) '${name}': @allow takes a predicate — \`@allow(ownerId == auth().id)\`, ` +
+              `graded on the row before the move`, attr)
+          this.eat(TK.LPAREN)
+          allow = this.parsePolicyExpr()
+          this.eat(TK.RPAREN)
+          continue
+        }
+
         if (attr.value === 'seals') {
           if (seals)
             throw new ParseError(`@@transitions(${field}) '${name}': @seals stated twice`, attr)
@@ -3388,7 +3408,7 @@ class Parser {
         }
 
         throw new ParseError(
-          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @system, @seals and @stamps are supported`, attr)
+          `@@transitions(${field}): unknown transition attribute '@${attr.value}' — only @gate, @allow, @system, @seals and @stamps are supported`, attr)
       }
 
       // `while: <predicate>` or `unless: <predicate>` — the move is refused
@@ -3421,7 +3441,7 @@ class Parser {
 
       if (name in transitions)
         throw new ParseError(`@@transitions(${field}): duplicate transition name '${name}'`, this.peek())
-      transitions[name] = { from, to, gate, system, seals, stamps, stampBy, guard }
+      transitions[name] = { from, to, gate, allow, system, seals, stamps, stampBy, guard }
     } while (this.maybeEat(TK.COMMA))
 
     this.eat(TK.RPAREN)

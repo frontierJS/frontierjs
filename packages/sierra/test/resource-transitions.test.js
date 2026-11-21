@@ -216,3 +216,41 @@ describe('on the resource', () => {
     expect(createResource('notes').transitions({ id: 1 }, 4)).toEqual([])
   })
 })
+
+// `$can` (FJS-2997, FJS-D2283): the gate is all the browser holds, and a row
+// policy is not a gate, so `can('update', level)` offered Edit on a row the PATCH
+// refused. A row read with `$can` carries the Data boundary's answer as `_can`,
+// and both affordances narrow by it. A row without one stays permissive.
+describe('a row that carries the server answer ($can)', () => {
+  const refused = { id: 1, status: 'paid', _can: { update: false, remove: false, moves: { ship: { allowed: false, refusedBy: 'policy' } } } }
+
+  test('can() narrows by the row, and only where the server said no', () => {
+    const orders = createResource('orders')
+    expect(orders.can('update', 4, refused)).toBe(false)
+    expect(orders.can('patch', 4, refused)).toBe(false)
+    expect(orders.can('remove', 6, refused)).toBe(false)
+    expect(orders.can('update', 4, { ...refused, _can: { update: true, remove: true, moves: {} } })).toBe(true)
+    expect(orders.can('update', 4, { id: 1, status: 'paid' })).toBe(true)
+    expect(orders.can('read', 4, refused)).toBe(true)
+  })
+
+  test('the gate still refuses first, whatever the row says', () => {
+    const orders = createResource('orders')
+    expect(orders.can('update', 1, { ...refused, _can: { update: true, remove: true, moves: {} } })).toBe(false)
+  })
+
+  test('transitions() takes the server refusal and its reason', () => {
+    const orders = createResource('orders')
+    const ship = orders.transitions(refused, 4).find(t => t.name === 'ship')
+    expect(ship).toMatchObject({ allowed: false, refusedBy: 'policy' })
+    expect(orders.transitions(refused, 4).find(t => t.name === 'cancel').allowed).toBe(true)
+  })
+
+  // FJS-1508: the grid is what the caller holds, which the schema cannot tell
+  // this side, so the server's word is the only way it reaches the button list.
+  test('a move the caller does not hold is refused by the grid', () => {
+    const orders = createResource('orders')
+    const row = { ...refused, _can: { update: true, remove: true, moves: { ship: { allowed: false, refusedBy: 'capability' } } } }
+    expect(orders.transitions(row, 4).find(t => t.name === 'ship')).toMatchObject({ allowed: false, refusedBy: 'capability' })
+  })
+})

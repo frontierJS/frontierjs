@@ -5,11 +5,12 @@
   // either — `@@allow(read, userId == auth().id)` on the model is what scopes
   // it, so no code here filters by member.
   //
-  // One tether for the bell and /notifications/ — each lists it through
-  // `notifications.tethered({ state: 'local', directives: INBOX })`. The inApp
-  // driver pushes `notifications created` to `notifications:user:<id>`, which
-  // the API joins on connect, and the client routes that frame into the tether
-  // — so neither screen polls.
+  // The bell and /notifications/ are `@frontierjs/notifications`' own
+  // NotificationBell and NotificationList, handed this resource; the home
+  // panel lists it through `notifications.tethered({ state: 'local',
+  // directives: INBOX })`. The inApp driver pushes `notifications created` to
+  // `notifications:user:<id>`, which the API joins on connect, and the client
+  // routes that frame into each tether — so no screen polls.
   import { createResource } from '@frontierjs/sierra/resource'
 
   export const notifications = createResource('notifications', { model: 'Notification' })
@@ -26,21 +27,4 @@
   export const titleOf  = (n) => n.data?.title ?? n.type
   export const bodyOf   = (n) => n.data?.body ?? ''
   export const actionOf = (n) => n.data?.action ?? null
-
-  /** An empty patch marks it read by the server's clock; a stated null marks
-   *  it unread again. The tether moves only on pushed frames and the service
-   *  announces no patch — a per-person channel would warn on every write the
-   *  driver makes outside a call — so `mutate` settles the row with the answer. */
-  const mark = (n, body) => notifications.mutate(n.id, body, () => notifications.service.patch(n.id, body))
-  export const markRead   = (n) => mark(n, {})
-  export const markUnread = (n) => mark(n, { readAt: null })
-
-  /** `readAll` is an updateMany, which announces nothing, so the screen's
-   *  inbox is re-read rather than left showing rows the server has already
-   *  marked. */
-  export async function markAllRead(inbox) {
-    const out = await notifications.service.invoke('readAll')
-    await inbox.reload()
-    return out?.count ?? 0
-  }
 </script>

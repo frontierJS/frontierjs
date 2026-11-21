@@ -244,7 +244,7 @@ test('directives: every name written is a name this table strips', function () {
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
     asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
-    scope: ['active'], recursive: { direction: 'ancestors' },
+    scope: ['active'], recursive: { direction: 'ancestors' }, can: true,
   }
   const params = directiveParams(every)
 

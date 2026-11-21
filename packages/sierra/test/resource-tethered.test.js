@@ -708,6 +708,32 @@ describe('composed: the rows carry what a push does not', () => {
     expect(list.loading).toBe(false)
   })
 
+  // FJS-D2283: `$can` is the server's answer on the row it read. A push carries
+  // the row without it, and the button goes back to the gate's answer -- never
+  // to a stale refusal, which would hide an Edit the caller may now make.
+  test('$can rides the read; a push drops it and can() goes permissive, a composed list keeps it', async () => {
+    await boot('/invoices/')
+    extra = { _can: { update: false, remove: false, moves: {} } }
+    const invoices = invoicesResource()
+
+    const plain = track(invoices.tethered({ state: 'local', directives: { can: true } }))
+    await settle()
+    expect(last().get('$can')).toBe('true')
+    expect(invoices.can('update', 9, plain.rows.find(r => r.id === 2))).toBe(false)
+    push()
+    await settle()
+    const pushed = plain.rows.find(r => r.id === 2)
+    expect(pushed.status).toBe('paid')
+    expect(pushed._can).toBeUndefined()
+    expect(invoices.can('update', 9, pushed)).toBe(true)
+
+    const list = track(invoices.tethered({ state: 'local', composed: true, directives: { can: true } }))
+    await settle()
+    push()
+    await settle()
+    expect(invoices.can('update', 9, list.rows.find(r => r.id === 2))).toBe(false)
+  })
+
   test('total answers the query\'s whole count, on both paths, and null before any answer', async () => {
     await boot('/invoices/')
     total = 134

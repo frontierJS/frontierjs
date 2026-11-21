@@ -114,7 +114,7 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
       for (const [i, row] of data.entries()) out.push(await applyPathDefaults(row, _usPathStamped[i]))
       data = out
     }
-    const _usHidden = await hiddenParents(data, _usPathStamped, system)
+    const _usHidden = await hiddenParents(data, _usPathStamped, system, true)
     // A row of the insert half whose hidden parent it may open is asked again
     // once the batch is written, as createMany's is (FJS-D1705). Which rows
     // insert is known only under the lock, so the unit awaits when any could.
@@ -233,14 +233,14 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
           if (present.has(keyOf(row))) continue
           const graded = authStamped(data[i], modelName, ctx)
           let parent, denied = null, trial
-          try { parent = checkCreate(graded, _usHidden[i]) }
+          try { parent = checkCreate(graded, _usHidden[i], _usHidden.chains.get(i)) }
           catch (e) {
             try { trial = holdDenial(e, _usHidden[i], _usHidden.absent.has(i)) }
             catch (e2) { throw asBatchRowError(e2, i, rows.length, data[i]) }
             denied = e
           }
           trial ??= !parent && deferrable(_usHidden[i])
-          if (trial) { _usDeferred.set(i, { refusal: _usHidden[i] ?? null, denied, row: graded }); _usHidden[i] = null }
+          if (trial) { _usDeferred.set(i, { refusal: _usHidden[i] ?? null, denied, row: graded, chains: _usHidden.chains.get(i) }); _usHidden[i] = null }
           else _usHidden[i] = denied ?? firstRefusal(parent, _usHidden[i])
         }
       }

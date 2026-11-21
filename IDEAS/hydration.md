@@ -6,8 +6,8 @@ dated: 2026-11-14
 
 # Idea — Hydration, and what a server-only region is
 
-**Status: PROPOSED. Q1–Q6 ruled 2026-11-15 (`FJS-D2172`–`FJS-D2177`), Q7 2026-11-17 (`FJS-D2260`); nothing
-built; Phase 0 done 2026-11-17; Phases 1–4 written, 1.1 next.** This is the guiding paper for hydration and server components
+**Status: PROPOSED. Q1–Q10 all ruled (§ 6); nothing built; Phase 0 done
+2026-11-17; Phases 1–4 written, 1.1 next.** This is the guiding paper for hydration and server components
 in Mesa and Sierra. Hydration is the direction (`FJS-D2172`); VISION RULE 20
 now names it as the planned replacement for islands-replace, and still says
 nothing hydrates today.
@@ -261,110 +261,22 @@ reads.
 
 ## 6. Open questions
 
-- ~~**Q1 — Does Mesa hydrate at all?**~~ **Answered 2026-11-15 (`FJS-D2172`): B — Yes, as the direction. Amend RULE 20 now to say hydration is the planned replacement for islands-replace, and build it in phases. - **Recommend B as the direction, with A's guide note kept until Phase 2 lands.** Building § 5 means building a state transport that B then throws away. The guide note already covers the common case.**
-  - **A** — No. Keep RULE 20. Fix `FJS-4313` with § 5's payload, and document
-    "pass what an island needs as props".
-  - **B** — Yes, as the direction. Amend RULE 20 now to say hydration is the
-    planned replacement for islands-replace, and build it in phases.
-  - **Recommend B as the direction, with A's guide note kept until Phase 2
-    lands.** Building § 5 means building a state transport that B then throws
-    away. The guide note already covers the common case.
-- ~~**Q2 — At what granularity does the client adopt?**~~ **Answered 2026-11-15 (`FJS-D2173`): A first, with C as the design target.**
-  - **A** — Whole page: one client root adopts the server's DOM.
-  - **B** — Per component.
-  - **C** — Per reactive edge: attach each binding to its node and ship
-    nothing for the rest.
-  - **Recommend A first, with C as the design target.** A is the order
-    `one-mental-model.md` § 5 already wrote, and it is what gives one owner
-    tree, which fixes `$context`. Key the marker protocol by reactive edge from
-    the start, so C is a narrowing of A rather than a new protocol. Skip B,
-    because it adds a noun and forecloses C.
-- ~~**Q3 — What do `client:*` directives become?**~~ **Answered 2026-11-15 (`FJS-D2174`): B — They stay as timing: inside the one tree, a subtree's bindings attach on `idle`, `visible` or `media`.**
-  - **A** — They are cut once hydration lands.
-  - **B** — They stay as timing: inside the one tree, a subtree's bindings
-    attach on `idle`, `visible` or `media`.
-  - **Recommend B.** The timing is the part authors chose on purpose. The
-    "own root per island" part is what goes.
-- ~~**Q4 — How does server state reach the client?**~~ **Answered 2026-11-15 (`FJS-D2175`): B — Serialize settled `{#await}` and `$async` values and store snapshots into the page.**
-  - **A** — Refetch, as today.
-  - **B** — Serialize settled `{#await}` and `$async` values and store
-    snapshots into the page.
-  - **C** — Serialize the reactive graph, as Qwik does.
-  - **Recommend B.** The server already awaits every `{#await}`
-    (`FJS-D1647`), so the value exists. It is the same value the loader would
-    fetch, so it is not a second origin. C adds a serializer for closures that
-    nothing else needs.
-- ~~**Q5 — Which server path writes the anchors?**~~ **Answered 2026-11-15 (`FJS-D2176`): A — The string mode (`FJS-D1634`) writes them, behind a flag, so default output stays byte-identical.**
-  - **A** — The string mode (`FJS-D1634`) writes them, behind a flag, so
-    default output stays byte-identical.
-  - **B** — A second anchor-writing emitter beside the string mode.
-  - **Recommend A** — a second emitter beside `FJS-D1634`'s would break
-    Invariant 4.
-- ~~**Q6 — What happens when the DOM and the compiled walk disagree?**~~ **Answered 2026-11-15 (`FJS-D2177`): A — Fail closed: abort adoption for that root, replace as today, and report it through the dev overlay.**
-  - **A** — Fail closed: abort adoption for that root, replace as today, and
-    report it through the dev overlay.
-  - **B** — Adopt what matches and bind the rest by best guess.
-  - **Recommend A** — binding to the wrong node is silent and costly, so the
-    code must never guess.
-- ~~**Q7 — Under one page root, how much does a mismatch replace?**~~ **Answered 2026-11-18 (`FJS-D2260`): A — The smallest enclosing block. Clear and re-render the nearest `if`, `each`, `await` or component range around the bad binding, inside the page's one owner tree. Fall back to the whole page when there is no such range, and name the binding in the dev overlay.** Q6 says
-  "that root", and under Q2 A the root is the page. A server render answers
-  every browser global as a wide desktop (`ui-hazards`), so a viewport branch
-  mismatches on every phone visit. Keyed markers (§ 4, *Marker protocols*) make
-  the bad binding findable.
-  - **A** — The smallest enclosing block. Clear and re-render the nearest
-    `if`, `each`, `await` or component range around the bad binding, inside
-    the page's one owner tree. Fall back to the whole page when there is no
-    such range, and name the binding in the dev overlay.
-  - **B** — The whole page, as Q6 reads today.
-  - **C** — A, plus rewriting a lone text or attribute binding in place.
-  - **Recommend A.** It guesses no more than Q6 allows, because it replaces a
-    range known to be wrong. It keeps a phone's viewport mismatch to one block.
-    C is an optimization to price once A exists.
-- **Q8 — Does a store's server value get its own snapshot?** `FJS-D2175`
-  ruled that snapshots exist. § 4 *State and the flag* finds that one tree
-  re-runs the route on the client, so a store the route writes from `load()`
-  data comes out the same with no snapshot.
-  - **A** — No snapshots. The client re-derives store values by running the
-    same scripts over the `load()` data step 2.5a writes into the page. A store
-    whose server value cannot be re-derived shows up as a mismatch, and
-    `FJS-D2260` re-renders that block. This amends `FJS-D2175`, keeping its
-    `{#await}` and `$async` half.
-  - **B** — Opt-in snapshots, as Nuxt, Svelte and Angular do: a store is
-    serialized only under a key its module declares. A store holding a
-    protected field (Invariants 6 and 7) is refused by name.
-  - **C** — Every watched module store is serialized automatically, as Pinia
-    does.
-  - **Recommend A.** It is one transport instead of two. The data it puts in
-    the page is the data `FJS-081` already checks. And no store identity has
-    to agree across the server and the bundle. B is the fallback if Phase 2
-    finds a store that real pages cannot re-derive. C publishes whatever a
-    store happens to hold.
-- **Q9 — What stops one page's store write leaking into the next page's
-  render?** Every page renders in one build process (`FJS-1659`).
-  - **A** — Documentation only, as `FJS-1659` already says, which is where
-    SvelteKit, Nuxt and Angular stop.
-  - **B** — Detection: in a flagged render, warn when a watched module store
-    starts a page holding a value that an earlier page wrote, naming the store
-    and both pages. Solid 2's `[SERVER_WRITE]` is the precedent, but Solid
-    warns on every server write, which would flag Q8 A's legitimate route
-    writes.
-  - **C** — Isolation: run each page render under an `AsyncLocalStorage`
-    scope and restore watched stores to their module values between pages.
-    Junction already scopes requests this way (`core/context.ts`).
-  - **Recommend B.** Under Q8 A a leaked value produces a mismatch rather than
-    a published snapshot, so the stakes are a wrong first paint. A warning that
-    names the store is the cheapest guard that says what happened. C restores
-    state no module asked to have restored.
-- **Q10 — What is the flag called?** Step 1.2.
-  - **A** — `hydratable: true`, a render option beside `islands: true`, and
-    the same key in Sierra's config. Solid and Svelte 4 spell it this way.
-  - **B** — A render target, as Marko's `output: "hydrate"` is.
-  - **C** — No flag on the server: always write markers and choose at the
-    client entry, as Svelte 5 does.
-  - **Recommend A.** `FJS-D2176` requires default output to stay
-    byte-identical, which rules out C until the default flips. A target would
-    make one output mode into two, and `FJS-D1634` calls the string mode the
-    server's one output mode.
+Every question is answered. The questions with their options and arguments
+moved verbatim to `docs/plan-done.md` § IDEAS/hydration.md, and each ruling is
+in `DECISIONS.md`:
+
+| Q | Asked | Ruling |
+| --- | --- | --- |
+| Q1 | Does Mesa hydrate at all? | `FJS-D2172`: yes, as the direction |
+| Q2 | At what granularity? | `FJS-D2173`: whole page first, per-edge as the target |
+| Q3 | What do `client:*` directives become? | `FJS-D2174`: timing inside one tree |
+| Q4 | How does server state reach the client? | `FJS-D2175`: settled values into the page |
+| Q5 | Which server path writes the markers? | `FJS-D2176`: the string mode, behind a flag |
+| Q6 | What does a mismatch do? | `FJS-D2177`: fail closed and replace |
+| Q7 | How much does a mismatch replace? | `FJS-D2260`: the smallest enclosing block |
+| Q8 | Do stores get their own snapshot? | `FJS-D2284`: no, re-derived from `load()` data |
+| Q9 | What guards a store leaking between pages? | `FJS-D2285`: a carry-over warning |
+| Q10 | What is the flag called? | `FJS-D2286`: `hydratable: true` |
 
 ## 7. What must stay true, and what proves it
 
@@ -488,21 +400,24 @@ first bullet.
 ### Phase 3 — Server state into the page
 
 Goal: what the server already settled reaches the client without a second
-fetch (`FJS-D2175`).
+fetch (`FJS-D2175`, with stores re-derived rather than snapshotted per
+`FJS-D2284`).
 Done when: a flagged page with an `{#await}` region makes no request for that
-value on load, and a store read by two components starts at the server's value
-before either is written.
+value on load, and a store the route writes from `load()` data shows the
+server's value in both components before either is written.
 
 - [ ] 3.1 Settled `{#await}` and `$async` values go into one trailing script,
   keyed by instance and binding, with a CSP nonce or hash as Svelte's
   `hydratable` writes it. A value that does not serialize is refused by name.
-- [ ] 3.2 Store snapshots: a module object a component watches with `$:` is
-  written under its path resolved from the app root and its export name, and
-  restored before the first component runs. A specifier is spelled differently
-  on the server and in the bundle, so it is not the key. Q8 decides whether
-  this step exists at all, and Q9 decides what guards a leak between pages.
+- [~] 3.2 Store snapshots — dropped: `FJS-D2284` (Q8 A). The client re-runs
+  the route over 2.5a's `load()` data, and a store it cannot re-derive is a
+  mismatch handled by `FJS-D2260`.
 - [ ] 3.3 The drive gains the `{#await}` case, counting requests the way 0.2
-  did.
+  did, and a store the route writes from `load()` data, read by two components.
+- [ ] 3.4 Carry-over warning (`FJS-D2285`, Q9 B): in a flagged render, a
+  watched module store that starts a page holding a value an earlier page
+  wrote is warned about, naming the store and both pages. A test renders two
+  pages in one process to force it.
 
 ### Phase 4 — `client:*` as timing
 

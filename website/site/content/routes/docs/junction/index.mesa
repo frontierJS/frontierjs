@@ -1,0 +1,11 @@
+---
+render: static
+---
+<!-- The Junction guide's landing page; the page is components/GuideIndex.mesa. -->
+<script>
+  import GuideIndex from '../../../components/GuideIndex.mesa'
+
+  export let data = null
+</script>
+
+<GuideIndex {data} />

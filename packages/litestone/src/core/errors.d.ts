@@ -96,12 +96,15 @@ export class SyncConflictError extends Error {
     retryable: boolean;
 }
 export class TransitionGateError extends Error {
-    constructor(model?: any, field?: any, transitionName?: any, required?: any, got?: any);
+    constructor(model?: any, field?: any, transitionName?: any, required?: any, got?: any, { allow }?: {
+        allow?: boolean;
+    });
     model: any;
     field: any;
     transition: any;
     required: any;
     got: any;
+    allow: boolean;
     status: number;
     retryable: boolean;
 }

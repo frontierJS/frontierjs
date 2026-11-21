@@ -16,7 +16,10 @@
 // Capture starts `capture`, the screenshot tool, found on PATH like `claude`
 // and `gh` and never built here (FJS-D2246). With no `capture` on PATH the item
 // is disabled and says so; PATH is read again with the API status, so installing
-// it enables the item without a restart.
+// it enables the item without a restart. Transcribe a file… sits under it and
+// follows it: it runs `capture transcribe --pick`, where capture asks for an
+// audio or video file in the desktop's file chooser, transcribes it in the
+// background and says when it is done in a notification.
 //
 // Start at login copies the launcher entry `fli desktop:install` wrote into
 // the XDG autostart folder, so a login start goes through `desktop:run` and
@@ -169,6 +172,7 @@ fn set_at_login(app: &AppHandle, want: bool) -> std::io::Result<()> {
 
 const CAPTURE:         &str = "Capture";
 const CAPTURE_MISSING: &str = "Capture — not installed";
+const TRANSCRIBE:      &str = "Transcribe a file…";
 
 fn capture_path() -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -193,9 +197,9 @@ fn is_executable(path: &Path) -> bool {
 // Waited on in its own thread: an unreaped child stays a zombie until the shell
 // quits, and waiting here would hold the menu event loop for as long as the
 // overlay is open.
-fn capture() {
+fn capture(args: &[&str]) {
     let Some(bin) = capture_path() else { return };
-    match Command::new(bin).spawn() {
+    match Command::new(bin).args(args).spawn() {
         Ok(mut child) => {
             std::thread::spawn(move || {
                 let _ = child.wait();
@@ -205,13 +209,20 @@ fn capture() {
     }
 }
 
-fn show_capture(item: &MenuItem<tauri::Wry>) {
+fn show_capture(items: &CaptureItems) {
     let found = capture_path().is_some();
     // A menu rewritten every tick flickers while it is open.
-    if item.is_enabled().unwrap_or(!found) != found {
-        let _ = item.set_enabled(found);
-        let _ = item.set_text(if found { CAPTURE } else { CAPTURE_MISSING });
+    if items.capture.is_enabled().unwrap_or(!found) != found {
+        let _ = items.capture.set_enabled(found);
+        let _ = items.capture.set_text(if found { CAPTURE } else { CAPTURE_MISSING });
+        let _ = items.transcribe.set_enabled(found);
     }
+}
+
+// The items that run capture, enabled while it is on PATH.
+struct CaptureItems {
+    capture:    MenuItem<tauri::Wry>,
+    transcribe: MenuItem<tauri::Wry>,
 }
 
 // ─── the window ──────────────────────────────────────────────────────────
@@ -274,8 +285,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     app.manage(ToggleLabel(toggle_item.clone()));
     let status = MenuItem::with_id(app, "api-status", "API: checking…", false, None::<&str>)?;
     let start = MenuItem::with_id(app, "api-start", "Start API", false, None::<&str>)?;
-    let capture_item = MenuItem::with_id(app, "capture", CAPTURE_MISSING, false, None::<&str>)?;
-    show_capture(&capture_item);
+    let capture_items = CaptureItems {
+        capture:    MenuItem::with_id(app, "capture", CAPTURE_MISSING, false, None::<&str>)?,
+        transcribe: MenuItem::with_id(app, "transcribe", TRANSCRIBE, false, None::<&str>)?,
+    };
+    show_capture(&capture_items);
     let quit = MenuItem::with_id(app, "quit", "Quit Workbench", true, None::<&str>)?;
 
     let menu = Menu::new(app)?;
@@ -285,7 +299,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         menu.append(&MenuItem::with_id(app, format!("go:{path}"), *label, true, None::<&str>)?)?;
     }
     menu.append(&PredefinedMenuItem::separator(app)?)?;
-    menu.append(&capture_item)?;
+    menu.append(&capture_items.capture)?;
+    menu.append(&capture_items.transcribe)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&status)?;
     if can_start {
@@ -318,7 +333,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         match id {
             "toggle" => toggle(app, &on_menu),
             "quit" => app.exit(0),
-            "capture" => capture(),
+            "capture" => capture(&[]),
+            "transcribe" => capture(&["transcribe", "--pick"]),
             "api-start" => {
                 if let Some(api) = api_target() {
                     start_api(app, &api);
@@ -350,13 +366,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     })
     .build(app)?;
 
-    watch_api(app.clone(), status, start, capture_item, api, can_start);
+    watch_api(app.clone(), status, start, capture_items, api, can_start);
     Ok(())
 }
 
 // The menu reads the port, and whether capture is on PATH, every few seconds
 // rather than when it opens: AppIndicator gives no event for a menu about to show.
-fn watch_api(app: AppHandle, status: MenuItem<tauri::Wry>, start: MenuItem<tauri::Wry>, capture: MenuItem<tauri::Wry>, api: Option<ApiTarget>, can_start: bool) {
+fn watch_api(app: AppHandle, status: MenuItem<tauri::Wry>, start: MenuItem<tauri::Wry>, capture: CaptureItems, api: Option<ApiTarget>, can_start: bool) {
     let Some(api) = api else {
         let _ = status.set_text("API: not known (built without build:desktop)");
         std::thread::spawn(move || loop {

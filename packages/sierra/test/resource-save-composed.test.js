@@ -187,3 +187,21 @@ describe('an m2m is read with the row and saved as one op', () => {
     expect(lastPatch()).toEqual({ id: 1, tags: { connect: [{ id: 2 }] } })
   })
 })
+
+// FJS-D2283: a row read with `$can` carries the server's per-row answer, which
+// is not a column and must never ride the patch back.
+describe('a row read with $can', () => {
+  const can = { update: true, remove: false, moves: {} }
+
+  test('save() sends no _can, with a read to compare against or without one', async () => {
+    row = { ...row, _can: can }
+    const r = createResource('blueprints', { model: 'Blueprint' })
+    await r.service.get(1)
+    await r.save({ ...row, name: 'Ship', _can: { ...can } })
+    expect(lastPatch()).toEqual({ id: 1, name: 'Ship' })
+
+    const unread = createResource('blueprints', { model: 'Blueprint' })
+    await unread.save({ id: 1, name: 'Ship', _can: can }, { mode: 'patch' })
+    expect(lastPatch()).toEqual({ id: 1, name: 'Ship' })
+  })
+})

@@ -38,6 +38,7 @@ export function checkFieldPolicies(schema?: any, relationMap?: any, claims?: any
 export function buildPolicyMap(schema?: any, relationMap?: any, claims?: any): {};
 export function determinedColumns(model?: any): {};
 export function writeClaims(field?: any): {};
+export function createChains(modelName?: any, ctx?: any): any[];
 export function readReach(modelName?: any, ctx?: any, op?: string): any[];
 export function readColumns(modelName?: any, ctx?: any, op?: string): {};
 export function fromReach(modelName?: any, ctx?: any): any[];
@@ -86,7 +87,7 @@ export function policyVerdict(modelName?: any, row?: any, ctx?: any, op?: any): 
     rule: string;
     parent: any;
 };
-export function checkCreatePolicy(modelName?: any, data?: any, ctx?: any, hidden?: any): {
+export function checkCreatePolicy(modelName?: any, data?: any, ctx?: any, hidden?: any, chains?: any): {
     ok: boolean;
     message?: undefined;
     rule?: undefined;
@@ -108,6 +109,7 @@ export function checkPostUpdatePolicy(modelName?: any, row?: any, ctx?: any): vo
 /** @param {string | null} [op] the verb asking — `null` for a field predicate */
 export function evalJs(node: any, ctx: any, data: any, modelName: any, op?: string | null): any;
 export function pickWhere(model?: any): {};
+export function chainKey(first?: any, second?: any): string;
 export const REFUSED_BY: string[];
 export function allowHolds(v?: any): boolean;
 export function denyFires(v?: any): boolean;

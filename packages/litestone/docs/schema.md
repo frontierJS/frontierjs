@@ -1412,6 +1412,49 @@ model Order {
 - **`lastMover: lastMovedById` keeps who made the machine's LAST move** (`FJS-D1731`, `FJS-3694`). Declared once among the moves — `@@transitions(status, lastMover: lastMovedById, submit: draft -> submitted, …)` — and every move writes `ctx.auth.id` into it in the same `UPDATE`, with `by:`'s column rules, payload refusal and no-principal case. A non-move edit leaves it, which is what `@updatedBy` cannot do, so under `@@deny(update, status == 'submitted' && lastMovedById == auth().id)` a manager's edit does not make the manager the mover, and the submitter cannot approve (or otherwise update) the claim until somebody else moves it. A rule keyed to one move rather than a state is `FJS-3692`. A `declaredBy:` machine does not keep one.
 - **`while: <predicate>` refuses a move while the predicate fails, and `unless:` while it holds** (`FJS-D1286`). `merge: open -> merged while: isChecksGreen == true` and `resolve: open -> resolved while: component.lastCheckOk == true` read the stored row and one to-one hop, in the predicate grammar `@@allow` uses, and NULL refuses in both spellings. It is graded only on the write that makes the move, so a later write to the merged row is not graded by it — a `@@require(postUpdate, …)` in its place grades every write after. It is the move's last clause, after its attributes. It is integrity, so `asSystem()` is held to it as to the machine; it refuses with `TransitionGuardError` (409, not retryable), and the compare-and-swap carries it, so a guard that fails between the read and the write leaves the row where it was.
 
+- **`@allow(<predicate>)` says who may make the move, asked of the row** (`FJS-D1025`). It is the policy language graded on the row as it stands BEFORE the move, beside the move's `@gate`, so `finalize: open -> final @allow(organization.memberships.some(userId == auth().id && role == 'finance'))` limits the move to finance members of the row's own organization and limits no other write — `@@allow(update, …)` is a WHERE over every write and cannot tell a move from an edit. It holds only on TRUE, so no `auth()` refuses. A refusal is the gate's: `TransitionGateError` with `allow: true` and `required: null`, and the message does not echo the predicate. `asSystem()` lifts it as it lifts `@gate`; with both declared, the level is asked first. `transitions(row)` grades it on the stored row and reports a refusal as `refusedBy: 'policy'`: it asks about this record, not the caller's level.
+
+```js
+import { createClient } from '@frontierjs/litestone'
+
+const db = await createClient({ db: ':memory:', schema: `
+enum InvoiceState { open  final }
+model Organization {
+  id          String       @id
+  memberships Membership[]
+  invoices    Invoice[]
+}
+model Membership {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String
+  role           String
+  @@index([organizationId])
+}
+model Invoice {
+  id             String       @id
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  state          InvoiceState @default(open)
+  @@index([organizationId])
+  @@transitions(state,
+    finalize: open -> final @allow(organization.memberships.some(userId == auth().id && role == 'finance'))
+  )
+}
+` })
+const sys = db.asSystem()
+await sys.organization.create({ data: { id: 'acme' } })
+await sys.membership.create({ data: { id: 'm1', organizationId: 'acme', userId: 'ann', role: 'finance' } })
+await sys.membership.create({ data: { id: 'm2', organizationId: 'acme', userId: 'bob', role: 'support' } })
+await sys.invoice.create({ data: { id: 'i1', organizationId: 'acme' } })
+
+const refused = await db.$setAuth({ id: 'bob' }).invoice.transition('i1', 'finalize').catch(e => e)
+if (refused.name !== 'TransitionGateError' || refused.allow !== true) throw new Error('support should be refused')
+const moved = await db.$setAuth({ id: 'ann' }).invoice.transition('i1', 'finalize')
+if (moved.state !== 'final') throw new Error('finance should make the move')
+```
+
 Any move that isn't declared throws `TransitionViolationError`; a declared one the caller can't make throws `TransitionGateError` (which carries `status: 403`). The `WHERE` clause is narrowed to the from-state, so two concurrent writers can't both win — the loser gets a `TransitionConflictError`.
 
 **A row starts at its column's `@default`, whoever creates it** (`FJS-D470`). `create`, `createMany`, `upsert`'s create half and `upsertMany` naming any other state throw `TransitionViolationError`, and the message names the entry. Without it a gated destination was reachable by starting there: a caller refused `approve` could create the row `approved`, and nothing on it said which path it took. A row that belongs further along is created at the entry and walked there by its moves. A machine whose column has no `@default` does not parse.
@@ -1440,13 +1483,13 @@ await db.order.transitions(row)   // or transitions(row.id)
 
 The legal next states for *this* record, for *this* caller. A move the caller can't make is returned with `allowed: false` rather than dropped — a disabled button is usually better UI than a missing one.
 
-**Both halves of *may I* are graded, and `refusedBy` says which said no.** A move is an update, so a row policy refuses one exactly as a gate does: `@@allow(update, ownerId == auth().id)` on the model means somebody else's order offers no moves at all, and `refusedBy` is `'policy'` rather than `'gate'`. The two are different sentences on a screen — *you are not senior enough* and *not this record* — and a status code cannot carry the difference. A move whose `while:` guard fails on the stored row is `'guard'`, asked last: it lifts when the record changes, not the caller.
+**Both halves of *may I* are graded, and `refusedBy` says which said no.** A move is an update, so a row policy refuses one exactly as a gate does: `@@allow(update, ownerId == auth().id)` on the model means somebody else's order offers no moves at all, and `refusedBy` is `'policy'` rather than `'gate'`. The two are different sentences on a screen — *you are not senior enough* and *not this record* — and a status code cannot carry the difference. A move the model's `@@capabilities` grid names, made by a caller whose `auth().capabilities` lacks `Model.move`, is `'capability'`, graded after the gate as the write grades it. A move whose `while:` guard fails on the stored row is `'guard'`, asked last: it lifts when the record changes, not the caller.
 
 The `update` policy is graded against the row as it is, so it is one evaluation per call. A `post-update` policy is graded against the row as it *would be* — the current row with that one column moved — so it is one per distinct target state, and it is the half that genuinely varies between moves.
 
 > A policy this cannot evaluate in JS — a `check()` over a relation that isn't to-one — is treated as permissive, like every other affordance. The Data boundary refuses regardless.
 
-The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on the model, and Sierra's `resource.transitions(row, level)` returns the same shape — but it is the **gate half only**. `x-transitions` carries a gate and not a predicate, and a browser has no policy engine, so a move a policy refuses reads `allowed: true` there and 403s when pressed. That's a UI affordance either way — the server enforces regardless, and a screen that needs the graded list asks the server for it.
+The same list reaches the browser: `generateJsonSchema` emits `x-transitions` on the model, and Sierra's `resource.transitions(row, level)` returns the same shape — but it is the **gate half only**. `x-transitions` carries a gate and not a predicate — neither a row policy nor a move's `@allow` or `while:` — and a browser has no policy engine, so a move a policy refuses reads `allowed: true` there and 403s when pressed. That's a UI affordance either way — the server enforces regardless, and a screen that needs the graded list asks the server for it.
 
 #### Declaring it on the enum instead
 

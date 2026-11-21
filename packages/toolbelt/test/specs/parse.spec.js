@@ -73,21 +73,45 @@ test('parse: stops at the first token that is not part of the expression', funct
 })
 
 test('parse: a refusal is the caller\'s error, at the token it failed on', function () {
-  const p = cursor([tok(T.IDENT, 'order'), tok(T.DOT, '.'), tok(T.IDENT, 'user'), tok(T.DOT, '.'), tok(T.IDENT, 'id')])
+  const p = cursor([
+    tok(T.IDENT, 'line'), tok(T.DOT, '.'), tok(T.IDENT, 'order'), tok(T.DOT, '.'),
+    tok(T.IDENT, 'user'), tok(T.DOT, '.'), tok(T.IDENT, 'id'),
+  ])
   let threw = null
   try { parseExpression(p) } catch (e) { threw = e }
   assert.ok(threw, 'expected a refusal')
-  assert.match(threw.message, /crosses two relations/)
-  assert.equal(threw.at.col, 4)
+  assert.match(threw.message, /crosses three relations.*TWO to-one/)
+  assert.equal(threw.at.col, 6)
 })
 
-// `members.some(…)` (`FJS-D566`). The condition is a full expression, and the
-// relation has spent the one hop — so a dot or a check() inside is refused at
-// the token that makes it, and so is a to-many test two relations away.
+// `members.some(…)` (`FJS-D566`). The condition is a full expression over the
+// rows at the end of the chain — so a dot, a check() or a nested some inside is
+// refused at the token that makes it.
 const SOME = (inner) => [
   tok(T.IDENT, 'members'), tok(T.DOT, '.'), tok(T.IDENT, 'some'), tok(T.LPAREN, '('),
   ...inner, tok(T.RPAREN, ')'),
 ]
+
+// `FJS-D1027`: two to-one hops, then a column or one `.some(…)`. `via` holds
+// the hops before `rel`, and is absent on the one-hop form.
+test('parse: two hops carry the chain in via', function () {
+  const path = parseExpression(cursor([
+    tok(T.IDENT, 'order'), tok(T.DOT, '.'), tok(T.IDENT, 'customer'), tok(T.DOT, '.'), tok(T.IDENT, 'userId'),
+  ]))
+  assert.equal(JSON.stringify(path), JSON.stringify({ type: 'path', rel: 'customer', name: 'userId', via: ['order'] }))
+  const some = parseExpression(cursor([
+    tok(T.IDENT, 'phoneNumber'), tok(T.DOT, '.'), tok(T.IDENT, 'org'), tok(T.DOT, '.'),
+    ...SOME([tok(T.IDENT, 'userId'), tok(T.EQ, '=='), tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'userId')]),
+  ]))
+  assert.equal(some.type, 'some')
+  assert.equal(some.rel, 'members')
+  assert.deepEqual(some.via, ['phoneNumber', 'org'])
+  assert.equal(JSON.stringify(some.where.right), JSON.stringify({ type: 'this', name: 'userId' }))
+  assert.throws(() => parseExpression(cursor([
+    tok(T.IDENT, 'a'), tok(T.DOT, '.'), tok(T.IDENT, 'b'), tok(T.DOT, '.'), tok(T.IDENT, 'c'), tok(T.DOT, '.'),
+    ...SOME([tok(T.IDENT, 'done'), tok(T.EQ, '=='), tok(T.BOOL, true)]),
+  ])), /'a\.b\.c\.…' crosses three relations/)
+})
 
 test('parse: rel.some(expr) is its own node, the condition parsed whole', function () {
   const ast = parseExpression(cursor(SOME([
@@ -104,10 +128,12 @@ test('parse: a field NAMED some is still a path — only a call is the test', fu
   assert.equal(JSON.stringify(ast.left), JSON.stringify({ type: 'path', rel: 'owner', name: 'some' }))
 })
 
-test('parse: inside rel.some(…) a dot is a second hop, and so is check()', function () {
+test('parse: inside rel.some(…) a dot, a check() and a nested some are refused', function () {
   assert.throws(() => parseExpression(cursor(SOME([
     tok(T.IDENT, 'team'), tok(T.DOT, '.'), tok(T.IDENT, 'private'), tok(T.EQ, '=='), tok(T.BOOL, false),
-  ]))), /inside 'members.some\(…\)' crosses a second relation/)
+  ]))), /inside 'members.some\(…\)' crosses a relation.*two to-one hops then one/)
+  assert.throws(() => parseExpression(cursor(SOME(SOME([tok(T.IDENT, 'done'), tok(T.EQ, '=='), tok(T.BOOL, true)])))),
+    /nests one to-many test in another.*ONE '\.some/)
   assert.throws(() => parseExpression(cursor(SOME([
     tok(T.IDENT, 'check'), tok(T.LPAREN, '('), tok(T.IDENT, 'team'), tok(T.RPAREN, ')'),
   ]))), /second hop/)
@@ -123,15 +149,17 @@ test('parse: inside rel.some(…) this.col is the declaring row, one level deep'
   assert.equal(JSON.stringify(ast.where.right), JSON.stringify({ type: 'this', name: 'authorId' }))
   assert.throws(() => parseExpression(cursor(SOME([
     tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'owner'), tok(T.DOT, '.'), tok(T.IDENT, 'id'),
-  ]))), /one hop is the bound/)
+  ]))), /'\.some\(…\)' ends the chain/)
   const top = parseExpression(cursor([tok(T.IDENT, 'this'), tok(T.DOT, '.'), tok(T.IDENT, 'authorId'), tok(T.EQ, '=='), tok(T.NUMBER, 1)]))
   assert.equal(top.left.type, 'path')
 })
 
-test('parse: a to-many test two relations away names the test, not the hops', function () {
-  assert.throws(() => parseExpression(cursor([
+test('parse: a to-many test one to-one hop away parses, the hop in via', function () {
+  const ast = parseExpression(cursor([
     tok(T.IDENT, 'interview'), tok(T.DOT, '.'), ...SOME([tok(T.IDENT, 'done'), tok(T.EQ, '=='), tok(T.BOOL, true)]),
-  ])), /two relations away.*'members\.some\(…\)'/)
+  ]))
+  assert.equal(ast.rel, 'members')
+  assert.deepEqual(ast.via, ['interview'])
 })
 
 test('parse: rel.some() with no condition is refused', function () {
