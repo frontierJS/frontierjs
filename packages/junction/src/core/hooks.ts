@@ -5,7 +5,9 @@
 //   around enter  →  before  →  method  →  after  →  around exit
 //
 // Short-circuit: set ctx.result in a before hook to skip the method.
-// Error hooks:   run when any stage throws. around exit still runs.
+// Error hooks:   run when any stage inside the arounds throws, and the error
+//                is then rethrown out of next(): an around's exit runs only
+//                from a finally or catch around its await next().
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
 import { CRUD_METHODS } from './context.ts'

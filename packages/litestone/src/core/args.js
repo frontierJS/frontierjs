@@ -956,6 +956,8 @@ const ARG_NAMES = {
   findManyCursor:    new Set(['cursor', 'limit', 'where', 'select', 'include', 'orderBy', ...VIEW_FLAGS]),
   search:            new Set(['raw', 'prefix', 'limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
   create:            new Set(['data', 'include', 'select', 'scopedBy', 'system']),
+  createMany:        new Set(['data', 'system', 'announce']),
+  upsertMany:        new Set(['data', 'conflictTarget', 'update', 'system', 'announce']),
   update:            new Set(['where', 'data', 'include', 'select', 'scopedBy', 'system', '_bypassVersion', '_move', 'base', ...VIEW_FLAGS]),
   updateMany:        new Set(['where', 'data', 'system', 'announce', ...VIEW_FLAGS]),
   upsert:            new Set(['where', 'create', 'update', 'include', 'select', 'system', ...VIEW_FLAGS]),
@@ -1292,6 +1294,8 @@ export function withArgValidation(table, model, ctx) {
       if (k === 'recursive' && ARG_READ_METHODS.includes(method)) continue
       const hint = k === 'search' || k === '$search'
         ? `. A full-text search is its own verb: ${modelName}.search(query, { where, limit })`
+        : k === 'skipDuplicates'
+        ? `. A batch that skips a row already taken is ${modelName}.upsertMany({ data, conflictTarget, update: [] })`
         : nearest(k, known) ? `. Did you mean: ${nearest(k, known)}?` : ''
       throw new ValidationError([{
         path:    [k],
@@ -1387,6 +1391,18 @@ export function withArgValidation(table, model, ctx) {
     out.create = async (args = {}) => {
       try { checkArgNames(args, 'create'); checkSelect(args, 'create', true) }
       catch (e) { throw await gateFirst(e, 'create') }
+      return fn.call(table, args)
+    }
+  }
+  // The bulk writes read no column-naming option, so they take the name check
+  // alone: `createMany({ data, skipDuplicates: true })` dropped the option and
+  // the batch then failed on the very row it meant to skip.
+  for (const method of ['createMany', 'upsertMany']) {
+    const fn = table[method]
+    if (typeof fn !== 'function') continue
+    out[method] = async (args = {}) => {
+      try { checkArgNames(args, method) }
+      catch (e) { throw await gateFirst(e, method) }
       return fn.call(table, args)
     }
   }

@@ -8,6 +8,7 @@ export function parseGateString(str?: any): {
 export function validateGate(gate?: any, modelName?: any): void;
 export function liftsGate(system?: any): boolean;
 export const GATE_LIFT: "@@gate";
+export function isGatePlugin(p?: any): boolean;
 export class GatePlugin extends LitestonePlugin {
     constructor({ getLevel }?: any);
     _getLevel: any;
@@ -19,7 +20,9 @@ export class GatePlugin extends LitestonePlugin {
     onBeforeCreate(model?: any, args?: any, ctx?: any): Promise<void>;
     onBeforeUpdate(model?: any, args?: any, ctx?: any): Promise<void>;
     onBeforeDelete(model?: any, args?: any, ctx?: any): Promise<void>;
+    get [GATE_PLUGIN](): boolean;
 }
 export const FrontierGateGetLevel: any;
 import { LitestonePlugin } from '../core/plugin.js';
+declare const GATE_PLUGIN: unique symbol;
 export { LEVELS, levelPasses, levelName };

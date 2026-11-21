@@ -245,16 +245,19 @@ const INBOX = `
   model User { id String @id  @@auth }
 
   model Employee {
-    id     Int    @id @default(autoincrement())
-    userId String @unique
-    user   User   @relation(fields: [userId], references: [id])
+    id       Int       @id @default(autoincrement())
+    userId   String    @unique
+    user     User      @relation(fields: [userId], references: [id])
+    expenses Expense[]
+    @@allow(read, auth() != null)
   }
 
   model Expense {
-    id            Int    @id @default(autoincrement())
+    id            Int      @id @default(autoincrement())
     note          String
     status        String
     submittedById Int
+    submittedBy   Employee @relation(fields: [submittedById], references: [id])
     @@allow(read, auth() != null)
   }
 `
@@ -273,6 +276,7 @@ describe('a filter naming the caller with { $auth }', () => {
     await sys.expense.create({ data: { note: 'drafted', status: 'draft', submittedById: 2 } })
     const app: any = createApp({ db })
     app.services.register(createService({ name: 'expenses', model: 'Expense' }))
+    app.services.register(createService({ name: 'employees', model: 'Employee' }))
     return app
   }
   const notesFor = async (app: any, query: object, userId: string) =>
@@ -288,6 +292,24 @@ describe('a filter naming the caller with { $auth }', () => {
   test('as an equality, it is the caller\'s own rows', async () => {
     const app = await inbox()
     expect(await notesFor(app, { submittedById: { $auth: 'employeeId' } }, 'u2')).toEqual(['by two', 'drafted'])
+  })
+
+  test('in an aggregate body\'s where, it is the caller\'s claim (FJS-4469)', async () => {
+    const app = await inbox()
+    const mine = { where: { submittedById: { $auth: 'employeeId' } }, _count: true }
+    expect(await app.service('expenses').aggregate(mine, as('u1'))).toMatchObject({ _count: 1 })
+    expect(await app.service('expenses').aggregate(mine, as('u2'))).toMatchObject({ _count: 2 })
+    await expect(app.service('expenses').aggregate({ where: { submittedById: { $auth: 'siteId' } } }, as('u1')))
+      .rejects.toThrow(/'siteId'/)
+  })
+
+  test('in a $count where, it is the caller\'s claim (FJS-4469)', async () => {
+    const app = await inbox()
+    const out = rowsOf(await app.service('employees').find({}, {
+      ...as('u2'),
+      directives: { count: { expenses: { where: { submittedById: { $auth: 'employeeId' } } } }, orderBy: 'id' },
+    } as never))
+    expect(out.map((r: any) => r._count.expenses)).toEqual([0, 2])
   })
 
   test('arrives off the wire as a structure, never as text', async () => {

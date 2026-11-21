@@ -71,7 +71,7 @@ is `development` or `test` and refuses to build otherwise, so a production
 process cannot fall back to a local directory by accident.
 
 A `File` column stores a reference — `{ key, name, provider, bucket, endpoint,
-size, mime, uploadedAt }` — and a read resolves it to a URL: the config's
+size, sha256, type, uploadedAt }` — and a read resolves it to a URL: the config's
 current `publicBase` (or, failing that, the ref's `endpoint`) joined to the key,
 so moving hosts re-points every file. With neither,
 the field reads back as `null`.
@@ -111,7 +111,7 @@ const db = await createClient({ path: './schema.lite', db: './app.db', plugins: 
 const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'me.png', { type: 'image/png' })
 await db.user.create({ data: { id: 1, email: 'ada@example.com' } })
 const user = await db.user.update({ where: { id: 1 }, data: { avatar: file }, select: { avatar: { resolve: false } } })
-if (user.avatar.mime !== 'image/png') throw new Error(`update() returned ${JSON.stringify(user.avatar)}`)
+if (user.avatar.type !== 'image/png') throw new Error(`update() returned ${JSON.stringify(user.avatar)}`)
 ```
 
 Multiple files. A `File[]` read resolves to the list of URLs; `resolve: false`
@@ -223,12 +223,13 @@ const user = await db.user.findUnique({
 })
 
 const buffer = await storage.download(user.avatar)
-// res.set('Content-Type', user.avatar.mime); res.send(buffer)
-if (buffer.length !== 11 || user.avatar.mime !== 'image/png') throw new Error(`${buffer.length} ${user.avatar.mime}`)
+// res.set('Content-Type', user.avatar.type); res.send(buffer)
+if (buffer.length !== 11 || user.avatar.type !== 'image/png') throw new Error(`${buffer.length} ${user.avatar.type}`)
 ```
 
-The reference's type is under `mime`, and what is stored is what the bytes
-were sniffed as, never only what the client claimed.
+The reference's type is under `type`, as on the `File` it was made from, and
+what is stored is what the bytes were sniffed as, never only what the client
+claimed.
 
 ---
 

@@ -18,5 +18,5 @@ export function makeZoned(shape?: any, deps?: any): {
     }) => any;
     zoneTouched: (data: any) => boolean;
     zonedParentKeys: (whereSql: string | null, params: any[]) => any;
-    recomputeZonedChildren: (keys: any[], note: (model: string, row: any) => void) => void;
+    recomputeZonedChildren: (keys: any[], note: (model: string, row: any) => void) => Map<string, any[]>;
 };

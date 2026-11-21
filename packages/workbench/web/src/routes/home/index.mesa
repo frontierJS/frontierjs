@@ -219,7 +219,10 @@ title: Home
   const pinAt = (cwd) => cwd && pins.find(p => p.path === cwd)
   const sessionTitle = (s) => s.title || s.firstPrompt || s.sessionId.slice(0, 8)
 
+  // Home shows a glance; the Laptop screen has the whole list.
+  const SERVERS = 6
   const servers = () => (running?.sessions ?? []).filter(s => s.running)
+  const answering = (r) => r.ports.filter(x => x.answering)
 
   const unread = () => inbox.rows.filter(isUnread).slice(0, 5)
 
@@ -436,21 +439,22 @@ title: Home
       <p class="text-sm text-muted">No dev server is up.</p>
     {:else}
       <ul class="home-list">
-        {#each servers() as r (r.root + (r.worktree ?? '') + r.name)}
-          <li class="home-row">
+        {#each servers().slice(0, SERVERS) as r (r.root + (r.worktree ?? '') + r.name)}
+          <li class="home-row home-server" title={r.root}>
             <Dot tone={r.alive ? 'success' : 'warning'} label={r.alive ? 'alive' : 'ports answer, process gone'} />
-            <span class="home-row-main">
-              <strong>{r.name}</strong>{#if r.env} <span class="text-sm text-muted">{r.env}</span>{/if}
-              <span class="cluster text-sm">
-                {#each r.ports.filter(x => x.answering) as x (x.category + x.port)}
-                  <a href={`http://localhost:${x.port}/`} target="_blank" rel="noopener">{x.category} :{x.port}</a>
-                {/each}
-              </span>
+            <strong class="home-clip home-server-name">{r.name}</strong>
+            <span class="cluster text-sm home-server-ports">
+              {#each answering(r) as x (x.category + x.port)}
+                <a href={`http://localhost:${x.port}/`} target="_blank" rel="noopener" class="home-num">{x.category} :{x.port}</a>
+              {/each}
             </span>
-            <span class="text-sm text-muted">{ago(r.startedAt, '')}</span>
+            <span class="text-sm text-muted home-server-age">{ago(r.startedAt, '')}</span>
           </li>
         {/each}
       </ul>
+      {#if servers().length > SERVERS}
+        <a href="/laptop/" class="text-sm text-muted">{servers().length - SERVERS} more on Laptop</a>
+      {/if}
     {/if}
   </section>
 
@@ -557,6 +561,9 @@ title: Home
     color: inherit; text-decoration: none;
     &:hover { border-color: var(--rule-strong); }
   }
+  .home-server-name { flex: 1; min-inline-size: 0; }
+  .home-server-ports { flex: none; gap: var(--space-xs); }
+  .home-server-age { flex: none; min-inline-size: 5.5rem; text-align: end; }
   .home-pin-head { align-items: center; }
   .home-pin-chats { align-items: center; gap: var(--space-3xs); }
 </style>

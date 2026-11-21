@@ -29,8 +29,8 @@ import { createExclusionLedger } from './exclusion.js'
 import { buildZonedMap, makeZoned } from './zoned.js'
 import { makeLedgerNotes } from './ledger-notes.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
-import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
-import { CapabilityPlugin, requireCapability } from '../plugins/capability.js'
+import { GatePlugin, FrontierGateGetLevel, levelPasses, isGatePlugin } from '../plugins/gate.js'
+import { CapabilityPlugin, requireCapability, isCapabilityPlugin } from '../plugins/capability.js'
 import { capabilityDeclarations } from './capabilities.js'
 import {
   buildPolicyMap, buildScopeMap, compileStatic,
@@ -1033,6 +1033,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
         fireRowEvent('update', 'update', after)
       }
     },
+    // A zone write on the parent re-derives this table's `@zoned` instants
+    // inside the parent's unit (zoned.js): the statement takes this table's
+    // stamp, and each moved row is then told as an update of its own.
+    stampSets: named => stampSets(named),
+    async rezoned(pairs) {
+      for (const [rawBefore, rawAfter] of pairs) {
+        const [before, after] = readAll([rawBefore, rawAfter])
+        if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', after, ctx)
+        if (tableHasLogWork) emitLogs('update', [after], { before, after })
+        fireRowEvent('update', 'update', after)
+      }
+    },
   })
 
   // null when no model the cascade can reach has a plugin or a log to tell,
@@ -1122,6 +1134,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   async function cascadeRemoved(doomed) {
     if (doomed) for (const [sink, rows, fk] of doomed) await (fk ? sink.nulled(rows, fk) : sink.removed(rows))
+  }
+
+  async function rezonedChildren(moved) {
+    for (const [model, pairs] of moved) await ctx.cascadeSinkFor(model).rezoned(pairs)
   }
 
   // ── Field policy helpers ──────────────────────────────────────────────────
@@ -1583,6 +1599,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const { refuseZonedWrite, deriveZoned, zoneTouched, zonedParentKeys, recomputeZonedChildren } = makeZoned(shape, {
     readDb, writeDb, col,
     buildWhereWithEncryption: (...a) => buildWhereWithEncryption(...a),
+    sinkFor: model => ctx.cascadeSinkFor?.(model),
   })
 
 
@@ -2901,8 +2918,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (notes.after === 'row') { noteCardinality(st.data); noteExclusion(st.data) }
     }
     // An upsert's RETURNING is the parent row whatever path it took.
-    if (zoneMoved && count) recomputeZonedChildren(zonedKeys ?? rows ?? [],
-      (model, row) => tx.exclusions?.note(model, row))
+    const rezoned = zoneMoved && count ? recomputeZonedChildren(zonedKeys ?? rows ?? [],
+      (model, row) => tx.exclusions?.note(model, row)) : null
     // Thrown only when a row was reached, as SQLite's own refusal is; the unit rolls back.
     if (count && moves) throw plan.moves
     // A row result is read once here — the post-update rule, the notes, the
@@ -2923,7 +2940,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       else noteCardinalityBySql(wSql, wBinds)
     }
     if (rootRows?.length) { doomed = []; cascadeSoftRemove(rootRows, plan.softCascade.ts, doomed) }
-    return { rows, count, row, image, doomed, affected, duration: _nt ? performance.now() - t0 : 0 }
+    return { rows, count, row, image, doomed, rezoned, affected, duration: _nt ? performance.now() - t0 : 0 }
   }
 
   // The lock (`FJS-638`): a bulk write run bare joins whatever transaction is
@@ -2947,7 +2964,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `select: false` still means *do not hand me the row*, and the announcement
   // keeps the row because it HAS one: `null` there means the RETURNING was
   // skipped, which is a different fact.
-  async function finishWrite(plan, { rows, count, row, image, doomed, affected, duration }) {
+  async function finishWrite(plan, { rows, count, row, image, doomed, rezoned, affected, duration }) {
     fireQuery({ operation: plan.verb, args: plan.args, sql: plan.query.sql, params: plan.query.params, duration, rowCount: count })
     if (plan.result) {
       // No row reached is three different things, and the plan says which are
@@ -2981,6 +2998,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         }
       }
       if (doomed) await cascadeRemoved(doomed)
+      if (rezoned) await rezonedChildren(rezoned)
       if (select === false || !final) return null
       // The caller's row is resolved like a read (FJS-D1324), on a copy: the
       // event, the plugins and the trail above hold `final`, and a stored ref
@@ -2999,6 +3017,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     if (plan.logs && rows?.length) emitLogs(LOG_OP[plan.op], rows, { system: plan.system, written: writtenOf(plan) })
     if (doomed) await cascadeRemoved(doomed)
+    if (rezoned) await rezonedChildren(rezoned)
     if (plan.announce) announceBulk({ ...plan.announce, count, rows })
     return { count }
   }
@@ -6594,7 +6613,7 @@ export async function createClient({
     a.kind === 'gate' ||
     (a.kind === 'transitions' && Object.values(a.transitions).some(t => t.gate != null))
   )) || authClaimsUsed(schema).has('level') || schemaDeclaresAccessRules(schema)
-  if (_anyGates && !effectivePlugins.some(p => p instanceof GatePlugin)) {
+  if (_anyGates && !effectivePlugins.some(isGatePlugin)) {
     effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
   }
 
@@ -6604,7 +6623,7 @@ export async function createClient({
   // has nothing to replace — the caller's set is auth().capabilities (`FJS-D151`)
   // — so it is installed whenever a model declares the grid.
   const _anyCapabilities = schema.models.some(m => m.attributes?.some(a => a.kind === 'capabilities'))
-  if (_anyCapabilities && !effectivePlugins.some(p => p instanceof CapabilityPlugin)) {
+  if (_anyCapabilities && !effectivePlugins.some(isCapabilityPlugin)) {
     effectivePlugins = [...effectivePlugins, new CapabilityPlugin()]
   }
 

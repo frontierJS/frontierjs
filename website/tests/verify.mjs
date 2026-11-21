@@ -290,12 +290,12 @@ t('install.published', await (async () => {
 
 // ─── the splash and the journey ───────────────────────────────────────────
 // The splash's one job is the hand-off, so the check is that the journey door
-// is in the file and the splash says what is coming. Every post file with a date is listed on the journey's index
+// is in the file and the splash carries its headline. Every post file with a date is listed on the journey's index
 // and emitted at its own URL — the index is read off the post files, so a
 // post that builds and is not listed means the reader broke, not the post.
 t('splash.handsOff', {
   journey: splash.includes('href="/journey/"'),
-  coming:  splash.includes('is coming.'),
+  headline: />awaits\.<\/span><\/h1>/.test(splash),
 })
 // Every derived feature is in the file twice: once read, once the copy that
 // makes the loop seamless, hidden from a screen reader.
@@ -431,7 +431,7 @@ t('demos.noRuntimeFetch',
   !bodyOf('why/landscape').includes('Loading') && !bodyOf('why/landscape').includes('projects.json'))
 
 // ─── the package guides ───────────────────────────────────────────────────
-// /docs/mesa/, /docs/litestone/ and /docs/junction/ are GENERATED from packages/<pkg>/docs/guide/,
+// /docs/mesa/, /docs/litestone/, /docs/junction/, /docs/sierra/, /docs/basecamp/ and /docs/testing/ are GENERATED from packages/<pkg>/docs/guide/,
 // so the failures are silent ones: a page the README lists that never built, a
 // rewritten link that still points at a `.md` file the site does not serve, a
 // renderer that ate the first sample. Each list is read independently of
@@ -444,6 +444,9 @@ const GUIDES = [
   { id: 'mesa',      title: 'Mesa guide',      landingLink: 'reactivity/let' },
   { id: 'litestone', title: 'Litestone guide', landingLink: 'schema/models-and-fields' },
   { id: 'junction',  title: 'Junction guide',  landingLink: 'services/a-service' },
+  { id: 'sierra',    title: 'Sierra guide',    landingLink: 'resources/a-resource' },
+  { id: 'basecamp',  title: 'Basecamp guide',  landingLink: 'deploy/a-release' },
+  { id: 'testing',   title: 'Testing guide',   landingLink: 'environment/a-test-env' },
 ]
 
 for (const { id, title, landingLink } of GUIDES) {
@@ -503,6 +506,28 @@ for (const { id, title, landingLink } of GUIDES) {
     && readFileSync(join(DIST, 'docs', id, 'index.html'), 'utf8').includes(`href="${base}${landingLink}/"`))
   t(`guide.${id}.title`, existsSync(join(DIST, 'docs', id, 'index.html'))
     && readFileSync(join(DIST, 'docs', id, 'index.html'), 'utf8').includes(`<title>${title} | FrontierJS</title>`))
+}
+
+// A command the Basecamp or Testing guide names must be one fli has: Basecamp's
+// examples are never run (a deploy needs a machine) and Testing's only name the
+// command in prose, so this is the only thing that would notice a command
+// renamed out from under a page. `fli ns:sub` is
+// commands/ns/sub.md, `fli ns` is its index.md, and `eset` is an `alias:`.
+{
+  const cmds = join(HERE, '..', '..', 'packages', 'cli', 'commands')
+  const guideDirs = ['basecamp', 'testing'].map((p) => join(HERE, '..', '..', 'packages', p, 'docs', 'guide'))
+  const files = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? files(join(d, e.name)) : [join(d, e.name)])
+  const aliases = new Set(files(cmds).filter((f) => f.endsWith('.md'))
+    .flatMap((f) => [...readFileSync(f, 'utf8').slice(0, 600).matchAll(/^alias: (\S+)/gm)].map((m) => m[1])))
+  const exists = (c) => {
+    const [ns, sub] = c.split(':')
+    return aliases.has(c) || (sub ? existsSync(join(cmds, ns, `${sub}.md`))
+      : [`${ns}/index.md`, `${ns}.md`].some((f) => existsSync(join(cmds, f))))
+  }
+  const named = guideDirs.flatMap(files).filter((f) => f.endsWith('.md') && !f.endsWith('README.md')).flatMap((f) =>
+    [...readFileSync(f, 'utf8').matchAll(/(?:^|`)fli ([a-z][a-z0-9]*(?::[a-z][a-z0-9-]*)?)/gm)].map((m) => `${f.split('/guide/')[1]}: fli ${m[1]}`)
+      .filter((x) => !exists(x.split('fli ')[1])))
+  t('guide.commandsExist', named, none)
 }
 
 // ─── the server ───────────────────────────────────────────────────────────

@@ -1,12 +1,6 @@
 // src/domain/job/job-context.ts
 // What a job handler (`jobs/`) is handed, and the two refusals it can make.
 //
-// Caravan puts the running Junction app on every JobContext, typed `App |
-// undefined` because caravan can run standalone. Basecamp cannot: every job
-// here reads rows and talks to a machine through plugins the app configured.
-// So the absence is an error stated once rather than a non-null assertion in
-// four files.
-//
 // ─── Who a job runs as ───────────────────────────────────────────────────
 //
 // A request carries both answers — a signed-in caller, and a workspace named in
@@ -46,14 +40,6 @@ import type { JobContext }  from '@frontierjs/caravan'
 import type { App }         from '@frontierjs/junction'
 import { actsAsApp }         from '../../core/gate.ts'
 
-export function appFrom(ctx: JobContext<unknown>, job: string): App {
-  if (!ctx.app) throw new Error(
-    `[${job}] no Junction app on the job context — this handler reads rows and ` +
-    `sends to an outpost, and caravan is running standalone.`
-  )
-  return ctx.app
-}
-
 /** A handler's own answer to *whose work is this*. */
 export interface CallerJob {
   mode:   'caller'
@@ -81,7 +67,7 @@ export interface AppJob {
  * membership is refused deeper, by `membershipClaim` on the first service call.
  */
 export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
-  const app    = appFrom(ctx, job)
+  const app    = ctx.app
   const actor  = actsAsApp(app.principal()) ? undefined : app.principal()!.id
   const tenant = app.tenant()
 
@@ -107,7 +93,7 @@ export function runsAsCaller(ctx: JobContext<unknown>, job: string): CallerJob {
  * direction.
  */
 export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
-  const app   = appFrom(ctx, job)
+  const app   = ctx.app
   const actor = actsAsApp(app.principal()) ? undefined : app.principal()!.id
 
   if (actor) throw new Error(
@@ -125,7 +111,7 @@ export function runsAsApp(ctx: JobContext<unknown>, job: string): AppJob {
  * discovering which one it is in the middle of its work.
  */
 export function runsEitherWay(ctx: JobContext<unknown>, job: string): CallerJob | AppJob {
-  return actsAsApp(appFrom(ctx, job).principal())
+  return actsAsApp(ctx.app.principal())
     ? runsAsApp(ctx, job)
     : runsAsCaller(ctx, job)
 }

@@ -192,7 +192,7 @@ export function generateTypeScript(schema, opts = {}) {
       `  provider:   string`,
       `  size:       number`,
       `  sha256:     string`,
-      `  mime:       string`,
+      `  type:       string`,
       `  uploadedAt: string`,
       `}`,
       ``,

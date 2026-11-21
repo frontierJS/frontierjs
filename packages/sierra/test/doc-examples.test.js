@@ -1,4 +1,4 @@
-// test/doc-examples.test.js — every runnable fence in README.md and AGENTS.md runs (FJS-D860, FJS-3670).
+// test/doc-examples.test.js — every runnable fence in README.md, AGENTS.md and docs/guide/ runs (FJS-D860, FJS-3670).
 //
 // Invariant 16: a runnable example is verified. The fence contract is toolbelt's
 // `docfences`: a block runs as a module in its own `bun` process unless its info
@@ -20,7 +20,7 @@
 // of file:line> runs one block.
 
 import { describe, test, expect, beforeAll } from 'bun:test'
-import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { readFileSync, readdirSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { join }          from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { docFences, isRunnable } from '@frontierjs/toolbelt/docfences'
@@ -30,7 +30,11 @@ const PRELUDE = join(PKG, 'test/doc-prelude.mjs')
 const REPORT  = !!process.env.DOC_EXAMPLES_REPORT
 const ONLY    = process.env.DOC_EXAMPLES_ONLY
 const TIMEOUT = 30_000
-const FILES   = ['README.md', 'AGENTS.md']
+// The guide is a folder per section; its README is the page order and holds no example.
+const GUIDE   = join(PKG, 'docs/guide')
+const guidePages = readdirSync(GUIDE, { withFileTypes: true }).filter(e => e.isDirectory())
+  .flatMap(e => readdirSync(join(GUIDE, e.name)).filter(f => f.endsWith('.md')).map(f => `docs/guide/${e.name}/${f}`))
+const FILES   = ['README.md', 'AGENTS.md', ...guidePages]
 
 // ─── the module a block runs as ───────────────────────────────────────────────
 

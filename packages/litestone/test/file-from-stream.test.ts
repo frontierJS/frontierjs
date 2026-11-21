@@ -56,7 +56,7 @@ describe('fromStream', () => {
     const row = await db.asSystem().doc.create({
       data: { id: 1, file: fromStream(streamOf(png), { name: 'a.txt', type: 'text/plain', size: png.length }) }, select: raw,
     })
-    expect(row.file.mime).toBe('image/png')
+    expect(row.file.type).toBe('image/png')
     expect(row.file.size).toBe(png.length)
     expect(row.file.sha256).toBe(sha(png))
     expect(new Uint8Array(readFileSync(join(dir, row.file.key)))).toEqual(png)

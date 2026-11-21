@@ -828,6 +828,7 @@
         "@frontierjs/junction": "workspace:*",
         "@frontierjs/litestone": "workspace:*",
         "@frontierjs/mesa": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {

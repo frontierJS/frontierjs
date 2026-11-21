@@ -1524,7 +1524,7 @@ export function createApp(opts: AppOptions = {}): App {
 
     async principalFor(ctx) {
       const user = (ctx.user ?? null) as import('../auth/types.ts').SessionContext | null
-      if (!dataHook) return { db: app.db, claims: {}, user }
+      if (!dataHook) return { db: app.db as import('./litestone.ts').RawRouteCaller['db'], claims: {}, user }
       return resolveRawCaller(dataHook, app, ctx)
     },
 

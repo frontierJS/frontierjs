@@ -50,7 +50,13 @@ function heldBy(/** @type {any} */ auth, /** @type {any} */ model) {
 
 const EMPTY = new Set()
 
+// By brand, as `isGatePlugin`: a second litestone copy's plugin is another class.
+const CAPABILITY_PLUGIN = Symbol.for('litestone.capabilityPlugin')
+export const isCapabilityPlugin = (/** @type {any} */ p) => p?.[CAPABILITY_PLUGIN] === true
+
 export class CapabilityPlugin extends LitestonePlugin {
+  get [CAPABILITY_PLUGIN]() { return true }
+
   // Nothing read from the schema is kept on the instance. A tenant registry
   // forwards one plugin to every client it opens, and a second onInit on `this`
   // replaced the FIRST client's grid with the second schema's (`FJS-1380`). The

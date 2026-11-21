@@ -76,8 +76,9 @@ export interface JobContext<T = unknown> extends Job<T> {
   user: SessionContext | null
 
   /**
-   * The running Junction app. Absent when Caravan runs standalone, which is
-   * the one case a handler has to test for.
+   * The running Junction app. Typed present, as every `app.<slot>` is
+   * (`FJS-D1138`): standalone Caravan has no app, and reading this there
+   * throws naming `app.configure(caravan())` rather than answering undefined.
    *
    * Typed as Junction's own `App` rather than the duck-typed `CaravanApp` the
    * rest of this file uses, because a handler's whole reason to hold it is
@@ -89,7 +90,7 @@ export interface JobContext<T = unknown> extends Job<T> {
    * `ctx.app.withDb((db) => …)`. The module client the app was created with is
    * the unscoped root, so a handler importing it reads as STRANGER(0).
    */
-  app?: JunctionApp
+  app: JunctionApp
 
   /** The id recorded at dispatch. null when nobody asked — cron, boot. */
   actorId: string | null

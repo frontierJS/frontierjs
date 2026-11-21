@@ -196,7 +196,7 @@ interface OAPathItem {
 
 interface OAResponse {
   description: string
-  content?:    { 'application/json': { schema: OASchema } }
+  content?:    { 'application/json'?: { schema: OASchema }; 'text/event-stream'?: { schema: OASchema } }
 }
 
 interface OAOperation {
@@ -642,21 +642,35 @@ export function generateOpenAPI(app: App, opts: OpenAPIOptions, seed?: { $defs?:
           : { type: 'object', description: `Declared output type \`${typeName}\` (not resolved — pass the seed's $defs to generateOpenAPI)` } as OASchema
         return { name: m, schema }
       })
-      const answers200 = answered.length
-        ? {
-            description: 'Success',
-            content: { 'application/json': { schema: (answered.length === 1
-              ? answered[0]!.schema
-              : { oneOf: answered.map(a => ({ title: a.name, ...a.schema })) }) as unknown as OASchema } },
-          }
+      // A method declared `stream: true` answers the same operation in frames
+      // when asked for `text/event-stream` (`FJS-D1031`), so the media type is
+      // listed with one entry per streaming method, titled like the bodies.
+      const streaming = service.describe().streamMethods.filter(m => customMethods.includes(m))
+      const json = answered.length
+        ? { 'application/json': { schema: (answered.length === 1
+            ? answered[0]!.schema
+            : { oneOf: answered.map(a => ({ title: a.name, ...a.schema })) }) as unknown as OASchema } }
+        : {}
+      const frames = streaming.length
+        ? { 'text/event-stream': { schema: {
+            oneOf: streaming.map(m => ({ title: m, ...answered.find(a => a.name === m)?.schema })),
+          } as unknown as OASchema } }
+        : {}
+      const answers200 = answered.length || streaming.length
+        ? { description: 'Success', content: { ...json, ...frames } }
         : { description: 'Success' }
+      const streamNote = streaming.length
+        ? ` ${streaming.map(m => `\`${m}\``).join(', ')} answer${streaming.length === 1 ? 's' : ''} in frames: ` +
+          'asked for with `Accept: text/event-stream`, each frame is a `frame` event and the answer one `result` event; ' +
+          'otherwise the answer is the last frame.'
+        : ''
 
       resource.post = {
         operationId: `call${serviceName.charAt(0).toUpperCase()}${serviceName.slice(1)}Method`,
         summary:     `Custom methods on ${serviceName}`,
         description:
           `Addressed by header, not by path: POST \`${prefix}/${serviceName}/{id}\` with ` +
-          `\`X-Service-Method\` naming one of ${customMethods.map(m => `\`${m}\``).join(', ')}.`,
+          `\`X-Service-Method\` naming one of ${customMethods.map(m => `\`${m}\``).join(', ')}.${streamNote}`,
         tags:      [tag],
         security:  [{ bearerAuth: [] }],
         parameters: [{

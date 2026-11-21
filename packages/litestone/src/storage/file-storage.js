@@ -201,7 +201,7 @@ function readInline(value, fieldName, model) {
   const bytes = decodeBase64(data, model, fieldName)
   return {
     bytes,
-    mime:     claimed || 'application/octet-stream',
+    claimed:  claimed || 'application/octet-stream',
     filename: displayName(name) ?? fieldName,
     name:     displayName(name),
     size:     bytes.length,
@@ -279,7 +279,7 @@ async function streamValue(value, fieldName) {
   })
   return {
     body, head, size: value.size ?? undefined,
-    mime:     value.type || 'application/octet-stream',
+    claimed:  value.type || 'application/octet-stream',
     filename: displayName(value.name) ?? fieldName,
     name:     displayName(value.name),
     cancel:   reason => body.cancel(reason),
@@ -289,13 +289,13 @@ async function streamValue(value, fieldName) {
 async function readValue(value, fieldName, model) {
   if (value instanceof FromStream) return streamValue(value, fieldName)
   if (typeof File !== 'undefined' && value instanceof File)
-    return blobValue(value, { mime: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name) })
+    return blobValue(value, { claimed: value.type || 'application/octet-stream', filename: value.name || fieldName, name: displayName(value.name) })
   if (value instanceof Blob)
-    return blobValue(value, { mime: value.type || 'application/octet-stream', filename: fieldName })
+    return blobValue(value, { claimed: value.type || 'application/octet-stream', filename: fieldName })
   if (value instanceof Buffer || value instanceof Uint8Array)
-    return bytesValue(value instanceof Buffer ? value : Buffer.from(value), { mime: 'application/octet-stream', filename: fieldName })
+    return bytesValue(value instanceof Buffer ? value : Buffer.from(value), { claimed: 'application/octet-stream', filename: fieldName })
   if (value instanceof ArrayBuffer)
-    return bytesValue(Buffer.from(value), { mime: 'application/octet-stream', filename: fieldName })
+    return bytesValue(Buffer.from(value), { claimed: 'application/octet-stream', filename: fieldName })
   if (value instanceof FromPath) {
     const { path } = value
     if (!existsSync(path)) throw new Error(`@file: file not found: ${path}`)
@@ -304,7 +304,7 @@ async function readValue(value, fieldName, model) {
       throw new Error(`@file: ${path} is ${blob.size} bytes and its stated size is ${value.size}; nothing was kept`)
     const named = displayName(value.name) ?? displayName(basename(path))
     return blobValue(blob, {
-      mime: value.type || guessMime(named), filename: named, name: named,
+      claimed: value.type || guessMime(named), filename: named, name: named,
       ...(value.move ? { move: path } : {}),
     })
   }
@@ -334,7 +334,7 @@ function resolveKey(pattern = ':model/:field/:uuid.:ext', { model, field, filena
   const date = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
   // The extension follows the RESOLVED type and not the uploaded name. A static
   // origin serves by extension and has no ref to read, so a PNG stored under
-  // `.txt` because that is what the upload was called leaves `ref.mime` and the
+  // `.txt` because that is what the upload was called leaves `ref.type` and the
   // URL stating different things — the same defect one layer out. Only where
   // the type is one the table can spell; otherwise the caller's name stands.
   const named    = extname(filename) || ''
@@ -439,16 +439,16 @@ class FileStoragePlugin extends ExternalRefPlugin {
   // serialize: Buffer/File/fromPath/fromStream → upload → return ref object
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._maps(ctx).fieldMap[model]?.[field] ?? {}
-    const { body, head, mime, filename, name, size: stated, cancel, move } = await readValue(value, field, model)
+    const { body, head, claimed, filename, name, size: stated, cancel, move } = await readValue(value, field, model)
     let key, type
     try {
-      // The stored type is the evidence and never the claim: `mime` is what the
-      // client or the filename SAID, and it is also what gets persisted on the ref
+      // The stored type is the evidence and never the claim: `claimed` is what the
+      // client or the filename SAID, and `type` is what gets persisted on the ref
       // and handed to the provider as `contentType`, which is what a public bucket
       // later serves under. Both must be the same answer, so it is resolved once.
-      const resolved = resolveType(mime, head)
+      const resolved = resolveType(claimed, head)
       type = resolved.type
-      checkAccept(type, fieldOpts.accept, model, field, resolved.evidence ? mime : null)
+      checkAccept(type, fieldOpts.accept, model, field, resolved.evidence ? claimed : null)
       key = resolveKey(this.config.keyPattern, { model, field, filename, type })
     } catch (err) {
       await cancel?.(err)
@@ -467,7 +467,10 @@ class FileStoragePlugin extends ExternalRefPlugin {
       endpoint:   this.config.endpoint ?? null,
       size,
       sha256,
-      mime: type,
+      // `type`, as the File, Blob and fromStream it was made from name it: a
+      // route reading `ref.type` off a ref named otherwise served every file
+      // as application/octet-stream (FJS-4409).
+      type,
       uploadedAt: new Date().toISOString(),
     }
   }

@@ -63,6 +63,28 @@ export function ntfyAuthRefusal(authUsers: string | undefined, authTokens: strin
   return undefined
 }
 
+const NTFY_AUTH_KEYS = ['NTFY_AUTH_USERS', 'NTFY_AUTH_TOKENS']
+
+/** `ntfyAuthRefusal` for one write to an ntfy App's own Variable, `value`
+ *  undefined when the row is removed. Install grades the pair it composes; an
+ *  edit afterwards changes one half, and ntfy exits on the pair at the next
+ *  release (`FJS-4462`). */
+export async function ntfyEditRefusal(db: any, appId: string | null, key: string, value: string | undefined): Promise<string | undefined> {
+  if (!appId || !NTFY_AUTH_KEYS.includes(key)) return undefined
+  const sys = db.asSystem()
+  const app = await sys.app.findFirst({ where: { id: appId }, select: { blueprintId: true } })
+  if (!app?.blueprintId) return undefined
+  const bp = await sys.blueprint.findFirst({ where: { id: app.blueprintId }, select: { slug: true } })
+  if (bp?.slug !== 'ntfy') return undefined
+  const rows = await sys.variable.findMany({
+    where:  { appId, key: { in: NTFY_AUTH_KEYS }, deletedAt: null },
+    select: { key: true, value: true, secretValue: true },
+  }) as { key: string; value: string | null; secretValue: string | null }[]
+  const held = new Map<string, string | undefined>(rows.map(r => [r.key, r.secretValue ?? r.value ?? undefined]))
+  held.set(key, value)
+  return ntfyAuthRefusal(held.get('NTFY_AUTH_USERS'), held.get('NTFY_AUTH_TOKENS'))
+}
+
 async function ownNtfyApp(db: any): Promise<PushServer | undefined> {
   const sys = db.asSystem()
   const bp  = await sys.blueprint.findFirst({ where: { slug: 'ntfy' } })

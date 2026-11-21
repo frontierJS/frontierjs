@@ -1361,7 +1361,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `provider` | `string` | yes | — | — | — |
 | `endpoint` | `string`? | — | — | — | — |
 | `size` | `integer` | yes | — | `minimum: 0` | — |
-| `mime` | `string` | yes | — | — | — |
+| `type` | `string` | yes | — | — | — |
 | `uploadedAt` | `string` | yes | — | `format: "date-time"` | — |
 
-**On create**: required — `key`, `bucket`, `provider`, `size`, `mime`, `uploadedAt`
+**On create**: required — `key`, `bucket`, `provider`, `size`, `type`, `uploadedAt`

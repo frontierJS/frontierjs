@@ -287,10 +287,7 @@ export class QueueWorker {
         correlationId: record.correlation_id ?? null,
         signal:   controller.signal,
         user: user as JobContext['user'],
-        // undefined rather than null when there is no app: a handler tests
-        // `ctx.app?` and an optional property that is present-but-null reads
-        // as a bug in the app wiring rather than as standalone Caravan.
-        app:      (this._app ?? undefined) as JobContext['app'],
+        app:      this._app as unknown as JobContext['app'],
         progress: (fraction: number) => {
           if (typeof fraction !== 'number' || !(fraction >= 0 && fraction <= 1))
             throw new Error(
@@ -300,6 +297,17 @@ export class QueueWorker {
           this._write(() => this._stmts.setProgress.run({ id: record.id, progress: fraction, owner: this._owner }))
         },
       }
+      // Typed present (FJS-D1138), so standalone a read must say what is
+      // missing. Non-enumerable, so spreading or logging ctx does not throw.
+      if (!this._app) Object.defineProperty(ctx, 'app', {
+        enumerable: false,
+        get: () => {
+          throw new Error(
+            `[Caravan] job '${record.name}' read ctx.app, but Caravan is running standalone ` +
+            `with no Junction app. Register it with app.configure(caravan()) in app.ts.`
+          )
+        },
+      })
       await handler.handler(ctx)
     }
 

@@ -130,3 +130,65 @@ describe('@zoned on a DateTime — the derived instant (FJS-3381)', () => {
     expect((await sys.shift.findUnique({ where: { id: s.id } })).startsAt).toBe('2026-07-01T01:00:00.000Z')
   })
 })
+
+describe('@zoned — a zone write is a write to each child it moves (FJS-4480)', () => {
+  const HEARD = SCHEMA
+    .replace('scope person(employeeId)', `scope person(employeeId)
+database main { path ":memory:" model AuditRow }
+model AuditRow {
+  id Int @id @default(autoincrement())
+  operation String
+  model String
+  field String?
+  recordId String?
+  before Json?
+  after Json?
+  actorId String?
+  actorType String?
+  correlationId String?
+  source String?
+  origin String?
+  ip String?
+  userAgent String?
+  tenant String?
+  meta Json?
+  createdAt DateTime @default(now())
+}`)
+    .replace('  @@exclude(person, range: [startsAt, endsAt])', `  updatedAt  DateTime @updatedAt
+  @@exclude(person, range: [startsAt, endsAt])
+  @@trail(main)`)
+  const tick = () => new Promise((r) => setImmediate(r))
+
+  async function heard(verb: 'update' | 'updateMany') {
+    const { createClient } = await import('../src/index.js')
+    let clock = Date.parse('2026-01-01T00:00:00.000Z')
+    const db = (await createClient({ db: ':memory:', schema: HEARD, now: () => new Date(clock) })) as any
+    const sys = db.asSystem()
+    const tokyo = await sys.site.create({ data: { name: 'tokyo', timeZone: 'Asia/Tokyo' } })
+    const s = await sys.shift.create({ data: { employeeId: 1, siteId: tokyo.id, onDate: '2026-07-01', startLocal: '10:00', endLocal: '12:00' } })
+    const kept = await sys.shift.create({ data: { employeeId: 2, siteId: tokyo.id, onDate: '2026-07-01', startLocal: '10:00', endLocal: '12:00' } })
+    await tick()
+    const events: any[] = []
+    db.$tapEvents((e: any) => { events.push(e) })
+    clock = Date.parse('2026-02-01T00:00:00.000Z')
+    await sys.site[verb]({ where: { id: tokyo.id }, data: { timeZone: 'Europe/London' } })
+    await tick()
+    const lines = (await sys.auditRow.findMany({ where: { operation: 'update', model: 'Shift' } }))
+    return { db, s, kept, events, lines, after: await sys.shift.findUnique({ where: { id: s.id } }) }
+  }
+
+  for (const verb of ['update', 'updateMany'] as const) {
+    test(`${verb}() — each moved child is stamped, announced and trailed`, async () => {
+      const { db, s, kept, events, lines, after } = await heard(verb)
+      expect(after.startsAt).toBe('2026-07-01T09:00:00.000Z')
+      expect(after.updatedAt).toBe('2026-02-01T00:00:00.000Z')
+      const shiftEvents = events.filter(e => e.model === 'Shift' && e.operation === 'update' && e.scope === 'row')
+      expect(shiftEvents.map(e => e.result.id).sort()).toEqual([s.id, kept.id].sort())
+      expect(shiftEvents.find(e => e.result.id === s.id).result.startsAt).toBe('2026-07-01T09:00:00.000Z')
+      const line = lines.find((l: any) => Number(l.recordId) === s.id)
+      expect(line?.before?.startsAt).toBe('2026-07-01T01:00:00.000Z')
+      expect(line?.after?.startsAt).toBe('2026-07-01T09:00:00.000Z')
+      db.$close()
+    })
+  }
+})

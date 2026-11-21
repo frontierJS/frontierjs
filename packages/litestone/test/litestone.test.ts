@@ -10254,11 +10254,11 @@ describe('fileUrl()', () => {
 describe('fileUrls() helper', () => {
   const makeRef = (key: string) => JSON.stringify({
     key, bucket: 'test', provider: 'local',
-    endpoint: 'https://cdn.example.com', size: 100, mime: 'image/png', uploadedAt: new Date().toISOString()
+    endpoint: 'https://cdn.example.com', size: 100, type: 'image/png', uploadedAt: new Date().toISOString()
   })
   const makeRefs = (...keys: string[]) => JSON.stringify(
     keys.map(key => ({ key, bucket: 'test', provider: 'local',
-      endpoint: 'https://cdn.example.com', size: 100, mime: 'image/png', uploadedAt: new Date().toISOString() }))
+      endpoint: 'https://cdn.example.com', size: 100, type: 'image/png', uploadedAt: new Date().toISOString() }))
   )
 
   test('returns empty array for null', () => {
@@ -10283,7 +10283,7 @@ describe('fileUrls() helper', () => {
   })
 
   test('filters out null entries', () => {
-    const arr = JSON.stringify([null, { key: 'x.png', bucket: 'b', provider: 'local', endpoint: 'https://e.com', size: 1, mime: 'image/png', uploadedAt: '' }])
+    const arr = JSON.stringify([null, { key: 'x.png', bucket: 'b', provider: 'local', endpoint: 'https://e.com', size: 1, type: 'image/png', uploadedAt: '' }])
     const urls = fileUrls(arr)
     expect(urls.length).toBe(1)
   })
@@ -23269,7 +23269,7 @@ describe('@default(fieldName)', () => {
       { id: 1, title: 'Hello World!' },
       { id: 2, title: 'Two', slug: 'Custom Slug' },
     ] })
-    await db.post.upsertMany({ data: [{ id: 3, title: 'Third One' }], conflict: 'id' })
+    await db.post.upsertMany({ data: [{ id: 3, title: 'Third One' }], conflictTarget: ['id'] })
     const rows = await db.post.findMany({ orderBy: { id: 'asc' } })
     expect(rows.map((r: any) => r.slug)).toEqual(['hello-world', 'custom-slug', 'third-one'])
     db.$close()

@@ -23,9 +23,16 @@
 //           change the parent
 //   delete  any of: an owner/author link, or whoever may change the parent
 //
-// A container's update is its members holding a role `roles.update` names,
-// and its membership's writes delegate to that update; with no such role the
-// membership's writes are the application's.
+// A container's update is its members holding a role `roles.update` names.
+// Its membership's writes name those same roles directly, so a child may
+// widen its own writes without opening the membership's; with no such role
+// the membership's writes are the application's.
+//
+// A child that says `roles: { update, delete }` swaps "whoever may change the
+// parent" for the members of that parent holding one of the roles, for that
+// op alone; its owner/author terms stay. `by: [role]` on a lifecycle move is
+// the same member test as that move's own @allow. Both are one relation hop
+// then `.some`, the deepest shape litestone takes.
 //
 // An op nobody holds is raised to gate 8 rather than left at a signed-in
 // level with no policy, which is the shape that read every tenant's rows in
@@ -83,7 +90,8 @@ function emitPlan(plan) {
   const backs = backFields(plan.models)
   const currency = plan.currency
   const declares = declarers(plan.models)
-  const access = accessTable(plan.models, backs)
+  const roleTerm = memberTest(plan.models, backs)
+  const access = accessTable(plan.models, backs, roleTerm)
   const out = []
 
   out.push('// ─── Oracle ' + '─'.repeat(WIDTH - 11))
@@ -111,7 +119,7 @@ function emitPlan(plan) {
 
   for (const m of plan.models) {
     out.push('')
-    out.push(...emitModel(m, backs.get(m.name) ?? [], access.get(m.name), currency, declares))
+    out.push(...emitModel(m, backs.get(m.name) ?? [], access.get(m.name), currency, declares, roleTerm))
   }
   return `${out.join('\n')}\n`
 }
@@ -189,8 +197,9 @@ function declarers(models) {
  * @param {import('./answer.js').Model} m
  * @param {string[]} currency  the answer's codes; a row with money picks one when there are several
  * @param {Map<string, { scope: string|null }>} declares  each declaring entity, and the parent its keys are unique under
+ * @param {(m: import('./answer.js').Model, roles: string[]) => string} roleTerm
  */
-function emitModel(m, backs, access, currency, declares) {
+function emitModel(m, backs, access, currency, declares, roleTerm) {
   const out = []
   const enums = []
   /** @type {[string, string, string][]} */
@@ -292,7 +301,7 @@ function emitModel(m, backs, access, currency, declares) {
   if (declares.has(m.name)) attrs.push(`@@unique([${declares.get(m.name).scope ?? 'model'}, key])`)
 
   attrs.push(`@@gate(${access.gate.join('.')})`)
-  if (m.lifecycle) attrs.push(transitions(m.lifecycle))
+  if (m.lifecycle) attrs.push(transitions(m, roleTerm))
   const rules = [...access.policies, ...access.gateOnly]
   const opWidth = Math.max(0, ...rules.map(([op]) => op.length + 1))
   for (const [op, expr] of rules) attrs.push(`@@allow(${`${op},`.padEnd(opWidth)} ${expr})`)
@@ -318,15 +327,30 @@ function labelField(m) {
   return pick ?? m.fields.find(f => f.required && ['text', 'email', 'slug'].includes(f.type))?.name ?? null
 }
 
-function transitions(life) {
+function transitions(m, roleTerm) {
+  const life = m.lifecycle
   const moves = life.moves.map(mv => {
     const from = mv.from.length === 1 ? mv.from[0] : `[${mv.from.join(', ')}]`
-    return `${mv.name}: ${from} -> ${mv.to}${mv.by === 'system' ? ' @system' : ''}`
+    return `${mv.name}: ${from} -> ${mv.to}${mv.by === 'system' ? ' @system' : ''}${mv.roles ? ` @allow(${roleTerm(m, mv.roles)})` : ''}`
   })
   return `@@transitions(${life.field},\n${moves.map((s, i) => `  ${s}${i < moves.length - 1 ? ',' : ')'}`).join('\n')}`
 }
 
 // ─── access ───────────────────────────────────────────────────────────────────
+
+// `<link>.<list>.some(<user>Id == auth().id && role == 'a')`: the caller holds
+// one of `roles` in the container this row reaches. The link is the one hop
+// litestone allows ahead of `.some`, and the list is the container's own
+// back-relation to its membership, whose name the emitter picks.
+function memberTest(models, backs) {
+  const byName = new Map(models.map(m => [m.name, m]))
+  return (m, roles) => {
+    const c = byName.get(m.reach.container)
+    const list = backs.get(c.name).find(b => b.source === c.members.model && b.link === c.members.link).name
+    const test = roles.length > 1 ? `(${roles.map(r => `role == '${r}'`).join(' || ')})` : `role == '${roles[0]}'`
+    return `${m.reach.link ? `${m.reach.link}.` : ''}${list}.some(${c.members.user}Id == auth().id && ${test})`
+  }
+}
 
 const OPS = ['read', 'create', 'update', 'delete']
 const SYSTEM_CLAIM = 'auth().isSystem'
@@ -342,13 +366,14 @@ const movesBySystem = (m) => !!m.lifecycle?.moves.some(mv => mv.by === 'system')
  *
  * @param {import('./answer.js').Model[]} models
  * @param {Map<string, { name: string, source: string, link: string }[]>} backs
+ * @param {(m: import('./answer.js').Model, roles: string[]) => string} roleTerm
  */
-function accessTable(models, backs) {
+function accessTable(models, backs, roleTerm) {
   const byName = new Map(models.map(m => [m.name, m]))
   /** @type {Map<string, { gate: number[], policies: [string, string][], gateOnly: [string, string][] }>} */
   const memo = new Map()
   const of = (name) => {
-    if (!memo.has(name)) memo.set(name, accessFor(byName.get(name), of, backs.get(name) ?? []))
+    if (!memo.has(name)) memo.set(name, accessFor(byName.get(name), of, backs.get(name) ?? [], roleTerm))
     return memo.get(name)
   }
   for (const m of models) of(m.name)
@@ -359,9 +384,10 @@ function accessTable(models, backs) {
  * @param {import('./answer.js').Model} m
  * @param {(name: string) => { gate: number[], policies: [string, string][] }} of
  * @param {{ name: string, source: string, link: string }[]} backs  this model's back-relation lists
+ * @param {(m: import('./answer.js').Model, roles: string[]) => string} roleTerm
  * @returns {{ gate: number[], policies: [string, string][], gateOnly: [string, string][] }}
  */
-function accessFor(m, of, backs) {
+function accessFor(m, of, backs, roleTerm) {
   const a = m.access
   const pub = a.public ?? []
 
@@ -382,11 +408,12 @@ function accessFor(m, of, backs) {
   let createParent = null
 
   if (m.container) {
-    // A membership row: its person reads it, and whoever administers the
-    // container decides who is in it. With no administering role there is
-    // nobody to delegate to, and the writes are the application's.
+    // A membership row: its person reads it, and the members holding an
+    // administering role decide who is in it, named here and not delegated to
+    // the container's update so that a child widening its own writes cannot
+    // widen these. With no administering role the writes are the application's.
     const c = m.container
-    const change = c.admins ? delegate(c.link, changeOp(c.model)) : []
+    const change = c.admins ? [roleTerm(m, c.admins)] : []
     terms.read = [`${c.user}Id == auth().id`, ...reader(c.link, c.model)]
     terms.create = [...change]
     terms.update = [...change]
@@ -395,26 +422,25 @@ function accessFor(m, of, backs) {
     terms.create = self('create')
     if (a.via) {
       const parent = m.links.find(l => l.name === a.via).to
-      const change = delegate(a.via, changeOp(parent))
+      // A role list is the member test in place of the parent's own update rule.
+      const delegated = delegate(a.via, changeOp(parent))
+      const by = (op) => m.opRoles[op] ? [roleTerm(m, m.opRoles[op])] : delegated
       terms.read.push(...reader(a.via, parent))
       // A caller who names themselves may file under a parent they only read
       // publicly, as a buyer orders from a published shop; a row naming nobody
       // is filed only by those who reach the parent's private rows.
       const into = terms.create.length ? 'read' : readOp(parent)
       if (into) createParent = `check(${a.via}, '${into}')`
-      terms.update.push(...change)
-      terms.delete.push(...change)
+      terms.update.push(...by('update'))
+      terms.delete.push(...by('delete'))
     }
     // A member reads the container, and a member holding an administering
-    // role changes it. The membership's writes delegate to this update, so a
-    // member test with no role in it let any member re-role themselves admin.
+    // role changes it. A member test with no role in it let any member
+    // re-role themselves admin.
     if (m.members) {
       const list = backs.find(b => b.source === m.members.model && b.link === m.members.link).name
-      const id = `${m.members.user}Id == auth().id`
-      const roles = (m.members.admins ?? []).map(r => `role == '${r}'`)
-      const role = roles.length > 1 ? ` && (${roles.join(' || ')})` : roles.length ? ` && ${roles[0]}` : ''
-      terms.read.push(`${list}.some(${id})`)
-      terms.update.push(`${list}.some(${id}${role})`)
+      terms.read.push(`${list}.some(${m.members.user}Id == auth().id)`)
+      terms.update.push(m.members.admins ? roleTerm(m, m.members.admins) : `${list}.some(${m.members.user}Id == auth().id)`)
     }
     // One term, every entry holding: checkAnswer's finding reads the entries
     // with *and*, and that sentence is what the person approves. Under a
@@ -476,7 +502,7 @@ function accessFor(m, of, backs) {
   // postUpdate grades where it lands: the create's parent rule there, and the
   // update's own.
   const update = updateBase ?? policies.find(([op]) => op === 'update')?.[1]
-  if (update && (a.via || m.container) && (createParent || update.includes('check('))) {
+  if (update && (a.via || m.container) && (createParent || update.includes('check(') || update.includes('.some('))) {
     const lands = createParent && !update.includes(`check(${a.via},`) ? `${createParent} && (${update})` : update
     // The system principal is not asked to read the parent it moves a row under.
     policies.push(['postUpdate', updateBase ? `${lands} || ${SYSTEM_CLAIM}` : lands])

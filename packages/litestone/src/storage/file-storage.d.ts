@@ -51,7 +51,7 @@ declare class FileStoragePlugin extends ExternalRefPlugin {
         endpoint: any;
         size: any;
         sha256: string;
-        mime: any;
+        type: any;
         uploadedAt: string;
         name?: any;
         key: string;

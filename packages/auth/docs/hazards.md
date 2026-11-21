@@ -35,7 +35,7 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   where TOTP is live), and `services.ts`'s `fresh()` asks the provider's
   `requireReauthenticated` before the seven: `changePassword`,
   `requestEmailChange`, `setupTotp`, `disableTotp`, `regenerateRecoveryCodes`,
-  `api-keys.create`, `connections.remove`. A new method that changes how the
+  `apiKeys.create`, `connections.remove`. A new method that changes how the
   account signs in calls `fresh(user)` after `refuseDelegated`, or it is a
   door the window does not cover. `reauthenticate` and `confirmTotp` are the two
   that check a secret, and they share one rate-limit bucket (`limitGuesses`).
@@ -162,7 +162,7 @@ Every hazard in this package, the full `What bites here`; `CLAUDE.md` keeps the 
   kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
 - **A handoff code is a `handoff` Credential storing the HMAC of code and PKCE challenge together** (`FJS-D1357`), so a wrong verifier finds no row. `redeemHandoff` spends it by delete and answers who, the audience and the scopes; the app mints what it grants. The hourly sweep clears lapsed ones by `tokenExpiresAt`, since Credential declares no window (`test/expiry.test.ts` § a handoff code).
 - **`Credential (type, value)` is unique for every type except the four whose `value` is not an identity** (`FJS-2658`): `password`, `totp`, `totpPending`, `recoveryCode`, listed in `auth.lite`'s partial `@@unique` because `.lite` has no prefix test to say `oauth:`. **A new credential type whose `value` is a hash or a secret joins that list** or two users holding it are refused. `oauthResolve` treats the refusal as a lost race and re-reads branch 1.
-- **`account-recovery` is the one service that takes somebody else's id, and its
+- **`accountRecovery` is the one service that takes somebody else's id, and its
   floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with
   `services.standingLevel`, else `services.level`, and refuses without one or on
   any answer that is not a finite number (`FJS-D550`) — `level` alone is also

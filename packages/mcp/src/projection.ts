@@ -98,6 +98,8 @@ export interface ServiceShape {
    * refuses.
    */
   methodGates?: Record<string, number>
+  /** The methods declared `stream: true` — `describe().streamMethods` (`FJS-D1031`). */
+  streamMethods?: string[]
 }
 
 // ─── what it answers ──────────────────────────────────────────────────────────
@@ -147,6 +149,12 @@ export interface Tool {
    * accepts anything, which is a claim, where null is the absence of one.
    */
   input:   ToolInput
+  /**
+   * The method answers in frames. The call still answers once, with the last
+   * frame (`FJS-D853`), so an agent told nothing reads that frame as the whole
+   * of an ordinary answer.
+   */
+  stream?: true
 }
 
 export type InputSource =
@@ -636,6 +644,7 @@ export function projectTools(
       // category — `revenue`, `shopfront` — and not an error.
       const ident = {
         name: toolName(svc.name, method), service: svc.name, method, model,
+        ...(svc.streamMethods?.includes(method) ? { stream: true as const } : {}),
       }
 
       if (CRUD.has(method) && !model) {

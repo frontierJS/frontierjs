@@ -262,7 +262,7 @@ export interface FileRef {
   size:       number
   /** SHA-256 of the stored bytes, lowercase hex, taken in the pass that wrote them. */
   sha256:     string
-  mime:       string
+  type:       string
   uploadedAt: string
 }
 

@@ -545,11 +545,12 @@ same transport rule as CRUD: the browser client sends it over the WebSocket when
 one is connected (a `service_call` frame naming the method, no URL involved), and
 falls back to HTTP otherwise. The HTTP form calls the service's own URL with
 `X-Service-Method`, which keeps the URL space flat and stops a method name from
-colliding with a record id:
+colliding with a record id. The id is the path's, never the body's: the body is
+`ctx.data`, and an `id` key in it leaves `ctx.id` null.
 
 ```bash
-curl -X POST http://localhost:3000/servers \
-  -H 'x-service-method: reboot' -H 'content-type: application/json' -d '{"id":1}'
+curl -X POST http://localhost:3000/servers/1 \
+  -H 'x-service-method: reboot' -H 'content-type: application/json' -d '{}'
 ```
 
 There is no `POST /servers/1/reboot` route — that 404s. CRUD names are blocked
@@ -774,8 +775,11 @@ Three answers no app registers:
 
 A route registered with `router.head(...)` or `router.options(...)` wins over
 either fallback, which is how `cors()`'s `OPTIONS /*` keeps every preflight.
-`Allow` lists the methods of THAT path, so a read-only resource does not
-advertise a `POST` it does not have.
+`Allow` lists the methods the router holds for THAT path. A service's
+`/{service}` and `/{service}/{id}` are registered for every verb, so `OPTIONS`
+on one lists them all, read-only or not; a verb the service does not offer is
+the service's own `405`, naming the methods it does (`Service 'audit' does not
+offer 'remove' (allowed: find)`).
 
 ---
 
@@ -1078,7 +1082,7 @@ createService({
   "errors": [ { "data": { "id": 2 }, "error": { "name": "TransitionViolationError", "message": "…" } } ] }
 ```
 
-Row by row rather than one `UPDATE` because that is what applies the schema. Litestone skips `@@transitions` on `updateMany` and bumps `@version` without requiring it, so a single `UPDATE` walks past a state machine that refuses the same move by id. What follows from the loop:
+Row by row rather than one `UPDATE` because that is what applies the schema. Litestone's `updateMany` refuses a `@@transitions` column outright (`BulkTransitionError`, a 400: a bulk write reads no from-state to grade), and bumps `@version` without requiring it. A loop of single-row updates grades each row's move and checks each row's version. A compare-and-set claim on a status column is not an `updateMany` filtered on the status. It is `db.<model>.transition(id, '<move>')`, whose from-state sits in the `UPDATE`'s `WHERE`, so a second claimer gets a `TransitionConflictError`. What follows from the loop:
 
 - **`bulkMax` refuses before it writes.** One statement per row means an unbounded filter is unbounded work under SQLite's single write lock. Over the cap the call is a 400 naming the count. An array create takes the same cap: more rows than `bulkMax` in one POST is refused before the first is written. It runs as one transaction with a savepoint per row, so a failed row rolls back alone and the POST pays one commit, while every other writer waits for the whole array.
 - **Only rows the caller can read are touched.** Selecting the targets applies the read policy; the write applies the update/delete one.
@@ -1113,7 +1117,7 @@ Row by row rather than one `UPDATE` because that is what applies the schema. Lit
 | `http.ws.maxConnectionsPerIp` | `number` | `256` | refused at the upgrade with a 503, so the caller reads a status rather than a close code. 0 is unlimited |
 | `http.ws.maxConnections` | `number` | `0` | total sockets. Unlimited by default — only an operator knows what the box holds |
 | `http.ws.reverifySeconds` | `number` | `60` | seconds a socket that sends nothing keeps its principal before `verifySession` is asked again; every frame asks it anyway. A session gone closes the app's socket 4001, a changed principal closes 1001 and the reconnect re-resolves it. `0` asks only on a frame (`FJS-D1201`) |
-| `cache.defaultTtl` | `string` | `'5 minutes'` | default cache entry TTL |
+| `cache.defaultTtl` | `string` | `'5 minutes'` | default entry TTL of `app.cache`. A service's `cache: true` does not read it: it keeps 30 seconds |
 
 ### Where the services are
 
@@ -1244,13 +1248,15 @@ await app.stop()
 ```
 
 A raw route holds `ctx.user` and no client. The schema still decides who may
-read and write (Invariant 6): read through the caller's own scoped client, and
-ask a write the route makes outside a table method with `$checkWrite`, which
-grades `@@allow` and the gate without writing.
+read and write (Invariant 6): read through the client `app.principalFor(ctx)`
+scopes to the caller, claims included and typed as `$.db` is, and ask a write
+the route makes outside a table method with `$checkWrite`, which grades
+`@@allow` and the gate without writing. A client scoped by hand with
+`$setAuth(ctx.user)` lacks the claims the app's `principal` resolver adds.
 
 ```ts
 app.post('/{owner}/{repo}.git/git-receive-pack', async (ctx) => {
-  const db   = ctx.app.db.$setAuth(ctx.user ?? null)
+  const { db } = await ctx.app.principalFor(ctx)
   const repo = await db.repository.findFirst({ where: { slug: ctx.route.repo } })
   if (!repo) return ctx.json({ message: 'Not Found' }, 404)
   if (!(await db.$checkWrite('repository', 'update', repo)).ok) return ctx.json({ message: 'Forbidden' }, 403)
@@ -1445,7 +1451,7 @@ const Loose = createSchema({ name: v.required.string() }, { passthrough: true })
 
 ## Service caching
 
-Add `cache: true` to any service to automatically cache `find` and `get` responses. Writes (`create`, `patch`, `remove`) bust the cache for that service automatically.
+Add `cache: true` to any service to automatically cache `find` and `get` responses for 30 seconds — a fixed default, not `cache.defaultTtl`, which is `app.cache`'s. Writes (`create`, `patch`, `remove`) bust the cache for that service automatically.
 
 ```typescript
 createService({
@@ -1661,9 +1667,11 @@ GET /search?q=quasar&models=issue       a subset; a model outside the mount is a
 GET /search?q=quasar&$limit=8           the limit is spent only on rows the caller may read
 ```
 
-A hit is `{ model, id, title, sub, _rank, _snippet }`, unchanged from
+It is a `find`, so over HTTP it answers the list envelope —
+`{ kind: 'list', object: 'search', data: [...hits], errors: [] }` — not a bare
+array. A hit is `{ model, id, title, sub, _rank, _snippet }`, unchanged from
 `$search`. The grade is the caller's client, so a hit is never a row the caller
-may not read. An empty `q` answers `[]`, the last word is a prefix, and a query
+may not read. An empty `q` answers an empty `data`, the last word is a prefix, and a query
 key other than `q` and `models` is refused by name. Each mounted model declares
 `@@fts` and `@@label`; one that does not fails on the first call with
 litestone's own refusal. `name:` moves the route from `/search`.
@@ -1867,7 +1875,7 @@ does.
   from-state is part of what `due()` asks, so with two unpaid invoices the older
   one lapses the subscription and the later one's fire is `lapsed`, not failed.
 - **The move is made as the app, not through `asSystem()`.** `asSystem()`
-  bypasses `@@transitions` whole, from-state lock included, so the fire uses the
+  lifts every move's `@gate` and `@system` marker (`FJS-D502`), so the fire uses the
   client a job gets — scoped to `createApp({ system })` — with
   `{ system: true }`, which unlocks an `@system` move and nothing else. A gate
   the app's principal does not clear FAILS the fire, loudly, and the queue
@@ -2074,7 +2082,7 @@ app.configure(openapi({
   schemas: { notes: { create: { body: CreateNoteSchema } } },
 }))
 // GET /openapi.json  — machine-readable spec
-// GET /docs          — Swagger UI (CDN, no extra deps)
+// GET /docs          — Scalar API reference (pinned CDN script, no extra deps)
 ```
 
 The generator respects `config.apiPrefix` — if your routes live at `/api/v2`, the spec paths will too. The default endpoint also moves: `/api/v2/openapi.json`.
@@ -2243,6 +2251,11 @@ app.scheduler.every('5 minutes', async () => { /* cleanup */ })
 app.scheduler.cron('0 2 * * *',  async () => { /* backup */ })
 app.scheduler.once('30 seconds', async () => { /* warmup */ })
 ```
+
+**A registered job is held until `app.scheduler.arm()`.** A serving `app.start()`
+arms it in its `work` phase, so a job ticks only in a process that serves; a
+one-shot process, a read-only copy and a test never tick unless they call
+`app.scheduler.arm()` themselves.
 
 ---
 
@@ -2577,9 +2590,13 @@ Send from anywhere you have `app`:
 ```typescript
 import { mail } from '@frontierjs/junction/mail'
 
-// A mailer is `{ send, batch }`; this one keeps what it is handed, as a test's does
+// A mailer is `{ send, batch }`; this one keeps what it is handed, as a test's does.
+// `SendResult` requires `messageId`, the id a reply's In-Reply-To names
 const outbox = []
-const send   = async (m) => { outbox.push(m); return { id: String(outbox.length), message: 'queued' } }
+const send   = async (m) => {
+  outbox.push(m)
+  return { id: String(outbox.length), messageId: `<${outbox.length}@test>`, message: 'queued' }
+}
 app.configure(mail({ mailer: { send, batch: ms => Promise.all(ms.map(send)) } }))
 
 await app.mail.send({
@@ -2812,7 +2829,8 @@ app.configure(conduit({
   management: { hooks: { before: { all: [authenticate] } } },
 }))
 
-// Send from anywhere — hooks, services, routes
+// Send from anywhere — hooks, services, routes. `targets` are written to the
+// store in the plugin's boot(), so a send before the app starts finds no target
 const result = await app.conduit.send({
   target: 'provider:hetzner',
   method: 'GET',

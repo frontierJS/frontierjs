@@ -2796,7 +2796,7 @@ export function makeRootEvent(root) {
       // Event delegation will be a no-op. The compiler should call makeRootEvent
       // before returning $dom from the init function to avoid this.
       console.warn(
-        '@frontierjs/mesa-runtime makeRootEvent(): fragment has no children — was it already inserted? Pass an explicit node array instead.'
+        '[Mesa] makeRootEvent(): fragment has no children — was it already inserted? Pass an explicit node array instead.'
       )
     }
     while (n) {
@@ -3437,7 +3437,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         'Use the Mesa SSR compiler target.'
     )
   if (!anchor) {
-    console.warn('@frontierjs/mesa-runtime $$eachBlock(): anchor is null — check compiled output')
+    console.warn('[Mesa] $$eachBlock(): anchor is null — check compiled output')
     return
   }
 
@@ -3915,7 +3915,7 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
         'Use the Mesa SSR compiler target.'
     )
   if (!anchor) {
-    console.warn('@frontierjs/mesa-runtime ifBlock(): anchor is null — check compiled output')
+    console.warn('[Mesa] ifBlock(): anchor is null — check compiled output')
     return
   }
   const withContext = captureContext()

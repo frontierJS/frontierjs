@@ -14,7 +14,7 @@ import { parse, inlineImportsFromDisk } from './core/parser.js'
 import { modelToAccessor }          from './core/ddl.js'
 import { createClient } from './core/client.js'
 import { cloneInto }                from './testdb.js'
-import { parseGateString, GatePlugin }  from './plugins/gate.js'
+import { parseGateString, GatePlugin, isGatePlugin } from './plugins/gate.js'
 import { AccessDeniedError }        from './core/plugin.js'
 import { levelLabel, REACHABLE_LEVELS, deriveAccess, gateLadder, expectedVerdict } from './access.js'
 import { DEFAULT_MESSAGES, validateField } from './core/validate.js'
@@ -361,7 +361,7 @@ export async function createTestEnv(opts = {}) {
   // constructed and cannot be a property of a call.
   const clientAt = async (cache, n, parsed) => {
     if (!cache.has(n)) {
-      const others = (built.clientOpts.plugins ?? []).filter(p => !(p instanceof GatePlugin))
+      const others = (built.clientOpts.plugins ?? []).filter(p => !isGatePlugin(p))
       // Re-parsed rather than sharing the first client's AST: a plugin's
       // onInit may decorate the schema it is given, and two clients quietly
       // sharing one object is not a thing to find out later.

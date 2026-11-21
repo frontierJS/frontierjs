@@ -80,6 +80,6 @@ export default defineJob<BookCourier>({
     // exactly as for a person, which is what makes the annotation worth having.
     // `recordTracking` names the column on the write and keeps every other rule
     // (see api/services/orders.service.ts).
-    await ctx.app!.service('orders').call('recordTracking', orderId, { trackingCode })
+    await ctx.app.service('orders').call('recordTracking', orderId, { trackingCode })
   },
 })

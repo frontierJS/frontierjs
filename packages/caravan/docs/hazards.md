@@ -221,8 +221,8 @@ The full hazard catalog for `@frontierjs/caravan`, moved out of `CLAUDE.md`. The
   a provider with no `sessionFor`. Downgrading to STRANGER(0) is the hazard this
   removes and upgrading to `system` would be worse, so neither happens.
 - **Standalone Caravan has no `runAs` and no principal** — the handler is called
-  directly, `ctx.app` is `undefined` and `ctx.user` is `null`. That is the
-  one case a handler tests for.
+  directly, `ctx.user` is `null`, and reading `ctx.app` throws naming
+  `app.configure(caravan())` — it is typed present (`FJS-D1138`, `FJS-4373`).
 - `db.asSystem()` is still the wrong fix for any of this — a job carries its own
   `ctx.user`, and reaching past it means a write with no principal attributed.
   **The right route to the db is `ctx.app.withDb((db) => …)`** (`FJS-3089`): the

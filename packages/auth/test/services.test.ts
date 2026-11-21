@@ -483,6 +483,15 @@ describe('how the three are registered', () => {
     scoped.cleanup()
   })
 
+  test('every path in the README route table is a registered service', async () => {
+    // A path written in prose case 404s for the reader who copies it (FJS-4405).
+    const readme = await Bun.file(new URL('../README.md', import.meta.url)).text()
+    const table  = readme.slice(readme.indexOf('## Services'), readme.indexOf('`account` also answers'))
+    const roots  = [...table.matchAll(/^\| `[A-Z]+`\s*\| `\/([^/`]+)/gm)].map(m => m[1])
+    expect(roots.length).toBeGreaterThan(0)
+    expect(roots.filter(name => !app.services.has(name))).toEqual([])
+  })
+
   test('a name with a slash is refused where the stack points at the caller', () => {
     // Junction routes `{service}` as ONE path segment, so a slash registers
     // fine and then 404s forever with nothing saying why.

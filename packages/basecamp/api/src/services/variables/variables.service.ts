@@ -18,6 +18,7 @@ import { db, findScoped, getScoped, narrowPatch, changesNothing, ws } from '../.
 import type { ServiceContext } from '@frontierjs/junction'
 import { keyScope } from '../../domain/api-key/scopes.ts'
 import { formatDotenv, parseDotenv } from '../../domain/release/dotenv.ts'
+import { ntfyEditRefusal } from '../../push.ts'
 
 /**
  * before/create hook: an app's variable takes its app's environment, which the
@@ -53,6 +54,13 @@ function placeValue(data: Record<string, unknown>, secret: boolean) {
   if (!('value' in data)) return
   if (typeof data.value !== 'string') throw new BadRequest('value must be text')
   if (secret) { data.secretValue = data.value; delete data.value }
+}
+
+/** A value an App's container would exit on is refused here as its install
+ *  refused it, rather than restart-looping at the next release. */
+async function refuseUnstartable(appId: string | null, key: string, value: string | undefined) {
+  const refusal = await ntfyEditRefusal($.db, appId, key, value)
+  if (refusal) throw new BadRequest(refusal)
 }
 
 /**
@@ -148,6 +156,7 @@ export default createService({
     await guard(data as { environmentId: string; appId: string | null }, ctx)
     if (data.value === undefined) throw new BadRequest('value is required')
     placeValue(data, Boolean(data.isSecret))
+    await refuseUnstartable(data.appId as string | null, data.key as string, (data.secretValue ?? data.value) as string)
     return db().variable.create({ data })
   },
 
@@ -159,6 +168,8 @@ export default createService({
     const patch = narrowPatch($.data as Record<string, unknown>)
     placeValue(patch, row.isSecret)
     if (changesNothing(patch)) return row
+    if ('value' in patch || 'secretValue' in patch)
+      await refuseUnstartable(row.appId, row.key, (patch.secretValue ?? patch.value) as string)
     if (!('secretValue' in patch)) return db().variable.update({ where: { id: row.id }, data: patch })
     return rotate(row, patch)
   },
@@ -166,6 +177,7 @@ export default createService({
   async remove(ctx: ServiceContext) {
     const row = await getScoped('variable', 'Variable')
     await guard(row, ctx)
+    await refuseUnstartable(row.appId, row.key, undefined)
     // Gone rather than stamped, or the key stays held by a row nobody can see
     // and setting it again is a 409.
     await db().variable.delete({ where: { id: row.id }, withDeleted: true })

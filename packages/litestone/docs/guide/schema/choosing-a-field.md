@@ -39,4 +39,6 @@ if (l.amount !== 8 || flagged.length !== 1) throw new Error('unexpected row')
 
 Every no in the write column is a refusal that names the attribute.
 
+`@system` and `@guarded` are access rules, so a schema holding either refuses every model with no `@@gate`, `@@allow` or `@@deny` below `asSystem()`, the model carrying the column included. `@@gate(0)` on a model declares it public.
+
 **In depth:** [Modeling § Which feature makes this field?](../../modeling.md#which-feature-makes-this-field)

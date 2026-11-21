@@ -32,7 +32,7 @@ import { NotFound, BadRequest, BadGateway, Unauthorized, Forbidden, FrameworkErr
 import type { AppDb, MirrorForward } from './app.ts'
 import { fieldError } from './field-errors.ts'
 import { CRUD_METHODS } from './methods.ts'
-import type { ServiceContext, QueryDirectives } from './context.ts'
+import type { ServiceContext, QueryDirectives, CallDb } from './context.ts'
 import { clampPagination, pageBounds, type PageBounds } from './directives.ts'
 import { columnsUnmoved } from './write-narrowing.ts'
 import { coveredWrite, freezeUser, setPrincipal, requestMeta, currentCall, callDb, setCallDb, enterCall } from './context.ts'
@@ -4293,8 +4293,8 @@ export function withLitestoneDb(
 
 /** What a raw route is answered when it asks who its caller is. */
 export interface RawRouteCaller {
-  /** The client scoped to this caller, claims included. */
-  db:     unknown
+  /** The client scoped to this caller, claims included, typed as `$.db` is. */
+  db:     NonNullable<CallDb>
   /** Every claim the request proved, guest or session, as `heldClaims` reads them. */
   claims: PrincipalClaims
   /** The session with its claims merged, or `null` for a guest: a guest's
@@ -4351,7 +4351,7 @@ export async function resolveRawCaller(
   const call = enterCall(ctx, () => around(ctx, async () => { db = callDb(ctx); scoped(); await ended }))
   await Promise.race([reached, call])
   return {
-    db,
+    db:     db as RawRouteCaller['db'],
     claims: heldClaims(ctx),
     user:   (ctx.user ?? null) as RawRouteCaller['user'],
   }
@@ -4362,13 +4362,18 @@ export async function resolveRawCaller(
 // After every claim is merged, since `{ $auth: 'employeeId' }` usually names
 // one the schema reads off a row. Read off the principal the Data boundary
 // grades, so the token is what `auth().<claim>` is in a policy; a guest's are
-// the claims its request proved. Rewritten on `ctx.query` once, so a hook and
-// the method both read the value rather than the token.
+// the claims its request proved. Rewritten once, so a hook and the method both
+// read the value rather than the token. Every where a caller writes is
+// rewritten — `ctx.query`, an aggregate body's `where` and each `$count` where —
+// since one left out reaches `translateOps` and is refused as unresolved.
 function resolveCallerFilter(ctx: ServiceContext): void {
-  const query = ctx.query as Record<string, unknown> | undefined
-  if (!query || typeof query !== 'object') return
+  const isBag = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+  const query = isBag(ctx.query) ? ctx.query : undefined
+  const body  = ctx.method === 'aggregate' && isBag(ctx.data) ? ctx.data : undefined
+  const count = ctx.directives?.count
+  if (!query && !body && count == null) return
   const claims = ctx.user ? toDataPrincipal(ctx.user) as Record<string, unknown> : heldClaims(ctx)
-  const out = resolveCallerTokens(query, claims)
+  const out = resolveCallerTokens({ query, where: body?.where, count }, claims)
   if (!out.found) return
   if (out.malformed.length) throw new BadRequest(
     `${CALLER_TOKEN} names one claim: { ${CALLER_TOKEN}: 'employeeId' }, or ${CALLER_TOKEN}=employeeId on the wire. ` +
@@ -4384,7 +4389,10 @@ function resolveCallerFilter(ctx: ServiceContext): void {
     `to stand for. A claim with no value (no row behind 'claim … from') is refused rather than matched against NULL.`,
     out.unknown.map(n => ({ field: CALLER_TOKEN, message: `'${n}' is not a claim this caller holds` })),
   )
-  ctx.query = out.query
+  const resolved = out.query as { query?: Record<string, unknown>; where?: unknown; count?: QueryDirectives['count'] }
+  if (query) ctx.query = resolved.query!
+  if (body && 'where' in body) ctx.data = { ...body, where: resolved.where }
+  if (count != null) ctx.directives = { ...ctx.directives, count: resolved.count }
 }
 
 // Last, after every re-scope: a claim re-scopes from the ROOT client, so a

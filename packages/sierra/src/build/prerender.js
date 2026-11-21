@@ -353,6 +353,19 @@ export function documentParts({
 }
 
 /**
+ * Front-matter `robots:` as the page's own meta tag. The sitemap leaving a
+ * noindex page out tells a crawler that follows a link to it nothing, and
+ * site-kit's search index reads only the built page (FJS-4429). A `head()` that
+ * names robots answers per path, so it wins and the tag is not written twice.
+ */
+function robotsMeta(node, headMeta) {
+  const robots = node.meta?.robots ?? node.meta?.frontmatter?.robots
+  if (!robots) return []
+  if ([].concat(headMeta ?? []).some((m) => String(m?.name ?? '').toLowerCase() === 'robots')) return []
+  return [{ name: 'robots', content: String(robots) }]
+}
+
+/**
  * Wrap rendered body HTML in a document.
  *
  * Mesa's wrapPage() takes `css` as an href, which would mean coordinating an
@@ -680,7 +693,7 @@ export async function prerenderRoutes(opts) {
         bodyAttrs,
         head:    docHead,
         bodyEnd: docBodyEnd,
-        meta:    [].concat(docMeta ?? [], head?.meta ?? []),
+        meta:    [].concat(docMeta ?? [], robotsMeta(node, head?.meta), head?.meta ?? []),
         links:   [].concat(docLinks ?? [], head?.links ?? []),
         jsonLd:  [].concat(docJsonLd ?? [], head?.jsonLd ?? []),
         lang:   node.meta?.lang ?? lang,

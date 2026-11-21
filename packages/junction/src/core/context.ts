@@ -71,9 +71,10 @@ export interface ServiceContext {
    *
    * Structured, unprefixed, and the only thing the query builder reads. The
    * bridge fills this from `$limit`/`$offset`/`$orderBy`/`$select`/… on the
-   * wire; internal callers set it directly:
+   * wire; internal callers set it under `directives`, since a flat `{ limit }`
+   * in the second argument is not read and leaves this `{}`:
    *
-   *   app.service('posts').find({ status: 'open' }, { limit: 10 })
+   *   app.service('posts').find({ status: 'open' }, { directives: { limit: 10 } })
    *
    * Populated on every call — `{}` when the caller asked for nothing.
    */
@@ -453,11 +454,8 @@ export interface CallOptions {
   locals?: Partial<ServiceContextLocals>
 
   /**
-   * Result-shaping directives — limit, offset, orderBy, select, …
-   *
-   * Internal callers had no way to express these at all: CallOptions carried
-   * only user/transport/locals, and the `$`-prefixed spellings lived on the
-   * wire. `app.service('posts').find({}, { limit: 10 })` was simply ignored.
+   * Result-shaping directives — limit, offset, orderBy, select, … — the one
+   * way an internal caller states them: `find({}, { limit: 10 })` is ignored.
    */
   directives?: QueryDirectives
 

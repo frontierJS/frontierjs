@@ -108,7 +108,7 @@ export const RULES = {
   lifecycle:   `A lifecycle has two or more states, each move names states it declares, every state is reachable from the first, and move names are camelCase, unique, and none of ${MOVE_RESERVED.join(', ')}.`,
   access:      'Every entity names who reaches a row: an actor link to User, `via` a required link to a parent, a `members` entity, or `public`/`shared` with a reason. `shared` is a reason, or `{ reason, ops }` to hand every signed-in user those ops (always including `read`); a write op is refused on an entity under a tenant container.',
   members:     'A `members` entity has a required link back to the container and a link to User.',
-  roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container, decide who is in it and change the rows under it, and the person whose sign-up creates it holds the first. A container without it leaves its membership to the application, and that person holds the role column\'s default.',
+  roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container, decide who is in it and change the rows under it, and the person whose sign-up creates it holds the first. A container without it leaves its membership to the application, and that person holds the role column\'s default. An entity `via` such a container may say `roles: { update: [...], delete: [...] }` to limit that write to members holding one of those roles, in place of the container\'s own rule; it is the container itself in `via`, never a parent of a parent. A lifecycle move takes `by: "finance"` or `by: ["finance", "admin"]` for the same limit on that move alone; a move is never a key of `roles`.',
   pattern:     'A cited pattern is one the catalog lists.',
   rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field. Content moving from one entity into another is not carried yet: the answer says `risk: migration` with an `escape`, and asks in `open` whether the old values may go.',
   backfill:    'A field or link you add to an entity whose rows already exist says `backfill` with the value those rows take: a field `{ value }`, a constant of its type, and a link `{ first: true }`, the first row of the entity it links to. Never on a catalog field, beside `was`, or on a link to User.',
@@ -329,7 +329,7 @@ export function checkAnswer(answer) {
       fields, links, lifecycle: life, access: e.access ?? {}, patterns: e.patterns ?? [],
       softDelete: e.softDelete === true, fts: Array.isArray(fts) ? fts : [],
       extensible: typeof e.extensible === 'string' ? e.extensible : null, currency: money ? CURRENCY : null,
-      renames, backfills, members: null, container: null,
+      renames, backfills, members: null, container: null, reach: null, opRoles: {},
     })
   }
 
@@ -369,7 +369,7 @@ export function checkAnswer(answer) {
         mm.container = { model: m.name, link: back.name, user: user.name, admins }
         if (mm.access.public || mm.access.shared || mm.access.members) refuse('members', mm.name, `${mm.name} is the membership of ${m.name}, which decides who reads and changes it; it declares no public, shared or members of its own.`)
       }
-    } else if (a.roles != null) refuse('roles', at, '`roles` names the membership roles that administer a container, so it sits beside `members`.')
+    }
     const pub = a.public == null ? [] : a.public
     if (!Array.isArray(pub) || pub.some(op => !['read', 'create'].includes(op))) refuse('access', at, '`public` is a list of `read` and `create`.')
     if (a.shared != null) {
@@ -400,6 +400,31 @@ export function checkAnswer(answer) {
       }
     }
     if (a.system != null && typeof a.system !== 'boolean') refuse('access', at, '`system` is true when only the application writes the rows.')
+  }
+
+  // ── roles: which members reach a write, or a move ──
+  for (const m of models) {
+    const a = m.access
+    if (!a || typeof a !== 'object' || Array.isArray(a)) continue
+    m.reach = reachOf(m, byName)
+    if (a.members == null && a.roles != null) {
+      const at = m.name
+      const names = new Set(m.lifecycle?.moves.map(mv => mv.name))
+      if (m.container) refuse('roles', at, `${m.name} is the membership of ${m.container.model}: its writes belong to the roles in the container's \`roles.update\`, so it takes no \`roles\` of its own.`)
+      else if (typeof a.roles !== 'object' || Array.isArray(a.roles)) refuse('roles', at, '`roles` is `{ update: [...], delete: [...] }`: the membership roles that make that write.')
+      else for (const [op, list] of Object.entries(a.roles)) {
+        if (names.has(op)) refuse('roles', at, `\`roles.${op}\` names a lifecycle move, and a move's role goes on the move: \`by: "role"\` or \`by: ["role", ...]\` on ${op}.`)
+        else if (!ROLE_OPS.includes(op)) refuse('roles', at, `\`roles.${op}\` is not an op. \`roles\` is \`{ update: [...], delete: [...] }\`.`)
+        else if (!Array.isArray(list) || !list.length) refuse('roles', at, `\`roles.${op}\` lists one or more membership roles.`)
+        else {
+          const roles = grantable(m, list, `roles.${op}`, byName, refuse)
+          if (roles) m.opRoles[op] = roles
+        }
+      }
+    }
+    for (const mv of m.lifecycle?.moves ?? []) {
+      if (mv.roles) grantable(m, mv.roles, `${mv.name}'s \`by\``, byName, refuse, `${m.name}.${mv.name}`)
+    }
   }
   for (const m of models) {
     const a = m.access
@@ -449,6 +474,11 @@ export function checkAnswer(answer) {
       find('access', m.name, `${everyone}${clauses.length ? `, and ${who.size === 1 && who.has('an administrator') && held.length === 1 ? 'only ' : ''}${clauses.join(', and ')}` : ''}: ${a.shared}`)
     }
     if (a.system) find('access', m.name, `Only the application writes ${an(m.name)}.`)
+    const named = Object.keys(m.opRoles)
+    if (named.length === 1 && m.reach && !byName.get(m.reach.container).members.admins) {
+      const other = ROLE_OPS.find(op => op !== named[0])
+      find('access', m.name, `${m.name} limits ${named[0]} to ${m.opRoles[named[0]].join(' or ')}, and ${other} stays with whoever may change ${m.reach.container}: no role administers it, so that is every member who can read it. Say \`roles.${other}\` too if ${other} is a role's.`)
+    }
     if (m.members && !m.members.admins) find('access', m.name, `No member administers ${an(m.name)}: only the application adds, removes or re-roles ${m.members.model} rows${a.system ? ', and the person whose sign-up creates it holds the role column\'s default' : ''}. Say \`roles: { update: [...] }\` to name the roles that do.`)
   }
 
@@ -472,12 +502,14 @@ export function checkAnswer(answer) {
  *   fields: import('./catalog.js').Field[],
  *   links: { name: string, to: string, actor?: string, required: boolean, why?: string }[],
  *   lifecycle: import('./catalog.js').Lifecycle|null,
- *   access: { via?: string, members?: string, roles?: { update: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string|{ reason: string, ops: string[] }, sharedOps?: string[], system?: boolean, why?: string },
+ *   access: { via?: string, members?: string, roles?: { update?: string[], delete?: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string|{ reason: string, ops: string[] }, sharedOps?: string[], system?: boolean, why?: string },
  *   patterns: string[],
  *   softDelete: boolean, fts: string[], extensible: string|null, currency: string|null,
  *   renames: Operation[], backfills: Operation[],
  *   members: { model: string, link: string, user: string, admins: string[]|null }|null,
  *   container: { model: string, link: string, user: string, admins: string[]|null }|null,
+ *   reach: { link: string|null, container: string }|null,
+ *   opRoles: { update?: string[], delete?: string[] },
  * }} Model
  * A row-keeping operation `litestone migrate create` takes (`FJS-D603`).
  * `split` joins this union in the second pass (`FJS-D683`).
@@ -496,6 +528,41 @@ function tenanted(m, byName) {
     if (!cur.access.via) break
   }
   return false
+}
+
+const ROLE_OPS = ['update', 'delete']
+
+// The membership container a row's roles are tested against, and the one
+// relation hop to it: none on the container itself, the container link on
+// its membership, the `via` link on a child whose parent is the container.
+// litestone takes one to-one hop before `.some` and refuses a second.
+function reachOf(m, byName) {
+  if (m.members) return { link: null, container: m.name }
+  if (m.container) return { link: m.container.link, container: m.container.model }
+  const parent = byName.get(m.links.find(l => l.name === m.access.via)?.to)
+  return parent?.members ? { link: m.access.via, container: parent.name } : null
+}
+
+// The role names a write or a move may be limited to: values of the reached
+// container's membership `role` enum. `label` is what the answer said.
+function grantable(m, roles, label, byName, refuse, at = m.name) {
+  if (!m.reach) {
+    const ancestors = []
+    for (let cur = byName.get(m.links.find(l => l.name === m.access.via)?.to); cur && !ancestors.includes(cur.name); cur = byName.get(cur.links.find(l => l.name === cur.access.via)?.to)) {
+      ancestors.push(cur.name)
+      if (cur.members) { refuse('roles', at, `${label} names membership roles, and ${m.name} reaches ${cur.name}'s members through ${ancestors.slice(0, -1).join(' → ')}: more than one hop before the membership, which litestone refuses. Say \`via\` the container itself, or let ${m.name} delegate.`); return null }
+    }
+    refuse('roles', at, `${label} names membership roles, and ${m.name} reaches no membership container: it is not the container, its membership, or \`via\` an entity with \`members\`.`)
+    return null
+  }
+  const container = byName.get(m.reach.container)
+  const mm = byName.get(container.members.model)
+  const role = mm.fields.find(f => f.name === 'role' && f.type === 'enum')
+  if (!role) { refuse('roles', at, `${label} names values of ${mm.name}'s \`role\` enum, and ${mm.name} has no \`role\` enum field.`); return null }
+  if (roles.some(r => typeof r !== 'string')) { refuse('roles', at, `${label} lists role names.`); return null }
+  const unknown = roles.filter(v => !role.values?.includes(v))
+  if (unknown.length) { refuse('roles', at, `${label} names ${unknown.join(', ')}, which ${mm.name}'s \`role\` is not: it is one of ${role.values.join(', ')}.`); return null }
+  return [...new Set(roles)]
 }
 
 // The roles whose members administer a container, or null when the answer
@@ -537,8 +604,11 @@ function readLifecycle(raw, at, refuse) {
     const from = mv.from === '*' ? states.filter(s => s !== mv.to) : Array.isArray(mv.from) ? mv.from : [mv.from]
     for (const s of [...from, mv.to]) if (!states.includes(s)) refuse('lifecycle', mat, `\`${s}\` is not one of the states.`)
     if (from.includes(mv.to)) refuse('lifecycle', mat, `\`${mv.name}\` moves ${mv.to} to itself.`)
-    if (mv.by != null && mv.by !== 'system') refuse('lifecycle', mat, '`by` is `system` for a move the application makes, or absent.')
-    moves.push({ name: mv.name, from, to: mv.to, ...(mv.by === 'system' ? { by: 'system' } : {}) })
+    // A role is tested against the membership the row reaches, which only the
+    // access pass can see; here it is the shape that is graded.
+    const roles = typeof mv.by === 'string' ? [mv.by] : mv.by
+    if (mv.by != null && mv.by !== 'system' && (!Array.isArray(roles) || !roles.length || roles.some(r => typeof r !== 'string' || r === 'system'))) refuse('lifecycle', mat, '`by` is `system` for a move the application makes, a membership role or a list of roles for a move only those members make, or absent.')
+    moves.push({ name: mv.name, from, to: mv.to, ...(mv.by === 'system' ? { by: 'system' } : mv.by != null && Array.isArray(roles) ? { roles } : {}) })
   }
   if (!moves.length) refuse('lifecycle', at, 'A lifecycle declares its moves; states nobody moves between are an enum.')
   const reach = new Set([initial])

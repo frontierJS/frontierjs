@@ -94,15 +94,11 @@
   <!-- Testimonial -->
   <Section>
     <Spacer height={24} />
-    <Row>
-      <Column>
-        <Card>
-          <Review name="{reviewerName}" rating={5} avatarBg="#9fc612">
-            Switched from three tools to this one. The time savings alone paid for the annual plan in the first month.
-          </Review>
-        </Card>
-      </Column>
-    </Row>
+    <Card>
+      <Review name="{reviewerName}" rating={5} avatarBg="#9fc612">
+        Switched from three tools to this one. The time savings alone paid for the annual plan in the first month.
+      </Review>
+    </Card>
     <Spacer height={24} />
   </Section>
 

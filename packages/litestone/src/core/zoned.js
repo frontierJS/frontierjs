@@ -98,7 +98,7 @@ export function wallInstant(/** @type {any} */ date, /** @type {any} */ time, /*
 
 export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
   const { modelName, tableName } = shape
-  const { readDb, writeDb, col, buildWhereWithEncryption } = deps
+  const { readDb, writeDb, col, buildWhereWithEncryption, sinkFor } = deps
   const own     = shape.zoned ?? []
   const parents = shape.zonedParents ?? []
   const ownKeys = new Set(own.map((/** @type {any} */ z) => z.field))
@@ -177,31 +177,44 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
   }
 
   // Every child of these parents re-derived under the parent's zone as it now
-  // stands, written on the raw connection inside the parent's unit. Each child
-  // is handed to `note` so the exclusion grade sees its new range.
+  // stands, written inside the parent's unit. Each child is handed to `note` so
+  // the exclusion grade sees its new range. A moved child is a write to that
+  // child: its own table stamps `@updatedAt` here and, once the unit has let
+  // go, announces and trails the [before, after] answered per model — written
+  // raw and left at that, a live list of shifts never heard its instants move
+  // (FJS-4480).
   function recomputeZonedChildren(/** @type {any[]} */ keys, /** @type {(model: string, row: any) => void} */ note) {
+    /** @type {Map<string, any[]>} */ const moved = new Map()
     for (const e of parents) {
+      const sink  = sinkFor(e.child)
+      const stamp = sink?.stampSets([]) ?? []
       const on   = e.pairs.map((/** @type {any} */ [c, p]) => `_p.${quoteIdent(p)} = _c.${quoteIdent(c)}`).join(' AND ')
       const keyed = e.pairs.map((/** @type {any} */ [, p]) => `_p.${quoteIdent(p)} = ?`).join(' AND ')
       const read = writeDb.query(`SELECT _c.rowid AS "__rowid", _c.*, _p.${quoteIdent(e.zoneColumn)} AS "__zone" ` +
         `FROM ${quoteIdent(e.table)} _c JOIN ${quoteIdent(tableName)} _p ON ${on} WHERE ${keyed}`)
       for (const key of keys) {
         for (const child of read.all(...e.pairs.map((/** @type {any} */ [, p]) => key[p]))) {
+          const { __rowid, __zone, ...before } = child
           const sets = []
           const binds = []
           for (const f of e.fields) {
-            const value = wallInstant(child[f.dateColumn], child[f.timeColumn], child.__zone)
+            const value = wallInstant(child[f.dateColumn], child[f.timeColumn], __zone)
             if (value === child[f.column]) continue
             sets.push(`${quoteIdent(f.column)} = ?`)
             binds.push(value)
             child[f.column] = value
           }
           if (!sets.length) continue
-          writeDb.query(`UPDATE ${quoteIdent(e.table)} SET ${sets.join(', ')} WHERE rowid = ?`).run(...binds, child.__rowid)
+          const after = writeDb.query(`UPDATE ${quoteIdent(e.table)} SET ${[...sets, ...stamp].join(', ')} WHERE rowid = ? RETURNING *`)
+            .get(...binds, __rowid)
           note(e.child, child)
+          if (!sink) continue
+          if (!moved.has(e.child)) moved.set(e.child, [])
+          moved.get(e.child)?.push([before, after])
         }
       }
     }
+    return moved
   }
 
   return { refuseZonedWrite, deriveZoned, zoneTouched, zonedParentKeys, recomputeZonedChildren }

@@ -95,8 +95,6 @@ try {
   // The search index and the two visitor islands, bound by autoImport the way a
   // preset places them. A bare import of the package's .mesa as an island is
   // not used: Sierra resolves an island specifier as a path (prerender.js).
-  // `robots: noindex` in front-matter is Sierra's sitemap switch and writes no
-  // meta tag, so the page states its own, as a preset's head does.
   write(join(SITE, 'content/routes/guide.md'),
     ['---', 'render: static', 'title: Cleaning guide', '---', '',
       '<Search client:idle />', '<Toc client:idle />', '',
@@ -105,7 +103,7 @@ try {
       '### Ovens', '', 'Racks soak overnight.', '',
       '## Bathrooms', '', 'Grout is brushed.', ''].join('\n'))
   write(join(SITE, 'content/routes/private.md'),
-    ['---', 'render: static', 'robots: noindex', '---', '', '<meta name="robots" content="noindex">', '', '## Secret', '', 'Hidden zebra words.', ''].join('\n'))
+    ['---', 'render: static', 'robots: noindex', '---', '', '## Secret', '', 'Hidden zebra words.', ''].join('\n'))
 
   // SITE_EDITOR is set on both builds: a release ignores it, a preview carries the editor (FJS-D1357).
   const EDITOR = 'https://basecamp.test/sites/app-1/?draft=spring'

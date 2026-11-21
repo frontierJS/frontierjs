@@ -32,6 +32,7 @@ const files = {
   'src/routes/about.md': '---\ntitle: About\n---\n\nAbout.\n',
   'src/routes/secret.md': '---\ntitle: Secret\nstatus: draft\n---\n\nNot yet.\n',
   'src/routes/old-about.md': '---\ntitle: Old About\nredirect: /about/\n---\n\nThe old page.\n',
+  'src/routes/thanks.md': '---\ntitle: Thanks\nrobots: noindex\n---\n\nThank you.\n',
 }
 
 const calls = []
@@ -83,6 +84,21 @@ describe('a redirect is the host\'s, not a page', () => {
     expect(sitemap).not.toContain('/old-about/')
     expect(llms).toContain('[About](/about/)')
     expect(llms).not.toContain('/old-about/')
+  })
+})
+
+describe('a noindex page is published and says so', () => {
+  // The sitemap leaving it out tells a crawler nothing: one that follows a link
+  // indexes it, and site-kit's search index reads the meta from the built page
+  // (FJS-4429).
+  test('the page carries the robots meta and is not in sitemap.xml', async () => {
+    const html = await readFile(dist('thanks/index.html'), 'utf8')
+    expect(html).toContain('<meta name="robots" content="noindex">')
+    expect(await readFile(dist('sitemap.xml'), 'utf8')).not.toContain('/thanks/')
+  })
+
+  test('an indexed page carries no robots meta', async () => {
+    expect(await readFile(dist('about/index.html'), 'utf8')).not.toContain('name="robots"')
   })
 })
 

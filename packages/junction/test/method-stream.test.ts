@@ -15,6 +15,8 @@ import { createApp, createService, channels, defaultConfig } from '../index.ts'
 import { protect } from '../src/core/hooks-builtin.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import { Forbidden } from '../src/core/errors.ts'
+import { manifest } from '../src/plugins/manifest/index.ts'
+import { openapi } from '../src/plugins/openapi/index.ts'
 
 let app: any
 let url: string
@@ -40,6 +42,8 @@ beforeAll(async () => {
     config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 250 } },
   } as never)
   app.configure(channels(() => {}) as never)
+  app.configure(manifest({ devOnly: false }))
+  app.configure(openapi({ title: 'T', version: '1' }))
   app.services.register(createService({
     name:    'ticks',
     methods: [
@@ -173,5 +177,25 @@ describe('a wire that cannot stream, and what is refused', () => {
 
   test('a declared stream answering something else is refused by name', async () => {
     await expect(app.service('ticks').call('flat')).rejects.toThrow(/declares stream: true/)
+  })
+})
+
+// describe() carries the declaration; each projection a client is generated
+// from has to say it too, or a streaming method reads as an ordinary one
+// (`FJS-4456`).
+describe('the projections name the declaration', () => {
+
+  test('the manifest lists the streaming methods', async () => {
+    const man = await (await fetch(`${url}/manifest`)).json()
+    const svc = man.services.find((s: any) => s.name === 'ticks')
+    expect(svc.streamMethods).toEqual(['ticker', 'paced', 'refused', 'flat'])
+  })
+
+  test('OpenAPI answers the custom-method operation as an event stream too, naming which', async () => {
+    const spec  = await (await fetch(`${url}/openapi.json`)).json()
+    const op    = spec.paths['/ticks/{id}'].post
+    const sse   = op.responses['200'].content?.['text/event-stream']
+    expect(sse?.schema.oneOf.map((s: any) => s.title)).toEqual(['ticker', 'paced', 'refused', 'flat'])
+    expect(op.description).toContain('text/event-stream')
   })
 })

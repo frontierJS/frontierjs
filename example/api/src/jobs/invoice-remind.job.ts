@@ -23,6 +23,6 @@ export default defineJob<{ invoiceId: number }>({
     // wrong, and the move already records that it was owed.
     if (!invoice || invoice.status !== 'issued' || !invoice.customer) return
 
-    await ctx.app!.notify(asRecipient(invoice.customer), invoiceDue({ invoice, customer: invoice.customer }))
+    await ctx.app.notify(asRecipient(invoice.customer), invoiceDue({ invoice, customer: invoice.customer }))
   },
 })

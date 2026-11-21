@@ -58,6 +58,18 @@ src/brief.js     brief() → markdown for a model: the contract, the types, the
   That shape is what read every tenant's rows in the freehand run
   (fjs-prototypes/charter, Phase 1). `shared` and `public` are the only ways to
   ask for it, and each is a finding.
+- **A role is one relation hop then `.some`, and it replaces a delegation.**
+  `roles: { update, delete }` on an entity `via` its membership container,
+  and `by: <role>` on a move, emit `<via>.<list>.some(userId == auth().id &&
+  role == '…')` (`FJS-D2280`); litestone refuses a second hop, so a `via`
+  that reaches the container through another entity is refused. A role list
+  takes the place of `check(via, 'update')` for that op and sits beside the
+  owner/author terms; the op it does not name still delegates, so a
+  container no role administers leaves that op to every member who reads it
+  (a finding says so). A move is never a `roles` key: its role is `by`.
+- **A membership's writes name the administering roles directly** rather than
+  delegating to the container's update (`FJS-4144`), so a child that widens
+  its own writes does not widen who is in the container.
 - **The catalog's `links` are advice.** The emitter never adds one the answer
   did not declare; `brief()` shows them as *usual links*.
 - **`User` and `Notification` are reserved** — every scaffolded app declares

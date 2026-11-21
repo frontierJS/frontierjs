@@ -35,7 +35,8 @@
 export const holds = ['ports']
 
 import { spawn, execFileSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, realpathSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
@@ -60,10 +61,10 @@ const SITE_PORT = 7710
 
 const procs   = []
 const servers = []
-function start(cmd, args, name, cwd = ROOT) {
+function start(cmd, args, name, cwd = ROOT, env = {}) {
   const p = spawn(cmd, args, {
     cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
-    env: { ...process.env, ...TEST_SINK_ENV, API_PORT },
+    env: { ...process.env, ...TEST_SINK_ENV, API_PORT, ...env },
   })
   p.stdout.on('data', d => { if (process.env.DEBUG) process.stdout.write(`[${name}] ${d}`) })
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
@@ -119,8 +120,19 @@ execFileSync('bunx', ['jetty', 'build', '--root=extension', '--browser=chrome'],
              { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore',
                env: { ...process.env, FRONTIER_PUBLIC_API_URL: API } })
 
+// The harbor's socket is a cross-origin upgrade from `chrome-extension://<id>`,
+// which the API refuses with a 403 unless the origin is named (`FJS-D1207`).
+// Nothing reports it: the page sees close 1006, every call falls back to HTTP
+// and passes, and only a push never arrives (`FJS-4483`). Chrome derives an
+// unpacked extension's id from its real path — the first 16 bytes of its
+// SHA-256, each hex digit spelled a–p — so the origin is known before Chrome
+// starts, and the id `loadUnpacked` answers is checked against it below.
+const EXT_ID = [...createHash('sha256').update(realpathSync(DIST)).digest('hex').slice(0, 32)]
+  .map(h => String.fromCharCode(97 + parseInt(h, 16))).join('')
+
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
-start('bun', ['run', 'api/index.ts'], 'api')
+start('bun', ['run', 'api/index.ts'], 'api', ROOT,
+      { FRONTIER_CORS_ORIGINS: `chrome-extension://${EXT_ID}` })
 if (!await waitFor(`${API}/api/health`, 'the API')) { stopAll(); process.exit(1) }
 
 // Sierra's own static server — the one `bun run serve:site` runs and the one a
@@ -187,12 +199,12 @@ browser.on('Runtime.consoleAPICalled', (p) => {
 browser.on('Runtime.exceptionThrown', (p) =>
   pageErrors.push(p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text ?? ''))
 
-// The id is a hash of the absolute path, so it differs on every machine and
-// there is nothing to hardcode. This is the only thing that answers it.
+// The id differs on every machine, so there is nothing to hardcode.
 const extId = await send('Extensions.loadUnpacked', { path: resolve(DIST) })
   .then((r) => r?.id, (e) => { console.error(e.message); return null })
 check('the built extension loads unpacked, manifest and all', typeof extId === 'string' && extId.length === 32, true)
 if (!extId) { stopAll(); process.exit(1) }
+check('and its id is the one the API was told to admit a socket from', extId, EXT_ID)
 
 // ─── the harbor ────────────────────────────────────────────────────────────
 //

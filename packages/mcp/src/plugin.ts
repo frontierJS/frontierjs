@@ -268,6 +268,7 @@ function describeAll(app: App): ServiceShape[] {
       methods:     d.methods.filter(m => isMethodAllowed(svc, m, 'mcp')),
       inputs:      d.inputs,
       methodGates: d.methodGates,
+      streamMethods: d.streamMethods,
     })
   }
   return out
@@ -637,8 +638,11 @@ function describeTool(tool: Tool): string {
   const takes = tool.input.schema
     ? ''
     : ' The seed does not describe this method\'s argument.'
+  const frames = tool.stream
+    ? ' It answers in frames; this tool waits for them and returns the last.'
+    : ''
 
-  return `${what}${takes}`
+  return `${what}${takes}${frames}`
 }
 
 const VERB: Record<string, string> = {

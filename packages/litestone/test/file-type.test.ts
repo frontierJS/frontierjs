@@ -128,7 +128,7 @@ describe('@accept grades the bytes, not the name', () => {
   test('honest bytes still pass, which is the control', async () => {
     const { p, puts } = plugin()
     const ref = await save(p, 'avatar', upload(PNG, 'logo.png', 'image/png'))
-    expect(ref.mime).toBe('image/png')
+    expect(ref.type).toBe('image/png')
     expect(puts[0].contentType).toBe('image/png')
   })
 
@@ -137,7 +137,7 @@ describe('@accept grades the bytes, not the name', () => {
     // `image/*` accepts the SVG on its own terms — the point is that the
     // grading input changed, not that everything is now refused.
     const ref = await save(p, 'img', upload(SVG, 'logo.png', 'image/png'))
-    expect(ref.mime).toBe('image/svg+xml')
+    expect(ref.type).toBe('image/svg+xml')
   })
 })
 
@@ -153,15 +153,15 @@ describe('what is stored is the evidence, declared or not', () => {
     // evidence and storing a claim, and `contentType` is what a public bucket
     // serves under.
     const ref = await save(p, 'any', upload(SVG, 'logo.png', 'image/png'))
-    expect(ref.mime).toBe('image/svg+xml')
+    expect(ref.type).toBe('image/svg+xml')
     expect(puts[0].contentType).toBe('image/svg+xml')
   })
 
   test('the ref and the provider never disagree', async () => {
     const { p, puts } = plugin()
     const ref = await save(p, 'any', upload(PDF, 'anything.bin', 'application/octet-stream'))
-    expect(ref.mime).toBe(puts[0].contentType)
-    expect(ref.mime).toBe('application/pdf')
+    expect(ref.type).toBe(puts[0].contentType)
+    expect(ref.type).toBe('application/pdf')
   })
 
   test('raw bytes with no name at all are typed by what they are', async () => {
@@ -170,7 +170,7 @@ describe('what is stored is the evidence, declared or not', () => {
     // `application/octet-stream` always — and `@accept("image/png")` therefore
     // REFUSED a genuine PNG passed as bytes.
     const ref = await save(p, 'avatar', Buffer.from(PNG))
-    expect(ref.mime).toBe('image/png')
+    expect(ref.type).toBe('image/png')
     expect(puts[0].contentType).toBe('image/png')
   })
 })
@@ -185,7 +185,7 @@ describe('null is not a verdict', () => {
     // so a sniffer read as authoritative would refuse every .txt and .csv ever
     // uploaded — the failure mode of a check that treats *unknown* as *wrong*.
     const ref = await save(p, 'any', upload(TEXT, 'notes.txt', 'text/plain'))
-    expect(ref.mime).toBe('text/plain')
+    expect(ref.type).toBe('text/plain')
     expect(puts[0].contentType).toBe('text/plain')
   })
 
@@ -205,7 +205,7 @@ describe('null is not a verdict', () => {
   test('an unrecognized claim over unrecognized bytes is left alone', async () => {
     const { p } = plugin()
     const ref = await save(p, 'any', upload(TEXT, 'x.unknown', ''))
-    expect(ref.mime).toBe('application/octet-stream')
+    expect(ref.type).toBe('application/octet-stream')
   })
 })
 
@@ -215,12 +215,12 @@ describe('the key follows the type, so the ref and the URL cannot disagree', () 
 
   test('a mislabeled photograph is stored under the extension its bytes earn', async () => {
     // A static origin serves by extension and has no ref to read. Storing a PNG
-    // as `.txt` because that is what the upload was called leaves `ref.mime`
+    // as `.txt` because that is what the upload was called leaves `ref.type`
     // saying image/png and the URL serving text/plain — the same two-facts
     // defect one layer out, and the one the catalog drive caught.
     const { p, puts } = plugin()
     const ref = await save(p, 'avatar', upload(PNG, 'notes.txt', 'text/plain'))
-    expect(ref.mime).toBe('image/png')
+    expect(ref.type).toBe('image/png')
     expect(ref.key.endsWith('.png')).toBe(true)
     expect(puts[0].key).toBe(ref.key)
   })
@@ -253,7 +253,7 @@ describe('a parameter is not part of the type', () => {
       async get() { return null }, async delete() {}, async sign(k: string) { return k } }
 
     const ref = await p.serialize(f, { field: 'note', model: 'Doc', id: 1, ctx: CTX })
-    expect(ref.mime).toBe('text/plain')
+    expect(ref.type).toBe('text/plain')
     expect(puts.at(-1).contentType).toBe('text/plain')
   })
 })
@@ -273,14 +273,14 @@ describe('@accept is not an equality over a format with two spellings', () => {
   test('a mif1 photo satisfies @accept("image/heic")', async () => {
     const { p, puts } = plugin()
     const ref = await save(p, 'photo', upload(heif, 'photo.heic', 'image/heic'))
-    expect(ref.mime).toBe('image/heif')
+    expect(ref.type).toBe('image/heif')
     expect(puts[0].contentType).toBe('image/heif')
   })
 
   test('the other brand still passes, which is the control', async () => {
     const { p } = plugin()
     const ref = await save(p, 'photo', upload(heic, 'photo.heic', 'image/heic'))
-    expect(ref.mime).toBe('image/heic')
+    expect(ref.type).toBe('image/heic')
   })
 
   test('the equivalence is not a general looseness', async () => {

@@ -302,3 +302,51 @@ describe('the EXISTS reaches the children by their foreign key', () => {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   }, 60000)
 })
+
+// FJS-4493: a literal the enum does not declare is a value no row can hold, so
+// `role == 'finance'` admits nobody and `role != 'finance'` admits everybody —
+// and FJS-D2280 writes the role literal into every child's policy, where a
+// rename that misses one is silent. Refused wherever the enum column is read:
+// locally, across a to-one hop, inside a '.some(…)', and in an 'in' list.
+describe('an enum column is compared only to a value its enum declares', () => {
+  const ORG = (rule: string, memberRule = '') => `
+enum Role { admin billing support }
+model User {
+  id   String @id
+  role Role
+}
+model Org {
+  id          String       @id
+  ownerId     String
+  owner       User         @relation(fields: [ownerId], references: [id])
+  memberships Membership[]
+  ${rule}
+}
+model Membership {
+  id     String @id
+  orgId  String
+  org    Org    @relation(fields: [orgId], references: [id])
+  userId String
+  role   Role
+  ${memberRule}
+}
+`
+  it.each([
+    ['inside a .some(…)',   `@@allow(update, memberships.some(userId == auth().id && role == 'finance'))`, ''],
+    ['across a to-one hop', `@@allow(read, owner.role == 'finance')`, ''],
+    ['with != on the left', `@@allow(read, 'finance' != owner.role)`, ''],
+    ['locally, with !=',    '', `@@allow(read, role != 'finance')`],
+    ['in an in-list',       '', `@@allow(read, role in ['admin', 'finance'])`],
+  ])('%s', async (_, rule, memberRule) => {
+    const err = await refusal(ORG(rule, memberRule))
+    expect(err).toContain(`'finance' is not a value of enum Role`)
+    expect(err).toContain('admin, billing, support')
+  })
+
+  it('a declared value is accepted in each of those places', async () => {
+    expect(await refusal(ORG(
+      `@@allow(update, memberships.some(userId == auth().id && role == 'billing'))
+  @@allow(read, owner.role == 'admin' || 'support' != owner.role)`,
+      `@@allow(read, role != 'billing' || role in ['admin', 'support'])`))).toBe('')
+  })
+})

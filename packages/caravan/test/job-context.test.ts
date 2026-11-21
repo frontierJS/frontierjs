@@ -211,7 +211,7 @@ describe('what the handler can reach', () => {
     } as never))
 
     jobsOf(app).handle('write-audit', async (ctx) => {
-      await ctx.app!.service('audit').create({ what: 'shipped' })
+      await ctx.app.service('audit').create({ what: 'shipped' })
     })
 
     app.services.register(createService({
@@ -240,9 +240,8 @@ describe('what the handler can reach', () => {
   })
 
   it('standalone Caravan hands the handler no app and no principal', async () => {
-    // No Junction, so no runAs and no scope. The shape stays the shape — a
-    // handler reads ctx.app and finds undefined rather than crashing on a
-    // missing argument.
+    // ctx.app is typed present (FJS-4373, FJS-D1138), so a standalone read
+    // throws naming the plugin to configure rather than answering undefined.
     const queue = caravan(opts())
     const seen: JobContext[] = []
     queue.handle('record', async (ctx) => { seen.push(ctx) })
@@ -250,7 +249,8 @@ describe('what the handler can reach', () => {
     await queue.dispatch('record', { n: 1 })
 
     expect(await until(() => seen.length > 0)).toBe(true)
-    expect(seen[0].app).toBeUndefined()
+    expect(() => seen[0].app).toThrow(/standalone.*app\.configure\(caravan\(\)\)/)
+    expect({ ...seen[0] }.data).toEqual({ n: 1 })
     expect(seen[0].user).toBeNull()
     expect(seen[0].data).toEqual({ n: 1 })
 

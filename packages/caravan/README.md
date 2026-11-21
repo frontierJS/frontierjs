@@ -275,7 +275,7 @@ nothing gated.
 | | |
 | --- | --- |
 | `ctx.id` · `ctx.queue` · `ctx.name` · `ctx.data` · `ctx.attempts` | the job |
-| `ctx.app` | the running Junction app. `undefined` standalone |
+| `ctx.app` | the running Junction app. Standalone, reading it throws naming `app.configure(caravan())` |
 | `ctx.user` | the principal this runs as. `null` when there is none |
 | `ctx.actorId` | the id recorded at dispatch. `null` when nobody asked |
 

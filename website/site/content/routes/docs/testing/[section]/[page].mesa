@@ -1,0 +1,11 @@
+---
+render: static
+---
+<!-- One page of the Testing guide; the page is components/GuidePage.mesa. -->
+<script>
+  import GuidePage from '../../../../components/GuidePage.mesa'
+
+  export let data = null
+</script>
+
+<GuidePage {data} />

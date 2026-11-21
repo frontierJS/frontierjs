@@ -1692,7 +1692,25 @@ describe('makeRootEvent()', () => {
       return document.createDocumentFragment()
     })
     expect(() => comp()).not.toThrow()
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('makeRootEvent'))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[Mesa\] makeRootEvent/))
+    warnSpy.mockRestore()
+  })
+})
+
+// A drive fails a run only on a console.warn starting [Mesa] (FJS-315); a block
+// that rendered nothing warned without it and passed every drive (FJS-4293).
+describe('a null block anchor warns with the [Mesa] prefix the drive promotes', () => {
+  it('ifBlock(null, …)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    ifBlock(null, () => 0, [() => document.createDocumentFragment()])
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[Mesa\] ifBlock\(\)/))
+    warnSpy.mockRestore()
+  })
+
+  it('$$eachBlock(null, …)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    $$eachBlock(null, 0, () => [1], (x) => x, () => document.createDocumentFragment(), null)
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringMatching(/^\[Mesa\] \$\$eachBlock\(\)/))
     warnSpy.mockRestore()
   })
 })

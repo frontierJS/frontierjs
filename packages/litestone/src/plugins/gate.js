@@ -258,7 +258,17 @@ function checkLevel(/** @type {any} */ required, /** @type {any} */ userLevel, /
 
 // ─── GatePlugin ───────────────────────────────────────────────────────────────
 
+// Asked by brand, never `instanceof`: a script outside an app resolves a second
+// litestone copy, whose GatePlugin is another class. The client then installed
+// its default resolver beside the app's and graded every caller at the lower
+// of the two, and createTestEnv's ladder kept the app's gate under each level
+// (`FJS-4382`). Symbol.for is one registry per process, shared by every copy.
+const GATE_PLUGIN = Symbol.for('litestone.gatePlugin')
+export const isGatePlugin = (/** @type {any} */ p) => p?.[GATE_PLUGIN] === true
+
 export class GatePlugin extends LitestonePlugin {
+  get [GATE_PLUGIN]() { return true }
+
   constructor({ getLevel } = /** @type {any} */ ({})) {
     super()
     // The default is the shipped grader, and it used to be a second one written

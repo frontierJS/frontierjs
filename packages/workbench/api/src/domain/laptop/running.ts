@@ -58,9 +58,9 @@ const alive = (pid: number | null) => {
 }
 const iso = (ms: number) => new Date(ms).toISOString()
 
-function sessions(home?: string, listening?: Map<number, Set<string>> | null): Promise<Session[]> {
+async function sessions(home?: string, listening?: Map<number, Set<string>> | null): Promise<Session[]> {
   const rows = sessionsOf({ lockFile: join(stateDir(pinned(home)), 'sessions.lock') })
-  return Promise.all(rows.map(async s => {
+  return claim(await Promise.all(rows.map(async s => {
     const ports: Port[] = []
     for (const [category, list] of Object.entries(s.ports ?? {})) {
       for (const port of list) {
@@ -75,7 +75,22 @@ function sessions(home?: string, listening?: Map<number, Set<string>> | null): P
       branch: Number.isInteger(s.branch) ? s.branch! : null, worktree: s.worktree ?? null,
       startedAt: s.startedAt ?? null, ports, running,
     }
-  }))
+  })))
+}
+
+// The lock keeps every session `fli dev` ever started, and many share a port
+// (8000 is every project's first slot), so crediting a port to each holder
+// shows every dead session that once held it as running. An answering port belongs to the
+// live session holding it; failing that, to the latest dead one, the likeliest
+// to have left a stray server behind.
+function claim(rows: Session[]): Session[] {
+  const owner = new Map<number, Session>()
+  const latest = [...rows].sort((a, b) => Number(b.alive) - Number(a.alive) || String(b.startedAt).localeCompare(String(a.startedAt)))
+  for (const s of latest) for (const p of s.ports) if (p.answering && !owner.has(p.port)) owner.set(p.port, s)
+  return rows.map(s => {
+    const ports = s.ports.map(p => p.answering && owner.get(p.port) !== s ? { ...p, answering: false } : p)
+    return { ...s, ports, running: s.alive || ports.some(p => p.answering) }
+  })
 }
 
 function holds(home: string | undefined, roots: string[]): Hold[] {

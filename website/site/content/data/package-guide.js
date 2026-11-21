@@ -162,3 +162,30 @@ export const junctionGuide = packageGuide({
   lede:        'What a service can do and how to add to it, one quick page per idea. Each page ends with a link to the full doc.',
   description: 'What a Junction service can do, one quick page per idea: services, hooks, transport, live updates, writes, protection and plugins.',
 })
+
+export const sierraGuide = packageGuide({
+  pkg:         'sierra',
+  name:        'Sierra guide',
+  base:        '/docs/sierra/',
+  heading:     'The Sierra guide',
+  lede:        'What a screen can do and how to build one, one quick page per idea. Each page ends with a link to the full doc.',
+  description: 'What a Sierra app can do, one quick page per idea: routing, resources, building and publishing, and the packages around it.',
+})
+
+export const basecampGuide = packageGuide({
+  pkg:         'basecamp',
+  name:        'Basecamp guide',
+  base:        '/docs/basecamp/',
+  heading:     'The Basecamp guide',
+  lede:        'How a release gets onto a machine and stays safe there, one quick page per idea. Each page ends with a link to the full doc.',
+  description: 'Shipping a FrontierJS app, one quick page per idea: deploying and reverting a release, a fleet of machines under Basecamp and Outpost, and backups with a restore that has been tried.',
+})
+
+export const testingGuide = packageGuide({
+  pkg:         'testing',
+  name:        'Testing guide',
+  base:        '/docs/testing/',
+  heading:     'The Testing guide',
+  lede:        'How to prove an app does what its schema says, one quick page per idea. Each page ends with a link to the full doc.',
+  description: 'Testing a FrontierJS app, one quick page per idea: a test environment over a real database and app, the checks a schema already contains, grading them by mutation, and driving a real browser.',
+})

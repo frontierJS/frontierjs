@@ -140,8 +140,8 @@ const user = await db.user.findUnique({
   select: { id: true, avatar: { resolve: false } }
 })
 const ref = parseRef(user.avatar)
-// → { key: 'User/avatar/<uuid>.png', name: 'alice.png', bucket, provider: 'local', endpoint: null, size: 70, mime: 'image/png', uploadedAt }
-if (ref.mime !== 'image/png' || ref.size !== 70) throw new Error('expected the stored ref')
+// → { key: 'User/avatar/<uuid>.png', name: 'alice.png', bucket, provider: 'local', endpoint: null, size: 70, sha256, type: 'image/png', uploadedAt }
+if (ref.type !== 'image/png' || ref.size !== 70) throw new Error('expected the stored ref')
 ```
 
 The ref is stored as JSON text and read back as the object; `parseRef` also turns the text into the object, for a ref held outside a row.

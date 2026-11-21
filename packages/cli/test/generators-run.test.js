@@ -438,7 +438,12 @@ describe('the scaffold verification link lands on a page fli new writes', () => 
         '  return { auth, authPlugin: {} }',
         '}',
       ].join('\n') + '\n',
+      // FJS-4466 — with no node_modules bun auto-installs @frontierjs/auth from
+      // npm, and a published junction behind the tree's auth failed the run.
+      'bunfig.toml': '[install]\nauto = "disable"\n',
     })
+    mkdirSync(join(root, 'node_modules/@frontierjs'), { recursive: true })
+    for (const pkg of ['auth', 'litestone']) symlinkSync(join(CLI, '..', pkg), join(root, 'node_modules/@frontierjs', pkg))
     const saved = { ENCRYPTION_KEY: process.env.ENCRYPTION_KEY, MARK: process.env.MARK }
     process.env.ENCRYPTION_KEY ??= 'a'.repeat(64)
     process.env.MARK = join(root, 'mark.txt')

@@ -836,8 +836,11 @@ if (after.state !== 'closed') throw new Error('expected the pull closed with its
 
 ```lite
 model User {
-  salary Float?   @allow(read,  auth().role == 'admin')   // hidden unless admin
-  apiKey String?   @allow(write, auth().role == 'admin')   // read-only unless admin
+  id     Int     @id
+  role   String
+  salary Float?  @allow(read,  auth().role == 'admin')   // hidden unless admin
+  apiKey String? @allow(write, auth().role == 'admin')   // read-only unless admin
+  @@auth
 }
 ```
 
@@ -1220,6 +1223,8 @@ its own — a column read must strip rather than refuse — so it is spelled as 
 predicate, and the literal in it is resolved against the same derived set:
 
 ```lite
+model User { id Int @id  @@auth }
+
 model Employee {
   id     Int   @id
   salary Float @capability @allow(read, 'Employee.salary' in auth().capabilities)
@@ -1245,7 +1250,10 @@ rejected before any SQL runs; a caller who clears it then meets the policies as
 `WHERE` injections.
 
 ```lite
+model User { id Int @id  @@auth }
+
 model Post {
+  id      Int @id
   ownerId Int @default(auth().id)
 
   @@gate(1.2.4.6)                           // level check first
@@ -1315,9 +1323,12 @@ disclose the contents of the database, so it has to be silent.
 Stamp a field from `ctx.auth` at create time — no SQL DEFAULT emitted:
 
 ```lite
+model User { id Int @id  type String  @@auth }   // the claims a default may read come from here
+
 model Post {
-  ownerId   Int  @default(auth().id)
-  ownerType String     @default(auth().type)
+  id        Int     @id
+  ownerId   Int     @default(auth().id)
+  ownerType String  @default(auth().type)
 }
 ```
 

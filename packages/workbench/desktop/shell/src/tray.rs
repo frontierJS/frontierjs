@@ -19,7 +19,10 @@
 // it enables the item without a restart. Transcribe a file… sits under it and
 // follows it: it runs `capture transcribe --pick`, where capture asks for an
 // audio or video file in the desktop's file chooser, transcribes it in the
-// background and says when it is done in a notification.
+// background and says when it is done in a notification. Record a call runs
+// `capture call`, which records the mic and desktop sound until it runs again,
+// then transcribes it; the item reads Stop recording the call while capture's
+// call socket answers, so the menu is the way to stop it too.
 //
 // Start at login copies the launcher entry `fli desktop:install` wrote into
 // the XDG autostart folder, so a login start goes through `desktop:run` and
@@ -173,6 +176,8 @@ fn set_at_login(app: &AppHandle, want: bool) -> std::io::Result<()> {
 const CAPTURE:         &str = "Capture";
 const CAPTURE_MISSING: &str = "Capture — not installed";
 const TRANSCRIBE:      &str = "Transcribe a file…";
+const CALL_START:      &str = "Record a call";
+const CALL_STOP:       &str = "Stop recording the call";
 
 fn capture_path() -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -209,6 +214,26 @@ fn capture(args: &[&str]) {
     }
 }
 
+// `capture call` listens on this socket while it records; a stale file left by
+// a killed one refuses the connection.
+#[cfg(unix)]
+fn recording_call() -> bool {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+    std::os::unix::net::UnixStream::connect(dir.join("capture-call.sock")).is_ok()
+}
+
+#[cfg(not(unix))]
+fn recording_call() -> bool {
+    false
+}
+
+fn show_call(item: &MenuItem<tauri::Wry>, recording: bool) {
+    let text = if recording { CALL_STOP } else { CALL_START };
+    if item.text().ok().as_deref() != Some(text) {
+        let _ = item.set_text(text);
+    }
+}
+
 fn show_capture(items: &CaptureItems) {
     let found = capture_path().is_some();
     // A menu rewritten every tick flickers while it is open.
@@ -216,13 +241,16 @@ fn show_capture(items: &CaptureItems) {
         let _ = items.capture.set_enabled(found);
         let _ = items.capture.set_text(if found { CAPTURE } else { CAPTURE_MISSING });
         let _ = items.transcribe.set_enabled(found);
+        let _ = items.call.set_enabled(found);
     }
+    show_call(&items.call, found && recording_call());
 }
 
 // The items that run capture, enabled while it is on PATH.
 struct CaptureItems {
     capture:    MenuItem<tauri::Wry>,
     transcribe: MenuItem<tauri::Wry>,
+    call:       MenuItem<tauri::Wry>,
 }
 
 // ─── the window ──────────────────────────────────────────────────────────
@@ -288,6 +316,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let capture_items = CaptureItems {
         capture:    MenuItem::with_id(app, "capture", CAPTURE_MISSING, false, None::<&str>)?,
         transcribe: MenuItem::with_id(app, "transcribe", TRANSCRIBE, false, None::<&str>)?,
+        call:       MenuItem::with_id(app, "call", CALL_START, false, None::<&str>)?,
     };
     show_capture(&capture_items);
     let quit = MenuItem::with_id(app, "quit", "Quit Workbench", true, None::<&str>)?;
@@ -301,6 +330,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&capture_items.capture)?;
     menu.append(&capture_items.transcribe)?;
+    menu.append(&capture_items.call)?;
     menu.append(&PredefinedMenuItem::separator(app)?)?;
     menu.append(&status)?;
     if can_start {
@@ -328,6 +358,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     let on_menu = toggle_item.clone();
     let start_item = start.clone();
+    let call_item = capture_items.call.clone();
     tray.on_menu_event(move |app, event| {
         let id = event.id().as_ref();
         match id {
@@ -335,6 +366,13 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "quit" => app.exit(0),
             "capture" => capture(&[]),
             "transcribe" => capture(&["transcribe", "--pick"]),
+            "call" => {
+                // `capture call` toggles. The label flips now rather than at
+                // the next tick, which corrects it if the start failed.
+                let recording = call_item.text().ok().as_deref() == Some(CALL_STOP);
+                capture(&["call"]);
+                show_call(&call_item, !recording);
+            }
             "api-start" => {
                 if let Some(api) = api_target() {
                     start_api(app, &api);

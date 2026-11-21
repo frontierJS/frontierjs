@@ -22,7 +22,9 @@ test/parity.test.ts   the runner, and the ways it can be worthless
 test/doubles.test.ts  the mailer double, held to the real send path's own guards
 test/drive.test.ts    drive()'s refusals and group stop — every case fails before
                       Chrome would open, so the suite stays hermetic
+test/doc-examples.test.ts  every `js` fence in README.md and docs/guide/ runs, against the `lite` fence above it
 test/fixtures/schema.lite
+docs/guide/           the Testing guide, served at /docs/testing/; README.md is the page order
 ```
 
 `index.ts` is one file on purpose — a composition of two packages' testing

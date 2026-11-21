@@ -128,9 +128,9 @@ describe('emit', () => {
     expect(emit(clone(hiring), { scaffold: SCAFFOLD }).text).toBe(emit(clone(hiring), { scaffold: SCAFFOLD }).text)
   })
 
-  test('a membership delegates to the container\'s update rule where it has one', () => {
+  test('a membership names the container\'s administering roles where it has any', () => {
     const text = flat(emit(hiring, { scaffold: SCAFFOLD }).text)
-    expect(text).toContain("@@allow(create, check(company, 'update'))")
+    expect(text).toContain("@@allow(create, company.memberships.some(userId == auth().id && role == 'recruiter'))")
     expect(text).toContain("@@allow(read, memberships.some(userId == auth().id))")
     expect(text).toContain("@@allow(update, memberships.some(userId == auth().id && role == 'recruiter'))")
     expect(text).toContain('@@relator([companyId, userId], once)')
@@ -1060,5 +1060,231 @@ describe('the visitor actor', () => {
     const text = brief()
     expect(text).toContain('`visitor`')
     expect(text).not.toContain('| `visitor` |')
+  })
+})
+
+// FJS-D2280: a role limits a write or a move, named with one relation hop then
+// `.some`. Lago's staff roles (fjs-prototypes/charter, runs/2026-10-13): Finance
+// finalizes, Support changes nothing.
+const LAGO = () => ({
+  entities: [
+    {
+      name: 'Organization', rung: 'variant', from: 'Organization', why: 'the billing account', cost: 'none', escape: 'none',
+      access: { members: 'Membership', roles: { update: ['admin'] }, system: true },
+    },
+    {
+      name: 'Membership', rung: 'property', why: 'who works in an organization, and as what',
+      fields: [{ name: 'role', type: 'enum', values: ['admin', 'finance', 'support'], default: 'support' }],
+      links: [{ name: 'organization', to: 'Organization', required: true }, { name: 'user', to: 'User', actor: 'subject', required: true }],
+    },
+    {
+      name: 'Invoice', rung: 'novel', why: 'a bill, finalized by finance',
+      fields: [{ name: 'number', type: 'text', required: true }],
+      links: [{ name: 'organization', to: 'Organization', required: true }],
+      lifecycle: {
+        field: 'status', states: ['draft', 'finalized', 'paid', 'voided'],
+        moves: [
+          { name: 'finalize', from: 'draft', to: 'finalized', by: 'finance' },
+          { name: 'markPaid', from: 'finalized', to: 'paid', by: ['finance', 'admin'] },
+          { name: 'void', from: ['draft', 'finalized'], to: 'voided', by: 'finance' },
+        ],
+      },
+      access: { via: 'organization', roles: { update: ['finance', 'admin'] } },
+    },
+  ],
+})
+
+describe('a role limits a write or a move (FJS-D2280)', () => {
+  test('the Lago answer emits the member test on the op and on each move, and parses', () => {
+    const out = emit(LAGO(), { scaffold: SCAFFOLD })
+    expect(out.refusals).toEqual([])
+    expect(parses(out.text)).toBe(true)
+    const text = flat(out.text)
+    const some = (role) => `organization.memberships.some(userId == auth().id && ${role})`
+    expect(text).toContain(`@@allow(update, ${some("(role == 'finance' || role == 'admin')")})`)
+    expect(text).toContain(`finalize: draft -> finalized @allow(${some("role == 'finance'")})`)
+    expect(text).toContain(`markPaid: finalized -> paid @allow(${some("(role == 'finance' || role == 'admin')")})`)
+    // Invoice's delete says nothing, so it is still the organization's update.
+    expect(text).toContain("@@allow(delete, check(organization, 'update'))")
+  })
+
+  test('a support member cannot update or finalize an invoice, a finance member can', async () => {
+    const env = await createTestEnv({ schema: emit(LAGO(), { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const org = await sys.organization.create({ data: { name: 'Acme' } })
+      const other = await sys.organization.create({ data: { name: 'Acme' } })
+      const join = async (email, role, o = org) => {
+        const user = await sys.user.create({ data: { email } })
+        await sys.membership.create({ data: { organizationId: o.id, userId: user.id, role } })
+        return user
+      }
+      const fin = await join('f@example.com', 'finance')
+      const sup = await join('s@example.com', 'support')
+      const boss = await join('a@example.com', 'admin')
+      // Finance in another organization is not finance in this one.
+      const away = await join('x@example.com', 'finance', other)
+      const bill = async () => sys.invoice.create({ data: { number: 'INV', organizationId: org.id } })
+      const row = async (b) => sys.invoice.findUnique({ where: { id: b.id } })
+      const quietly = (p) => p.catch(() => null)
+
+      let inv = await bill()
+      // A support member still reads and files; the write is what is refused.
+      expect((await env.actingAs(sup).invoice.findMany({})).length).toBe(1)
+      await quietly(env.actingAs(sup).invoice.update({ where: { id: inv.id }, data: { number: 'EDIT' } }))
+      await quietly(env.actingAs(sup).invoice.transition(inv.id, 'finalize'))
+      await quietly(env.actingAs(away).invoice.transition(inv.id, 'finalize'))
+      await quietly(env.actingAs(sup).invoice.delete({ where: { id: inv.id } }))
+      expect(await row(inv)).toMatchObject({ number: 'INV', status: 'draft' })
+
+      await env.actingAs(fin).invoice.update({ where: { id: inv.id }, data: { number: 'INV-1' } })
+      await env.actingAs(fin).invoice.transition(inv.id, 'finalize')
+      expect(await row(inv)).toMatchObject({ number: 'INV-1', status: 'finalized' })
+      // A move's role is its own: an admin edits but `void` is finance's.
+      await env.actingAs(boss).invoice.update({ where: { id: inv.id }, data: { number: 'INV-2' } })
+      await quietly(env.actingAs(boss).invoice.transition(inv.id, 'void'))
+      expect(await row(inv)).toMatchObject({ number: 'INV-2', status: 'finalized' })
+      await env.actingAs(boss).invoice.transition(inv.id, 'markPaid')
+      expect((await row(inv)).status).toBe('paid')
+
+      // A PATCH moving an invoice into an organization the caller is not
+      // finance in is refused where it lands.
+      inv = await bill()
+      await quietly(env.actingAs(fin).invoice.update({ where: { id: inv.id }, data: { organizationId: other.id } }))
+      expect((await row(inv)).organizationId).toBe(org.id)
+    } finally {
+      env.close()
+    }
+  })
+
+  // The default for the fork: a role list REPLACES the parent's rule for its
+  // op, so an admin the organization names is not a finance member here.
+  test('a role list replaces the container\'s rule for that op, and the other op keeps it', async () => {
+    const a = LAGO()
+    a.entities[2].access.roles = { update: ['finance'] }
+    const env = await createTestEnv({ schema: emit(a, { scaffold: SCAFFOLD }).text })
+    try {
+      const sys = env.system
+      const org = await sys.organization.create({ data: { name: 'Acme' } })
+      const boss = await sys.user.create({ data: { email: 'a@example.com' } })
+      await sys.membership.create({ data: { organizationId: org.id, userId: boss.id, role: 'admin' } })
+      const inv = await sys.invoice.create({ data: { number: 'INV', organizationId: org.id } })
+      await env.actingAs(boss).invoice.update({ where: { id: inv.id }, data: { number: 'EDIT' } }).catch(() => null)
+      expect((await sys.invoice.findUnique({ where: { id: inv.id } })).number).toBe('INV')
+      await env.actingAs(boss).invoice.delete({ where: { id: inv.id } })
+      expect(await sys.invoice.findUnique({ where: { id: inv.id } })).toBe(null)
+    } finally {
+      env.close()
+    }
+  })
+
+  test('a role on one op of a container no role administers says who holds the other', () => {
+    const a = LAGO()
+    delete a.entities[0].access.roles
+    const r = checkAnswer(a)
+    expect(r.refusals).toEqual([])
+    expect(r.findings.map(f => f.message).join('\n')).toMatch(/Invoice limits update to finance or admin, and delete stays with whoever may change Organization/)
+  })
+
+  // FJS-4144: admins invite, every member edits the records.
+  test('admins write the membership and every member edits the records', async () => {
+    const a = {
+      entities: [
+        { name: 'Workspace', rung: 'novel', why: 'the account', access: { members: 'Membership', roles: { update: ['admin'] }, system: true } },
+        {
+          name: 'Membership', rung: 'property', why: 'who is in a workspace',
+          fields: [{ name: 'role', type: 'enum', values: ['admin', 'member'], default: 'member' }],
+          links: [{ name: 'workspace', to: 'Workspace', required: true }, { name: 'user', to: 'User', actor: 'subject', required: true }],
+        },
+        {
+          name: 'EventType', rung: 'novel', why: 'a bookable slot',
+          fields: [{ name: 'title', type: 'text', required: true }],
+          links: [{ name: 'workspace', to: 'Workspace', required: true }],
+          access: { via: 'workspace', roles: { update: ['admin', 'member'], delete: ['admin', 'member'] } },
+        },
+      ],
+    }
+    const out = emit(a, { scaffold: SCAFFOLD })
+    expect(out.refusals).toEqual([])
+    const env = await createTestEnv({ schema: out.text })
+    try {
+      const sys = env.system
+      const ws = await sys.workspace.create({ data: {} })
+      const join = async (email, role) => {
+        const user = await sys.user.create({ data: { email } })
+        const row = await sys.membership.create({ data: { workspaceId: ws.id, userId: user.id, role } })
+        return { user, row }
+      }
+      const boss = await join('a@example.com', 'admin')
+      const staff = await join('m@example.com', 'member')
+      const guest = await sys.user.create({ data: { email: 'g@example.com' } })
+      const event = await sys.eventType.create({ data: { title: 'Intro', workspaceId: ws.id } })
+      const members = async () => (await sys.membership.findMany({ orderBy: { id: 'asc' } })).map(r => [r.userId, r.role])
+      const before = await members()
+
+      await env.actingAs(staff.user).eventType.update({ where: { id: event.id }, data: { title: 'Edited' } })
+      expect((await sys.eventType.findUnique({ where: { id: event.id } })).title).toBe('Edited')
+      await env.actingAs(staff.user).membership.create({ data: { workspaceId: ws.id, userId: guest.id } }).catch(() => null)
+      await env.actingAs(staff.user).membership.update({ where: { id: staff.row.id }, data: { role: 'admin' } }).catch(() => null)
+      await env.actingAs(staff.user).membership.delete({ where: { id: boss.row.id } }).catch(() => null)
+      expect(await members()).toEqual(before)
+
+      await env.actingAs(boss.user).membership.create({ data: { workspaceId: ws.id, userId: guest.id } })
+      expect((await members()).length).toBe(before.length + 1)
+    } finally {
+      env.close()
+    }
+  })
+
+  describe('refuses', () => {
+    const rules = (a) => checkAnswer(a).refusals.filter(r => r.rule === 'roles').map(r => r.message).join('\n')
+
+    test('a role the membership does not have, on an op and on a move', () => {
+      const a = LAGO()
+      a.entities[2].access.roles.update = ['owner']
+      expect(rules(a)).toMatch(/names owner, which Membership's `role` is not/)
+      const b = LAGO()
+      b.entities[2].lifecycle.moves[0].by = 'owner'
+      expect(rules(b)).toMatch(/finalize's `by` names owner/)
+    })
+
+    test('a lifecycle move as a roles key points at by', () => {
+      const a = LAGO()
+      a.entities[2].access.roles.finalize = ['finance']
+      expect(rules(a)).toMatch(/`roles.finalize` names a lifecycle move.*`by: "role"`/)
+      const b = LAGO()
+      b.entities[2].access.roles.create = ['finance']
+      expect(rules(b)).toMatch(/`roles.create` is not an op/)
+    })
+
+    test('roles and by on an entity with no membership container', () => {
+      const a = LAGO()
+      a.entities.push({ name: 'Note', rung: 'novel', why: 'a note', links: [{ name: 'owner', to: 'User', actor: 'owner', required: true }], access: { roles: { update: ['admin'] } } })
+      expect(rules(a)).toMatch(/Note reaches no membership container/)
+      const b = LAGO()
+      b.entities[2].access = {}
+      b.entities[2].links.push({ name: 'owner', to: 'User', actor: 'owner', required: true })
+      expect(rules(b)).toMatch(/Invoice reaches no membership container/)
+    })
+
+    test('a via that is one hop too deep', () => {
+      const a = LAGO()
+      a.entities.push({
+        name: 'Line', rung: 'novel', why: 'a line of an invoice',
+        fields: [{ name: 'label', type: 'text', required: true }],
+        links: [{ name: 'invoice', to: 'Invoice', required: true }],
+        access: { via: 'invoice', roles: { update: ['finance'] } },
+      })
+      expect(rules(a)).toMatch(/Line reaches Organization's members through Invoice: more than one hop/)
+    })
+
+    test('a role list on a membership, and by naming system among roles', () => {
+      const a = LAGO()
+      a.entities[1].access = { roles: { update: ['admin'] } }
+      expect(rules(a)).toMatch(/Membership is the membership of Organization/)
+      const b = LAGO()
+      b.entities[2].lifecycle.moves[0].by = ['finance', 'system']
+      expect(checkAnswer(b).refusals.map(r => r.rule)).toContain('lifecycle')
+    })
   })
 })

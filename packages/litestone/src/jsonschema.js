@@ -289,10 +289,10 @@ export function generateJsonSchema(schema, options = {}) {
         provider:   { type: 'string', enum: ['r2', 's3', 'b2', 'minio', 'local'], description: 'Storage provider' },
         endpoint:   { type: ['string', 'null'],    description: 'S3-compatible endpoint URL' },
         size:       { type: 'integer', minimum: 0, description: 'File size in bytes' },
-        mime:       { type: 'string',              description: 'MIME type' },
+        type:       { type: 'string',              description: 'MIME type' },
         uploadedAt: { type: 'string', format: 'date-time', description: 'Upload timestamp' },
       },
-      required: ['key', 'bucket', 'provider', 'size', 'mime', 'uploadedAt'],
+      required: ['key', 'bucket', 'provider', 'size', 'type', 'uploadedAt'],
       additionalProperties: false,
     },
     // What a writer SENDS, which is never the ref: the server is a ref's only

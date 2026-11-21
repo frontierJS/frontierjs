@@ -131,9 +131,16 @@ const idsOf = (ctx: Ctx, key: string, max: number): string[] => {
   return [...new Set(v as string[])]
 }
 
-/** A refusal from the server, as this app's status: what it refused as malformed is the caller's 400. */
-const refused = (what: string, kind: string) =>
-  fail(kind === 'forbidden' ? 403 : kind === 'not_found' || kind === 'gone' ? 404 : kind === 'refused' ? 400 : 502, `chat.${what}: the chat server refused (${kind})`)
+/**
+ * A refusal from the server, as this app's status: what it refused as malformed is the caller's 400.
+ * The server's own code and words ride along -- a bare 'server_error' left a failing
+ * delete undiagnosable.
+ */
+const refused = (what: string, kind: string, said?: { code?: string, message?: string }) => {
+  const why = [said?.code, said?.message].filter(Boolean).join(': ')
+  if (why) console.warn(`[chat] ${what} refused (${kind}): ${why}`)
+  return fail(kind === 'forbidden' ? 403 : kind === 'not_found' || kind === 'gone' ? 404 : kind === 'refused' ? 400 : 502, `chat.${what}: the chat server refused (${kind})${why ? ` -- ${why}` : ''}`)
+}
 
 /** Basecamp's refusal as this app's status; the kind is all the caller is told. */
 const todoRefused = (what: string, e: Parameters<typeof kindOf>[0]) => {
@@ -256,7 +263,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const channel = idOf(ctx, 'channelExternalId')!
     const r = await viewAs(ctx.app, profile, channel, idOf(ctx, 'prevChannelExternalId', true))
-    if (r.error) throw refused('view', r.error.kind)
+    if (r.error) throw refused('view', r.error.kind, r.error)
     return { channelExternalId: channel }
   },
 
@@ -264,8 +271,8 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const root = idOf(ctx, 'rootExternalId')!
-    const r = await readThreadAs(ctx.app, profile, root) as { error?: { kind: string } }
-    if (r.error) throw refused('readThread', r.error.kind)
+    const r = await readThreadAs(ctx.app, profile, root) as { error?: { kind: string, code?: string, message?: string } }
+    if (r.error) throw refused('readThread', r.error.kind, r.error)
     return { rootExternalId: root }
   },
 
@@ -273,7 +280,7 @@ export default createService({
     serverOn(ctx)
     const post = idOf(ctx, 'postExternalId')!, pinned = flagOf(ctx, 'pinned')
     const r = await pinAs(ctx.app, post, pinned)
-    if (r.error) throw refused('pin', r.error.kind)
+    if (r.error) throw refused('pin', r.error.kind, r.error)
     return { postExternalId: post, isPinned: pinned }
   },
 
@@ -282,7 +289,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const post = idOf(ctx, 'postExternalId')!
     const r = await markUnreadAs(ctx.app, profile, post)
-    if (!r.row) throw refused('markUnread', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('markUnread', r.error?.kind ?? 'no answer', r.error)
     return { postExternalId: post, channelExternalId: r.row.channelExternalId }
   },
 
@@ -291,7 +298,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const channel = idOf(ctx, 'channelExternalId')!, muted = flagOf(ctx, 'muted')
     const r = await muteAs(ctx.app, profile, channel, muted)
-    if (r.error) throw refused('mute', r.error.kind)
+    if (r.error) throw refused('mute', r.error.kind, r.error)
     return { channelExternalId: channel, muted }
   },
 
@@ -300,7 +307,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const root = idOf(ctx, 'rootExternalId')!, following = flagOf(ctx, 'following')
     const r = await followAs(ctx.app, profile, root, following)
-    if (r.error) throw refused('follow', r.error.kind)
+    if (r.error) throw refused('follow', r.error.kind, r.error)
     return { rootExternalId: root, following }
   },
 
@@ -308,7 +315,7 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const r = await browseAs(ctx.app, profile)
-    if (!r.rows) throw refused('browse', r.error?.kind ?? 'no answer')
+    if (!r.rows) throw refused('browse', r.error?.kind ?? 'no answer', r.error)
     return { channels: r.rows.map(c => ({ externalId: c.externalId, teamExternalId: c.teamExternalId, name: c.name, displayName: c.displayName, purpose: c.purpose })) }
   },
 
@@ -318,7 +325,7 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const r = await openDirectAs(ctx.app, profile, peopleOf(ctx, profile))
-    if (!r.row) throw refused('openDirect', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('openDirect', r.error?.kind ?? 'no answer', r.error)
     return { channelExternalId: r.row.externalId, type: r.row.type }
   },
 
@@ -329,7 +336,7 @@ export default createService({
     const channel = idOf(ctx, 'channelExternalId')!, root = idOf(ctx, 'rootExternalId', true)
     const files = dataOf(ctx).fileExternalIds === undefined ? [] : idsOf(ctx, 'fileExternalIds', 10)
     const r = await saveDraftAs(ctx.app, profile, { channelExternalId: channel, ...(root ? { rootExternalId: root } : {}), message: textOf(ctx, 'message', 16383), fileExternalIds: files })
-    if (!r.row) throw refused('saveDraft', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('saveDraft', r.error?.kind ?? 'no answer', r.error)
     return await sysOf(ctx.app).draft.findFirst({ where: { profileExternalId: profile, channelExternalId: channel, rootExternalId: root } })
   },
 
@@ -337,8 +344,8 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const channel = idOf(ctx, 'channelExternalId')!, root = idOf(ctx, 'rootExternalId', true)
-    const r = await deleteDraftAs(ctx.app, profile, channel, root) as { error?: { kind: string } }
-    if (r.error) throw refused('deleteDraft', r.error.kind)
+    const r = await deleteDraftAs(ctx.app, profile, channel, root) as { error?: { kind: string, code?: string, message?: string } }
+    if (r.error) throw refused('deleteDraft', r.error.kind, r.error)
     return { channelExternalId: channel, rootExternalId: root }
   },
 
@@ -347,14 +354,14 @@ export default createService({
     const profile = await callerProfile(ctx)
     const post = idOf(ctx, 'postExternalId')!, saved = flagOf(ctx, 'saved')
     const r = await saveAs(ctx.app, profile, post, saved)
-    if (r.error) throw refused('save', r.error.kind)
+    if (r.error) throw refused('save', r.error.kind, r.error)
     return { postExternalId: post, saved }
   },
 
   async saved (ctx: Ctx) {
     serverOn(ctx)
     const r = await savedAs(ctx.app, await callerProfile(ctx))
-    if (!r.rows) throw refused('saved', r.error?.kind ?? 'no answer')
+    if (!r.rows) throw refused('saved', r.error?.kind ?? 'no answer', r.error)
     return { postExternalIds: r.rows }
   },
 
@@ -363,7 +370,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const channel = idOf(ctx, 'channelExternalId')!, favorite = flagOf(ctx, 'favorite')
     const r = await favoriteAs(ctx.app, profile, channel, favorite)
-    if (r.error) throw refused('favorite', r.error.kind)
+    if (r.error) throw refused('favorite', r.error.kind, r.error)
     return { channelExternalId: channel, favorite }
   },
 
@@ -373,7 +380,7 @@ export default createService({
     const status = dataOf(ctx).status
     if (status !== 'online' && status !== 'away' && status !== 'offline' && status !== 'dnd') throw fail(400, 'chat.setStatus: status is online, away, offline or dnd')
     const r = await setStatusAs(ctx.app, profile, status, status === 'dnd' ? laterOf(ctx, 'dndEndAt') : null)
-    if (!r.row) throw refused('setStatus', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('setStatus', r.error?.kind ?? 'no answer', r.error)
     return { profileExternalId: profile, status: r.row.status }
   },
 
@@ -384,7 +391,7 @@ export default createService({
     const emoji = textOf(ctx, 'emoji', 64, true), text = textOf(ctx, 'text', 100, true)
     const custom = emoji || text ? { emoji, text, expiresAt: laterOf(ctx, 'expiresAt') } : null
     const r = await setCustomStatusAs(ctx.app, profile, custom)
-    if (r.error) throw refused('setCustomStatus', r.error.kind)
+    if (r.error) throw refused('setCustomStatus', r.error.kind, r.error)
     return { profileExternalId: profile, customEmoji: custom?.emoji || null, customText: custom?.text || null, customExpiresAt: custom?.expiresAt ?? null }
   },
 
@@ -392,7 +399,7 @@ export default createService({
     serverOn(ctx)
     await callerProfile(ctx)
     const r = await statusesAs(ctx.app, idsOf(ctx, 'profileExternalIds', 200))
-    if (!r.rows) throw refused('statuses', r.error?.kind ?? 'no answer')
+    if (!r.rows) throw refused('statuses', r.error?.kind ?? 'no answer', r.error)
     return { statuses: r.rows.map(s => ({ profileExternalId: s.profileExternalId, status: s.status })) }
   },
 
@@ -402,14 +409,14 @@ export default createService({
     const terms = textOf(ctx, 'terms', 500).trim()
     if (!terms) throw fail(400, 'chat.search takes { terms }')
     const r = await searchAs(ctx.app, profile, terms)
-    if (!r.rows) throw refused('search', r.error?.kind ?? 'no answer')
+    if (!r.rows) throw refused('search', r.error?.kind ?? 'no answer', r.error)
     return { postExternalIds: r.rows, matches: r.matches }
   },
 
   async activity (ctx: Ctx) {
     serverOn(ctx)
     const r = await activityAs(ctx.app, await callerProfile(ctx))
-    if (!('mentions' in r) || !r.mentions) throw refused('activity', r.error?.kind ?? 'no answer')
+    if (!('mentions' in r) || !r.mentions) throw refused('activity', r.error?.kind ?? 'no answer', r.error)
     return r
   },
 
@@ -439,7 +446,7 @@ export default createService({
     serverOn(ctx)
     await callerProfile(ctx)
     const r = await editHistoryAs(ctx.app, idOf(ctx, 'postExternalId')!)
-    if (!r.rows) throw refused('editHistory', r.error?.kind ?? 'no answer')
+    if (!r.rows) throw refused('editHistory', r.error?.kind ?? 'no answer', r.error)
     return { versions: r.rows }
   },
 
@@ -449,7 +456,7 @@ export default createService({
     const post = idOf(ctx, 'postExternalId')!, at = laterOf(ctx, 'at')
     if (!at) throw fail(400, 'chat.remind takes { postExternalId, at }')
     const r = await remindAs(ctx.app, profile, post, at)
-    if (r.error) throw refused('remind', r.error.kind)
+    if (r.error) throw refused('remind', r.error.kind, r.error)
     return { postExternalId: post, at }
   },
 
@@ -493,7 +500,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const channels = dataOf(ctx).channelExternalIds === undefined ? [] : idsOf(ctx, 'channelExternalIds', 200)
     const r = await createSectionAs(ctx.app, profile, idOf(ctx, 'teamExternalId')!, sectionNameOf(ctx), channels)
-    if (!r.row) throw refused('createSection', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('createSection', r.error?.kind ?? 'no answer', r.error)
     return r.row
   },
 
@@ -501,7 +508,7 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const r = await renameSectionAs(ctx.app, profile, sectionIdOf(ctx, 'sectionExternalId'), sectionNameOf(ctx))
-    if (!r.row) throw refused('renameSection', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('renameSection', r.error?.kind ?? 'no answer', r.error)
     return r.row
   },
 
@@ -510,7 +517,7 @@ export default createService({
     const profile = await callerProfile(ctx)
     const id = sectionIdOf(ctx, 'sectionExternalId')
     const r = await deleteSectionAs(ctx.app, profile, id)
-    if (r.error) throw refused('deleteSection', r.error.kind)
+    if (r.error) throw refused('deleteSection', r.error.kind, r.error)
     return { sectionExternalId: id }
   },
 
@@ -520,7 +527,7 @@ export default createService({
     const order = dataOf(ctx).sectionExternalIds
     if (!Array.isArray(order) || order.length > 200 || !order.every(isSectionId)) throw fail(400, 'chat: sectionExternalIds is a list of section ids')
     const r = await reorderSectionsAs(ctx.app, profile, idOf(ctx, 'teamExternalId')!, order as string[])
-    if (!r.order) throw refused('reorderSections', r.error?.kind ?? 'no answer')
+    if (!r.order) throw refused('reorderSections', r.error?.kind ?? 'no answer', r.error)
     return { sectionExternalIds: r.order }
   },
 
@@ -530,7 +537,7 @@ export default createService({
     const index = dataOf(ctx).index
     if (index !== undefined && index !== null && !(Number.isInteger(index) && (index as number) >= 0)) throw fail(400, 'chat: index is a whole number from 0')
     const r = await moveToSectionAs(ctx.app, profile, idOf(ctx, 'channelExternalId')!, sectionIdOf(ctx, 'sectionExternalId'), (index ?? null) as number | null)
-    if (!r.row) throw refused('moveToSection', r.error?.kind ?? 'no answer')
+    if (!r.row) throw refused('moveToSection', r.error?.kind ?? 'no answer', r.error)
     return r.row
   },
 

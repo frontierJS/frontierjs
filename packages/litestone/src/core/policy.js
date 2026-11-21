@@ -345,6 +345,30 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     return target ? { rel, target, field: target.fields.find(x => x.name === n.name) ?? null } : null
   }
 
+  // A value the enum does not declare is one no row holds, so `==` admits
+  // nobody and `!=` everybody — and a role renamed in the enum and missed in
+  // one policy is exactly that (`FJS-4493`).
+  const enumOf = (side) => {
+    const f = side.type === 'field' ? model.fields.find(x => x.name === side.name)
+            : side.type === 'path'  ? pathTarget(side)?.field
+            : side.type === 'this'  ? outer?.fields.find(x => x.name === side.name)
+            : null
+    return f ? schema?.enums?.find(e => e.name === f.type?.name) ?? null : null
+  }
+  const literalsOf = (side) =>
+    side.type === 'literal' ? [side.value] : side.type === 'list' ? side.items : []
+  const strayEnumValue = (n) => {
+    for (const [col, other] of [[n.left, n.right], [n.right, n.left]]) {
+      const en = enumOf(col)
+      if (!en) continue
+      const members = en.values.map(v => v.name)
+      const stray   = literalsOf(other).find(v => v !== null && !members.includes(v))
+      if (stray !== undefined) throw new Error(
+        `${model.name}: '${stray}' is not a value of enum ${en.name}, so '${policyExprToString(col)}' never ` +
+        `holds it — declared: ${members.join(', ')} — in ${what} '${policyExprToString(expr)}'`)
+    }
+  }
+
   const walk = (n) => {
     if (!n || typeof n !== 'object') return
     if (n.type === 'or' || n.type === 'and') { walk(n.left); walk(n.right); return }
@@ -483,6 +507,7 @@ function checkExpr(model, expr, relationMap, what = '@@allow/@@deny', claims = n
     }
     if (n.type !== 'compare') return
     walk(n.left); walk(n.right)
+    strayEnumValue(n)
     // `encodedCompare` encodes a value the policy holds; a parent's column is
     // not one, and `scalarOperand` binds the left of an 'in' as one, so the
     // parent's column there would bind null.

@@ -7,7 +7,7 @@
 
 import { existsSync }                from 'node:fs'
 import { fileURLToPath }             from 'node:url'
-import { mesaGuide, litestoneGuide, junctionGuide } from './package-guide.js'
+import { mesaGuide, litestoneGuide, junctionGuide, sierraGuide, basecampGuide, testingGuide } from './package-guide.js'
 import { loadGuides }                from './docs-guides.js'
 
 const REPO = 'https://github.com/frontierjs/frontierjs/blob/main'
@@ -20,11 +20,14 @@ const AREAS = [
   { id: 'mesa',      title: 'Mesa guide',      href: '/docs/mesa/',      icon: 'mesa' },
   { id: 'litestone', title: 'Litestone guide', href: '/docs/litestone/', icon: 'database' },
   { id: 'junction',  title: 'Junction guide',  href: '/docs/junction/',  icon: 'plug' },
+  { id: 'sierra',    title: 'Sierra guide',    href: '/docs/sierra/',    icon: 'layout' },
+  { id: 'basecamp',  title: 'Basecamp guide',  href: '/docs/basecamp/',  icon: 'server' },
+  { id: 'testing',   title: 'Testing guide',   href: '/docs/testing/',   icon: 'check' },
   { id: 'reference', title: 'Reference',       href: '/packages/',       icon: 'info' },
 ]
 
 // The areas whose tree is a package guide.
-const GUIDES = { mesa: mesaGuide, litestone: litestoneGuide, junction: junctionGuide }
+const GUIDES = { mesa: mesaGuide, litestone: litestoneGuide, junction: junctionGuide, sierra: sierraGuide, basecamp: basecampGuide, testing: testingGuide }
 
 const START = { section: 'Start here', pages: [
   { title: 'Overview',  href: '/docs/' },
@@ -60,7 +63,7 @@ const learn = () => [
 /** The area a docs page belongs to, from its path. */
 export const areaOf = (href) => AREAS.find((a) => a.id in GUIDES && String(href).startsWith(a.href))?.id ?? 'learn'
 
-/** { areas, trees: { learn, mesa, litestone, junction } } — plain data, safe to hand to a page. */
+/** { areas, trees: { learn, mesa, litestone, junction, sierra, basecamp, testing } } — plain data, safe to hand to a page. */
 export function docsNav() {
   return {
     areas: AREAS,

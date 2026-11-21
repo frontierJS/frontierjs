@@ -809,3 +809,25 @@ describe('a row component inside a Column (FJS-1665, FJS-3452)', () => {
     })
   }
 })
+
+// ─── a shipped template renders without a warning ────────────────────────────
+//
+// A template is what a consumer copies, so a warning it trips is copied with
+// it — WelcomeEmail put its review Card inside a Column and logged on every
+// render while every other test here stayed green (FJS-4492).
+
+describe('every shipped template renders without a warning', () => {
+  const templates = readdirSync(TEMPLATES).filter((f) => f.endsWith('.mesa'))
+
+  for (const file of templates) {
+    it(file, async () => {
+      resetSlotGuard()
+      resetContentWarnings()
+      const seen = []
+      const real = console.warn
+      console.warn = (...a) => seen.push(a.join(' '))
+      try { await renderKit(`templates/${file}`, { cwd: __dirname }) } finally { console.warn = real }
+      expect(seen).toEqual([])
+    })
+  }
+})

@@ -636,3 +636,22 @@ describe('an argument schema resolves on its own', () => {
     expect(DEFS.Order['x-gate']?.read).toBe(1)
   })
 })
+
+// ─── a streaming method ───────────────────────────────────────────────────────
+//
+// The tool call buffers the frames and answers the last (`FJS-D853`), which is
+// right; the tool list still has to say the method streams, or an agent reads a
+// final frame as the whole of an ordinary answer (`FJS-4456`).
+
+describe('a method declared stream: true', () => {
+  const services: ServiceShape[] = [
+    { name: 'drafts', model: null, methods: ['find', 'compose', 'outline'], streamMethods: ['compose'] },
+  ]
+  const p = projectTools(services, VIEWS, 0)
+
+  test('its tool is marked, and its neighbors are not', () => {
+    expect(p.tools.find(t => t.method === 'compose')?.stream).toBe(true)
+    expect(p.tools.find(t => t.method === 'outline')?.stream).toBeUndefined()
+    expect(p.tools.find(t => t.method === 'find')?.stream).toBeUndefined()
+  })
+})

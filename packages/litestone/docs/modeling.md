@@ -35,6 +35,40 @@ read off the emitter. Every *no* in the write column is a refusal that names the
 attribute and says why — `@from` was the one exception, accepted and silently
 dropped, until [FJS-395](../../../ISSUES_ARCHIVE.md#fjs-395).
 
+**`@system` and `@guarded` close the schema.** Each is an access rule, like
+`@encrypted`, `@secret`, `@scoped`, a field `@allow`, `@@gate`, `@@allow` and
+`@@deny`. A schema declaring any of them refuses every model that declares
+neither a `@@gate` nor an `@@allow`/`@@deny` to every caller below `asSystem()`
+(`FJS-D1206`, `FJS-D1212`), and that includes the model carrying the column. One
+`@system` field added to a plain schema therefore turns every unscoped call on
+every ungated model into `AccessDeniedError: … requires SYSTEM access`. A
+model's `@@gate(0)` declares it public:
+
+```lite
+model Ticket {
+  id   Int     @id @default(autoincrement())
+  code String? @system
+}
+```
+
+```js throws
+await db.ticket.create({ data: {} })
+// AccessDeniedError: "Ticket.create" requires SYSTEM access: Ticket declares no @@gate and no @@allow/@@deny …
+```
+
+```lite
+model Ticket {
+  id   Int     @id @default(autoincrement())
+  code String? @system
+  @@gate(0)
+}
+```
+
+```js
+const t = await db.ticket.create({ data: {} })
+if (t.code !== null) throw new Error('unexpected row')
+```
+
 **`@guarded` refuses the NAME as well as the value**, which is what the two
 `asSystem()` cells in the filter and sort columns mean. Until
 [FJS-393](../../../ISSUES_ARCHIVE.md#fjs-393) a caller who could not read the column

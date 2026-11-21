@@ -3,7 +3,7 @@
 //
 // A File[] column is JSON-parsed with the other array columns, while a single
 // File was stored as JSON text and handed back as that text by create, update
-// and `select: { f: { resolve: false } }`, so `.mime` on it was undefined.
+// and `select: { f: { resolve: false } }`, so `.type` on it was undefined.
 
 import { describe, test, expect } from 'bun:test'
 import { createHash } from 'crypto'
@@ -39,12 +39,12 @@ describe('a File reference is an object wherever it is not resolved (FJS-2422)',
     const db = await client()
     const select = { avatar: { resolve: false }, docs: { resolve: false } }
     const made = await db.p.create({ data: { id: 1, avatar: png(), docs: [png()] }, select })
-    expect(made.avatar.mime).toBe('image/png')
+    expect(made.avatar.type).toBe('image/png')
     expect(typeof made.avatar.key).toBe('string')
-    expect(made.docs[0].mime).toBe('image/png')
+    expect(made.docs[0].type).toBe('image/png')
 
     const changed = await db.p.update({ where: { id: 1 }, data: { avatar: png() }, select })
-    expect(changed.avatar.mime).toBe('image/png')
+    expect(changed.avatar.type).toBe('image/png')
     expect(changed.avatar.key).not.toBe(made.avatar.key)
     db.$close()
   })
@@ -53,9 +53,9 @@ describe('a File reference is an object wherever it is not resolved (FJS-2422)',
     const db = await client()
     await db.p.create({ data: { id: 1, avatar: png() } })
     const select = { avatar: { resolve: false } }
-    expect((await db.p.findUnique({ where: { id: 1 }, select })).avatar.mime).toBe('image/png')
-    expect((await db.p.findFirst({ select })).avatar.mime).toBe('image/png')
-    expect((await db.p.findMany({ select }))[0].avatar.mime).toBe('image/png')
+    expect((await db.p.findUnique({ where: { id: 1 }, select })).avatar.type).toBe('image/png')
+    expect((await db.p.findFirst({ select })).avatar.type).toBe('image/png')
+    expect((await db.p.findMany({ select }))[0].avatar.type).toBe('image/png')
     db.$close()
   })
 
@@ -113,5 +113,16 @@ describe('every stored ref records the SHA-256 of its bytes, whichever way they 
     expect(listed.docs.map((d: any) => d.sha256)).toEqual([sha256, sha256])
     db.$close()
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('a stored ref names its content type as its input does (FJS-4409)', () => {
+  test('ref.type is the File type, and the ref carries no second name for it', async () => {
+    const db = await client()
+    const file = new File([png()], 'p.png', { type: 'image/png' })
+    const made = await db.p.create({ data: { id: 1, avatar: file }, select: { avatar: { resolve: false } } })
+    expect(made.avatar.type).toBe(file.type)
+    expect(Object.keys(made.avatar).sort()).toEqual(['bucket', 'endpoint', 'key', 'name', 'provider', 'sha256', 'size', 'type', 'uploadedAt'])
+    db.$close()
   })
 })

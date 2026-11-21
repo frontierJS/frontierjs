@@ -113,7 +113,46 @@ const UNTYPED = `
   }
 `
 
+// FJS-4410 -- a raw route's client is the one `app.principalFor(ctx)` scopes,
+// and it answers the type `$.db` does. The README's raw-route example is this.
+const RAW_ROUTE = `
+  import { createApp } from '@frontierjs/junction'
+
+  const app = createApp({})
+  app.post('/{owner}/{repo}.git/git-receive-pack', async (ctx) => {
+    const { db } = await ctx.app.principalFor(ctx)
+    const book = await db.book.findFirst({ where: { name: ctx.route.repo } })
+    if (!book) return ctx.json({ message: 'Not Found' }, 404)
+    if (!(await db.$checkWrite('book', 'update', book)).ok) return ctx.json({ message: 'Forbidden' }, 403)
+    // @ts-expect-error -- a column the model lacks
+    await db.book.findFirst({ where: { nope: 1 } })
+    return ctx.json({ name: book.name })
+  })
+`
+
+const RAW_ROUTE_UNTYPED = `
+  import { createApp } from '@frontierjs/junction'
+
+  const app = createApp({})
+  app.get('/books', async (ctx) => {
+    const { db } = await ctx.app.principalFor(ctx)
+    return ctx.json(await db.book.findMany())
+  })
+`
+
 describe('the registered client reaches $.db', () => {
+  test('a raw route reads the same client through app.principalFor(ctx)', () => {
+    const { ok, out } = compile(RAW_ROUTE, { generated: true })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, TSC_MS)
+
+  test('a raw route in an app that registers nothing keeps the hand-written LitestoneClient', () => {
+    const { ok, out } = compile(RAW_ROUTE_UNTYPED, { generated: false })
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  }, TSC_MS)
+
   test('an app that augments AppDb reads typed rows through it, and not through ctx.locals', () => {
     const { ok, out } = compile(TYPED, { generated: true })
     expect(out).toBe('')

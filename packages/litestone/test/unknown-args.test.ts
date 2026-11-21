@@ -70,6 +70,26 @@ describe('an unknown argument is refused, not dropped', () => {
     expect(await db.note.count()).toBe(3)
   })
 
+  it('createMany and upsertMany refuse a key they do not read', async () => {
+    const db = await seeded()
+    await expect(db.note.createMany({ data: [{ body: 'x' }], bogus: 1 } as any))
+      .rejects.toThrow(/Unknown argument 'bogus' to Note\.createMany/)
+    await expect(db.note.upsertMany({ data: [{ id: 1, body: 'x' }], confilctTarget: ['id'] } as any))
+      .rejects.toThrow(/Unknown argument 'confilctTarget' to Note\.upsertMany.*Did you mean: conflictTarget\?/)
+    expect(await db.note.count()).toBe(3)
+    expect((await db.note.createMany({ data: [{ body: 'x' }], announce: 'rows' })).count).toBe(1)
+  })
+
+  it('Prisma\'s skipDuplicates points at the upsertMany that skips a taken row', async () => {
+    const db = await seeded()
+    await expect(db.note.createMany({ data: [{ id: 1, body: 'again' }], skipDuplicates: true } as any))
+      .rejects.toThrow(/Unknown argument 'skipDuplicates' to Note\.createMany.*upsertMany\(\{ data, conflictTarget, update: \[\] \}\)/)
+    // The call the refusal names does what skipDuplicates meant.
+    await db.note.upsertMany({ data: [{ id: 1, body: 'again' }, { id: 9, body: 'new' }], conflictTarget: ['id'], update: [] })
+    expect((await db.note.findUnique({ where: { id: 1 } }))?.body).toBe('tachyon drive')
+    expect(await db.note.count()).toBe(4)
+  })
+
   it('a named aggregate is a key the caller coins and is still accepted', async () => {
     const db = await seeded()
     const out: any = await db.note.aggregate({ _total: { count: true } } as any)

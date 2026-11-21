@@ -23,6 +23,11 @@ services, the arguments are your schema, and what a caller may reach is the gate
 they are already graded by. A caller with no session is a stranger and sees a
 stranger's tools.
 
+**The tool list is built in the plugin's `boot()`, from the schema**, so the
+endpoint answers `503` until the app has started, and stays `503` in an app
+with no Litestone client (`createApp({ db })` or `{ tenants }`) to read the
+schema from.
+
 | Option | Default | What it is |
 | --- | --- | --- |
 | `path` | `/mcp` | mounted under the app's own `apiPrefix` |

@@ -62,6 +62,8 @@ export interface ServiceManifest {
   name:       string
   model:      string | null
   methods:    string[]      // CRUD + custom methods, after the `methods:` policy
+  /** The advertised methods declared `stream: true`, whose answer is frames (`FJS-D1031`). */
+  streamMethods: string[]
   hooks:      HookManifest
   softDelete: boolean
   cache:      boolean
@@ -169,13 +171,15 @@ function buildServices(app: App): ServiceManifest[] {
   // it omitted `update`.
   return app.services.values().map(svc => {
     const d = svc.describe()
+    // Policy-filtered: advertising a verb the service answers 405 to is worse
+    // than not advertising it, because a generated client would call it. The
+    // client reaches it over HTTP or the socket, never in-process.
+    const methods = d.methods.filter(m => isMethodAllowed(svc, m, 'http') || isMethodAllowed(svc, m, 'websocket'))
     return {
       name:       d.name,
       model:      d.model,
-      // Policy-filtered: advertising a verb the service answers 405 to is worse
-      // than not advertising it, because a generated client would call it. The
-      // client reaches it over HTTP or the socket, never in-process.
-      methods:    d.methods.filter(m => isMethodAllowed(svc, m, 'http') || isMethodAllowed(svc, m, 'websocket')),
+      methods,
+      streamMethods: d.streamMethods.filter(m => methods.includes(m)),
       hooks:      serializeHookMap(d.hooks),
       softDelete: !!d.softDelete,
       cache:      d.cache,

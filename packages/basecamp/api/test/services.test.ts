@@ -3305,6 +3305,39 @@ describe('an app made from a blueprint', () => {
     expect((await shippedEnv(ok)).NTFY_AUTH_TOKENS).toMatch(new RegExp(`^frontier:${good}:`))
   })
 
+  test('an edit to an installed ntfy App\'s auth Variables is refused as the install refuses it (FJS-4462)', async () => {
+    const ntfy = await catalogNtfy()
+    const good = `tk_${'b2'.repeat(14)}y`
+    const app = await make(developer, {
+      blueprintId: ntfy.id, environmentId: environment.id, name: `Ntfy ${tag()}`,
+      values: { NTFY_BASE_URL: 'https://ntfy.example.test', NTFY_AUTH_USERS: NTFY_USERS, NTFY_SENDER_TOKEN: good },
+    }) as any
+    const variables = env.as(developer).service('variables')
+    const rows = await variables.find({ appId: app.id }) as any
+    const row = (key: string) => (rows.data ?? rows).find((v: any) => v.key === key)
+
+    const tokens = row('NTFY_AUTH_TOKENS')
+    await expect(variables.patch(tokens.id, { value: 'frontier:tk_tooshort', version: tokens.version }))
+      .rejects.toThrow(/'NTFY_AUTH_TOKENS' entry 1 \(frontier\).*29 letters or digits/)
+    const stranger = `stranger:${good}:x`
+    const refused = await variables.patch(tokens.id, { value: stranger, version: tokens.version }).catch((e: Error) => e.message)
+    expect(refused).toMatch(/stranger.*'NTFY_AUTH_USERS'/)
+    expect(refused).not.toContain(good)
+    // Dropping the user a token names is the same restart-loop from the other field.
+    const users = row('NTFY_AUTH_USERS')
+    await expect(variables.patch(users.id, { value: 'someoneelse:$2b$10$x:user', version: users.version }))
+      .rejects.toThrow(/frontier.*'NTFY_AUTH_USERS'/)
+    await expect(variables.remove(users.id)).rejects.toThrow(/frontier.*'NTFY_AUTH_USERS'/)
+    // An import goes through the same patch.
+    await expect(variables.call('import', null, { appId: app.id, text: 'NTFY_AUTH_TOKENS=frontier:tk_nope\n' }))
+      .rejects.toThrow(/'NTFY_AUTH_TOKENS'/)
+    expect((await shippedEnv(app)).NTFY_AUTH_TOKENS).toMatch(new RegExp(`^frontier:${good}:`))
+
+    const fresh = `tk_${'c3'.repeat(14)}x`
+    await variables.patch(tokens.id, { value: `frontier:${fresh}:laptop`, version: tokens.version })
+    expect((await shippedEnv(app)).NTFY_AUTH_TOKENS).toBe(`frontier:${fresh}:laptop`)
+  })
+
   test('a required parameter is refused by its label, an unknown one by its key', async () => {
     await expect(make(developer, { blueprintId: bp.id, environmentId: environment.id, name: 'No pw' }))
       .rejects.toThrow(/Required: Password/)

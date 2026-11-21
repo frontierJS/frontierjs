@@ -85,7 +85,7 @@ import { createApp }        from '@frontierjs/junction'
 // not a thing.
 const app = createApp({ auth, db })
 
-// Mounts /auth/* and registers the account / sessions / api-keys services. Its
+// Mounts /auth/* and registers the account / sessions / apiKeys services. Its
 // work() phase starts the hourly sweep of expired sessions, verifications,
 // OAuth flows and login challenges; `auth.cleanup.sweepNow()` runs it on demand.
 app.configure(authPlugin({ auth }))
@@ -150,7 +150,7 @@ relative to `apiPrefix` for the same reason.
 ## Services
 
 Registered by the same plugin, at the app's own service root. Every method is
-scoped to the CALLER — nothing here takes a user id — except `account-recovery` and `people`,
+scoped to the CALLER — nothing here takes a user id — except `accountRecovery` and `people`,
 which are an operator acting on somebody else's account and have a floor of their
 own (§ *When a factor is lost*, below).
 
@@ -163,12 +163,12 @@ own (§ *When a factor is lost*, below).
 | `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
 | `DELETE` | `/sessions/{id}` | End one of them |
 | `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |
-| `GET`  | `/api-keys` | The caller's keys — never the key itself |
-| `POST` | `/api-keys` | Issue one. **The raw key is in this response and nowhere else** |
-| `DELETE` | `/api-keys/{id}` | Revoke one |
+| `GET`  | `/apiKeys` | The caller's keys — never the key itself |
+| `POST` | `/apiKeys` | Issue one. **The raw key is in this response and nowhere else** |
+| `DELETE` | `/apiKeys/{id}` | Revoke one |
 | `GET`  | `/connections` | Which OAuth providers are attached to the caller |
 | `DELETE` | `/connections/{id}` | Detach one |
-| `POST` | `/account-recovery/{userId}` + `X-Service-Method: resetTotp` | An operator resetting somebody else's lost second factor — SYSADMIN(7) |
+| `POST` | `/accountRecovery/{userId}` + `X-Service-Method: resetTotp` | An operator resetting somebody else's lost second factor — SYSADMIN(7) |
 | `GET`  | `/people/{userId}` | An operator reading somebody else's sessions and API keys — ADMINISTRATOR(5) |
 | `POST` | `/people/{userId}` + `X-Service-Method: revokeSession` · `revokeApiKey` · `signOut` | An operator ending them. Refused over `/mcp` |
 | `DELETE` | `/people/{userId}` | An operator removing the account with its credentials and sessions. Refused over `/mcp` |
@@ -328,7 +328,7 @@ const { recoveryCodes } = await client.auth.confirmTotp(code)
 ```
 
 **Sudo mode** (`FJS-D1209`). `changePassword`, `requestEmailChange`, `setupTotp`,
-`disableTotp`, `regenerateRecoveryCodes`, `api-keys.create` and
+`disableTotp`, `regenerateRecoveryCodes`, `apiKeys.create` and
 `connections.remove` take no password. Each asks whether the calling session
 proved it within `reauthenticationWindow` — a sign-in counts, and so does
 `account.reauthenticate` — and answers **403** with
@@ -388,7 +388,7 @@ A person without their phone or their recovery codes cannot get back in alone.
 A **SYSADMIN(7)** can take the factor off for them:
 
 ```
-POST /account-recovery/{userId}   X-Service-Method: resetTotp   → { sessionsRevoked }
+POST /accountRecovery/{userId}    X-Service-Method: resetTotp   → { sessionsRevoked }
 ```
 
 The factor, any enrollment in flight, the recovery codes, a half-finished login

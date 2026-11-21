@@ -36,7 +36,8 @@
     "bun-types": "^1.3.14",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
-    "@frontierjs/mesa": "workspace:*"
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/toolbelt": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

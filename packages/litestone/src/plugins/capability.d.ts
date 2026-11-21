@@ -33,6 +33,7 @@ export function requireCapability(model?: any, action?: any, ctx?: any): void;
  * security rule is the worse of the two.
  */
 export function requireGrantSubset(model?: any, field?: any, values?: any, ctx?: any): void;
+export function isCapabilityPlugin(p?: any): boolean;
 export class CapabilityPlugin extends LitestonePlugin {
     onInit(schema?: any, ctx?: any): void;
     _check(model?: any, op?: any, ctx?: any): void;
@@ -58,5 +59,8 @@ export class CapabilityPlugin extends LitestonePlugin {
     onBeforeCreate(model?: any, args?: any, ctx?: any): Promise<void>;
     onBeforeUpdate(model?: any, args?: any, ctx?: any): Promise<void>;
     onBeforeDelete(model?: any, args?: any, ctx?: any): Promise<void>;
+    get [CAPABILITY_PLUGIN](): boolean;
 }
 import { LitestonePlugin } from '../core/plugin.js';
+declare const CAPABILITY_PLUGIN: unique symbol;
+export {};

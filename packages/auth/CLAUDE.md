@@ -13,7 +13,7 @@ this list does not name. The owners that matter on most turns:
 
 - `auth.ts` is the `IAuth` implementation — sessions, login, verification; `firstFactorProven()` is the one tail every first factor ends at (its ending is a session, or a bare proof for `authenticate`), `issueSession` the one place a session is minted, `toContext()` the one place a session context is built, `credentialChanged()` the one credential observer.
 - `plugin.ts` is `auth()` — mounts `/auth/*` (the raw routes, with their own body reader `BODY_FIELDS`), declares the cookie mode, registers the three services at `boot()`.
-- `services.ts` is `account` / `sessions` / `api-keys` — the half that is NOT a route; `refuseDelegated` and `fresh()` guard every credential write.
+- `services.ts` is `account` / `sessions` / `apiKeys` — the half that is NOT a route; `refuseDelegated` and `fresh()` guard every credential write.
 - `oauth.ts` is the flow engine — URL, code-for-token trade, normalized identity; no HTTP, no database, no session.
 - `db/user.lite` is `model User`, APPENDED into the app's `schema.lite`; `db/auth.lite` is the machinery (`Credential` / `Session` / `Verification` / `LoginChallenge` / `OauthFlow`), IMPORTED and `extend model`ed; `schema.ts` reads both (`retargetDb` is `--db`).
 - `tenancy.ts` reads the app's `tenancy` block · `totp.ts` is RFC 6238, clockless, shipped as `@frontierjs/auth/totp` · `cleanup.ts` is the expired-row sweep · `crypto.ts` hashing and `expiresAt(ttl, now)` · `errors.ts` carries each error's `status`.

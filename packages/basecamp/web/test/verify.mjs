@@ -496,6 +496,10 @@ async function goto(path) {
     if (!old) break
     await sleep(100)
   }
+  // The served shell already holds Sierra's skip link, and <main id="main"> is
+  // the root layout's, so a page read before Mesa mounts audits as no <main>
+  // and a dead skip target (FJS-4449).
+  await waitFor(`!!document.getElementById('main')`, Boolean, 10_000)
   await sleep(2500)
 }
 

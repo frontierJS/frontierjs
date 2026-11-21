@@ -18,7 +18,7 @@
 //   apiKeys    GET/POST /apiKeys · DEL /apiKeys/{id}
 //   connections GET /connections      which providers are attached
 //               DEL /connections/{id} detach one
-//   account-recovery POST /accountRecovery/{userId}  X-Service-Method: resetTotp
+//   accountRecovery  POST /accountRecovery/{userId}  X-Service-Method: resetTotp
 //   people     GET  /people/{userId}               their sessions and API keys
 //              POST /people/{userId}               X-Service-Method: revokeSession ·
 //                                                  revokeApiKey · signOut
@@ -297,7 +297,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     if (what) refuseDelegated(ctx, operator, what)
     const userId = String(ctx.id ?? '')
     if (!userId || userId === 'me' || userId === operator.id) {
-      throw new Forbidden('That is your own account — manage it from sessions and api-keys')
+      throw new Forbidden('That is your own account — manage it from sessions and apiKeys')
     }
     // Somebody in another tenant is the same miss as nobody at all, so a
     // refusal never confirms they are there.

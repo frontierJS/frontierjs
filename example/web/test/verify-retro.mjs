@@ -52,6 +52,16 @@ import { calculatePayslipFor, payPayRun, revertPayRun } from '../../api/src/doma
 import { arrearsFor }                            from '../../api/src/domain/payroll'
 import { sweepPayroll }                          from './verify-payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
+import { execFileSync }                      from 'node:child_process'
+import { fileURLToPath }                     from 'node:url'
+
+// The tax and pension bands are seeded, not minted here: a second band set
+// would overlap the first and double every deduction. Against an unseeded
+// database every payslip collects no tax, and the PAYE journal line — zero —
+// is never posted.
+execFileSync('bun', ['run', 'db/seed.ts'], {
+  cwd: fileURLToPath(new URL('../..', import.meta.url)), stdio: 'ignore',
+})
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)

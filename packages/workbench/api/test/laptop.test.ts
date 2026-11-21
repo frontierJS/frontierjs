@@ -253,6 +253,23 @@ describe('running', () => {
     } finally { server.stop(true) }
   })
 
+  test('a dead session sharing a live session\'s answering port is not running', async () => {
+    const server = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    const lock   = join(home, '.fli', 'sessions.lock')
+    const before = readFileSync(lock, 'utf8')
+    try {
+      const seeded = JSON.parse(before)
+      seeded[live].ports.fe = [server.port]
+      seeded[gone].ports.fe = [server.port]
+      writeFileSync(lock, JSON.stringify(seeded))
+      const out = await running({ home })
+      expect(out.sessions.find(s => s.name === 'live')).toMatchObject({ running: true })
+      const row = out.sessions.find(s => s.name === 'gone')!
+      expect(row).toMatchObject({ alive: false, running: false })
+      expect(row.ports.every(p => !p.answering)).toBe(true)
+    } finally { server.stop(true); writeFileSync(lock, before) }
+  })
+
   test('a session whose pid is dead is alive: false and not running', async () => {
     const row = (await running({ home })).sessions.find(s => s.name === 'gone')!
     expect(row).toMatchObject({ alive: false, running: false })

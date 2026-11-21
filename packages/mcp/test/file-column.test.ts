@@ -105,7 +105,7 @@ describe('an agent supplies a File column over /mcp (FJS-2062)', () => {
   })
 
   test('the stored ref sent back is refused, and nothing is written', async () => {
-    const ref = { key: 'Photo/original/x.png', bucket: 'test', provider: 'local', size: 1, mime: 'image/png', uploadedAt: new Date().toISOString() }
+    const ref = { key: 'Photo/original/x.png', bucket: 'test', provider: 'local', size: 1, type: 'image/png', uploadedAt: new Date().toISOString() }
     const { result } = await rpc('tools/call', { name: 'photos_create', arguments: { title: 'forged', original: ref } })
     expect(result?.isError).toBe(true)
     expect((await db.asSystem().photo.findMany()).map(r => r.id)).toEqual([1, 2])

@@ -26,7 +26,7 @@ export default defineJob<AnnouncePayment>({
   maxAttempts: 5,
   retryDelay:  [30_000, 120_000, 600_000],
   handler: async (ctx) => {
-    const app = ctx.app!
+    const app = ctx.app
 
     const order = (await db
       .asSystem()
