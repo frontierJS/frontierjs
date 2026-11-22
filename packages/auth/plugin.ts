@@ -672,7 +672,11 @@ export function auth(opts: AuthPluginOptions): Plugin {
           // Only for a provider the app configured: the begin route set it on
           // that path alone, and the segment here is whatever the URL said --
           // `%3B` would end the Path attribute and start one of the sender's.
-          if (oauthAuth.oauthProviderNames?.().includes(provider)) {
+          const configured = [
+            ...(oauthAuth.oauthProviderNames?.() ?? []),
+            ...(oauthAuth.oauthProviderNames?.('grant') ?? []),
+          ]
+          if (configured.includes(provider)) {
             ctx.setCookie?.(OAUTH_STATE_COOKIE, '', { maxAge: 0, path: callbackPath(app, prefix, provider) })
           }
 
@@ -682,7 +686,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
           if (!code || !state)          return oauthFailure(ctx, oauth, 'state')
           if (!oauthAuth.oauthCallback) return oauthFailure(ctx, oauth, 'unavailable')
 
-          let identity, returnTo, link
+          let identity, tokens, returnTo, link, grant, initiator
           try {
             const done = await oauthAuth.oauthCallback(provider, {
               code,
@@ -690,15 +694,27 @@ export function auth(opts: AuthPluginOptions): Plugin {
               cookieState: ctx.cookies?.[OAUTH_STATE_COOKIE] ?? null,
               redirectUri: callbackUri(app, prefix, provider),
             })
-            identity = done.identity
-            returnTo = done.returnTo
-            link     = done.link
+            ;({ identity, tokens, returnTo, link } = done)
+            grant     = done.grant ?? null
+            initiator = done.initiator ?? null
           } catch {
             // One code for every refusal, deliberately. Which one it was is in
             // the audit trail; telling the browser whether a state existed, or
             // whether an exchange failed, is an oracle handed to whoever can
             // reach the URL.
             return oauthFailure(ctx, oauth, 'state')
+          }
+
+          // A grant flow connects an account to the app's row and signs nobody
+          // in, so it ends here and never reaches `oauthResolve` (FJS-D1313).
+          if (grant) {
+            if (!oauthAuth.oauthGrant) return oauthFailure(ctx, oauth, 'unavailable')
+            try {
+              await oauthAuth.oauthGrant(provider, { tokens, identity, grant, initiator })
+            } catch {
+              return oauthFailure(ctx, oauth, 'exchange')
+            }
+            return ctx.redirect!(returnTo ?? '/')
           }
 
           // A flow the mailed link started ends at the link and nowhere else:

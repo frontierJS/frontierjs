@@ -8,7 +8,7 @@
   that states `tag` gets that element, or none with `tag={false}`. A block is
   nested when its caller says `nested` or when it renders inside another
   Block's element, which that Block tells it through `$context`: a Band is
-  100vw, so a second one inside the first scrolls the page sideways (FJS-2716).
+  as wide as its page, so a second one inside the first scrolls the page sideways (FJS-2716).
 
   Its look is six typed keys, each a word @frontierjs/css already ships
   (FJS-D621, FJS-D823): `template` is a Layout helper, `tone`, `treatment` and

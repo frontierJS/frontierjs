@@ -19,7 +19,7 @@ without anything asking for them.
 Two details worth having now rather than the first time they bite. **The jobs
 are the `jobs/` folder beside `createApp({ root: import.meta.url })`**, so the
 call names no directory. And **the database opens on first use**, at
-`db/jobs.db`, so nothing is spent by an app that never queues anything.
+`db/app-jobs.db` beside `db/app.db`, so nothing is spent by an app that never queues anything.
 
 The queue is its own SQLite file rather than a table in the app's database. That
 is what makes a job survive a crash of the thing that queued it.

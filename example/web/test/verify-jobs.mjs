@@ -348,17 +348,17 @@ try {
   // run below does, and its fires are this run's too.
   const sweptAt = Date.now()
   const shop2 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
-  const base  = shop2.prepare('SELECT customerId, planVersionId, userId FROM subscription ORDER BY id LIMIT 1').get()
+  const base  = shop2.prepare('SELECT customerId, planVersionId FROM subscription ORDER BY id LIMIT 1').get()
   const day   = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
   const plantSub = (suffix) => Number(shop2.prepare(
-    `INSERT INTO subscription (reference, customerId, planVersionId, status, userId)
-     VALUES (?, ?, ?, 'active', ?)`)
-    .run(`DUN-${suffix}-${mint}`, base.customerId, base.planVersionId, base.userId).lastInsertRowid)
+    `INSERT INTO subscription (reference, customerId, planVersionId, status)
+     VALUES (?, ?, ?, 'active')`)
+    .run(`DUN-${suffix}-${mint}`, base.customerId, base.planVersionId).lastInsertRowid)
   const plantInvoice = (suffix, subscriptionId, dueOn) => Number(shop2.prepare(
     `INSERT INTO invoice (number, status, customerId, subscriptionId, subtotal, tax, total,
-                          periodStart, periodEnd, dueOn, graceDays, dunningDays, userId)
-     VALUES (?, 'issued', ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21, ?)`)
-    .run(`DUN-${suffix}-${mint}`, base.customerId, subscriptionId, day(-40), day(-10), dueOn, base.userId).lastInsertRowid)
+                          periodStart, periodEnd, dueOn, graceDays, dunningDays)
+     VALUES (?, 'issued', ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21)`)
+    .run(`DUN-${suffix}-${mint}`, base.customerId, subscriptionId, day(-40), day(-10), dueOn).lastInsertRowid)
 
   const lapsingId  = plantSub('L')
   const cancelId   = plantSub('C')
@@ -434,12 +434,12 @@ try {
   {
     const shop3 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
     const renewId = Number(shop3.prepare(
-      `INSERT INTO subscription (reference, customerId, planVersionId, status, userId) VALUES (?, ?, ?, 'active', ?)`)
-      .run(`REN-${mint}`, base.customerId, base.planVersionId, base.userId).lastInsertRowid)
+      `INSERT INTO subscription (reference, customerId, planVersionId, status) VALUES (?, ?, ?, 'active')`)
+      .run(`REN-${mint}`, base.customerId, base.planVersionId).lastInsertRowid)
     dunning.subs.push(renewId)
     const periodId = Number(shop3.prepare(
-      `INSERT INTO subscription_period (subscriptionId, startsOn, endsOn, status, userId) VALUES (?, ?, ?, 'open', ?)`)
-      .run(renewId, day(-31), day(-1), base.userId).lastInsertRowid)
+      `INSERT INTO subscription_period (subscriptionId, startsOn, endsOn, status) VALUES (?, ?, ?, 'open')`)
+      .run(renewId, day(-31), day(-1)).lastInsertRowid)
     shop3.close()
 
     const renewedAt = Date.now()
@@ -499,9 +499,9 @@ try {
     const shop4 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
     const plant = (suffix, status, dueOn) => Number(shop4.prepare(
       `INSERT INTO invoice (number, status, customerId, subtotal, tax, total,
-                            periodStart, periodEnd, dueOn, graceDays, dunningDays, userId)
-       VALUES (?, ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21, ?)`)
-      .run(`REM-${suffix}-${mint}`, status, base.customerId, day(-30), day(0), dueOn, base.userId).lastInsertRowid)
+                            periodStart, periodEnd, dueOn, graceDays, dunningDays)
+       VALUES (?, ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21)`)
+      .run(`REM-${suffix}-${mint}`, status, base.customerId, day(-30), day(0), dueOn).lastInsertRowid)
     const dueId   = plant('D', 'issued', day(2))
     const paidId  = plant('P', 'paid',   day(2))
     const aheadId = plant('A', 'issued', day(10))

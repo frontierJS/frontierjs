@@ -33,7 +33,7 @@
   export let text    = ''        // email only: the plain-text part
   export let fields  = null      // a `mergeFields(...)` catalog
   export let data    = null      // a record to preview against, over the catalog's examples
-  export let height  = '24rem'
+  export let height  = 'calc(24 * var(--rem))'
 
   // The 3GPP GSM 7-bit alphabet. The extension table costs two septets a
   // character; anything outside both sends the whole message as UCS-2.

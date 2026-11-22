@@ -21,10 +21,10 @@ test('type: every rung is declared on :root', function () {
     var v = root.getPropertyValue('--text-' + r).trim();
     assert.ok(v, '--text-' + r + ' is not declared');
     /*
-     * rem, not px. A px rung would ignore the reader's base font size,
-     * which is the whole class of bug this ruling closed.
+     * --rem, not px. A px rung would ignore the reader's base font size,
+     * and a bare rem follows a widget's host page (FJS-D1164).
      */
-    assert.ok(/rem$/.test(v), '--text-' + r + ' should be rem, got ' + v);
+    assert.ok(/(^|\* )1rem\)?$/.test(v), '--text-' + r + ' should be spelled in --rem, got ' + v);
   });
 
   ['display', 'heading', 'snug', 'normal', 'body', 'relaxed'].forEach(function (l) {

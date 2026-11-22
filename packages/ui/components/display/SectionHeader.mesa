@@ -32,11 +32,11 @@
 <div
   class="section-header start"
   style:border-block-end={border ? '1px solid var(--rule)' : null}
-  style:padding-block-end={border ? '0.75rem' : null}
+  style:padding-block-end={border ? 'calc(0.75 * var(--rem))' : null}
   {class}
   {...$attributes}
 >
-  <div class="stack" style:gap="0.125rem" style:min-inline-size="0">
+  <div class="stack" style:gap="calc(0.125 * var(--rem))" style:min-inline-size="0">
     {#if kicker}
       <p class="kicker" style:margin="0">{kicker}</p>
     {/if}

@@ -27,8 +27,10 @@ import { pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
 import { nearest } from '@frontierjs/toolbelt/typo'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { trailMarksOf, markOf, untrailed } from './trail-entries.js'
+import { zonedDayOf } from './zoned.js'
 
-export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSystem }) {
+// `readFor(modelName)` is the read connection that model's rows live on.
+export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSystem, readFor }) {
   const { shapes, schema, now } = ctx
 
   // ─── $checkWhere ────────────────────────────────────────────────────────
@@ -421,13 +423,18 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
     const at = asOf != null
       ? (asOf instanceof Date ? asOf.toISOString() : String(asOf))
       : (win.kind === 'day' ? nowISO(now).slice(0, 10) : nowISO(now))
+    // Unstated, a zoned day is the row's own, as the read lowers it (`FJS-D1053`).
+    const zoned = asOf == null ? shapes[model.name].zonedWindow : null
+    const dayOf = (/** @type {string} */ field) => zoned?.[field]
+      ? zonedDayOf(zoned[field], row, nowISO(now), (sql, params) => readFor(model.name).query(sql).get(...params))
+      : at
 
     // A null edge is an open end — `from` null is *always has been*, `to` null
     // is *still in force* — which is the same reading the SQL injects.
     const from = win.from ? row[win.from] : null
     const to   = win.to   ? row[win.to]   : null
-    if (from != null && String(from) >  at) return false
-    if (to   != null && String(to)   <= at) return false
+    if (from != null && String(from) >  dayOf(win.from)) return false
+    if (to   != null && String(to)   <= dayOf(win.to))   return false
     return true
   }
 

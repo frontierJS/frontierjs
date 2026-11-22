@@ -105,8 +105,13 @@
   .pill-close,
   .drawer-handle
 ):focus-visible,
+:where(.rating > input:focus-visible + label),
 :where(.field, .skip-link):focus {
-  outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
+  /* Clamped into the edge window (tokens.css), or a light brand rings under 3:1. */
+  outline:        var(--ring-width) var(--ring-style)
+                  oklch(from var(--ring-color, var(--ring, var(--color-primary)))
+                    clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                          calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
   outline-offset: var(--ring-offset);
 }
 
@@ -167,8 +172,10 @@
  * The close button sits on top of a filled pill. A blue --ring is
  * invisible on a blue pill and illegible on a red one, so it rings in the
  * text color the pill already derived for contrast — which chip.css
- * guarantees is AA against that fill.
+ * guarantees is AA against that fill. Set as the outline's color rather
+ * than --ring-color, since the edge window is tuned for the surface and
+ * would pull white text on a dark pill toward the pill.
  */
 :where(.pill-close):focus-visible {
-  --ring-color: currentColor;
+  outline-color: currentColor;
 }

@@ -29,8 +29,7 @@ import collectInvoice                  from '../jobs/invoice-collect.job.ts'
  */
 const sys = () => ($.db as { asSystem(): Record<string, any> }).asSystem()
 
-type OrderRow   = { id: number; reference: string; status: string; total: number
-                    userId: string | null }
+type OrderRow   = { id: number; reference: string; status: string; total: number }
 // Both parents are nullable and exactly one is set — `Payment` is
 // `@@arc([orderId, invoiceId])`, so the shape here is the declaration's, and a
 // branch that reads one without checking it is a branch the schema already
@@ -190,11 +189,6 @@ const start = async () => {
       orderId:     order.id,
       amount:      order.total,
       currency:    intent.currency ?? 'USD',
-      // Copied from the order, like the invoice path does. Null for a guest,
-      // which is most of this shop's orders and is the honest answer: there is no
-      // account for the row policy to match, and a checkout link is what the
-      // stranger was given instead.
-      userId:      order.userId ?? null,
     } }) as PaymentRow
   } catch (err) {
     if ((err as Error)?.name !== 'UniqueConflictError') throw err
@@ -425,7 +419,6 @@ const record = async () => {
       expMonth:    Number(inst.expMonth ?? 12),
       expYear:     Number(inst.expYear ?? 2030),
       isDefault:   true,
-      userId:      customer.userId ?? null,
     } })
 
     return { status: 'filed', eventId, paymentMethod: filed.id, customer: customer.id }

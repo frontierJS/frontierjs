@@ -65,5 +65,5 @@
 
 <style>
   .filter-range-input { display: inline-flex; }
-  .filter-bound       { --field-inline-size: 6rem; inline-size: 6rem; flex: 0 1 auto; }
+  .filter-bound       { --field-inline-size: calc(6 * var(--rem)); inline-size: calc(6 * var(--rem)); flex: 0 1 auto; }
 </style>

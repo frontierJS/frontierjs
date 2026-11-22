@@ -385,6 +385,28 @@ test('theming: --dialog-bg does not break .outlined on a dialog', function () {
   cleanup();
 });
 
+test('theming: a toned dialog header tints the dialog\'s own ground, not --surface', function () {
+  /*
+   * FJS-4531. The header's tint was mixed into --surface while the body
+   * drew --dialog-bg (or --surface-raised), so a themed dialog wore a
+   * header cut from a different ground. Two grounds, one --surface: the
+   * header must move with the ground.
+   */
+  var html = '<div class="dialog danger"><div class="surface-header" id="h">x</div></div>'
+  var header = function (ground) {
+    var node = themedBy('--surface: rgb(10, 20, 30); ' + ground, html, '#h');
+    var read = { bg: style(node, 'background-color'), border: style(node, 'border-bottom-color') };
+    cleanup();
+    return read;
+  };
+  [['--dialog-bg', 'explicit --dialog-bg'], ['--surface-raised', 'the raised default']].forEach(function (pair) {
+    var dark = header(pair[0] + ': rgb(0, 0, 0)');
+    var light = header(pair[0] + ': rgb(255, 255, 255)');
+    assert.ok(dark.bg !== light.bg, 'the header background ignored ' + pair[1] + ' (' + dark.bg + ')');
+    assert.ok(dark.border !== light.border, 'the header rule ignored ' + pair[1] + ' (' + dark.border + ')');
+  });
+});
+
 test('theming: a dark Surface inside a Dialog or Drawer draws its own ground, not the dialog\'s', function () {
   /*
    * FJS-2635. The dialog sets --surface-ground on itself, the property
@@ -587,6 +609,39 @@ test('theming: the spinner keeps a linear timing function', function () {
   cleanup();
 });
 
+test('theming: a thing that travels has a duration and a spring on :root', function () {
+  /*
+   * A view transition's pseudo-elements inherit from the document element
+   * and from nothing else, so a word that is not on :root does not reach
+   * them, and an app moving a window or a dock coins its own (FJS-2257,
+   * FJS-D2150). Read through animation-duration because test/run.js crushes
+   * transitions and leaves animations alone.
+   */
+  var root = getComputedStyle(document.documentElement);
+  assert.ok(root.getPropertyValue('--motion-travel').trim(), ':root declares no --motion-travel');
+  assert.ok(root.getPropertyValue('--motion-ease-spring').trim(), ':root declares no --motion-ease-spring');
+
+  var node = themedBy('', '<div style="animation-duration: var(--motion-travel); animation-timing-function: var(--motion-ease-spring)">x</div>');
+  var slow = themedBy('', '<div style="animation-duration: var(--motion-slow)">x</div>');
+  assert.ok(
+    parseFloat(getComputedStyle(node).animationDuration) > parseFloat(getComputedStyle(slow).animationDuration),
+    'travel is not longer than a measurement moving: ' + getComputedStyle(node).animationDuration
+  );
+
+  var easing = getComputedStyle(node).animationTimingFunction;
+  var overshoots = /^linear\(/.test(easing) && easing.slice(7).split(/[,\s()]+/).some(function (n) {
+    return !/%$/.test(n) && parseFloat(n) > 1;
+  });
+  assert.ok(overshoots, 'the spring does not overshoot: ' + easing);
+  cleanup();
+});
+
+test('theming: data-motion="still" stops a thing that travels', function () {
+  var node = themedBy('', '<div data-motion="still"><div style="animation-duration: var(--motion-travel)">x</div></div>', 'div');
+  assert.equal(getComputedStyle(node).animationDuration, '0s', 'data-motion="still" left --motion-travel running');
+  cleanup();
+});
+
 /* ── FJS-163 — typography treatment ──────────────────────────────── */
 
 var LABELS = [
@@ -785,7 +840,7 @@ test('theming: a nested theme\'s --text-md, --leading-body and --body-letter-spa
   );
   var outer = app.querySelector('.outer');
   var root = getComputedStyle(document.documentElement);
-  var md = parseFloat(root.getPropertyValue('--text-md')) * parseFloat(root.fontSize);
+  var md = lengthPx(document.body, '--text-md');
   assert.equal(px(style(outer, 'font-size')), px(md), '.app does not read --text-md');
   assert.equal(px(style(outer, 'line-height')), px(md * parseFloat(root.getPropertyValue('--leading-body'))), '.app does not read --leading-body');
   assert.equal(style(outer, 'letter-spacing'), 'normal', '--body-letter-spacing moved shipped body tracking');

@@ -72,7 +72,7 @@
     archive: 'muted', audio: 'secondary', video: 'secondary', code: 'muted', file: 'muted',
   }
 
-  const sizeMap = { sm: '2rem', md: '2.5rem', lg: '3.5rem' }
+  const sizeMap = { sm: 'calc(2 * var(--rem))', md: 'calc(2.5 * var(--rem))', lg: 'calc(3.5 * var(--rem))' }
 
   const k    = kind || fileKind(name, type)
   const ext  = fileExt(name).slice(0, 4).toUpperCase()

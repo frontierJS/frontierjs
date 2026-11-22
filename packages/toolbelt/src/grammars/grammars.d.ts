@@ -23,4 +23,4 @@ import { mesa } from './mesa.js';
 import { ts } from './js.js';
 import { yaml } from './yaml.js';
 export { css, html, js, json, lite, markdown, mesa, ts, yaml };
-export { ELEMENT, STRUCTURE, escapeHTML, initialState, lineHTML, stateGrammar, stateStack, tokenizeLine } from "./tokenize.js";
+export { ELEMENT, STRUCTURE, escapeLine, initialState, lineHTML, stateGrammar, stateStack, tokenizeLine } from "./tokenize.js";

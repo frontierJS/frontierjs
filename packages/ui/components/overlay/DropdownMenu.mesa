@@ -207,11 +207,11 @@
       bind:this={panelEl}
       class="popover"
       style:position="fixed"
-      style:min-inline-size="10rem"
-      style:max-inline-size="16rem"
+      style:min-inline-size="calc(10 * var(--rem))"
+      style:max-inline-size="calc(16 * var(--rem))"
       style:max-block-size={maxH == null ? 'calc(100dvh - 16px)' : `${maxH}px`}
       style:overflow-y="auto"
-      style:padding="0.25rem"
+      style:padding="calc(0.25 * var(--rem))"
       style:left="{x}px"
       style:top="{y}px"
       style:visibility="{placed ? 'visible' : 'hidden'}"

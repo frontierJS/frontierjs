@@ -44,8 +44,9 @@ export async function run(t) {
     html.classList.remove('theme-press');
     return { plain, press };
   `)
-  t.is(scale.plain, '0.8125rem', 'the type scale on the page is the one @frontierjs/css ships')
-  t.is(scale.press, '0.75rem', 'a theme on <html> retunes the type scale')
+  // An unregistered token reads back as its token stream, --rem substituted.
+  t.is(scale.plain, 'calc(0.8125 * 1rem)', 'the type scale on the page is the one @frontierjs/css ships')
+  t.is(scale.press, 'calc(0.75 * 1rem)', 'a theme on <html> retunes the type scale')
 
   // A click through the input pipeline, not el.click(): the delegation root is
   // what a mount registers, and a component reached without one renders fine

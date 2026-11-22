@@ -20,7 +20,7 @@
 </script>
 
 {#if keys.length}
-  <span class="cluster" style:gap="0.25rem" {class} {...$attributes}>
+  <span class="cluster" style:gap="calc(0.25 * var(--rem))" {class} {...$attributes}>
     {#each keys as key, i (i)}
       {#if i > 0}
         <span class="text-muted text-xs" aria-hidden="true">+</span>

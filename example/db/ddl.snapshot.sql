@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS "oauth_flow" (
   "verifier" TEXT NOT NULL,
   "returnTo" TEXT,
   "invitation" TEXT,
+  "grant" TEXT,
+  "initiator" TEXT,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -698,7 +700,6 @@ CREATE TABLE IF NOT EXISTS "order" (
   "trackingCode" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
-  "userId" TEXT,
   CHECK ("status" IN ('pending', 'paid', 'shipped', 'refunded', 'cancelled')),
   CHECK (subtotal = 0 OR total = subtotal - discount + shipping + tax),
   CHECK (discount <= subtotal),
@@ -749,7 +750,6 @@ CREATE TABLE IF NOT EXISTS "payment_method" (
   "expYear" INTEGER NOT NULL,
   "isDefault" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "userId" TEXT,
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_payment_method_customerId" ON "payment_method" ("customerId");
@@ -1144,7 +1144,6 @@ CREATE TABLE IF NOT EXISTS "subscription" (
   "cancelledAt" TEXT,
   "isCancelingAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "userId" TEXT,
   CHECK ("status" IN ('trialing', 'active', 'pastDue', 'cancelled')),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
   FOREIGN KEY ("planVersionId") REFERENCES "plan_version" ("id") ON DELETE RESTRICT
@@ -1265,7 +1264,6 @@ CREATE TABLE IF NOT EXISTS "subscription_period" (
   "startsOn" TEXT NOT NULL,
   "endsOn" TEXT NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'open',
-  "userId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("status" IN ('open', 'closed')),
   CHECK (startsOn < endsOn),
@@ -1319,7 +1317,6 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   "dunningDays" INTEGER NOT NULL,
   "paidAt" TEXT,
   "isReminded" INTEGER NOT NULL DEFAULT 0,
-  "userId" TEXT,
   CHECK ("status" IN ('draft', 'issued', 'paid', 'void')),
   CHECK (total = subtotal + tax),
   FOREIGN KEY ("customerId") REFERENCES "customer" ("id") ON DELETE RESTRICT,
@@ -1371,7 +1368,6 @@ CREATE TABLE IF NOT EXISTS "payment" (
   "refundedAmount" INTEGER NOT NULL DEFAULT 0 CHECK ("refundedAmount" BETWEEN -9007199254740991 AND 9007199254740991),
   "failureReason" TEXT,
   "actionUrl" TEXT,
-  "userId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "settledAt" TEXT,
   CHECK ("status" IN ('pending', 'requiresAction', 'succeeded', 'failed', 'refunded')),
@@ -1400,7 +1396,6 @@ CREATE TABLE IF NOT EXISTS "invoice_line" (
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
   "periodStart" TEXT,
   "periodEnd" TEXT,
-  "userId" TEXT,
   FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_invoice_line_invoiceId" ON "invoice_line" ("invoiceId");
@@ -1417,7 +1412,6 @@ CREATE TABLE IF NOT EXISTS "credit_note" (
   "amount" INTEGER NOT NULL CHECK ("amount" BETWEEN -9007199254740991 AND 9007199254740991),
   "reason" TEXT NOT NULL,
   "issuedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "userId" TEXT,
   FOREIGN KEY ("invoiceId") REFERENCES "invoice" ("id") ON DELETE RESTRICT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_credit_note_invoiceId" ON "credit_note" ("invoiceId");

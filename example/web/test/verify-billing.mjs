@@ -85,7 +85,6 @@ const sub = await startSubscription(sys, {
   planVersionId: version.id,
   status:     'trialing',
   quantity:   3,
-  userId:     customer.userId,
 }, { startsOn: periodStart, endsOn: periodEnd })
 
 const invoicesFor = () => sys.invoice.findMany({ where: { subscriptionId: sub.id }, orderBy: { id: 'asc' } })
@@ -301,7 +300,6 @@ const mkSub = (suffix, isCancelingAtPeriodEnd) => startSubscription(sys, {
   planVersionId: version.id,
   status:     'active',
   quantity:   1,
-  userId:     customer.userId,
   isCancelingAtPeriodEnd,
 }, { startsOn: addToDate(TODAY, { days: -35 }), endsOn: boundaryPeriodEnd })
 

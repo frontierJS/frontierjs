@@ -37,7 +37,9 @@ import type { LitestoneAuthOptions, CredentialEvent } from './types.ts'
 import {
   beginFlow, exchangeCode, fetchIdentity, stateMatches, isAllowedReturnTo, OAuthError,
 } from './oauth.ts'
-import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
+import type {
+  OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution, OAuthPurpose, OAuthGrantTarget, OAuthGrantEvent,
+} from './oauth.ts'
 import { createAuthCleanupJobs } from './cleanup.ts'
 import { ClientCache, clientHost, type ClientFetchOptions } from './clients.ts'
 import { userTenancy }          from './tenancy.ts'
@@ -1721,8 +1723,8 @@ export function createLitestoneAuth(
     // NOT secret: these names are on the sign-in page of every site that has
     // one, and the screen that needs them has no session by definition.
 
-    oauthProviderNames(): string[] {
-      return Object.keys(oauthProviders)
+    oauthProviderNames(purpose: OAuthPurpose = 'signIn'): string[] {
+      return Object.keys(oauthProviders).filter(name => (oauthProviders[name].purpose ?? 'signIn') === purpose)
     },
 
     // ── OAuth: start a flow ──────────────────────────────────────────────
@@ -1742,10 +1744,27 @@ export function createLitestoneAuth(
         returnTo?:   string | null
         extra?:      Record<string, string>
         link?:       string | null
+        grant?:      OAuthGrantTarget | null
+        initiator?:  string | null
       },
     ): Promise<{ authorizeUrl: string; state: string }> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
+
+      // A grant provider started without a target is the public begin route
+      // turning it into a sign-in; a sign-in provider started with one would
+      // land tokens nothing declared a place for.
+      const isGrant = provider.purpose === 'grant'
+      const grant   = args.grant ?? null
+      if (isGrant !== Boolean(grant)) {
+        throw new OAuthError(isGrant
+          ? `OAuth provider '${providerName}' connects an account and needs a grant target`
+          : `OAuth provider '${providerName}' signs in and takes no grant target`)
+      }
+      if (grant && (typeof grant.model !== 'string' || !grant.model || typeof grant.id !== 'string' || !grant.id)) {
+        throw new OAuthError('A grant target is { model, id }, both strings')
+      }
+      if (grant && args.link) throw new OAuthError('A grant flow answers no oauthLink invitation')
 
       // Looked up and NOT spent: a mail scanner prefetching the link lands
       // here, and all it may do is reach the provider's sign-in page.
@@ -1775,6 +1794,8 @@ export function createLitestoneAuth(
           verifier,
           returnTo,
           invitation: args.link ?? null,
+          grant:      grant ? { model: grant.model, id: grant.id } : null,
+          initiator:  grant ? (args.initiator ?? null) : null,
           expiresAt: expiresAt(oauthFlowTtl, sys.$now()),
         }
       })
@@ -1791,7 +1812,14 @@ export function createLitestoneAuth(
     async oauthCallback(
       providerName: string,
       args: { code: string; state: string; cookieState: string | null; redirectUri: string },
-    ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null; link: string | null }> {
+    ): Promise<{
+      identity:  OAuthIdentity
+      tokens:    TokenSet
+      returnTo:  string | null
+      link:      string | null
+      grant:     OAuthGrantTarget | null
+      initiator: string | null
+    }> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
 
@@ -1831,7 +1859,33 @@ export function createLitestoneAuth(
       })
       const identity = await fetchIdentity(provider, tokens)
 
-      return { identity, tokens, returnTo: flow.returnTo ?? null, link: flow.invitation ?? null }
+      return {
+        identity,
+        tokens,
+        returnTo:  flow.returnTo ?? null,
+        link:      flow.invitation ?? null,
+        grant:     (flow.grant as OAuthGrantTarget | null) ?? null,
+        initiator: flow.initiator ?? null,
+      }
+    },
+
+    // ── OAuth: land a grant ──────────────────────────────────────────────
+    //
+    // Where a sign-in flow goes to `oauthResolve`, a grant flow ends here: no
+    // Credential and no session. The app's `onGrant` writes the tokens to its
+    // own row, where that model's gate and `@secret` already are.
+
+    async oauthGrant(providerName: string, event: Omit<OAuthGrantEvent, 'provider'>): Promise<void> {
+      const provider = oauthProviders[providerName]
+      if (!provider || provider.purpose !== 'grant' || !provider.onGrant) {
+        throw new OAuthError(`OAuth provider '${providerName}' is not a grant provider`)
+      }
+      await provider.onGrant({ provider: providerName, ...event })
+      await audit('oauth.granted', {
+        model:    event.grant.model,
+        recordId: event.grant.id,
+        meta:     { provider: providerName, initiator: event.initiator },
+      })
     },
 
     // ── OAuth: who is this identity? ─────────────────────────────────────
@@ -1859,6 +1913,7 @@ export function createLitestoneAuth(
     async oauthResolve(providerName: string, identity: OAuthIdentity, from?: SignInOrigin): Promise<OAuthResolution> {
       const provider = oauthProviders[providerName]
       if (!provider) throw new OAuthError(`Unknown OAuth provider '${providerName}'`)
+      if (provider.purpose === 'grant') throw new OAuthError(`OAuth provider '${providerName}' connects an account and signs nobody in`)
 
       const type = `oauth:${providerName}`
 

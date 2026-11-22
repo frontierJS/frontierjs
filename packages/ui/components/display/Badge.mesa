@@ -37,8 +37,8 @@
 <span
   class={cx('badge', t, sizeClass(SIZES, size, $class))}
   style:position={float ? 'absolute' : null}
-  style:top={float ? '-0.375rem' : null}
-  style:right={float ? '-0.375rem' : null}
+  style:top={float ? 'calc(-0.375 * var(--rem))' : null}
+  style:right={float ? 'calc(-0.375 * var(--rem))' : null}
   style:z-index={float ? '10' : null}
   {class}
   {...$attributes}

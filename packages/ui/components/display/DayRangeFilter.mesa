@@ -144,5 +144,5 @@
 
 <style>
   .filter-days { display: inline-flex; gap: var(--space-xs); align-items: center; }
-  .filter-day  { --field-inline-size: auto; min-inline-size: 10rem; text-align: start; cursor: pointer; }
+  .filter-day  { --field-inline-size: auto; min-inline-size: calc(10 * var(--rem)); text-align: start; cursor: pointer; }
 </style>

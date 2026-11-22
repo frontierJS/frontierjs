@@ -73,6 +73,13 @@ describe('the binding key', () => {
     expect(server).toEqual(dom)
   })
 
+  it('names a flagged <mesa:boundary> by its own offset on both walks (FJS-4517)', async () => {
+    const src = "<script>\n  const u = $async(() => Promise.resolve(1))\n</script>\n<mesa:boundary>{#snippet pending()}<i>w</i>{/snippet}<p>{u}</p></mesa:boundary><b>after</b>"
+    const dom = await keys(src, { hydratable: true }), server = await keys(src, { target: 'server', hydratable: true })
+    expect(dom).toContain('block ' + bindingKey(src.indexOf('<mesa:boundary')))
+    expect(server).toEqual(dom)
+  })
+
   it('names a snippet rendered twice once, by the snippet body, on both walks', async () => {
     const src = '<script>\n  let n = 1\n</script>\n{#snippet s()}<b>{n}</b>{/snippet}\n{@render s()}{@render s()}'
     const { dom, server } = await both(src)
@@ -81,7 +88,7 @@ describe('the binding key', () => {
   })
 })
 
-const UNRESOLVED_TODAY = 76
+const UNRESOLVED_TODAY = 83
 
 describe('every corpus file', () => {
   // rg skips node_modules and gitignored build output, as scripts/corpus.mjs does.

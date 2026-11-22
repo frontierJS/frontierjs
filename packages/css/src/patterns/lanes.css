@@ -25,7 +25,7 @@
 .lane {
   display:        flex;
   flex-direction: column;
-  flex:           0 0 var(--lane-size, 18rem);
+  flex:           0 0 var(--lane-size, calc(18 * var(--rem)));
   gap:            var(--space-lg);
   padding:        var(--space-lg);
   min-inline-size: 0;

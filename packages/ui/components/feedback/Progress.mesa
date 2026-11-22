@@ -27,13 +27,13 @@
   const pct = Math.min(100, Math.max(0, (value / max) * 100))
 
   // block-size override for .progress, which is 0.5rem by default.
-  const sizeMap = { xs: '0.25rem', sm: '0.375rem', md: '0.5rem', lg: '1rem' }
+  const sizeMap = { xs: 'calc(0.25 * var(--rem))', sm: 'calc(0.375 * var(--rem))', md: 'calc(0.5 * var(--rem))', lg: 'var(--rem)' }
 
   const height = sizeMap[size] ?? sizeMap.md
   const t      = toTone(tone)
 </script>
 
-<div class="stack" style:gap="0.375rem" {class} {...$attributes}>
+<div class="stack" style:gap="calc(0.375 * var(--rem))" {class} {...$attributes}>
   {#if label || showLabel}
     <div class="split">
       {#if label}

@@ -208,5 +208,5 @@
   display:     flex;
   flex-wrap:   wrap;
   gap:         var(--space-sm);
-  margin-block-start: 0.5rem;
+  margin-block-start: calc(0.5 * var(--rem));
 }

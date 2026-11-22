@@ -42,12 +42,12 @@ import {
 import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.js'
-import { foldSpec } from './fold.js'
+import { foldSpec, foldMoveClause, foldedDay } from './fold.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {TransitionConflictError, VersionRequiredError,
   VersionConflictError, SyncConflictError, MonotonicError,
   TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,isUniqueConflict, CapabilityNotDeclaredError,
-  SealedDocumentError, TransitionGateError, TransitionSystemError, UniqueConflictError } from './errors.js'
+  SealedDocumentError, TransitionGateError, TransitionSystemError, UniqueConflictError, FoldedSpanError } from './errors.js'
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy, LATEST_DAY } from './commitment.js'
 import { dueAt, } from '@frontierjs/toolbelt/datetime'
@@ -637,6 +637,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Three SELECT columns: the aggregate, the count of non-numeric members and
   // one stray's JSON type. `filter` is a named aggregate's FILTER, which each
   // column carries so the strays are counted over the rows the sum reads.
+  const memberValue = (c) => `CASE WHEN json_type(${c}, ?) IN ('integer', 'real') THEN json_extract(${c}, ?) END`
+
   function memberAggCols(op, fn, field, spec, alias, params, { distinct = false, filter = null, named = false } = {}) {
     const { jp, key } = memberPath(op, field, spec, named ? ['column', 'path'] : ['path'])
     const c      = _aggCol(field)
@@ -645,10 +647,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const stray  = `json_type(${c}, ?) NOT IN ('integer', 'real', 'null')`
     params.push(jp, jp, ...fp, jp, ...fp, jp, jp, ...fp)
     return { key, sql: [
-      `${fn}(${distinct ? 'DISTINCT ' : ''}CASE WHEN json_type(${c}, ?) IN ('integer', 'real') THEN json_extract(${c}, ?) END)${tail} AS ${quoteIdent(alias)}`,
+      `${fn}(${distinct ? 'DISTINCT ' : ''}${memberValue(c)})${tail} AS ${quoteIdent(alias)}`,
       `COUNT(CASE WHEN ${stray} THEN 1 END)${tail} AS ${quoteIdent(`${alias}__strays`)}`,
       `MIN(CASE WHEN ${stray} THEN json_type(${c}, ?) END)${tail} AS ${quoteIdent(`${alias}__stray`)}`,
     ].join(', ') }
+  }
+
+  // The aggregate alone, for a groupBy's having or orderBy. It reads a stray as
+  // NULL, so the caller also selects memberAggCols to have the read refuse it.
+  function memberAggExpr(op, fn, field, spec, keys, params) {
+    const { jp, key } = memberPath(op, field, spec, keys)
+    params.push(jp, jp)
+    return { key, sql: `${fn}(${memberValue(_aggCol(field))})` }
   }
 
   // The answer for one member aggregate out of a result row, after refusing
@@ -2862,7 +2872,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const readState = (field) => readDb.query(
       sqlJoin([sqlFragment('SELECT '), ident(col(field)), sqlFragment(' AS v FROM '), T, KW.where, r.where], '').sql,
     ).get(...r.where.params)
-    const backwards = () => { if (r.monotonic) throwIfBackwards(r.where, r.monotonic) }
+    const backwards = () => {
+      if (r.monotonic) throwIfBackwards(r.where, r.monotonic)
+      if (r.fold) throwIfFolded(r.where, r.fold)
+    }
     const versionMoved = () => {
       if (!r.version) return
       const cur = readState(r.version.field)
@@ -2970,6 +2983,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (cur) throw new MonotonicError(modelName, m.field, m.direction, cur.v)
     }
   }
+  // A row the where reaches that the write would move into a folded day.
+  function throwIfFolded(where, fold) {
+    const q = sqlJoin([
+      sqlFragment(`SELECT ${fold.values.sql} FROM `, fold.values.params), T, KW.where,
+      where ? sqlJoin([sqlFragment('('), where, sqlFragment(') AND ')], '') : null,
+      sqlFragment(`NOT (${fold.sql}) LIMIT 1`, fold.params),
+    ], '')
+    const cur = readDb.query(q.sql).get(...q.params)
+    const hit = cur && foldedDay(shape.fold, readDb, Object.values(cur))
+    if (hit) throw new FoldedSpanError(modelName, { into: shape.fold.into, day: hit.day, key: hit.key })
+  }
   const sqlOfParts = (parts) => parts.map(m => m.sql).join(' AND ')
   const paramsOfParts = (parts) => parts.flatMap(m => m.params)
 
@@ -3001,6 +3025,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     if (plan.op === 'delete') refuseLockedCascade(where)
     if (plan.monotonic) throwIfBackwards(where, plan.monotonic)
+    if (plan.fold) throwIfFolded(where, plan.fold)
     const notes  = WRITE_NOTES[plan.op]
     const wSql   = where?.sql ?? null
     const wBinds = where?.params ?? []
@@ -3330,6 +3355,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // Asked inside the unit, under its lock: narrowing a bulk WHERE would
       // drop the backwards rows from the count instead of refusing them.
       monotonic: monotonicClause(row, _umOps),
+      fold:      shape.fold ? foldMoveClause(shape.fold, row, _umOps) : null,
     }
   }
 
@@ -3880,10 +3906,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // value the caller read, so a row that moved simply does not match. The
       // bump rides the SET clause, which also means a versioned update always
       // has a column to write even when `data` was otherwise empty.
-      // @monotonic narrows the same way, ahead of the version.
+      // @monotonic narrows the same way, ahead of the version, and so does a
+      // folding model's key or clock moving the row into a folded day.
       const _mono          = monotonicClause(row, _upOps)
-      const _mWhereSql     = _mono ? `(${_txWhereSql}) AND ${sqlOfParts(_mono)}` : _txWhereSql
-      const _mWhereParams  = _mono ? [..._txWhereParams, ...paramsOfParts(_mono)] : _txWhereParams
+      const _foldMove      = shape.fold ? foldMoveClause(shape.fold, row, _upOps) : null
+      const _narrow        = [...(_mono ?? []), ...(_foldMove ? [_foldMove] : [])]
+      const _mWhereSql     = _narrow.length ? `(${_txWhereSql}) AND ${sqlOfParts(_narrow)}` : _txWhereSql
+      const _mWhereParams  = _narrow.length ? [..._txWhereParams, ...paramsOfParts(_narrow)] : _txWhereParams
       const _vWhereSql0    = _expectVersion == null ? _mWhereSql : `(${_mWhereSql}) AND ${ident(col(_versionField)).sql} = ?`
       const _vWhereParams0 = _expectVersion == null ? _mWhereParams : [..._mWhereParams, _expectVersion]
       // The third link in the same chain: the caller's where, then the policy,
@@ -3966,7 +3995,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         refuse: {
           where: callerWhere,
           transition: _transResult ? { ..._transResult, policy: !!updatePolicy } : null,
-          monotonic: _mono, version, sealSelf: _vSelf.frozen,
+          monotonic: _mono, fold: _foldMove, version, sealSelf: _vSelf.frozen,
           seal: { sql: _vWhereSql0, params: _vWhereParams0, op: 'update' },
         },
         before: beforeRow, heard: heardRow, transition: _transResult,
@@ -4378,7 +4407,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, T, needsTiming, fireQuery,
     hydrateCols, exactSum, buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue,
-    refuseValueAggKeys,
+    memberAggExpr, refuseValueAggKeys,
   })
   const { upsertMany } = makeUpsertMany(shape, ctx, {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
@@ -7672,7 +7701,8 @@ export async function createClient({
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
     $fromReach, $fromColumns, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     accessorIndex, tenancyInfo,
-  } = makeIntrospection(ctx, { schemaFilePath, asSystem })
+  } = makeIntrospection(ctx, { schemaFilePath, asSystem,
+    readFor: (/** @type {string} */ m) => (dbRegistry[modelDbMap[m] ?? 'main'] ?? dbRegistry.main).readDb })
 
   // ─── $softDelete ────────────────────────────────────────────────────────
   //

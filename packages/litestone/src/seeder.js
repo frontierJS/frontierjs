@@ -889,29 +889,37 @@ export async function loadRows(db, modelName, source, opts = {}) {
 
   const accessor = modelToAccessor(modelName)
   const requiredNames = mode === 'upsert' ? model.fields.filter(columns.required).map(f => f.name) : []
-  let added = 0, updated = 0
+  let added = 0, updated = 0, unchanged = 0
   // SQLite checks NOT NULL before it resolves ON CONFLICT, so a row lacking a
   // required value cannot ride upsertMany even when its key is stored: it is
   // an update by key, and a key no row holds makes it a new row that lacks it.
-  // Answers how many of `rows` it added; the rest updated a stored row.
+  // Answers how many of `rows` it added and how many restated a stored row
+  // value for value; the rest updated one.
   const write = async (tx, rows) => {
-    if (mode !== 'upsert') { await tx[accessor].createMany({ data: rows.map(r => r.data) }); return rows.length }
+    if (mode !== 'upsert') { await tx[accessor].createMany({ data: rows.map(r => r.data) }); return { fresh: rows.length, same: 0 } }
     const whole = rows.filter(r => !r.lacking.length)
     // Asked through the caller's own accessor, so the split never counts a
-    // row the caller cannot read.
-    const held = whole.length
-      ? (await tx[accessor].findMany({ where: { [key]: whole.map(r => r.data[key]) }, select: { [key]: true } })).length
-      : 0
+    // row the caller cannot read, and a column it cannot read never matches.
+    const named = new Set(rows.flatMap(r => Object.keys(r.data)))
+    const stored = new Map((await tx[accessor].findMany({
+      where: { [key]: rows.map(r => r.data[key]) },
+      select: Object.fromEntries([...named].map(n => [n, true])),
+    })).map(s => [String(s[key]), s]))
+    const held = whole.filter(r => stored.has(String(r.data[key]))).length
+    const same = rows.filter(r => {
+      const s = stored.get(String(r.data[key]))
+      return s && Object.entries(r.data).every(([n, v]) => sameValue(columns.of(n).kind, v, s[n]))
+    }).length
     if (whole.length) await tx[accessor].upsertMany({ data: whole.map(r => r.data), conflictTarget: [key] })
     for (const r of rows) {
       if (!r.lacking.length) continue
       const { [key]: keyValue, ...set } = r.data
-      const stored = Object.keys(set).length
+      const kept = Object.keys(set).length
         ? await tx[accessor].update({ where: { [key]: keyValue }, data: set })
         : await tx[accessor].findFirst({ where: { [key]: keyValue } })
-      if (!stored) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
+      if (!kept) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
     }
-    return whole.length - held
+    return { fresh: whole.length - held, same }
   }
 
   const run = async (tx) => {
@@ -924,13 +932,13 @@ export async function loadRows(db, modelName, source, opts = {}) {
       const rows = group
       group = []; inGroup = new Set()
       if (!rows.length) return
+      const tally = (n, { fresh, same }) => { added += fresh; unchanged += same; updated += n - fresh - same }
       try {
-        const fresh = await tx.$transaction(t => write(t, rows))
-        added += fresh; updated += rows.length - fresh
+        tally(rows.length, await tx.$transaction(t => write(t, rows)))
       } catch (e) {
         if (!refusesARow(e)) throw e
         for (const r of rows) {
-          try { const fresh = await tx.$transaction(t => write(t, [r])); added += fresh; updated += 1 - fresh }
+          try { tally(1, await tx.$transaction(t => write(t, [r]))) }
           catch (err) {
             if (!refusesARow(err)) throw err
             const why = reasonFor(err)
@@ -973,8 +981,26 @@ export async function loadRows(db, modelName, source, opts = {}) {
   catch (e) { if (e !== DRY_RUN) throw e }
 
   rejects.sort((a, b) => a.row - b.row)
-  return { loaded: added + updated, added, updated, rejects }
+  return { loaded: added + updated + unchanged, added, updated, unchanged, rejects }
 }
+
+// A source value against the stored one read back through the client, which
+// answers its own shape: an instant in another spelling of the same moment,
+// a Boolean as 0 or 1, a JSON object with its keys in another order.
+function sameValue(kind, a, b) {
+  if (a === b) return true
+  if (a == null || b == null) return false
+  if (kind === 'datetime') {
+    const at = (v) => v instanceof Date ? v.getTime() : Date.parse(v)
+    return !Number.isNaN(at(a)) && at(a) === at(b)
+  }
+  if (kind === 'boolean') return Number(a) === Number(b)
+  if (kind === 'json') return canonical(a) === canonical(b)
+  return false
+}
+
+const canonical = (v) => JSON.stringify(v, (_, x) =>
+  x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(k => [k, x[k]])) : x)
 
 // An upsert row lacking a required value whose key no stored row holds.
 class LacksForNewRow extends Error {

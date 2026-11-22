@@ -7,7 +7,12 @@
  * because they don't carry their own padding.
  */
 
-.card { padding: var(--space-3xl); }
+/* --bleed-inline is how far a `.badge.bleed` inside reaches back (bands.css):
+   the padding's own rung, so the two move together under a density. */
+.card {
+  padding:        var(--space-3xl);
+  --bleed-inline: var(--space-3xl);
+}
 
 /*
  * A box that holds blocks owns the space between them, at Stack's rung: a

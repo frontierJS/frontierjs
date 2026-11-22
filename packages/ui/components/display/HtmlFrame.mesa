@@ -26,7 +26,7 @@
 
   export let html   = ''
   export let title  = 'Preview'
-  export let height = '24rem'
+  export let height = 'calc(24 * var(--rem))'
 </script>
 
 <!-- `srcdoc` is written here and never through {...$attributes}: mesa refuses

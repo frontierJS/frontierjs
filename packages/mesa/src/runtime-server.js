@@ -416,6 +416,16 @@ export function awaitBlock(out, scope, value, then, fail, id, key) {
   ))
 }
 
+/**
+ * A flagged `<mesa:boundary>`: written in place when its states have landed,
+ * otherwise pushed as a promise `settle` writes once each has, either way.
+ */
+export function boundaryWait(out, scope, states, body) {
+  if (!states.some((s) => s.loading)) { body(out); return }
+  const buf = []
+  out.push(Promise.all(states.map((s) => s.settled())).then(() => { scope(() => body(buf)); return buf }))
+}
+
 // A flagged render's settled `{#await}` values, by instance id and binding key
 // (`IDEAS/hydration.md` 3.1): the client reads its entry instead of fetching the
 // value a second time. Renders run one at a time (`render.js` `_queue`), so one
@@ -499,7 +509,7 @@ async function _settle(out) {
  * (`ANCHOR_DATA`). The static renderer strips these and nothing else, so an
  * `<!--[if mso]>` conditional and a comment an author wrote through `{@html}`
  * survive (`FJS-906`). One test, read by `render.js` for the DOM path and by
- * `html()` for the string one.
+ * `parsedHTML()` for the string one.
  */
 export function isAnchorComment(data) {
   return data === 'mesa-root' || data.startsWith('$')
@@ -514,7 +524,7 @@ export function isAnchorComment(data) {
  * document `initRenderer` installs, since the mode owns no window
  * (`IDEAS/server-render-without-dom.md` Q2 B, Q1 A).
  */
-export function html(value) {
+export function parsedHTML(value) {
   if (value == null || value === '') return ''
   const doc = globalThis.document
   if (!doc) {

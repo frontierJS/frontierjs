@@ -80,8 +80,8 @@
  */
 .skip-link {
   position:       fixed;
-  top:            0.5rem;
-  left:           0.5rem;
+  top:            calc(0.5 * var(--rem));
+  left:           calc(0.5 * var(--rem));
   z-index:        var(--z-skip-link);
   padding:        var(--space-sm) var(--space-2xl);
   background:     var(--surface);
@@ -102,7 +102,7 @@
   text-decoration: none;
 
   /* Out of sight, but still focusable — not display:none. */
-  transform:  translateY(calc(-100% - 1rem));
+  transform:  translateY(calc(-100% - var(--rem)));
   transition: transform var(--motion-fast) var(--motion-ease-out);
 }
 /* Slide into view on focus; the ring comes from focus.css. */

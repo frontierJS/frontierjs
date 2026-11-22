@@ -244,3 +244,56 @@ test('shadow: no custom property the kit reads takes the host page\'s value', fu
   shadowCleanup();
   assert.equal(leaked.join(' '), '', 'host-page values reached into the shadow root');
 });
+
+test('shadow: a host page\'s root font size does not reach the kit\'s sizes', function () {
+  /*
+   * rem reads the DOCUMENT root and a shadow root does not change that, so
+   * on a marketing page with `html { font-size: 62.5% }` every type rung,
+   * padding and gap in a widget drew at 10/16 of its size (FJS-2072). The
+   * kit spells size through --rem, which :host pins (FJS-D1164).
+   */
+  var f = shadowRoot('small-root', 'font-size: 10px');
+  var cases = [
+    ['<button class="btn">Go</button>', ['font-size', 'padding-top', 'padding-left']],
+    ['<input class="field">', ['font-size', 'padding-top']],
+    ['<h2>Title</h2>', ['font-size']],
+    ['<div class="stack"><p>a</p><p>b</p></div>', ['row-gap']],
+  ];
+  var bad = [];
+  cases.forEach(function (c) {
+    var page = el(c[0]);
+    var wrap = f.doc.createElement('div');
+    wrap.innerHTML = c[0];
+    var node = f.root.appendChild(wrap.firstElementChild);
+    c[1].forEach(function (p) {
+      var want = style(page, p);
+      var got = shadowStyle(node, p);
+      if (got !== want) bad.push(c[0] + ' ' + p + ': ' + want + ' in the page, ' + got + ' in a widget on a 10px root');
+    });
+    shadowCleanup();
+  });
+  assert.equal(bad.join('\n'), '', 'the host page\'s root font size reached the widget');
+});
+
+test('shadow: no declaration spells a size in bare rem', function () {
+  /*
+   * The guard on the test above: a bare `Nrem` in any declaration reads the
+   * host page's root inside a widget, and nothing in a page shows it. The
+   * one rem the kit declares is --rem's own value at :root. A condition of
+   * @media or @container is a rule's prelude, not a declaration, and cannot
+   * read a var().
+   */
+  var bare = /(^|[^\w.-])-?\d*\.?\d+rem\b/;
+  var offenders = [];
+  allRules().forEach(function (rule) {
+    var text = (rule.style && rule.style.cssText) || '';
+    if (window.CSSPropertyRule && rule instanceof CSSPropertyRule) text = rule.initialValue || '';
+    var hits = text.split(';').filter(function (d) {
+      return bare.test(d) && !/^\s*--rem:\s*1rem\s*$/.test(d);
+    });
+    if (!hits.length) return;
+    var href = (rule.parentStyleSheet && rule.parentStyleSheet.href) || '';
+    offenders.push(href.split('/').pop() + ': ' + (rule.selectorText || rule.name || '') + ' {' + hits.join(';') + ' }');
+  });
+  assert.equal(offenders.join('\n'), '', 'write calc(N * var(--rem)), never Nrem (FJS-D1164)');
+});

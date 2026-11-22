@@ -22,11 +22,11 @@
 
   // font-size, because .spinner is sized in em.
   const sizeMap = {
-    xs: '0.75rem',
-    sm: '0.875rem',
-    md: '1.25rem',
-    lg: '1.75rem',
-    xl: '2.5rem',
+    xs: 'calc(0.75 * var(--rem))',
+    sm: 'calc(0.875 * var(--rem))',
+    md: 'calc(1.25 * var(--rem))',
+    lg: 'calc(1.75 * var(--rem))',
+    xl: 'calc(2.5 * var(--rem))',
   }
 
   const fontSize = sizeMap[size] ?? sizeMap.md

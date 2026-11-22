@@ -783,6 +783,7 @@ rather than refusing the row.
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `OauthFlow` | `invitation` | `@guarded` |
+| `OauthFlow` | `grant` | `@guarded` |
 | `Recipe` | `lastRunAt` | `@system` |
 | `Recipe` | `runCount` | `@system` |
 | `Run` | `context` | `@encrypted` |

@@ -79,7 +79,7 @@
     display:        flex;
     flex-direction: column;
     gap:            var(--space-xs);
-    font-size:      0.875rem;
+    font-size:      calc(0.875 * var(--rem));
   }
   .fjs-toolcall-head {
     display:     inline-flex;
@@ -90,7 +90,7 @@
   .fjs-toolcall-plain { cursor: default; }
   .fjs-toolcall-label {
     margin:     var(--space-sm) 0 var(--space-xs);
-    font-size:  0.75rem;
+    font-size:  calc(0.75 * var(--rem));
     font-weight: 600;
     opacity:    0.7;
   }

@@ -65,8 +65,8 @@ core/
                 tunnel's random name, or a named tunnel's fixed host under
                 `FLI_TUNNEL_DOMAIN` (`FJS-D2249`) made through `cloudflare.js`;
                 `fli dev --tunnel`, `fli tunnel [port]` (`IDEAS/tunnel.md`)
-  open-url.js   a URL in the person's browser — argv, detached; `fli dev`'s `o`,
-                `fli gui --open`
+  open-url.js   a URL in the person's browser, or in one named program — argv,
+                detached; `fli dev`'s `o` and `s`, `fli gui --open`
   clipboard.js  text onto the clipboard over stdin, never a shell string —
                 `env:send`'s link, `crypto:keygen --copy`
   requires.js   what a namespace's `_module.md`, or one command's frontmatter, says it cannot run without —

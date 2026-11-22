@@ -104,7 +104,7 @@
    * and too light on --surface-raised.
    */
   --rule:        rgba(255, 255, 255, 0.07);
-  --rule-strong: rgba(255, 255, 255, 0.13);
+  --rule-strong: rgba(255, 255, 255, 0.34);
 
   /*
    * Near-black shadows are invisible against a #151820 surface, so the

@@ -43,6 +43,11 @@ export function head(out?: any): any;
  * their providers.
  */
 export function awaitBlock(out?: any, scope?: any, value?: any, then?: any, fail?: any, id?: any, key?: any): void;
+/**
+ * A flagged `<mesa:boundary>`: written in place when its states have landed,
+ * otherwise pushed as a promise `settle` writes once each has, either way.
+ */
+export function boundaryWait(out?: any, scope?: any, states?: any, body?: any): void;
 /** Open the collection a flagged render's awaits write into. */
 export function collectState(page?: any): void;
 /** Close it, handing back what the render settled. */
@@ -63,7 +68,7 @@ export function settle(out?: any): Promise<void>;
  * (`ANCHOR_DATA`). The static renderer strips these and nothing else, so an
  * `<!--[if mso]>` conditional and a comment an author wrote through `{@html}`
  * survive (`FJS-906`). One test, read by `render.js` for the DOM path and by
- * `html()` for the string one.
+ * `parsedHTML()` for the string one.
  */
 export function isAnchorComment(data?: any): any;
 /**
@@ -75,7 +80,7 @@ export function isAnchorComment(data?: any): any;
  * document `initRenderer` installs, since the mode owns no window
  * (`IDEAS/server-render-without-dom.md` Q2 B, Q1 A).
  */
-export function html(value?: any): string;
+export function parsedHTML(value?: any): string;
 /** The id a call site handed this instance, or `parent` when none did. */
 export function hid(out?: any, parent?: any): any;
 /** Run a component or snippet call with the id its call site gives it. */

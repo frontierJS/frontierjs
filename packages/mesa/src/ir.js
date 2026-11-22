@@ -481,6 +481,7 @@ function lowerBoundary(ctx, n) {
   const snippet = (name) => (has(body, name) || has(ctx.DOM?.body, name) ? `$$snippet_${name}` : null)
   return {
     kind: 'boundary',
+    start: n.start,
     loc: ctx.posOf(n.start),
     states: boundaryWatchSet(asyncVars, body).map((v) => `$$async_${v.name}`),
     pending: snippet('pending'),

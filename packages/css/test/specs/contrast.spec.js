@@ -34,7 +34,30 @@ var FILLED = [
   { name: '.btn', html: '<button class="btn TONE">Save changes</button>' },
   { name: '.pill', html: '<span class="pill TONE">99+</span>' },
   { name: '.badge', html: '<span class="badge TONE">Overdue</span>' },
+  { name: '.card.solid', html: '<article class="card solid TONE">Lead</article>' },
+  { name: '.band.solid', html: '<section class="band solid TONE">Lead</section>' },
 ];
+
+/*
+ * A solid Block is the chip's fill, not a darker tint: maid.tech heads its
+ * lead card in the brand green, and a tint of it was all the kit could say
+ * (FJS-2560). Compared against .btn, which shares the untoned fallback.
+ */
+THEMES.forEach(function (theme) {
+  test('contrast: a .solid Block in ' + theme + ' paints the fill a .btn of its tone paints', function () {
+    var failures = [];
+    [''].concat(TONES).forEach(function (tone) {
+      var want = getComputedStyle(themed(theme, '<button class="btn ' + tone + '">x</button>')).backgroundColor;
+      cleanup();
+      ['card', 'tile', 'band', 'alert'].forEach(function (block) {
+        var got = getComputedStyle(themed(theme, '<div class="' + block + ' solid ' + tone + '">x</div>')).backgroundColor;
+        if (got !== want) failures.push('.' + block + '.solid.' + (tone || '(untoned)') + ' ' + got + ', .btn ' + want);
+        cleanup();
+      });
+    });
+    assert.equal(failures.length, 0, 'theme-' + theme + ':\n        ' + failures.join('\n        '));
+  });
+});
 
 /*
  * The other job: a tone rendered as TEXT on a surface. Every one of these
@@ -416,6 +439,66 @@ test('contrast: body text clears AA on every theme surface', function () {
     0,
     failures.length + ' neutral text pairs below AA:\n        ' + failures.join('\n        ')
   );
+});
+
+/*
+ * ── A control's edge (WCAG 1.4.11) ──────────────────────────────────
+ *
+ * The field border and the focus ring are non-text contrast, 3:1 against
+ * the ground beside them. The untoned border is --rule-strong, retuned per
+ * theme; a toned border and the ring go through the edge window, the text
+ * window widened by --tone-l-slack (FJS-D2133). A translucent edge is
+ * graded laid over its ground, since that is the color a reader sees.
+ */
+function contrastEdge(edge, ground) {
+  return contrast(over(edge, toRGB(ground)), ground);
+}
+
+THEMES.forEach(function (theme) {
+  test('contrast: a .field border clears 3:1 in ' + theme + ' untoned and on all seven tones', function () {
+    var failures = [];
+    [''].concat(TONES).forEach(function (tone) {
+      var cs = getComputedStyle(themed(theme, '<input class="field ' + tone + '" type="text">'));
+      var ratio = contrastEdge(cs.borderTopColor, cs.backgroundColor);
+      if (ratio < AA_NON_TEXT) failures.push((tone || '(untoned)') + '  ' + ratio.toFixed(2) + ':1');
+      cleanup();
+    });
+    assert.equal(failures.length, 0, '.field border in theme-' + theme + ':\n        ' + failures.join('\n        '));
+  });
+
+  test('contrast: the focus ring clears 3:1 in ' + theme, function () {
+    var failures = [];
+    var cases = ['<button class="btn">Save</button>', '<a class="link" href="#x">More</a>', '<input class="field" type="text">']
+      .concat(TONES.map(function (t) { return '<input class="field ' + t + '" type="text">'; }));
+    cases.forEach(function (html) {
+      var node = themed(theme, html);
+      node.focus();
+      var cs = getComputedStyle(node);
+      var ratio = contrastEdge(cs.outlineColor, cs.getPropertyValue('--surface').trim());
+      if (ratio < AA_NON_TEXT) failures.push(html.match(/class="([^"]*)"/)[1] + '  ' + ratio.toFixed(2) + ':1');
+      cleanup();
+    });
+    assert.equal(failures.length, 0, 'focus ring in theme-' + theme + ':\n        ' + failures.join('\n        '));
+  });
+});
+
+test('contrast: the edge window generalizes to a hue no theme defines', function () {
+  var hues = ['#ffff00', '#00ff00', '#c0ff3e', '#000080', '#7f7f7f', '#ff00ff', '#00ffff', '#8b4513'];
+  var failures = [];
+  ['default', 'dark'].forEach(function (theme) {
+    hues.forEach(function (hue) {
+      var node = themed(theme, '<input class="field" type="text" style="--bg-mix: ' + hue + '">');
+      var rest = contrastEdge(getComputedStyle(node).borderTopColor, getComputedStyle(node).backgroundColor);
+      node.focus();
+      var cs = getComputedStyle(node);
+      var ring = contrastEdge(cs.outlineColor, cs.getPropertyValue('--surface').trim());
+      if (Math.min(rest, ring) < AA_NON_TEXT) {
+        failures.push(hue + ' in theme-' + theme + '  border ' + rest.toFixed(2) + ':1, ring ' + ring.toFixed(2) + ':1');
+      }
+      cleanup();
+    });
+  });
+  assert.equal(failures.length, 0, 'an undeclared hue as an edge:\n        ' + failures.join('\n        '));
 });
 
 /*

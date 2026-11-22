@@ -33,7 +33,7 @@
  */
 
 .avatar {
-  --avatar-size: 2.25rem;
+  --avatar-size: calc(2.25 * var(--rem));
 
   /* Layout and auto-contrast come from chip.css. */
   --tone-fill: var(--data-accent, var(--bg-mix, var(--color-muted)));
@@ -116,7 +116,7 @@ img.avatar {
 }
 
 .avatars > :is(.avatar, :has(> .avatar)) + :is(.avatar, :has(> .avatar)) {
-  margin-inline-start: calc(var(--avatar-overlap, 0.625rem) * -1);
+  margin-inline-start: calc(var(--avatar-overlap, calc(0.625 * var(--rem))) * -1);
 }
 
 /*

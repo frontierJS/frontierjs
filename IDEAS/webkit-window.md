@@ -105,7 +105,7 @@ WebKit and passes the same page's Chrome drive, and the check runs in CI.
     windows as equal in open time and memory, so B buys nothing, and two hosts
     for one surface is a render that can pass in one and ship broken in the
     other.
-- **Q2 — Where the WebKit launcher lives**
+- ~~**Q2 — Where the WebKit launcher lives**~~ **Answered 2026-11-22 (`FJS-D2309`): A — One helper that opens a page in a Playwright engine, WebKit or Firefox, and returns problems and a screenshot; sierra's `openFirefoxCsp` moves onto it.**
   - **A** — One helper that opens a page in a Playwright engine, WebKit or
     Firefox, and returns problems and a screenshot; sierra's `openFirefoxCsp`
     moves onto it.

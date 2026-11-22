@@ -44,6 +44,22 @@
  * a shadow root it declares the tokens on the host element, from which they
  * inherit into the tree exactly as `:root`'s do in a page.
  */
+
+/*
+ * ── --rem: the unit every size is spelled in ──────────────────
+ *
+ * `rem` reads the DOCUMENT root and a shadow root does not change that, so
+ * a widget on a page with `html { font-size: 62.5% }` drew every rung, pad
+ * and gap at 10/16 of its size (FJS-2072). The kit writes a size as
+ * `calc(N * var(--rem))`, never `Nrem` (FJS-D1164). In a page --rem is 1rem
+ * and a reader's raised base font still scales everything; in a widget it
+ * is pinned to 16px, which gives up that base font there to stop following
+ * the host's. A condition of @media or @container cannot read a var() and
+ * stays in rem. The last test in test/specs/shadow.spec.js fails a bare rem.
+ */
+:root { --rem: 1rem; }
+:host { --rem: 16px; }
+
 :root,
 :host {
   /*
@@ -88,7 +104,13 @@
    */
   --ink-mute:       #757067;
   --rule:           #e7e3d8;
-  --rule-strong:    #d4cfc0;
+  /*
+   * A control's edge — the untoned .field border, a segmented button —
+   * so 3:1 on --surface (WCAG 1.4.11), in every theme that sets its own
+   * (FJS-D2133). This one is fitted to notebook's #f4f1e8, the darkest
+   * surface that inherits it; --rule is the quiet divider.
+   */
+  --rule-strong:    #8d887b;
 
   /*
    * ── Control height ────────────────────────────────────────
@@ -159,7 +181,7 @@
    * axis; press.css moves the stroke and leaves the bar alone.
    */
   --stroke-width: 2px;
-  --track-size:   0.5rem;
+  --track-size:   calc(0.5 * var(--rem));
 
   /*
    * ── Resting elevation on the Block tier ───────────────────
@@ -257,15 +279,22 @@
   /*
    * ── Motion ────────────────────────────────────────────────
    *
-   * Every transition in the package used to be a literal, so nine themes
-   * moved identically and a house style that wanted no motion at all had
-   * nowhere to say so. Four durations, because the package genuinely uses
-   * four, and each is named for the JOB rather than for its length:
+   * A literal duration moves every theme identically and leaves a house
+   * style that wants no motion nowhere to say so. Each rung is named for
+   * the JOB rather than for its length:
    *
    *   --motion-fast   a color, a border, a background changing
    *   --motion-base   a control changing shape — a switch, a chevron
    *   --motion-enter  something arriving or leaving (overlays.css)
    *   --motion-slow   a measurement moving — a progress bar
+   *   --motion-travel a thing moving across the page — a window growing,
+   *                   a dock sliding, a view transition
+   *
+   * `--motion-travel` pairs with `--motion-ease-spring`, a `linear()` curve
+   * that overshoots and settles. Both are on :root because a view
+   * transition's pseudo-elements inherit from the document element and
+   * from nothing else. A spring that retargets mid-flight is not a token
+   * (FJS-D2150).
    *
    * `--motion-spin` is separate and its easing is not a token: a spinner
    * that eases reads as broken hardware rather than as a slower spinner,
@@ -280,6 +309,7 @@
   --motion-base:  150ms;
   --motion-enter: 160ms;
   --motion-slow:  200ms;
+  --motion-travel: 400ms;
   /*
    * Two loops, two durations, both named for the job. A spinner's
    * revolution and a skeleton's sweep are 2.3x apart and neither is a
@@ -291,6 +321,7 @@
   --motion-ease:       ease;
   --motion-ease-out:   ease-out;
   --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-spring: linear(0, 0.0072 1.2%, 0.0291 2.5%, 0.1134 5.1%, 0.4285 11.5%, 0.6532 16.8%, 0.8093 22.2%, 0.9063 27.6%, 0.9656 33.2%, 0.9983 39.1%, 1.0138 45.5%, 1.0172 52.2%, 1.0121 62.4%, 1.0034 77.6%, 1);
 
   /*
    * ── Container ─────────────────────────────────────────────
@@ -298,14 +329,14 @@
    */
   --container-max:    1280px;
   --container-narrow: 768px;
-  --container-pad:    1rem;
+  --container-pad:    var(--rem);
 
   /* ── App frame ────────────────────────────────────────────── */
-  --topbar-height:  3.5rem;
-  --sidebar-width:  15rem;
-  --rail-width:     3.5rem;
-  --screen-pad:     1.5rem;
-  --aside-width:    20rem;
+  --topbar-height:  calc(3.5 * var(--rem));
+  --sidebar-width:  calc(15 * var(--rem));
+  --rail-width:     calc(3.5 * var(--rem));
+  --screen-pad:     calc(1.5 * var(--rem));
+  --aside-width:    calc(20 * var(--rem));
 
   /*
    * ── Stacking order ────────────────────────────────────────
@@ -353,6 +384,14 @@
    */
   --tone-l-min: 0;
   --tone-l-max: 0.46;
+
+  /*
+   * The edge window: a toned border and the focus ring are non-text, 3:1
+   * rather than 4.5:1 (WCAG 1.4.11), so they clamp into the text window
+   * widened by this much on each side. Through the text window itself every
+   * brand ring darkened further than its job asks (FJS-D2133).
+   */
+  --tone-l-slack: 0.12;
 
   /* ── Shadows ──────────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -443,9 +482,9 @@
    * h1–h6 in typography.css read the SAME rungs, which is why .text-xl and
    * h4 are the same size.
    *
-   * Every rung is rem. A px size ignores the reader's raised base font, so
-   * a px and a rem spelling of the same nominal size are accessible in one
-   * place and not the other. No component declares a literal font-size;
+   * Every rung is --rem (above). A px size ignores the reader's raised base
+   * font, so a px and a rem spelling of the same nominal size are accessible
+   * in one place and not the other. No component declares a literal font-size;
    * test/specs/type.spec.js fails if one appears.
    *
    * Values are literal here — never `--text-sm: var(--text-md)`. A var() at
@@ -456,15 +495,15 @@
    * An app running UnoCSS that prefers Uno's 4px scale retunes these and
    * gets one scale across both — see "Using it with UnoCSS" in README.md.
    */
-  --text-2xs: 0.6875rem;  /* 11px — the uppercase overline: table head, nav group label */
-  --text-xs:  0.75rem;    /* 12px — badge, pill, tooltip, field hint */
-  --text-sm:  0.8125rem;  /* 13px — caption, meta, table cell, help */
-  --text-md:  0.875rem;   /* 14px — BODY. nav, tab, button, label */
-  --text-lg:  1rem;       /* 16px — h5, alert icon */
-  --text-xl:  1.125rem;   /* 18px — subhead, h4, empty-state title, the lead paragraph under a page title */
-  --text-2xl: 1.375rem;   /* 22px — h3, dialog title */
-  --text-3xl: 1.75rem;    /* 28px — h2, tile figure */
-  --text-4xl: 2.25rem;    /* 36px — h1 */
+  --text-2xs: calc(0.6875 * var(--rem));  /* 11px — the uppercase overline: table head, nav group label */
+  --text-xs:  calc(0.75 * var(--rem));    /* 12px — badge, pill, tooltip, field hint */
+  --text-sm:  calc(0.8125 * var(--rem));  /* 13px — caption, meta, table cell, help */
+  --text-md:  calc(0.875 * var(--rem));   /* 14px — BODY. nav, tab, button, label */
+  --text-lg:  var(--rem);                 /* 16px — h5, alert icon */
+  --text-xl:  calc(1.125 * var(--rem));   /* 18px — subhead, h4, empty-state title, the lead paragraph under a page title */
+  --text-2xl: calc(1.375 * var(--rem));   /* 22px — h3, dialog title */
+  --text-3xl: calc(1.75 * var(--rem));    /* 28px — h2, tile figure */
+  --text-4xl: calc(2.25 * var(--rem));    /* 36px — h1 */
 
   /*
    * Line height rides with the size: small text needs proportionally more
@@ -644,18 +683,18 @@
 *::before,
 *::after,
 :host {
-  --space-3xs: calc(var(--space-3xs-base, 0.125rem) * var(--density));  /*  2px */
-  --space-2xs: calc(var(--space-2xs-base, 0.25rem)  * var(--density));  /*  4px */
-  --space-xs:  calc(var(--space-xs-base,  0.375rem) * var(--density));  /*  6px */
-  --space-sm:  calc(var(--space-sm-base,  0.5rem)   * var(--density));  /*  8px */
-  --space-md:  calc(var(--space-md-base,  0.625rem) * var(--density));  /* 10px */
-  --space-lg:  calc(var(--space-lg-base,  0.75rem)  * var(--density));  /* 12px */
-  --space-xl:  calc(var(--space-xl-base,  0.875rem) * var(--density));  /* 14px */
-  --space-2xl: calc(var(--space-2xl-base, 1rem)     * var(--density));  /* 16px */
-  --space-3xl: calc(var(--space-3xl-base, 1.25rem)  * var(--density));  /* 20px */
-  --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  /* 24px */
-  --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  /* 32px */
-  --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  /* 48px */
+  --space-3xs: calc(var(--space-3xs-base, calc(0.125 * var(--rem))) * var(--density));  /*  2px */
+  --space-2xs: calc(var(--space-2xs-base, calc(0.25 * var(--rem)))  * var(--density));  /*  4px */
+  --space-xs:  calc(var(--space-xs-base,  calc(0.375 * var(--rem))) * var(--density));  /*  6px */
+  --space-sm:  calc(var(--space-sm-base,  calc(0.5 * var(--rem)))   * var(--density));  /*  8px */
+  --space-md:  calc(var(--space-md-base,  calc(0.625 * var(--rem))) * var(--density));  /* 10px */
+  --space-lg:  calc(var(--space-lg-base,  calc(0.75 * var(--rem)))  * var(--density));  /* 12px */
+  --space-xl:  calc(var(--space-xl-base,  calc(0.875 * var(--rem))) * var(--density));  /* 14px */
+  --space-2xl: calc(var(--space-2xl-base, var(--rem))     * var(--density));  /* 16px */
+  --space-3xl: calc(var(--space-3xl-base, calc(1.25 * var(--rem)))  * var(--density));  /* 20px */
+  --space-4xl: calc(var(--space-4xl-base, calc(1.5 * var(--rem)))   * var(--density));  /* 24px */
+  --space-5xl: calc(var(--space-5xl-base, calc(2 * var(--rem)))     * var(--density));  /* 32px */
+  --space-6xl: calc(var(--space-6xl-base, calc(3 * var(--rem)))     * var(--density));  /* 48px */
 }
 
 /*
@@ -756,6 +795,9 @@
   --switch-at:            initial;
   --fr:                   initial;
   --side:                 initial;
+  --bleed-inline:         initial;
+  --rating:               initial;
+  --rating-max:           initial;
   --app-bg:               initial;
   --app-depth:            initial;
   --topbar-bg:            initial;
@@ -896,6 +938,7 @@
   --motion-base:  0s !important;
   --motion-enter: 0s !important;
   --motion-slow:  0s !important;
+  --motion-travel: 0s !important;
 }
 
 /* ── Respect prefers-reduced-motion ─────────────────────────── */

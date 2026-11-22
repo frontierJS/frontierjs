@@ -192,6 +192,34 @@ lead <b>{on}</b>{#if on}<s>x</s>{/if}<section><Kid/></section>`, 'Late', { dev: 
     expect(root.querySelectorAll('li')).toHaveLength(2)
   })
 
+  it('re-renders the page when a text binding\'s marker is missing under a root element its code names (FJS-4519)', async () => {
+    const c = await build(`<script>\n  let n = 0\n</script>\n<button onclick={() => n++}>{n}</button>`, undefined, { dev: true })
+    const root = await served(c)
+    const button = root.querySelector('button')
+    ;[...button.childNodes].find((x) => x.nodeType === 8).remove()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/no marker for binding \w+ \(source offset \d+\) in 0; re-rendered the page/)
+    warn.mockRestore()
+    expect(root.querySelector('button')).not.toBe(button)
+    expect(root.querySelectorAll('button')).toHaveLength(1)
+  })
+
+  it('adopts a root element with no key of its own, as a spread root is', async () => {
+    const c = await build(`<script>\n  let n = 0\n</script>\n<p {...$attributes}><b onclick={() => n++}>{n}</b></p>`, undefined, { dev: true })
+    const root = await served(c)
+    const p = root.querySelector('p'), b = root.querySelector('b')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    expect(root.querySelector('p')).toBe(p)
+    b.click()
+    flushSync()
+    expect(root.querySelector('b')).toBe(b)
+    expect(b.textContent).toBe('1')
+  })
+
   it('detects a wrong {#if} branch and re-renders only that block', async () => {
     const c = await build(PAGE, undefined, { dev: true })
     const root = await served(c, { start: 2 })
@@ -407,6 +435,20 @@ describe('hydrate() with an awaited const', () => {
     expect(root.querySelector('p').textContent).toBe('user2')
   })
 
+  // Nothing else holds the render open, so the boundary has to wait itself.
+  it('the server waits on a boundary, and the client adopts what it wrote (FJS-4517)', async () => {
+    const slow = SRC.replace(/\{#await tick\}.*?\{\/await\}/, '').replace("return Promise.resolve({ name: 'user' + i })", "return new Promise((r) => setTimeout(() => r({ name: 'user' + i }), 5))")
+    const c = await build(slow)
+    const { root, html, state } = await page(c)
+    expect(html).toMatch(/<p>[^<]*user1/)
+    const p = root.querySelector('p')
+    hydrate(root, c.dom, {}, { state: JSON.parse(JSON.stringify(state)) })
+    await settle()
+    expect(globalThis.__hyUsers).toEqual([])
+    expect(root.querySelectorAll('p')).toHaveLength(1)
+    expect(root.querySelector('p')).toBe(p)
+  })
+
   it('a missing entry is loaded, and a dev build names it', async () => {
     const c = await build(SRC, 'HyConst', { dev: true })
     const { root } = await page(c)
@@ -476,6 +518,22 @@ describe('a client:* subtree under the flag (FJS-D2174)', () => {
     expect(root.querySelector('button').textContent).toBe('abb  0')
   })
 
+  it('bind:this resolves to the subtree\'s interface once it attaches (FJS-4518)', async () => {
+    await build(`<script>\n  export let label = 'a'\n  export function shout() { return label + '!' }\n</script>\n<button>{label}</button>`, 'Ref')
+    const c = await build(`<script>
+  import Ref from './Ref.mesa'
+  let kid
+</script>
+<b onclick={() => { globalThis.__hyRef = kid }}>peek</b><Ref client:idle label="r" bind:this={kid}/>`, 'RefHost')
+    const root = await served(c)
+    hydrate(root, c.dom)
+    await tick()
+    flushSync()
+    root.querySelector('b').click()
+    expect(globalThis.__hyRef?.label).toBe('r')
+    expect(globalThis.__hyRef?.shout()).toBe('r!')
+  })
+
   it('client:static adopts the structure and never attaches', async () => {
     await build(KID, 'Still')
     const c = await build(`<script>import Still from './Still.mesa'</script><Still client:static/>`, 'Static')
@@ -513,6 +571,28 @@ describe('a client:* subtree under the flag (FJS-D2174)', () => {
     const button = root.querySelector('button')
     expect(button).not.toBe(stale)
     expect(root.querySelectorAll('button').length).toBe(1)
+    expect(root.querySelector('p')).toBe(p)
+    button.click()
+    flushSync()
+    expect(button.textContent).toBe('z  1')
+  })
+
+  it('a text binding whose marker is missing re-renders the site when the trigger attaches (FJS-4519)', async () => {
+    await build(KID, 'Unmarked', { dev: true })
+    const c = await build(`<script>import Unmarked from './Unmarked.mesa'</script><p>keep</p><Unmarked client:idle label="z"/>`, 'UnmarkedHost', { dev: true })
+    const root = await served(c)
+    const p = root.querySelector('p')
+    const stale = root.querySelector('button')
+    ;[...stale.childNodes].find((x) => x.nodeType === 8).remove()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    await tick()
+    flushSync()
+    expect(warn.mock.calls.map((a) => String(a[0])).join('\n')).toMatch(/no marker for binding \w+ \(source offset \d+\) in 0\.\w+; re-rendered the client:idle <Unmarked>/)
+    warn.mockRestore()
+    const button = root.querySelector('button')
+    expect(button).not.toBe(stale)
+    expect(root.querySelectorAll('button')).toHaveLength(1)
     expect(root.querySelector('p')).toBe(p)
     button.click()
     flushSync()

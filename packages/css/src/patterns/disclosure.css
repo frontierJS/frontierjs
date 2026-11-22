@@ -72,8 +72,8 @@
 /* CSS caret — points right when collapsed, down when open */
 .disclosure-summary::after {
   content:       "";
-  width:         0.45rem;
-  height:        0.45rem;
+  width:         calc(0.45 * var(--rem));
+  height:        calc(0.45 * var(--rem));
   border-right:  var(--stroke-width) solid var(--ink-mute);
   border-bottom: var(--stroke-width) solid var(--ink-mute);
   transform:     rotate(-45deg);

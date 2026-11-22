@@ -112,6 +112,7 @@
 @import './components/tooltips.css'   layer(components);
 @import './components/drawers.css'    layer(components);
 @import './components/form-core.css'  layer(components);
+@import './components/rating.css'     layer(components);
 @import './components/tables.css'     layer(components);
 @import './components/dialogs.css'    layer(components);
 

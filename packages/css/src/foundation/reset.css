@@ -105,8 +105,8 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
 /*
  * ── A page with a Band does not scroll sideways ──────────────────────
  *
- * `.bleed` and `.band` reach the viewport edge with `50vw`, and `vw` counts
- * a classic scrollbar: on a desktop that draws one, each escape is half a
+ * Outside any container `.bleed` and `.band` reach the viewport edge, and a
+ * viewport unit can count a classic scrollbar: then each escape is half a
  * scrollbar wider than the page and the page scrolls sideways by it. The
  * UA's `overflow: visible` on the root is the default that fights the term,
  * and the term cannot fix it from inside. `clip` on the root reaches the

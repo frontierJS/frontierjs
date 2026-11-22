@@ -31,12 +31,12 @@
   // .toast-stack defaults to bottom-right; only the other corners need
   // inset overrides, and they are inline rather than six utility classes.
   const posMap = {
-    'top-right':     { top: '1rem',    right: '1rem', bottom: 'auto', left: 'auto',  align: 'flex-end'   },
-    'top-left':      { top: '1rem',    left: '1rem',  bottom: 'auto', right: 'auto', align: 'flex-start' },
-    'bottom-right':  { bottom: '1rem', right: '1rem', top: 'auto',    left: 'auto',  align: 'flex-end'   },
-    'bottom-left':   { bottom: '1rem', left: '1rem',  top: 'auto',    right: 'auto', align: 'flex-start' },
-    'top-center':    { top: '1rem',    left: '50%',   bottom: 'auto', right: 'auto', align: 'center'     },
-    'bottom-center': { bottom: '1rem', left: '50%',   top: 'auto',    right: 'auto', align: 'center'     },
+    'top-right':     { top: 'var(--rem)',    right: 'var(--rem)', bottom: 'auto', left: 'auto',  align: 'flex-end'   },
+    'top-left':      { top: 'var(--rem)',    left: 'var(--rem)',  bottom: 'auto', right: 'auto', align: 'flex-start' },
+    'bottom-right':  { bottom: 'var(--rem)', right: 'var(--rem)', top: 'auto',    left: 'auto',  align: 'flex-end'   },
+    'bottom-left':   { bottom: 'var(--rem)', left: 'var(--rem)',  top: 'auto',    right: 'auto', align: 'flex-start' },
+    'top-center':    { top: 'var(--rem)',    left: '50%',   bottom: 'auto', right: 'auto', align: 'center'     },
+    'bottom-center': { bottom: 'var(--rem)', left: '50%',   top: 'auto',    right: 'auto', align: 'center'     },
   }
 
   const pos        = posMap[position] ?? posMap['bottom-right']

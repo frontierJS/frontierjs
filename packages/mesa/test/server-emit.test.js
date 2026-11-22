@@ -119,7 +119,7 @@ describe('server target — the emitted module', () => {
 
   it('writes {@html} as a hole the runtime parses', async () => {
     const { result } = await server(`<script>let h = '<b>x</b>'</script>\n<div>{@html h}</div>\n`)
-    expect(result).toContain('$$out.push(`<div>${$$host.html($$runtime.get($$sig_h))}</div>`);')
+    expect(result).toContain('$$out.push(`<div>${$$host.parsedHTML($$runtime.get($$sig_h))}</div>`);')
   })
 
   it('writes a dynamic element through the runtime\'s tag, a head into its buffer, a portal into nothing and a boundary as branches', async () => {

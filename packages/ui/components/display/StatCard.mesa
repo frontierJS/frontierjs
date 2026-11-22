@@ -41,15 +41,15 @@
     <div class={cx('fjs-tile-icon', t)} aria-hidden="true">{@render icon?.()}</div>
   {/if}
   {#if loading}
-    <div class="stack" style:gap="0.5rem" aria-busy="true">
-      <div class="skeleton text" style:inline-size="6rem"></div>
-      <div class="skeleton" style:inline-size="8rem" style:block-size="1.75rem"></div>
-      <div class="skeleton text" style:inline-size="5rem"></div>
+    <div class="stack" style:gap="calc(0.5 * var(--rem))" aria-busy="true">
+      <div class="skeleton text" style:inline-size="calc(6 * var(--rem))"></div>
+      <div class="skeleton" style:inline-size="calc(8 * var(--rem))" style:block-size="calc(1.75 * var(--rem))"></div>
+      <div class="skeleton text" style:inline-size="calc(5 * var(--rem))"></div>
     </div>
   {:else}
     <Stat {label} {value} {sub} {trend} {tone} />
     {#if spark?.length}
-      <Sparkline data={spark} tone={t} width={120} style="margin-block-start: 0.5rem" />
+      <Sparkline data={spark} tone={t} width={120} style="margin-block-start: calc(0.5 * var(--rem))" />
     {/if}
   {/if}
 {/snippet}
@@ -93,11 +93,11 @@
   }
   .fjs-tile-icon {
     position:           absolute;
-    inset-block-start:  1rem;
-    inset-inline-end:   1rem;
+    inset-block-start:  var(--rem);
+    inset-inline-end:   var(--rem);
     display:            grid;
     place-items:        center;
-    padding:            0.4rem;
+    padding:            calc(0.4 * var(--rem));
     border-radius:      var(--card-radius);
     color:              var(--tone-ink, var(--ink-mute));
     background:         var(--tint-surface, transparent);

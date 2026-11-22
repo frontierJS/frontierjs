@@ -5976,7 +5976,15 @@ export function buildBlock(data, option = {}) {
             const contentBody = (n.body || []).filter(nd => nd.type !== 'snippet')
             const contentBlock = ctx.buildBlock({ body: contentBody }, { inline: false })
 
-            const label = requireLabel(true, isRoot)
+            // Under the flag the boundary is a keyed block of its own: anchored
+            // on whatever follows it, it had no key the server could bracket
+            // its branch with (FJS-4517).
+            const hydBoundary = ctx.config?.hydratable && !TARGETS[ctx.config.target]
+            const label = hydBoundary ? ownAnchor('boundary') : requireLabel(true, isRoot)
+            if (hydBoundary) {
+              hydrationVar(ctx, label, n.start)
+              hydrationSite(ctx, 'block', n.start)
+            }
 
             const statesExpr = asyncVars.length
               ? `[${asyncVars.map(v => `$$async_${v.name}`).join(', ')}]`
@@ -7974,29 +7982,35 @@ export function bindSetter(ctx, a, at) {
 }
 
 /**
- * A PascalCase tag that names nothing in the file is a component call against
- * an undeclared identifier: it compiled clean, threw a ReferenceError in a
- * browser, and failed a prerender with a hint written for a browser global
- * (`FJS-1495`). The binding set is generous on purpose -- a name mentioned as a
- * word in either script, or in the header of an each/snippet/await/`{@const}`,
- * counts as bound -- because a false refusal breaks a working component and a
- * missed one only falls back to the runtime error.
+ * A PascalCase tag or a `{@render}` that names nothing in the file is a call
+ * against an undeclared identifier: it compiled clean, threw a ReferenceError
+ * in a browser, and failed a prerender with a hint written for a browser global
+ * (`FJS-1495`) or a `$$snippet_<name>` the author never wrote -- the `?.` of
+ * `{@render children?.()}` does not stop a ReferenceError (`FJS-4516`). The
+ * binding set is generous on purpose -- a name mentioned as a word in either
+ * script, or in the header of an each/snippet/await/`{@const}`, counts as bound
+ * -- because a false refusal breaks a working component and a missed one only
+ * falls back to the runtime error.
  */
-function checkComponentTagsBound(ctx, instanceSrc) {
+function checkTemplateNamesBound(ctx, instanceSrc) {
   const headers = []
   const tags = []
+  const renders = []
   ;(function walk(v) {
     if (!v || typeof v !== 'object') return
     if (Array.isArray(v)) return v.forEach(walk)
     if (v.type === 'node') {
       if (/^[A-Z]/.test(v.name ?? '')) tags.push(v)
+    } else if (v.type === 'systag' && v.value?.startsWith('@render ')) {
+      // Not a header: its own text would bind the name it is checked for.
+      renders.push(v)
     } else if (['each', 'snippet', 'await', 'systag'].includes(v.type)) {
       headers.push(v.value, v.name, v.rawArgs, v.parts?.thenValue, v.parts?.catchValue)
       headers.push(v.thenValue, v.catchValue)
     }
     for (const k of Object.keys(v)) if (k !== 'attributes') walk(v[k])
   })(ctx.DOM)
-  if (!tags.length) return
+  if (!tags.length && !renders.length) return
 
   const haystack = [
     instanceSrc,
@@ -8013,16 +8027,30 @@ function checkComponentTagsBound(ctx, instanceSrc) {
   const bound = (root) => /^[\w$]+$/.test(root)
     ? words.has(root)
     : new RegExp(`(^|[^\\w$.])${root.replace(/\$/g, '\\$')}(?![\\w$])`).test(haystack)
+  const where = (n) => {
+    const at = n.start != null ? ctx.posOf(n.start) : null
+    return at ? ` — ${at}` : ''
+  }
   const seen = new Set()
   for (const n of tags) {
     const root = n.name.split('.')[0]
     if (seen.has(n.name)) continue
     seen.add(n.name)
     if (bound(root)) continue
-    const at = n.start != null ? ctx.posOf(n.start) : null
     ctx.analysis.errors.push(
       `<${n.name}> names nothing in this file. Bind it with \`import ${root} from './${root}.mesa'\` ` +
-      `or let the app resolve it through \`autoImport\`.` + (at ? ` — ${at}` : '')
+      `or let the app resolve it through \`autoImport\`.` + where(n)
+    )
+  }
+  for (const n of renders) {
+    const root = parseRenderTag(n.value).expr.match(/^[A-Za-z_$][\w$]*/)?.[0]
+    if (!root || seen.has(`{@render ${root}}`)) continue
+    seen.add(`{@render ${root}}`)
+    if (bound(root)) continue
+    ctx.analysis.errors.push(
+      `{@render ${root}} names nothing in this file. Declare the prop with ` +
+      `\`export let ${root} = null\` or write a \`{#snippet ${root}()}\`` +
+      (root === 'children' ? ', or receive the content with `<slot />`.' : '.') + where(n)
     )
   }
 }
@@ -8337,7 +8365,9 @@ export function makeComponent(node, option = {}) {
       // is a comment: `ref.focus()` on a component was a TypeError and
       // `ref.count` was undefined, both silently (`FJS-087`).
       if (n.hasBindThis) {
-        w.writeLine(`${n.bindThisSetter}($$runtime.componentApi(${n.anchorName}));`)
+        w.writeLine(n.island?.hyd
+          ? `$$runtime.islandThis(${n.anchorName}, ${n.bindThisSetter});`
+          : `${n.bindThisSetter}($$runtime.componentApi(${n.anchorName}));`)
       }
 
       // Reactive prop sync: push new values whenever deps change.
@@ -10959,7 +10989,7 @@ function _domTraversal(code) {
 // undefined on that path, so the handle refuses it by name and the enclosing
 // block, or the page, renders afresh (FJS-D2260). The block calls become their
 // adopting forms, which hand an unflagged anchor straight to the block itself.
-const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['makeBlock', 'hydBlock']]
+const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
 
 function _adoptRoots(code, ctx) {
   const byName = new Map()
@@ -10993,7 +11023,9 @@ function _adoptRoots(code, ctx) {
   const plan = (walk, body, ind) => {
     const lines = walk.split('\n').filter(Boolean)
     const declared = lines.map((l) => l.match(/^\s*(?:let|var) (\S+) = /)?.[1]).filter(Boolean)
-    const read = declared.filter((n) => !byName.has(n) && uses(n, body).length)
+    // The root element itself, which the handle has already found.
+    const aliases = lines.map((l) => l.match(/^\s*(?:let|var) (\S+) = \$\$parentElement;$/)?.[1]).filter((n) => n && !byName.has(n))
+    const read = declared.filter((n) => !byName.has(n) && !aliases.includes(n) && uses(n, body).length)
     const once = read.filter((n) => {
       const name = n.replace(/\$/g, '\\$')
       const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', )', 'gm')) ?? []
@@ -11003,12 +11035,17 @@ function _adoptRoots(code, ctx) {
     const adopt = [
       ...declared.filter((n) => byName.has(n)).map((n) => `${n} = $$h.take(${JSON.stringify(byName.get(n))});`),
       ...once.map((n) => `${n} = document.createElement('i');`),
+      ...aliases.map((n) => `${n} = $$parentElement;`),
     ]
     return { lines, declared, unkeyed, adopt }
   }
+  // A root element its code names opens the walk with a `let` alias; a walk
+  // cut off there left every node below it unkeyed and unchecked (FJS-4519).
+  // It becomes a `var` so the name outlives the branch that assigns it.
   let out = code.replace(
-    /^(\s*)const \$\$parentElement = (\$\$tpl\d+)\(\);\n((?:\s+(?:var [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/mg,
+    /^(\s*)const \$\$parentElement = (\$\$tpl\d+)\(\);\n((?:\s+(?:(?:let|var) [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/mg,
     (whole, ind, tpl, walk, at, str) => {
+      walk = walk.replace(/^([ \t]*)let /mg, '$1var ')
       const { unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind.replace(/^[^]*\n/, ''))
       const opts = `{ file: ${file}${ctx.css?.id ? `, scope: ${JSON.stringify(ctx.css.id)}` : ''}${ctx.config.dev ? ', dev: true' : ''}${unkeyed.length ? `, unkeyed: ${JSON.stringify(unkeyed.join(', '))}` : ''} }`
       const root = byName.has('$$parentElement') ? `$$h.take(${JSON.stringify(byName.get('$$parentElement'))})` : `$$h.root(${tpl})`
@@ -12004,7 +12041,7 @@ function runAnalysis(ctx, script) {
     })
   }
 
-  checkComponentTagsBound(ctx, rawScript)
+  checkTemplateNamesBound(ctx, rawScript)
   checkModuleScriptBound(ctx)
 
   // A <style> block is extracted from the TOP LEVEL of the component only (the

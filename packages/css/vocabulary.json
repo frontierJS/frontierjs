@@ -1,7 +1,7 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 62,
+    "terms": 63,
     "tiers": 8,
     "anatomy": 29
   },
@@ -333,6 +333,14 @@
       "element": "<input type=\"checkbox\" role=\"switch\">",
       "meaning": "An on/off control that commits immediately — not a checkbox, which commits with the form",
       "class": "switch"
+    },
+    {
+      "term": "Rating",
+      "tier": "Inline",
+      "tierBlurb": "Things that sit in a line of content.",
+      "element": "<fieldset> + <input type=\"radio\"> / <span>",
+      "meaning": "A score of 1 to N drawn as stars: native radios in reading order, each with its own label. .readonly draws --rating of --rating-max (default 5) as one strip, so an average fills part of a star",
+      "class": "rating"
     },
     {
       "term": "Heading",
@@ -1019,6 +1027,7 @@
       "outlined",
       "ghost",
       "glass",
+      "solid",
       "bordered",
       "edge",
       "tinted"
@@ -1042,6 +1051,7 @@
       "narrow",
       "peek",
       "pills",
+      "readonly",
       "removable",
       "rail",
       "segmented",

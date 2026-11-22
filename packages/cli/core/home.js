@@ -43,6 +43,7 @@ export const entries = [
 
   // ─── data ────────────────────────────────────────────────────────────────
   row('data', 'basecamp', 'Backups pulled from each Basecamp, one directory per box, never pruned.', 'core/basecamp.js'),
+  row('data', 'top',      'The fli top recorder\'s samples, one file per day under history/.', 'core/top-history.js'),
 
   // ─── cache ───────────────────────────────────────────────────────────────
   row('cache', 'registry-<key>.json', 'A compiled command registry per source set; rebuilt on demand.', 'core/registry.js', { reclaim: 'clear', pattern: /^registry-[0-9a-f]+\.json$/ }),

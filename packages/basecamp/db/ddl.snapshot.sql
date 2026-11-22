@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS "oauth_flow" (
   "verifier" TEXT NOT NULL,
   "returnTo" TEXT,
   "invitation" TEXT,
+  "grant" TEXT,
+  "initiator" TEXT,
   "expiresAt" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -1083,6 +1085,7 @@ CREATE TABLE IF NOT EXISTS "app" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_app_workspaceId" ON "app" ("workspaceId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_environmentId" ON "app" ("environmentId") WHERE "deletedAt" IS NULL;
+CREATE INDEX IF NOT EXISTS "idx_app_projectId" ON "app" ("projectId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_status" ON "app" ("status") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_blueprintId" ON "app" ("blueprintId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_app_backupDestinationId" ON "app" ("backupDestinationId") WHERE "deletedAt" IS NULL;

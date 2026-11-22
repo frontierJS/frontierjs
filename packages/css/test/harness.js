@@ -103,6 +103,19 @@
   };
 
   /*
+   * A length token in px, measured through a use site inside `node`. An
+   * unregistered token computes to its token stream — `calc(3.5 * 1rem)`
+   * — which parseFloat reads as NaN.
+   */
+  window.lengthPx = function (node, name) {
+    var probe = node.appendChild(document.createElement('span'));
+    probe.style.cssText = 'position:absolute;display:block;block-size:0;inline-size:var(' + name + ')';
+    var w = probe.getBoundingClientRect().width;
+    probe.remove();
+    return w;
+  };
+
+  /*
    * Normalize any CSS color — rgb(), color(xyz-d65 …), oklch(), color-mix()
    * output, a named color — to [r, g, b, a] with r/g/b as 0–255 sRGB bytes.
    *

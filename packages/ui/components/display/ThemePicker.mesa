@@ -28,7 +28,7 @@
   export let value    = ''
   export let label    = 'Theme'              // the group's accessible name
   export let disabled = false
-  export let min      = '10rem'              // a card's narrowest width
+  export let min      = 'calc(10 * var(--rem))'              // a card's narrowest width
   export let onchange = undefined            // (name) => void
 
   const group = uid('theme')

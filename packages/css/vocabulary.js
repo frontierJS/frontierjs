@@ -126,6 +126,7 @@ const VOCAB = [
       ["Badge", "<span>", "A categorical status — never the count; that is Pill. Elsewhere 'badge' often means the count"],
       ["Field", "<input> / <select> / <textarea>", "A form control"],
       ["Switch", '<input type="checkbox" role="switch">', "An on/off control that commits immediately — not a checkbox, which commits with the form"],
+      ["Rating", '<fieldset> + <input type="radio"> / <span>', "A score of 1 to N drawn as stars: native radios in reading order, each with its own label. .readonly draws --rating of --rating-max (default 5) as one strip, so an average fills part of a star"],
       ["Heading", "<h1>–<h6>", "Outline structure (Principle 3)", null],
       ["Text", "<p> / <span>", "Prose", null],
       ["Icon", "<span aria-hidden>", "A decorative glyph"],
@@ -187,7 +188,7 @@ const NOT_A_TERM = {
   /*
    * Treatments. Orthogonal, compose onto anything, name no component.
    */
-  treatment: ['raised', 'outlined', 'ghost', 'glass', 'bordered', 'edge', 'tinted'],
+  treatment: ['raised', 'outlined', 'ghost', 'glass', 'solid', 'bordered', 'edge', 'tinted'],
 
   /*
    * Density. The third axis, and the only one that INHERITS — a tone is a
@@ -206,7 +207,7 @@ const NOT_A_TERM = {
    */
   modifier: [
     'bottom', 'circle', 'compact', 'complete', 'disabled', 'divided', 'end',
-    'flush', 'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'removable',
+    'flush', 'focusable', 'hover', 'menu', 'narrow', 'peek', 'pills', 'readonly', 'removable',
     'rail', 'segmented', 'sheet', 'square', 'start', 'stretch', 'striped', 'text', 'top', 'vertical', 'viewport',
     'wide', 'wrap',
   ],

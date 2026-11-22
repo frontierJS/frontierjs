@@ -1100,7 +1100,7 @@
    * Four knobs, each one a design token. Override them on any ancestor.
    */
   .fjs-dp {
-    --dp-cell:   2.5rem;                  /* one day cell, square */
+    --dp-cell:   calc(2.5 * var(--rem));                  /* one day cell, square */
     --dp-accent: var(--color-primary);    /* the selected day's fill */
     --dp-band:   var(--rule);             /* the in-range band behind the cells */
     --dp-layer:  99;                      /* the panel sits above page content */
@@ -1128,7 +1128,7 @@
 
   .fjs-dp-trigger {
     --field-inline-size: auto;
-    min-inline-size:     10rem;
+    min-inline-size:     calc(10 * var(--rem));
     text-align:          start;
     cursor:              pointer;
   }
@@ -1184,8 +1184,8 @@
   .fjs-dp-panel.right    { left: auto; right: 0; }
   .fjs-dp-panel.show     { display: grid; top: calc(100% + var(--space-2xs)); }
   .fjs-dp-panel.range    { grid-template-columns: repeat(2, 1fr); }
-  .fjs-dp-panel.presets  { grid-template-columns: minmax(11rem, 12.5rem) 1fr 1fr; }
-  .fjs-dp-panel.presets:not(.range) { grid-template-columns: minmax(11rem, 12.5rem) 1fr; }
+  .fjs-dp-panel.presets  { grid-template-columns: minmax(calc(11 * var(--rem)), calc(12.5 * var(--rem))) 1fr 1fr; }
+  .fjs-dp-panel.presets:not(.range) { grid-template-columns: minmax(calc(11 * var(--rem)), calc(12.5 * var(--rem))) 1fr; }
 
   /* ── Presets ─────────────────────────────────────────────────────────── */
 

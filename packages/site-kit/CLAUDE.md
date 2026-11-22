@@ -249,8 +249,9 @@ what they mean in any app.
   a `url`, the stated `tag` otherwise. Six typed keys, each checked against
   `@frontierjs/css/vocabulary.json` at render, so the list of good values is
   css's, never a copy (FJS-D823); `classes:` is refused. A consumer that runs
-  without css's reset must clip `overflow-x` on the root, because a Band is
-  `100vw` and a classic scrollbar makes that wider than the page.
+  without css's reset must clip `overflow-x` on the root, because a Band
+  outside any container is viewport-wide and a classic scrollbar makes that
+  wider than the page.
 - `src/blocks/` — content blocks, one `.mesa` each, exported as
   `@frontierjs/site-kit/blocks/<Name>.mesa`.
   - `Marquee.mesa` — a row sliding sideways forever, CSS only so a static page

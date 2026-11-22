@@ -40,8 +40,9 @@
 
   let failedSrc = ''
 
+  // In --rem units (FJS-D1164).
   const sizeMap = {
-    xs: '1.5rem', sm: '2rem', md: '2.25rem', lg: '2.75rem', xl: '3.5rem',
+    xs: 1.5, sm: 2, md: 2.25, lg: 2.75, xl: 3.5,
   }
 
   // Status maps onto the tone vocabulary rather than a second color list.
@@ -74,10 +75,11 @@
     n.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % toneCount
   ]
 
-  const sz          = sizeMap[size] ?? sizeMap.md
-  const px          = Math.round(parseFloat(sz) * 16)   // reserves the box before the image loads
+  const rems        = sizeMap[size] ?? sizeMap.md
+  const sz          = `calc(${rems} * var(--rem))`
+  const px          = Math.round(rems * 16)   // reserves the box before the image loads
   const statusTone  = statusToneMap[status] ?? ''
-  const radius      = shape === 'square' ? 'var(--card-radius, 0.5rem)' : '999px'
+  const radius      = shape === 'square' ? 'var(--card-radius, calc(0.5 * var(--rem)))' : '999px'
   const initialTone = toTone(tone) || autoTone
 
   // The failure belongs to the URL that failed, so a new src gets its try.

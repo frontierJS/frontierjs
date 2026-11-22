@@ -128,6 +128,16 @@ describe('the shell facts', () => {
     expect(own.match(/skip-link/g)).toHaveLength(1)
     expect(wrapDocument('', { title: 'x' })).toContain('<html lang="en">')
   })
+
+  // FJS-4523: an app that does not load css a11y showed the link as bare text.
+  test('the prerendered page carries the guard first in <head>, only with the link it writes', () => {
+    const out = wrapDocument('<main id="main">x</main>', { title: 'x', stylesheets: ['/a.css'], head: '<style>b{}</style>' })
+    expect(out).toMatch(/<head>\n {2}<style id="sierra-skip-link">@layer sierra-shell\{/)
+    expect(out.match(/sierra-skip-link/g)).toHaveLength(1)
+    expect(out.indexOf('sierra-skip-link')).toBeLessThan(out.indexOf('/a.css'))
+    const own = wrapDocument('<a class="skip-link" href="#top">Skip</a><main>x</main>', { title: 'x' })
+    expect(own).not.toContain('sierra-skip-link')
+  })
 })
 
 // A real dev server's own transformIndexHtml, so what is proved is the plugin

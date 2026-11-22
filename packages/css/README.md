@@ -56,7 +56,7 @@ learning the system.
 | Kind | Composes | What it names |
 |---|---|---|
 | **Element** | onto valid markup | *What a thing is* — `btn` `card` `field` `table` `tabs` |
-| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost` `glass` `edge` `tinted`, `stack` `cluster` |
+| **Treatment** | onto anything | Orthogonal — the 7 tones, `raised` `outlined` `ghost` `glass` `solid` `edge` `tinted`, `stack` `cluster` |
 | **Anatomy** | no — nests | *A position inside* an Element — `alert-icon`, `feed-dot`, `surface-header` |
 
 Chaining is for Treatments. Anatomy nests:
@@ -150,10 +150,12 @@ rule of its own, the token that would have carried it is missing.
 | `--body-letter-spacing` | body tracking, `normal` by default. Read with `--text-md` and `--leading-body` by `.app`, `.prose` and the Block tier — the places body copy is set |
 | `--h1-size` … `--h6-size` | one heading level's size, without moving the `.text-*` utilities that share its `--text-*` rung. Unset, the level reads its rung |
 | `--h1-ink` … `--h6-ink` | one heading level's color. Unset, the level reads `--ink`, so a theme can give h1/h2, h3/h4 and body text three different inks |
-| `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` | how quickly the product moves. `--motion-spin` and `--motion-shimmer` are the two loops |
-| `--motion-ease` · `--motion-ease-out` · `--motion-ease-enter` | and how it moves |
+| `--motion-fast` · `--motion-base` · `--motion-enter` · `--motion-slow` · `--motion-travel` | how quickly the product moves. `--motion-travel` is a thing moving across the page — a view transition reads it, since its pseudo-elements inherit only from `:root`. `--motion-spin` and `--motion-shimmer` are the two loops |
+| `--motion-ease` · `--motion-ease-out` · `--motion-ease-enter` · `--motion-ease-spring` | and how it moves. `--motion-ease-spring` is a fixed `linear()` spring that overshoots and settles |
 | `--ring` · `--ring-width` · `--ring-offset` · `--ring-style` | the focus ring. **`--ring-style` takes `solid`, `dashed` or `double` and nothing else** — it is registered with `@property`, so `none` is invalid and falls back to `solid`. A theme can restyle the ring and cannot turn it off |
 | `--tone-l-min` / `--tone-l-max` | the window a tone is legible as text in. **Required if you set `color-scheme: dark`** |
+| `--tone-l-slack` | how far the focus ring and a toned field border may sit outside that window: they are non-text, 3:1 rather than 4.5:1 |
+| `--rule-strong` | a control's edge — the untoned field border. **3:1 on `--surface`** (WCAG 1.4.11); `contrast.spec.js` grades it |
 
 Set the rung's **base**, never the rung: `--space-2xl` written in a theme wins
 on the themed element and nowhere below it, because every element recomputes
@@ -359,7 +361,9 @@ never a class
 
 **Axes** `align-start` `align-center` `align-end` — inherit, like `dense`/`roomy`
 
-**Page** `band` (+ `band-media`) · `bleed` — a full-width stripe, and the escape it shares
+**Page** `band` (+ `band-media`) · `bleed` — a full-width stripe, and the escape it shares.
+On a Badge, `bleed` is the status ribbon: `badge success bleed` reaches back to its
+container's start edge by the `--bleed-inline` the container sets (a Card sets its own padding)
 
 **Type** `h1`–`h6` · `text-2xs` `text-xs` `text-sm` `text-md` `text-lg` `text-xl` ·
 `text-body` `text-muted` `text-primary` … 

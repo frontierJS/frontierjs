@@ -65,14 +65,15 @@ describe('buildThemeScript', () => {
   test('applies a CLASS on documentElement by default', () => {
     const script = buildThemeScript({ default: 'system' })
     expect(script).toContain('document.documentElement')
-    expect(script).toContain('classList.add')
+    expect(script).toContain('classList')
+    expect(script).toContain('l.add.apply(l')
     expect(script).not.toContain('setAttribute')
   })
 
   test('applies an attribute when asked, with a custom name', () => {
     const script = buildThemeScript({ apply: 'attribute', attribute: 'color-scheme', default: 'system' })
     expect(script).toContain('setAttribute("color-scheme"')
-    expect(script).not.toContain('classList.add')
+    expect(script).not.toContain('classList')
   })
 
   // The class it adds is the class it removes. Without the removal every
@@ -80,7 +81,7 @@ describe('buildThemeScript', () => {
   // then a question about stylesheet order rather than about the setting.
   test('removes the app\'s other themes before adding one', () => {
     const script = buildThemeScript({ themes: ['a', 'b', 'c'], default: 'a' })
-    expect(script).toContain('classList.remove')
+    expect(script).toContain('l.remove.apply(l')
     expect(script).toContain('["a","b","c"]')
   })
 
@@ -234,6 +235,37 @@ describe('in a tab', () => {
     const document = { documentElement: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) } } }
     new Function('localStorage', 'document', 'window', buildThemeScript(pair, { prefix: 'app' }))(tab.localStorage, document, globalThis.window)
     expect([...classes]).toEqual(['theme-dark'])
+  })
+
+  // FJS-D1000: a mode and an accent are one entry naming both classes, so the
+  // kit's accent-only themes nest on its dark one without a second switch.
+  // The fake throws on a spaced token, as a real DOMTokenList does.
+  test('an entry naming several classes writes each, and the next pick removes them all', () => {
+    const classes = new Set(['unrelated'])
+    const tokens = (fn) => (...cs) => cs.forEach((c) => {
+      if (/\s/.test(c)) throw new Error(`InvalidCharacterError: '${c}'`)
+      fn(c)
+    })
+    const document = { documentElement: { classList: { add: tokens((c) => classes.add(c)), remove: tokens((c) => classes.delete(c)) } } }
+    const looks = { themes: ['theme-default', 'theme-dark theme-sunset', 'theme-dark  theme-forest'], default: 'theme-dark theme-sunset' }
+
+    globalThis.document = document
+    try {
+      initTheme(looks)
+      expect([...classes].sort()).toEqual(['theme-dark', 'theme-sunset', 'unrelated'])
+      setTheme('theme-dark  theme-forest')
+      expect([...classes].sort()).toEqual(['theme-dark', 'theme-forest', 'unrelated'])
+      expect(theme.value).toBe('theme-dark  theme-forest')
+      setTheme('theme-default')
+      expect([...classes].sort()).toEqual(['theme-default', 'unrelated'])
+    } finally {
+      delete globalThis.document
+    }
+
+    classes.clear()
+    tab.store.set('theme', 'theme-dark theme-sunset')
+    new Function('localStorage', 'document', 'window', buildThemeScript(looks))(tab.localStorage, document, globalThis.window)
+    expect([...classes].sort()).toEqual(['theme-dark', 'theme-sunset'])
   })
 
   test('a stored pick is what the next boot opens on', () => {

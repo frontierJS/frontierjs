@@ -71,7 +71,7 @@ test('frame: --topbar-height is a floor, so a bar that fits keeps it', function 
     '.topbar'
   );
 
-  var want = parseFloat(style(bar, '--topbar-height')) * 16;
+  var want = lengthPx(bar, '--topbar-height');
   var got  = bar.getBoundingClientRect().height;
 
   assert.ok(Math.abs(got - want) < 1.5,
@@ -82,7 +82,7 @@ test('frame: --topbar-height is a floor, so a bar that fits keeps it', function 
 
 test('frame: and it is still a floor, not a ceiling', function () {
   var narrow = overfullBar('320px').getBoundingClientRect().height;
-  var floor  = parseFloat(style(document.body, '--topbar-height')) * 16;
+  var floor  = lengthPx(document.body, '--topbar-height');
 
   assert.ok(narrow > floor,
     'an overfull bar should be taller than the floor — floor ' + floor + 'px, got ' + narrow + 'px');

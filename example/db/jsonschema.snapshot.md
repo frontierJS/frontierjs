@@ -240,6 +240,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `provider` | `string` | yes | — | — | — |
 | `returnTo` | `string`? | — | — | — | — |
+| `initiator` | `string`? | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 
 **On create**: required — `provider`, `expiresAt` · not accepted — `id`
@@ -667,7 +668,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `note` | `string`? | — | — | — | — |
 | `customerId` | `integer` | yes | Customer | — | `required` |
 | `trackingCode` | `string`? | — | Tracking | `x-litestone-kind` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `reference`, `customerId` · not accepted — `id`
 
@@ -705,7 +705,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expMonth` | `integer` | yes | Expiry month | `minimum: 1` `maximum: 12` | — |
 | `expYear` | `integer` | yes | Expiry year | `minimum: 2000` `maximum: 2100` | — |
 | `isDefault` | `boolean` = `false` | — | Default | `x-litestone-kind` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `customerId`, `brand`, `last4`, `expMonth`, `expYear` · not accepted — `id`
 
@@ -729,7 +728,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `refundedAmount` | `integer` = `0` | — | — | `minimum: 0` `x-money` | — |
 | `failureReason` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
 | `actionUrl` | `string`? | — | — | `minLength: 0` `maxLength: 300` `x-litestone-kind` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 | `settledAt` | `string`? | — | — | `format: "date-time"` | — |
 
 **On create**: required — `providerRef`, `amount` · not accepted — `id`
@@ -803,7 +801,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `trialEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 | `cancelledAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `isCancelingAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `reference`, `customerId`, `planVersionId` · not accepted — `id`, `currentPeriodStart`, `currentPeriodEnd`
 
@@ -821,7 +818,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `startsOn` | `string` | yes | — | `format: "date"` | — |
 | `endsOn` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
 | `status` | `PeriodStatus` = `"open"` | — | — | — | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `subscriptionId`, `startsOn` · not accepted — `id`
 
@@ -857,7 +853,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `dunningDays` | `integer` | yes | — | `x-unit` | — |
 | `paidAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `isReminded` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `number`, `customerId`, `periodStart`, `periodEnd`, `dueOn`, `graceDays`, `dunningDays` · not accepted — `id`
 
@@ -876,7 +871,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `amount` | `integer` | yes | Amount | `x-money` | — |
 | `periodStart` | `string`? | — | — | `format: "date"` | — |
 | `periodEnd` | `string`? | — | — | `format: "date"` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `invoiceId`, `description`, `unitAmount`, `amount` · not accepted — `id`
 
@@ -893,7 +887,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `amount` | `integer` | yes | Amount | `exclusiveMinimum: 0` `x-money` | — |
 | `reason` | `string` | yes | Reason | `minLength: 3` `maxLength: 200` | — |
 | `issuedAt` | `string` | — | — | `format: "date-time"` | — |
-| `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `number`, `invoiceId`, `amount`, `reason` · not accepted — `id`
 

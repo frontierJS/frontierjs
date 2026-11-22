@@ -106,15 +106,15 @@
    * not. The rungs are literals: `--text-sm: var(--text-md)` at a theme
    * resolves once and would not follow a scoped retune.
    */
-  --text-2xs: 0.625rem;
-  --text-xs:  0.6875rem;
-  --text-sm:  0.75rem;
-  --text-md:  0.8125rem;
-  --text-lg:  0.9375rem;
-  --text-xl:  1.125rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 2.125rem;
-  --text-4xl: 3rem;
+  --text-2xs: calc(0.625 * var(--rem));
+  --text-xs:  calc(0.6875 * var(--rem));
+  --text-sm:  calc(0.75 * var(--rem));
+  --text-md:  calc(0.8125 * var(--rem));
+  --text-lg:  calc(0.9375 * var(--rem));
+  --text-xl:  calc(1.125 * var(--rem));
+  --text-2xl: calc(1.5 * var(--rem));
+  --text-3xl: calc(2.125 * var(--rem));
+  --text-4xl: calc(3 * var(--rem));
 
   /* Headline leading, tight enough that a two-line h1 reads as one block. */
   --leading-display: 0.95;
@@ -139,9 +139,9 @@
    * recomputed on every element from the base it inherited, so a rung
    * declared here would win on the themed element and nowhere below it.
    */
-  --space-4xl-base: 1.75rem;
-  --space-5xl-base: 2.5rem;
-  --space-6xl-base: 4rem;
+  --space-4xl-base: calc(1.75 * var(--rem));
+  --space-5xl-base: calc(2.5 * var(--rem));
+  --space-6xl-base: calc(4 * var(--rem));
 
   /*
    * ── Set in metal, so it barely moves ───────────────────────────────
@@ -154,10 +154,12 @@
   --motion-base:  90ms;
   --motion-enter: 100ms;
   --motion-slow:  120ms;
+  --motion-travel: 150ms;
 
-  --motion-ease:       linear;
-  --motion-ease-out:   linear;
-  --motion-ease-enter: linear;
+  --motion-ease:        linear;
+  --motion-ease-out:    linear;
+  --motion-ease-enter:  linear;
+  --motion-ease-spring: linear;
 
   /*
    * The small caps that name a region — table head, tile label, nav group.
@@ -206,8 +208,8 @@
   /* Measure and frame. A narrower column than the default 1280px. */
   --container-max:    1080px;
   --container-narrow: 680px;
-  --container-pad:    1.5rem;
-  --topbar-height:    3rem;
-  --sidebar-width:    14rem;
-  --screen-pad:       2rem;
+  --container-pad:    calc(1.5 * var(--rem));
+  --topbar-height:    calc(3 * var(--rem));
+  --sidebar-width:    calc(14 * var(--rem));
+  --screen-pad:       calc(2 * var(--rem));
 }

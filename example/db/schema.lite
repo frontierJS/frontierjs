@@ -1256,21 +1256,6 @@ model Order {
   /// row is due; an order paid first has left `pending` and owes nothing.
   @@commitment(abandon, on: createdAt + 14d)
 
-  /// Whose order this is, when the buyer had an account at the moment of sale.
-  ///
-  /// DENORMALIZED from `Customer.userId`, deliberately. A row policy compares
-  /// columns on its own model against `auth()` and does not traverse a
-  /// relation, and `@from` crosses one only to AGGREGATE (`count: true`) — so
-  /// *the orders of the customer this account is linked to* has nowhere to be
-  /// written except here. The alternative was a service filter, which is a rule
-  /// living outside the boundary that enforces every other rule about this row.
-  ///
-  /// Null for a guest sale, and it stays null: an account registered later
-  /// takes the customer record with it, and the orders under it, through the
-  /// policy on `Customer` — but an order already written is a receipt, and
-  /// back-filling receipts is a write nobody asked for.
-  userId         String?      @system
-  
   @@gate(1.4.4.5)
   
   /// ─── Bulk export ────────────────────────────────────────────────────────
@@ -1291,11 +1276,12 @@ model Order {
   /// machine are the same principal and a different blast radius.
   @@export(ndjson, since: createdAt)
   
-  /// Staff read every order; a shopper reads their own. Two allows rather than
-  /// one expression, because within an operation they are OR'd — and because
-  /// they are two different sentences that will change at different times.
+  /// Staff read every order; a shopper reads the orders of the customer their
+  /// account is linked to. Read through the customer rather than copied onto
+  /// the order, so a guest who registers later reads the orders they placed as
+  /// a guest.
   @@allow(read, auth().isStaff)
-  @@allow(read, userId == auth().id)
+  @@allow(read, customer.userId == auth().id)
   
   /// ─── The receipt adds up ────────────────────────────────────────────────
   ///
@@ -1330,10 +1316,8 @@ model Order {
   
   @@trail(audit)
   
-  /// One customer's orders — the console's customer screen, and what
-  /// `Customer`'s cascade walks to find them. The read policy above correlates
-  /// on `userId` and not on this column, so the policy hop is unaffected; what
-  /// is affected is every read that starts from the customer.
+  /// One customer's orders — the console's customer screen, the read policy's
+  /// hop, and what `Customer`'s cascade walks to find them.
   @@index([customerId])
 }
 
@@ -1408,12 +1392,9 @@ model OrderLine {
   
   /// *The lines of my own orders*, asked of the ORDER rather than of a column
   /// here. The three copies above are facts about the moment of sale; a buyer's
-  /// id would not be one, and it is not stored.
-  ///
-  /// The bound is ONE hop (`FJS-D221`), which is why `Order.userId` is a
-  /// denormalized copy of `Customer.userId` and has to stay one: reaching the
-  /// customer from a line is two hops and is a parse error.
-  @@allow(read, order.userId == auth().id)
+  /// id would not be one, and it is not stored. Two hops is the bound
+  /// (`FJS-D1027`), and this is both of them.
+  @@allow(read, order.customer.userId == auth().id)
   
   @@softDelete
   
@@ -1540,11 +1521,6 @@ model PaymentMethod {
 
   payments   Payment[]
 
-  /// `Order`'s trick and `Subscription`'s: a row policy compares columns on its
-  /// own model, so *the cards of the customer this account is linked to* has
-  /// nowhere to live but here.
-  userId     String?  @system
-
   /// Read 1 — a shopper sees their own card, narrowed by the policy below, and
   /// what they see is a brand and four digits. Every write is 8: an instrument
   /// is recorded when the PROVIDER says it exists, off a signed event, and no
@@ -1555,7 +1531,7 @@ model PaymentMethod {
   /// what happens to a live subscription whose only instrument has gone.
   @@gate(1.8.8.8)
   @@allow(read, auth().isStaff)
-  @@allow(read, userId == auth().id)
+  @@allow(read, customer.userId == auth().id)
 
   @@index([customerId])
 
@@ -1647,12 +1623,6 @@ model Payment {
   /// row policies below are already what decides who may read it.
   actionUrl String? @length(0, 300) @system
 
-  /// The account this payment belongs to, copied at creation like `Order`'s and
-  /// `Invoice`'s — a row policy compares columns on its own model, so *the
-  /// payments of the customer this account is linked to* has nowhere else to
-  /// live.
-  userId String? @system
-
   createdAt DateTime  @default(now())
   settledAt DateTime?
 
@@ -1681,8 +1651,9 @@ model Payment {
   /// The change is `requiresAction`: when the bank asks for the cardholder, the
   /// only person who can finish the payment is the one who owns it, and a row
   /// only an administrator may read cannot tell them. So a shopper reads their
-  /// own payments and staff read the book — the same pair `Invoice` already
-  /// makes, over the same `userId`.
+  /// own payments and staff read the book. A payment is the customer's through
+  /// whichever of the arc's two parents it names, so there is one allow per
+  /// parent.
   ///
   /// Create and update 8 — SYSTEM, because the only writer is the shop
   /// recording what a provider said, and a level is not what separates those:
@@ -1691,7 +1662,8 @@ model Payment {
   /// caller including the application itself.
   @@gate(1.8.8.9)
   @@allow(read, auth().isStaff)
-  @@allow(read, userId == auth().id)
+  @@allow(read, order.customer.userId == auth().id)
+  @@allow(read, invoice.customer.userId == auth().id)
   @@trail(audit)
 }
 
@@ -1894,19 +1866,14 @@ model Subscription {
   periods            SubscriptionPeriod[]
   createdAt          DateTime           @default(now())
 
-  /// `Order`'s trick, and for `Order`'s reason: a row policy compares columns on
-  /// its own model and does not traverse a relation, so *the subscriptions of
-  /// the customer this account is linked to* has nowhere to live but here.
-  userId             String?            @system
-
   /// Read at 1 and written at 4, like an `Order`: staff manage subscriptions,
   /// and the one move a subscriber makes for themselves is cancelling, which
   /// the policy below scopes to their own row.
   @@gate(1.4.4.5)
   @@allow(read,   auth().isStaff)
-  @@allow(read,   userId == auth().id)
+  @@allow(read,   customer.userId == auth().id)
   @@allow(update, auth().isStaff)
-  @@allow(update, userId == auth().id)
+  @@allow(update, customer.userId == auth().id)
 
   /// The moves, and every one of them is the ENGINE's — which is what `@system`
   /// says, and it is a different sentence from a gate set high (`FJS-D150`): a
@@ -1974,7 +1941,6 @@ model SubscriptionPeriod {
   endsOn         String        @date @system
   status         PeriodStatus  @default(open)
 
-  userId         String?       @system
   createdAt      DateTime      @default(now())
 
   /// Written by billing alone: created at 8, so only the system writes one,
@@ -1982,7 +1948,7 @@ model SubscriptionPeriod {
   /// fire makes. Every column a caller could name is `@system` or frozen.
   @@gate(1.8.7.8)
   @@allow(read,   auth().isStaff)
-  @@allow(read,   userId == auth().id)
+  @@allow(read,   subscription.customer.userId == auth().id)
   @@allow(update, auth().isStaff)
 
   @@transitions(status, close: open -> closed @system)
@@ -2112,8 +2078,6 @@ model Invoice {
   creditNotes    CreditNote[]
   payments       Payment[]
 
-  userId         String?         @system
-
   /// Read at 1; created and deleted by the system alone — an invoice is issued
   /// by billing and by nothing else. Update is 4 and staff-only, and
   /// what it can reach is the moves: every other column is `@system` or
@@ -2128,9 +2092,9 @@ model Invoice {
   /// is `@system`, so this admits nothing a request can ask for.
   @@gate(1.8.4.8)
   @@allow(read,   auth().isStaff)
-  @@allow(read,   userId == auth().id)
+  @@allow(read,   customer.userId == auth().id)
   @@allow(update, auth().isStaff)
-  @@allow(update, userId == auth().id && status == 'draft')
+  @@allow(update, customer.userId == auth().id && status == 'draft')
 
   /// The one-row half of the receipt identity. The other half — that the lines
   /// sum to `subtotal` — is the cross-row invariant this language cannot state.
@@ -2203,11 +2167,9 @@ model InvoiceLine {
   periodStart String?   @date @immutable
   periodEnd   String?   @date @immutable
 
-  userId      String?  @system
-
   @@gate(1.8.8.8)
   @@allow(read, auth().isStaff)
-  @@allow(read, userId == auth().id)
+  @@allow(read, invoice.customer.userId == auth().id)
 
   /// Every read of this table is "the lines of one invoice" —
   /// `invoices.get(id)` composes the header with them.
@@ -2228,11 +2190,9 @@ model CreditNote {
   reason     String    @length(3, 200) @immutable @label("Reason")
   issuedAt   DateTime  @default(now()) @immutable
 
-  userId     String?   @system
-
   @@gate(1.8.8.8)
   @@allow(read, auth().isStaff)
-  @@allow(read, userId == auth().id)
+  @@allow(read, invoice.customer.userId == auth().id)
 
   /// What has been credited back against one invoice. `Restrict`, so it is also
   /// the check that runs before an invoice can be removed.

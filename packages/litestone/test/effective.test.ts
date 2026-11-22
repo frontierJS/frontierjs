@@ -532,4 +532,21 @@ describe('a day window read in its row’s own zone (FJS-2782)', () => {
     expect(labels(await db.desk.findMany())).toEqual(['west'])
     env.close?.()
   })
+
+  // FJS-4538: a broadcast grades the row it was handed, so it has to agree with the read.
+  test('$inWindow grades a zoned day in the row’s own zone, a parent’s included', async () => {
+    const { env, db } = await staged()
+    const rows = await db.quote.findMany({ withExpired: true, orderBy: { id: 'asc' } })
+    const inWindow = () => labels(rows.filter(r => env.db.$inWindow('quote', r)))
+    expect(inWindow()).toEqual(['la', 'nozone', 'orphan'])
+    env.clock.set('2026-10-04T06:59:00.000Z')
+    expect(inWindow()).toEqual(['la'])
+    // A stated moment is one day for every row, as a stated asOf is.
+    expect(labels(rows.filter(r => env.db.$inWindow('quote', r, '2026-10-03T23:00:00.000Z')))).toEqual(['la', 'nozone', 'orphan', 'tokyo'])
+    await db.desk.create({ data: { label: 'east', offset: 540,  closesOn: '2026-10-04' } })
+    await db.desk.create({ data: { label: 'west', offset: -420, closesOn: '2026-10-04' } })
+    env.clock.set('2026-10-03T15:00:00.000Z')
+    expect(labels((await db.desk.findMany({ withExpired: true })).filter(r => env.db.$inWindow('desk', r)))).toEqual(['west'])
+    env.close?.()
+  })
 })

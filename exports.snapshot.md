@@ -381,16 +381,17 @@ lists the pair, and a rename that removes one drops it on the next write.
 
 ## `@frontierjs/notifications`
 
-`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `client.ts` `crash.ts` `db/` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `services.ts` `state.ts` `types.ts`
+`packages/notifications` · ships `LICENSE` `README.md` `builders.ts` `client.ts` `crash.ts` `db/` `define.ts` `drivers/` `errors.ts` `index.ts` `loader.ts` `notification.ts` `notify.ts` `package.json` `plugin.ts` `resource/` `services.ts` `state.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
 | exports | `./client` | `client.ts` | yes |
 | exports | `./schema.lite` | `db/notification.lite` | yes |
+| exports | `./resource/*.mesa` | `resource/*.mesa` | 2 files |
 | main | `main` | `index.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/ui`: `^0.1.0`
 
 ## `@frontierjs/orion`
 
@@ -558,6 +559,8 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./frontmatter (default)` | `src/frontmatter/frontmatter.js` | yes |
 | exports | `./glow (types)` | `src/glow/glow.d.ts` | yes |
 | exports | `./glow (default)` | `src/glow/glow.js` | yes |
+| exports | `./grammars (types)` | `src/grammars/grammars.d.ts` | yes |
+| exports | `./grammars (default)` | `src/grammars/grammars.js` | yes |
 | exports | `./history (types)` | `src/history/history.d.ts` | yes |
 | exports | `./history (default)` | `src/history/history.js` | yes |
 | exports | `./hooks (types)` | `src/hooks/hooks.d.ts` | yes |

@@ -708,6 +708,18 @@ export interface CaravanApp {
   withDb?: <T>(fn: (db: unknown) => T | Promise<T>) => Promise<T>
 
   /**
+   * The tenant registry under `createApp({ tenants })`, where there is no one
+   * client: a job's row-bound schedules are read from each tenant it lists.
+   */
+  tenants?: unknown
+
+  /**
+   * Junction's Observer for each tenant client the app opens — how a
+   * row-bound schedule follows a tenant's writes.
+   */
+  onTenantClient?: (observer: (client: unknown, tenantId: string) => void) => () => void
+
+  /**
    * WHICH TENANT is in scope right now — read at dispatch, beside the actor.
    *
    * Optional for `principal`'s reason: Caravan runs standalone, and an app that

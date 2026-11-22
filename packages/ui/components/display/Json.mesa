@@ -691,8 +691,8 @@
           role="gridcell"
           data-stop
           tabindex="-1"
-          style:padding-inline-start={`calc(${row.depth} * 1.15rem)`}
-          style:background-size={`calc(${row.depth} * 1.15rem) 100%`}
+          style:padding-inline-start={`calc(${row.depth} * calc(1.15 * var(--rem)))`}
+          style:background-size={`calc(${row.depth} * calc(1.15 * var(--rem))) 100%`}
         >
           {#if row.container && !row.circular}
             <button
@@ -889,8 +889,8 @@
         <div class="fjs-json-row fjs-json-addrow" data-add={row.key}>
           <span
             class="fjs-json-cell"
-            style:padding-inline-start={`calc(${row.depth + 1} * 1.15rem)`}
-            style:background-size={`calc(${row.depth + 1} * 1.15rem) 100%`}
+            style:padding-inline-start={`calc(${row.depth + 1} * calc(1.15 * var(--rem)))`}
+            style:background-size={`calc(${row.depth + 1} * calc(1.15 * var(--rem))) 100%`}
           >
             <span class="fjs-json-toggle" aria-hidden="true"></span>
             {#if row.kind !== 'array'}
@@ -930,8 +930,8 @@
         <div class="fjs-json-row" data-empty={row.key}>
           <span
             class="fjs-json-cell"
-            style:padding-inline-start={`calc(${row.depth + 1} * 1.15rem)`}
-            style:background-size={`calc(${row.depth + 1} * 1.15rem) 100%`}
+            style:padding-inline-start={`calc(${row.depth + 1} * calc(1.15 * var(--rem)))`}
+            style:background-size={`calc(${row.depth + 1} * calc(1.15 * var(--rem))) 100%`}
           >
             <span class="fjs-json-toggle" aria-hidden="true"></span>
           </span>
@@ -1096,7 +1096,7 @@
     gap:                var(--space-2xs);
     min-inline-size:    0;
     white-space:        nowrap;
-    background-image:   repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px 1.15rem);
+    background-image:   repeating-linear-gradient(to right, var(--rule) 0 1px, transparent 1px calc(1.15 * var(--rem)));
     background-repeat:  no-repeat;
     background-position: left top;
   }
@@ -1106,7 +1106,7 @@
      same width so leaf rows line up with their siblings. */
   .fjs-json-toggle {
     flex:        none;
-    inline-size: 1rem;
+    inline-size: var(--rem);
     padding:     0;
     border:      0;
     background:  none;
@@ -1200,7 +1200,7 @@
      narrowed to sit inside a row. */
   .fjs-json-input {
     inline-size:     auto;
-    min-inline-size: 6rem;
+    min-inline-size: calc(6 * var(--rem));
     padding-block:   0;
     font-family:     var(--font-mono);
     font-size:       inherit;
@@ -1235,7 +1235,7 @@
     grid-column:        1 / -1;
     margin-block-end:   var(--space-2xs);
     padding-block-end:  var(--space-2xs);
-    padding-inline-end: 5rem;
+    padding-inline-end: calc(5 * var(--rem));
     border-block-end:   var(--border-width) solid var(--rule);
   }
   .fjs-json-query { flex: 1; min-inline-size: 0; }

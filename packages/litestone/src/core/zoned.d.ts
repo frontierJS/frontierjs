@@ -18,6 +18,12 @@ export function zonedDayCompare(src?: any, op?: string, at?: string, all?: (sql:
     params: string[];
 };
 /**
+ * The day `row` is on at the instant `at`, in its own zone — `zonedDayCompare`'s
+ * rule for a row in hand, which a broadcast grades with no query to filter through.
+ * `get(sql, params)` answers one row; a parent's zone is read through it.
+ */
+export function zonedDayOf(src?: any, row?: any, at?: string, get?: (sql: string, params: any[]) => any): any;
+/**
  * `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is.
  * With `after`, an instant at or before it is read on the next day — `22:00–06:00` ends the morning
  * after, and an end equal to its start is 24 hours (`FJS-D2294`).

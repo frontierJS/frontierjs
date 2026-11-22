@@ -23,11 +23,11 @@
 -->
 <fieldset disabled={disabled} class="fjs-fieldset" {class} {...$attributes}>
   {#if legend}
-    <legend class="h4" style:margin="0 0 0.25rem">{legend}</legend>
+    <legend class="h4" style:margin="0 0 calc(0.25 * var(--rem))">{legend}</legend>
   {/if}
 
   {#if description}
-    <p class="text-sm text-muted" style:margin="0 0 1rem">{description}</p>
+    <p class="text-sm text-muted" style:margin="0 0 var(--rem)">{description}</p>
   {/if}
 
   <div class="stack">

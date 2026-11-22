@@ -40,7 +40,7 @@
 
   const anim = $.entrance({
     in:  el => el.animate(
-      [{ opacity: 0, transform: 'translateY(-0.75rem) scale(0.97)' },
+      [{ opacity: 0, transform: 'translateY(calc(-0.75 * var(--rem))) scale(0.97)' },
        { opacity: 1, transform: 'translateY(0) scale(1)' }],
       { duration: 200, easing: 'cubic-bezier(0.16,1,0.3,1)', fill: 'forwards' }
     ),
@@ -82,11 +82,11 @@
 <style>
   .fjs-global-alert {
     position:          fixed;
-    inset-block-start: 1.5rem;
+    inset-block-start: calc(1.5 * var(--rem));
     inset-inline-start: 50%;
     transform:         translateX(-50%);
-    min-inline-size:   18rem;
-    max-inline-size:   36rem;
+    min-inline-size:   calc(18 * var(--rem));
+    max-inline-size:   calc(36 * var(--rem));
     z-index:           300;
     align-items:       center;
   }

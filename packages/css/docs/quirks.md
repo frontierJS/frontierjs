@@ -280,6 +280,13 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   anything visual. code.css writes the clamp out per role instead of reading
   `--tone-ink`, because it needs six roles at once off six theme colors and
   `--tone-ink` is one tone per element.
+- **The focus ring and a toned field border are clamped too, into the edge
+  window** — the text window widened by `--tone-l-slack`, for 3:1 rather than
+  4.5:1 (`FJS-D2133`). So a theme's `--ring` is not the color the ring paints
+  where it falls outside, and a spec comparing the outline to the raw token
+  fails; `focus.spec.js`'s `expectedRing` reads it through the window. The
+  untoned border is `--rule-strong`, which every theme keeps at 3:1 on
+  `--surface` by value — there is no window behind it.
 - **A sibling combinator behind an `:is()` ancestor is paid for page-wide.**
   `:is(.card, …) > * + *` was tried against every element and marked every
   parent's children as sibling-dependent, so one DOM removal anywhere
@@ -489,9 +496,12 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
     tab indicator, which is `calc(var(--border-width) + 1px)` and bleeds by the
     strip's own weight: at 3px a literal 2px underline reads as a gap in the
     line.
-- **Motion is four rungs and two loops, named for the job.** `--motion-fast`
+- **Motion is five rungs and two loops, named for the job.** `--motion-fast`
   (a color changing) · `--motion-base` (a control changing shape) ·
-  `--motion-enter` (overlays) · `--motion-slow` (a measurement moving), plus
+  `--motion-enter` (overlays) · `--motion-slow` (a measurement moving) ·
+  `--motion-travel` (a thing moving across the page, with
+  `--motion-ease-spring`; on `:root` because a view transition's
+  pseudo-elements inherit from nothing else, `FJS-D2150`), plus
   `--motion-spin` and `--motion-shimmer`. `theming.spec.js` sweeps every rule
   for a literal duration, with two exclusions that are the point rather than
   housekeeping: anything inside `prefers-reduced-motion` (the READER's setting
@@ -572,7 +582,7 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   transition on every Band, Card, Btn and Field per move: 92 on a 103-element
   page for 47 tokens, 20 to 34 ms p95 against about 5 without (FJS-4208). Put
   `data-motion="still"` on the subtree's root for the drag and take it off
-  after; it zeroes the four `--motion-*` rungs there, a nested theme included
+  after; it zeroes the five `--motion-*` rungs there, a nested theme included
   (`tokens.css`). The package's own runner turns every transition off, so no
   spec here sees this cost.
 - **Overlay motion is owned by `components/overlays.css`, not by the four

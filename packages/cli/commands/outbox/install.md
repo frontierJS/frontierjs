@@ -67,17 +67,19 @@ import "${PKG}/outbox.lite"${db === 'main' ? '' : ` into ${db}`}
 const wiringHint = `
 // ─── Add to api/src/app.ts ────────────────────────────────────────────────────
 
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath }    from 'node:url'
-import { outbox }           from '@frontierjs/junction/outbox'
-import { caravan }    from '@frontierjs/caravan'
-import { env }              from './core/env.ts'
+import { basename, dirname, resolve } from 'node:path'
+import { fileURLToPath }              from 'node:url'
+import { outbox }                     from '@frontierjs/junction/outbox'
+import { caravan }                    from '@frontierjs/caravan'
+import { env }                        from './core/env.ts'
 
 // Beside the main database. A deploy mounts only the directory DATABASE_URL
 // points at, so a jobs database left on Caravan's default path is inside the
 // container and every deploy empties it -- pending jobs and a pause included.
+// Named for that database (app.db -> app-jobs.db), so a drive on its own
+// database does not share a queue with the dev server.
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
-const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
+const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), basename(env.DATABASE_URL).replace(/\\.db$/, '') + '-jobs.db')
 
 // Inside buildApp(), beside its other app.configure calls:
 app.configure(caravan({ db: jobsDb }))  // the outbox needs a queue

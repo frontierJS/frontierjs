@@ -10,7 +10,7 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 213**.
+Graded: **13 of 214**.
 
 ## data — 3 of 78
 
@@ -266,7 +266,7 @@ Graded: **13 of 213**.
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 58
+## ui — 4 of 59
 
 ### Routes, prerender and static
 
@@ -333,7 +333,7 @@ Graded: **13 of 213**.
 | A `type="number"` or `"range"` input binds a NUMBER, and an empty box binds `undefined`. | **none** |
 | In a `.md` file `{…}` interpolates a bare path only; anything else stays literal text, with no error. | **none** |
 | A compiled component called directly instead of through `mount()` renders and never answers a click. | **none** |
-| A prop a component does not declare is not an error: it is the component's `$attributes`, spread onto its root element | **none** |
+| A prop a component does not declare is not an error: it is the component's `$attributes`, which lands only where the component writes `{...$attributes}` — one that never writes it drops `inert`, `id` or `hidden` without a word | **none** |
 | A parent sends a prop only when ITS value changed, so re-sending the same value does not reset a child's own edit | **none** |
 | A component reaches the DOM through nodes it owns. | **none** |
 
@@ -354,5 +354,6 @@ Graded: **13 of 213**.
 | A class name is not checked by anything | **none** |
 | A code sample highlighted with `prefix: true` loses its first character. | **none** |
 | An inline `style=` carries a custom property and the `<style>` block reads it. | **none** |
+| A size is `calc(N * var(--rem))`, never `Nrem`, in `css/src` and `ui/components`. | **none** |
 | An optional peer of `@frontierjs/ui` resolves from ui's own folder under a `link:`, where it is not installed. | **none** |
 

@@ -16,8 +16,8 @@
 
 .toast {
   position:   fixed;
-  bottom:     1rem;
-  right:      1rem;
+  bottom:     var(--rem);
+  right:      var(--rem);
   min-width:  240px;
   max-width:  360px;
   padding:    var(--space-lg) var(--space-2xl);
@@ -36,8 +36,8 @@
 
 .toast-stack {
   position:       fixed;
-  bottom:         1rem;
-  right:          1rem;
+  bottom:         var(--rem);
+  right:          var(--rem);
   display:        flex;
   flex-direction: column-reverse;
   gap:            var(--space-sm);

@@ -156,7 +156,6 @@ const sub = await startSubscription(sys, {
   planVersionId: cheap.id,
   status:     'active',
   quantity:   2,
-  userId:     customer.userId,
 }, { startsOn: periodStart, endsOn: periodEnd })
 
 // It needs a document to correct before a downgrade can credit anything.
@@ -164,7 +163,6 @@ await issueInvoice(sys, {
   number:         `INV-P${RUN}`,
   customerId:     customer.id,
   subscriptionId: sub.id,
-  userId:         customer.userId,
   periodStart, periodEnd, timeZone: 'UTC',
   lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
 })
@@ -250,13 +248,11 @@ const annual = await startSubscription(sys, {
   planVersionId: cheap.id,
   status:     'active',
   quantity:   2,
-  userId:     customer.userId,
 }, { startsOn: periodStart, endsOn: periodEnd })
 await issueInvoice(sys, {
   number:         `INV-P${RUN}Y`,
   customerId:     customer.id,
   subscriptionId: annual.id,
-  userId:         customer.userId,
   periodStart, periodEnd, timeZone: 'UTC',
   lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
 })

@@ -72,6 +72,7 @@ export function buildThemeScript(config = {}, { prefix = '' } = {}) {
     `var e=document.documentElement;` +
     (apply === 'attribute'
       ? `e.setAttribute(${JSON.stringify(attribute)},t);`
-      : `for(var i=0;i<k.length;i++)e.classList.remove(k[i]);e.classList.add(t);`) +
+      // An entry may name several classes (FJS-D1000); a spaced token throws.
+      : `var l=e.classList,w=/\\S+/g;l.remove.apply(l,k.join(" ").match(w));l.add.apply(l,t.match(w));`) +
     `})()`
 }

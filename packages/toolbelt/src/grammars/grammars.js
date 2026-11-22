@@ -27,7 +27,7 @@ import { yaml } from './yaml.js'
  * @typedef {import('./tokenize.js').State} State
  */
 
-export { ELEMENT, STRUCTURE, escapeHTML, initialState, lineHTML, stateGrammar, stateStack, tokenizeLine } from './tokenize.js'
+export { ELEMENT, STRUCTURE, escapeLine, initialState, lineHTML, stateGrammar, stateStack, tokenizeLine } from './tokenize.js'
 export { css, html, js, json, lite, markdown, mesa, ts, yaml }
 
 /**

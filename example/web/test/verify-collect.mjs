@@ -146,11 +146,11 @@ async function freshSubscription(suffix, who = customer) {
   const end   = addToDate(TODAY, { days: 25 })
   const sub = await startSubscription(sys, {
     reference: `SUB-C${RUN}${suffix}`, customerId: who.id, planVersionId: version.id,
-    status: 'active', quantity: 1, userId: who.userId,
+    status: 'active', quantity: 1,
   }, { startsOn: start, endsOn: end })
   const invoice = await issueInvoice(sys, {
     number: `INV-C${RUN}${suffix}`, customerId: who.id, subscriptionId: sub.id,
-    userId: who.userId, periodStart: start, periodEnd: end, timeZone: 'UTC',
+    periodStart: start, periodEnd: end, timeZone: 'UTC',
     lines: periodLines({ name: plan.name, quantity: 1, unitAmount: version.price,
                          periodStart: start, periodEnd: end }),
   })
@@ -488,7 +488,7 @@ async function settles(fn, ms = 20000) {
   const end   = addToDate(TODAY, { days: -10 })
   const sub = await startSubscription(sys, {
     reference: `SUB-C${RUN}X`, customerId: customer.id, planVersionId: version.id,
-    status: 'active', quantity: 1, userId: customer.userId,
+    status: 'active', quantity: 1,
   }, { startsOn: start, endsOn: end })
 
   // The sweep, with the REAL app behind it: junction's `commitments()` asks

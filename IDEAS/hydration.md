@@ -499,9 +499,9 @@ server's value in both components before either is written.
   changes; a read it cannot separate from a call falls back to evaluating,
   with a dev warning. Done 2026-11-20. *(main) unconfirmed:* the JSON block
   rather than a trailing script; an `$async` with `[]` deps is not seeded.
-  Left: the server does not wait on a `<mesa:boundary>` under the flag,
-  because the boundary's binding key differs between server and client
-  (`FJS-4517`) -- such a const loads on the client, as before.
+  Under the flag a `<mesa:boundary>` is a keyed block: the server waits on its
+  states and brackets the branch it wrote, and `hydBoundary` adopts the
+  content (`FJS-4517`, closed 2026-11-22).
 - [~] 3.2 Store snapshots — dropped: `FJS-D2284` (Q8 A). The client re-runs
   the route over 2.5a's `load()` data, and a store it cannot re-derive is a
   mismatch handled by `FJS-D2260`.
@@ -522,7 +522,7 @@ server's value in both components before either is written.
 
 **Built 2026-11-20.** Mesa's `bun run test` passed with 2838 tests and
 Sierra's with 2558, `test:hydrate` and island-site both green, and the corpus
-moved only hydrate fixtures. `FJS-4517` holds the boundary wait.
+moved only hydrate fixtures.
 
 ### Phase 4 — `client:*` as timing
 

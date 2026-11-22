@@ -180,12 +180,11 @@ table `credit_note` · db `main` · gate `1.8.8.8`
 | `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `number` | `String` | no | — | unique · **required on write** |
 | `reason` | `String` | no | — | **required on write** |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@index(invoiceId)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, invoice.customer.userId == auth().id)
 ```
 
 ### `Customer`
@@ -437,16 +436,15 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `subtotal` | `Int` | no | — | @system · **required on write** |
 | `tax` | `Int` | no | `0` | @system |
 | `total` | `Int` | no | — | @system · **required on write** |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@index(customerId)
 @@index(subscriptionId)
 @@check(total = subtotal + tax)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, customer.userId == auth().id)
 @@allow(update, auth().isStaff)
-@@allow(update, userId == auth().id && status == 'draft')
+@@allow(update, customer.userId == auth().id && status == 'draft')
 transition isReminded.remind: false → true @system
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system
@@ -469,12 +467,11 @@ table `invoice_line` · db `main` · gate `1.8.8.8`
 | `periodStart` | `String` | yes | — | — |
 | `quantity` | `Int` | no | `1` | — |
 | `unitAmount` | `Int` | no | — | **required on write** |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@index(invoiceId)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, invoice.customer.userId == auth().id)
 ```
 
 ### `JournalEntry`
@@ -631,7 +628,9 @@ table `oauth_flow` · db `main` · gate `8`
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
+| `grant` | `Json` | yes | — | @guarded |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `initiator` | `String` | yes | — | — |
 | `invitation` | `String` | yes | — | @guarded |
 | `provider` | `String` | no | — | **required on write** |
 | `returnTo` | `String` | yes | — | — |
@@ -669,14 +668,13 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 | `taxRate` | `Float` | no | `0` | @system |
 | `total` | `Int` | no | `0` | — |
 | `trackingCode` | `String` | yes | — | @system |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@index(customerId)
 @@check(discount <= subtotal)
 @@check(subtotal = 0 OR total = subtotal - discount + shipping + tax)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, customer.userId == auth().id)
 transition status.abandon: pending → cancelled @system
 transition status.cancel: paid, pending → cancelled
 transition status.pay: pending → paid
@@ -707,7 +705,7 @@ table `order_line` · db `main` · gate `1.8.8.8` · @@softDelete
 @@index(orderId)
 @@index(variantId)
 @@allow(read, auth().isStaff)
-@@allow(read, order.userId == auth().id)
+@@allow(read, order.customer.userId == auth().id)
 ```
 
 ### `OutboxMessage`
@@ -755,7 +753,6 @@ table `payment` · db `main` · gate `1.8.8.9`
 | `refundedAmount` | `Int` | no | `0` | — |
 | `settledAt` | `DateTime` | yes | — | — |
 | `status` | `PaymentStatus` | no | `'pending'` | — |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@unique(orderId), where: ("status" = 'pending' OR "status" = 'requiresAction')
@@ -764,7 +761,8 @@ table `payment` · db `main` · gate `1.8.8.9`
 @@index(paymentMethodId)
 @@check((("orderId" IS NOT NULL) + ("invoiceId" IS NOT NULL)) = 1)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, invoice.customer.userId == auth().id)
+@@allow(read, order.customer.userId == auth().id)
 ```
 
 ### `PaymentEvent`
@@ -796,13 +794,12 @@ table `payment_method` · db `main` · gate `1.8.8.8`
 | `last4` | `String` | no | — | **required on write** |
 | `payments` | `Payment[]` | — | — | relation |
 | `providerRef` | `String` | no | — | unique · @guarded · **required on write** |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@unique(customerId), where: "isDefault" = 1
 @@index(customerId)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, customer.userId == auth().id)
 ```
 
 ### `PayRate`
@@ -1257,15 +1254,14 @@ table `subscription` · db `main` · gate `1.4.4.5`
 | `reference` | `String` | no | — | unique · **required on write** |
 | `status` | `SubscriptionStatus` | no | `'trialing'` | — |
 | `trialEndsAt` | `DateTime` | yes | — | — |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@index(customerId)
 @@index(planVersionId)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, customer.userId == auth().id)
 @@allow(update, auth().isStaff)
-@@allow(update, userId == auth().id)
+@@allow(update, customer.userId == auth().id)
 transition status.activate: trialing → active @system
 transition status.cancel: active, pastDue, trialing → cancelled @system
 transition status.lapse: active → pastDue @system
@@ -1285,14 +1281,13 @@ table `subscription_period` · db `main` · gate `1.8.7.8`
 | `status` | `PeriodStatus` | no | `'open'` | — |
 | `subscription` | `Subscription` | — | — | relation |
 | `subscriptionId` | `Int` | no | — | **required on write** |
-| `userId` | `String` | yes | — | @system |
 
 ```
 @@unique(subscriptionId), where: "status" = 'open'
 @@index(subscriptionId, startsOn)
 @@check(startsOn < endsOn)
 @@allow(read, auth().isStaff)
-@@allow(read, userId == auth().id)
+@@allow(read, subscription.customer.userId == auth().id)
 @@allow(update, auth().isStaff)
 transition status.close: open → closed @system
 ```

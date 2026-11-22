@@ -133,7 +133,7 @@
 .popover:has(> .surface-header) {
   display:        flex;
   flex-direction: column;
-  width:          22rem;
+  width:          calc(22 * var(--rem));
   max-width:      calc(100vw - 2 * var(--space-md));
   max-height:     calc(100dvh - 2 * var(--space-lg));
   padding:        0;

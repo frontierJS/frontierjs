@@ -17560,6 +17560,42 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d1236"></a>2026-11-22 · `FJS-D1236` — What is a star rating in the kit: a css component over native radios, a Mesa component in ui, or nothing — `@frontierjs/css` grows `.rating` in `src/components/`: a `fieldset`/`div` of visually hidden radios and their labels, filled by `input:checked ~ label` over a reversed flex row, with `.rating.readonly` (or `[data-value]`) for the display and tone from the existing `tone` axis. Pure CSS, no script, named in `vocabulary.js`; the survey keeps native radios, so form posts and keyboard arrows work unchanged.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`@frontierjs/ui` grows `Rating.mesa` (props `value`, `max`, `readonly`, `name`) that renders the radios and carries its own scoped style. It is one file and the read-only display is the same component, but a style block in a kit package ships what Invariant 13 says the kit should state in `@frontierjs/css`, and a plain-HTML or email consumer gets nothing), **C** (Nothing in the kit: a star is a glyph an app draws, and ela's scoped block is the right owner. Close `FJS-2112` as declined and add the one sentence to the css `CLAUDE.md` so the next survey does not ask again).
+
+The paper's recommendation, taken as written: the drawing is style over a native control, which is what `@frontierjs/css` owns and what B would re-own in markup; A also gives the read-only display and the input one class, where C leaves two copies in every app that asks a rating.
+
+### <a id="fjs-d1237"></a>2026-11-22 · `FJS-D1237` — Is the status ribbon a new Ribbon term bleeding by the Card's own padding rung, a part of the record-page aside FJS-2686 has not drawn yet, or a Badge shape — No new noun: a Badge bleeds through a knob (`.badge.bleed`, reading a `--bleed-inline` the container sets), so the shape is a Badge treatment and Ribbon stays a word in guides only.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (New `Ribbon` term (`<span class="ribbon success">`) in `patterns/`, bleeding as `.card > .ribbon` by the Card's padding rung, same rule shape as `.surface-header`. Tone fill and derived ink come from chip.css, end-only radius. The aside later adds its own one-line rule when FJS-2686 lands), **B** (Hold the row for FJS-2686 and make Ribbon a part of the record-page aside (`.aside > .ribbon`), so the padding it bleeds by is stated once, by the aside that owns it).
+
+Against the recommendation (**A**): Owner's pick over the recommended Ribbon term: no new noun, the ribbon is a Badge treatment (.badge.bleed reading a --bleed-inline the container sets).
+
+### <a id="fjs-d1173"></a>2026-11-22 · `FJS-D1173` — How does a Block say a solid tone fill: a new treatment on the surface, a header-only modifier, or a toned header that fills by default — A treatment `solid` on the Block tier (`.card.success.solid`): the whole surface paints `--_fill` with `--_on-fill` ink and its own border, next to `raised`/`outlined`/`ghost`/`glass`, listed in `treatment` and the wizard. Orthogonal and composes with tone; a header band alone then needs a nested card or `.band.solid`, and a solid card body is rarely wanted (long text on a saturated fill).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the fill is a Block sub-region rule, not a treatment: `.surface-header.solid` (or `.card > .surface-header.solid`) paints the tone the surface already carries. Says exactly what the row reports (a header band) and leaves the body readable, but a treatment listed on the sub-region is the "wrong ELEMENT" trap in `CLAUDE.md`, and it needs an anatomy entry rather than a vocabulary treatment), **C** (no modifier: a toned Card's `.surface-header` fills solid by default. Nothing new to learn, but it changes every toned card in the kit and the apps (`example`, `basecamp`) at once, and drops the tint header a quiet success/danger card relies on).
+
+The paper's recommendation, taken as written: a treatment is what vocabulary already calls an orthogonal change of fill, and the derivation to reuse (`chip.css`) is a fill-plus-ink pair that wants a whole surface as its subject; the header band falls out of `.band.solid` or a `solid` Card with a flat body, and B/C each break a standing rule (element-scoped modifier; silent restyle of existing cards).
+
+### <a id="fjs-d1164"></a>2026-11-22 · `FJS-D1164` — How does a widget's type scale stop following the host page's root font size — Make the kit stop spelling size in rem for widgets: `@frontierjs/css` states its sizes through a `--rem` token that `:root` sets to `1rem` and `:host` sets to `16px`, so every literal becomes `calc(N * var(--rem))`. The same rewrite as A moved into the source, so Mesa component sheets are covered by being written that way, at the price of touching 65 files and a test that no new bare `rem` appears.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (Rewrite `Nrem` to `calc(N * var(--rem, 1rem))` in every stylesheet that enters a widget root, with `:host { --rem: 16px }` set by `mountInto`. One owner for the widget boundary, but it must cover BOTH the `widgetCssPlugin` output and Mesa's runtime-registered sheets (mesa is the leaf and knows no widget), and `@media`/`@container` conditions in rem stay on the host root. The widget stops honoring a reader's raised base font), **B** (`mountInto` measures the host's root size and sets `:host { zoom: calc(16 / <host px>) }`. No CSS rewrite and the kit stays untouched, but every px (borders, ring widths, a px `max-width`) scales by the same factor, and `zoom` shifts popover and measured-position arithmetic), **D** (Document it as a host's responsibility (the 62.5% root is theirs) and ship nothing. The marketing-site hosts a widget lives on are the common case, so the row's measurement stays true).
+
+The paper's recommendation, taken as written: one spelling in the source is the only option that covers Mesa's runtime sheets without teaching mesa about widgets, and a guard test keeps it from regressing.
+
+### <a id="fjs-d1000"></a>2026-11-22 · `FJS-D1000` — Should the theme switch offer a mode+accent pair, or stay one whole theme per choice — A `themes` entry may name several classes, space-separated. `applyTheme` splits it and removes every class of every declared entry before adding; `setTheme`, `toggleTheme`, persistence and `theme.value` keep treating the entry as one opaque choice, and `buildThemeScript` splits the same way. No new noun or option; a picker's swatch wears the entry's classes.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (two axes: `theme: { modes, accents }` with `setMode` / `setAccent`, persisted under two keys and written as two classes. The honest model of "dark with a red accent", but two public verbs, a second persisted key and a `system` map that must say which accent follows the OS), **C** (no switch change: the kit ships (or the app writes) one whole dark-with-accent theme per accent. Sierra is untouched, but it multiplies kit themes by modes and is the app stylesheet restating `theme-dark`'s tokens the row names as the cost).
+
+The paper's recommendation, taken as written: the switch already owns a list of whole choices and the css themes already nest, so letting an entry name more than one class closes the gap without a second axis, a new verb or a second persisted key.
+
+### <a id="fjs-d2133"></a>2026-11-22 · `FJS-D2133` — How does a non-text control boundary (the untoned `.field` border and the focus ring) reach WCAG 1.4.11's 3:1 in every theme — C for the neutral and a derived B for the tones.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C for the neutral and a derived B for the tones*) over **A** (Send the ring, the focused border and toned borders through the existing text window, the way `.btn.outlined`'s border does (`FJS-D93`). This adds no token, but a 3:1 job gets a 4.5:1 window and every brand ring darkens), **B** (A second, non-text window: each theme declares its own `--edge-l-min/max` pair, tuned to 3:1).
+
+The recommended hybrid: C retunes --rule-strong per theme (as FJS-125 did for --ink-mute), and the ring and tone borders get B's edge window derived from the text window, clamp(var(--tone-l-min) - slack, l, var(--tone-l-max) + slack), costing one slack token.
+
 ### <a id="fjs-d2150"></a>2026-11-14 · `FJS-D2150` — Q3 — Is a spring a token or a solver — `FJS-D1235` option B: one duration `--motion-travel` (~400 ms) and one easing `--motion-ease-spring` (a `linear()` curve) beside `--motion-ease` (`tokens.css:291`). A fixed spring is a token; a retargeting one is Motion's `animate()` through `$.entrance`.
 
 Asked in [`IDEAS/motion.md`](IDEAS/motion.md) § Open questions. **B** was picked over **A** (three tokens mirroring Portal's `--stage-spring`/`--stage-move`/ `--stage-morph` (`FJS-2257`): `--motion-spring` (a `linear()` overshoot easing), `--motion-move` and `--motion-morph` (durations) beside the four in `packages/css/src/foundation/tokens.css:279`), **C** (no token: a view transition is the app's choreography and Portal's `--stage-*` on `:root` stays the owner. `FJS-2257` closes as won't-fix and `$.animate` (Q1 **C**) has no spring to default to), **D** (a solver: Mesa ships a spring integrator (`$.spring`, stiffness/ damping, retargets mid-flight). One owner for fixed and live springs, at the cost of a physics engine § 3.2 hands to a maintained library).
@@ -23060,6 +23096,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2309"></a>2026-11-22 · `FJS-D2309` — Q2 — Where the WebKit launcher lives — One helper that opens a page in a Playwright engine, WebKit or Firefox, and returns problems and a screenshot; sierra's `openFirefoxCsp` moves onto it.
+
+Asked in [`IDEAS/webkit-window.md`](IDEAS/webkit-window.md) § Open questions. **A** was picked over **B** (Each drive launches its engine itself, as `openFirefoxCsp` does today).
+
+The paper's recommendation, taken as written: two engines are about to be launched from drives, and one owner keeps the browser install and the problems shape in one place.
 
 ### <a id="fjs-d2305"></a>2026-11-22 · `FJS-D2305` — Q5 — What drives a page in WebKit — Playwright's WebKit through `playwright-core`, a test-only devDependency, following `FJS-3549`'s Firefox exception to `FJS-D1214`.
 

@@ -108,8 +108,10 @@ test('an app with no queue gets no job it could not run', () => {
 
 // FJS-2644 — a deploy mounts only the directory DATABASE_URL points at, so a
 // queue written as a literal beside the code stays inside the container and
-// every release starts with an empty one.
-test('the scaffolded queue sits beside DATABASE_URL, not beside the code', () => {
+// every release starts with an empty one. FJS-4522 — one shared jobs.db let a
+// dev server on app.db claim a job a drive on verify.db had queued, so the
+// queue is named for its database and a throwaway database gets its own.
+test('the scaffolded queue sits beside DATABASE_URL, named for it', () => {
   const app = scaffold('queue-volume', '--full')
   const config = join(app, 'api/config/junction.config.js')
   const probe = (url) => {
@@ -118,9 +120,11 @@ test('the scaffolded queue sits beside DATABASE_URL, not beside the code', () =>
     expect(r.stderr).toBe('')
     return r.stdout.trim()
   }
-  expect(probe('/data/app.db')).toBe('/data/jobs.db')
-  expect(probe('./db/app.db')).toBe(join(app, 'db/jobs.db'))
-  expect(probe(':memory:')).toBe(join(app, 'db/jobs.db'))
+  expect(probe('/data/app.db')).toBe('/data/app-jobs.db')
+  expect(probe('./db/app.db')).toBe(join(app, 'db/app-jobs.db'))
+  expect(probe('./db/verify.db')).toBe(join(app, 'db/verify-jobs.db'))
+  expect(probe('')).toBe(join(app, 'db/app-jobs.db'))
+  expect(probe(':memory:')).toBe(':memory:')
 }, 60_000)
 
 // FJS-1792 — --full installed caravan and notifications and wired neither past

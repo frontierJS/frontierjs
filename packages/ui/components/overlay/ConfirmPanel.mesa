@@ -97,9 +97,9 @@
     bind:this={panelEl}
     class="popover stack"
     style:position="fixed"
-    style:gap="0.5rem"
-    style:inline-size="16rem"
-    style:max-width="16rem"
+    style:gap="calc(0.5 * var(--rem))"
+    style:inline-size="calc(16 * var(--rem))"
+    style:max-width="calc(16 * var(--rem))"
     style:left="{x}px"
     style:top="{y}px"
     style:max-block-size={maxH == null ? null : `${maxH}px`}

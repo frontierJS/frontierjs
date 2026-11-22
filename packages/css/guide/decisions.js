@@ -210,6 +210,7 @@ var QUESTIONS = {
       { label: 'Takes a value', hint: 'text, number, date, or a <select> — the plain dropdown of values', on: 'Field' },
       { label: 'Turns something on or off, immediately', hint: 'the change is saved as you flip it', on: 'Switch' },
       { label: 'Turns something on or off, with the form', hint: 'nothing happens until submit', on: 'Field' },
+      { label: 'Asks for a score', hint: 'one to five stars, or shows an average of them', on: 'Rating' },
     ],
   },
 
@@ -440,7 +441,7 @@ var OUTCOMES = {
       return '<article class="' + c + '">\n  <h3>Invoice #4021</h3>\n  <p>Due in 6 days.</p>\n</article>'
     },
     tones: true,
-    treatments: ['raised', 'outlined', 'glass'],
+    treatments: ['raised', 'outlined', 'glass', 'solid'],
     states: [],
     instead: [
       { term: 'Tile', when: 'it is one number and a label' },
@@ -455,7 +456,7 @@ var OUTCOMES = {
       return '<article class="' + c + '">\n  <span class="tile-label">Revenue</span>\n  <span class="tile-value">£48,120</span>\n</article>'
     },
     tones: true,
-    treatments: ['raised', 'outlined', 'glass'],
+    treatments: ['raised', 'outlined', 'glass', 'solid'],
     states: [],
     instead: [
       { term: 'Card', when: 'there is prose in it' },
@@ -888,7 +889,7 @@ var OUTCOMES = {
       return '<section class="' + c + '" aria-labelledby="why-h">\n  <div class="container stack">\n    <h2 id="why-h">Why it works</h2>\n    <p>…</p>\n  </div>\n</section>'
     },
     tones: true,
-    treatments: ['raised', 'outlined', 'align-center', 'roomy'],
+    treatments: ['raised', 'outlined', 'solid', 'align-center', 'roomy'],
     states: [],
     instead: [
       { term: 'Section', when: 'it is a subdivision inside a Screen rather than a stripe across a page' },
@@ -942,6 +943,28 @@ var OUTCOMES = {
     ],
     instead: [
       { term: 'Field', when: 'it is a checkbox that commits with the form. A switch that needs a Save button is lying about when it took effect' },
+    ],
+  },
+
+  Rating: {
+    page: 'formcontrols',
+    lead: 'A score of one to five, drawn as stars over native radios.',
+    markup: function (c) {
+      return '<fieldset class="' + c + '">\n  <legend>How was the visit?</legend>\n' +
+        [1, 2, 3, 4, 5].map(function (n) {
+          return '  <input type="radio" name="score" id="score-' + n + '" value="' + n + '"' + (n === 4 ? ' checked' : '') + '>' +
+            '<label for="score-' + n + '">' + n + (n === 1 ? ' star' : ' stars') + '</label>'
+        }).join('\n') +
+        '\n</fieldset>'
+    },
+    tones: true,
+    treatments: [],
+    states: [
+      { label: 'Answered', apply: 'checked', why: 'the native property on one radio; the stars before it fill from it' },
+      { label: 'Display', apply: 'readonly', why: 'a class on a <span role="img"> with --rating and --rating-max set, so an average fills part of a star' },
+    ],
+    instead: [
+      { term: 'Meter', when: 'it measures how full something is rather than a score someone gave' },
     ],
   },
 

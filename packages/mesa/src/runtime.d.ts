@@ -469,6 +469,13 @@ export function hydEach(anchor?: any, mode?: any, getArray?: any, keyFn?: any, m
 /** `awaitBlock` under the flag: the server's settled branch stays on screen and is adopted when the client settles the same way. */
 export function hydAwait(anchor?: any, getPromise?: any, pendingBlock?: any, thenBlock?: any, catchBlock?: any, waits?: any, deps?: any): void;
 /**
+ * `boundaryBlock` under the flag: the server's content is adopted when the
+ * client's first branch is content too, which a seeded `$async` const makes it.
+ * Until a branch mounts, whatever the server wrote stays on screen as the
+ * pending branch, so a const loaded again does not blank the page first.
+ */
+export function hydBoundary(anchor?: any, getStates?: any, contentBlock?: any, pendingBlock?: any, failedBlock?: any): void;
+/**
  * Adopt the page a `hydratable: true` server render wrote into `target`: the
  * server's nodes stay, and the component's bindings attach to them. A mismatch
  * at a component root re-renders the whole target (FJS-D2260).
@@ -851,6 +858,12 @@ export function hydIsland(anchor: Comment, load: () => Function | Promise<Functi
 export function islandPush(anchor?: any, newProps?: any): void;
 /** `bindProp` for a `client:*` child under the flag: held until it attaches. */
 export function islandBind(anchor?: any, name?: any, setParent?: any): void;
+/**
+ * `bind:this` on a `client:*` child under the flag: the ref stays unset until
+ * the child attaches, since its interface is read off a registry that does not
+ * exist before then.
+ */
+export function islandThis(anchor?: any, setRef?: any): void;
 /**
  * Store a value in a signal. The value is stored as-is — including functions.
  *

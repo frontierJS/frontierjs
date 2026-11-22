@@ -10,7 +10,7 @@
 // So what a person presses is here, and it is two methods over one `@system`
 // column rather than a move: `cancel` sets `isCancelingAtPeriodEnd` and `resume`
 // clears it. The row policy scopes both — staff act on any subscription, a
-// subscriber on their own — and the `@@allow(update, userId == auth().id)`
+// subscriber on their own — and the `@@allow(update, customer.userId == auth().id)`
 // pair on the model is what says so, not a line of code here.
 //
 // **Neither method transitions anything**, and the ordering is the reason: the
@@ -59,7 +59,7 @@ async function setCancelling(on: boolean) {
  *  so a refused period takes the subscription back with it. Through
  *  `asSystem()` because a period is created at 8, by billing alone. */
 async function openPeriodOf(ctx: { result?: unknown }) {
-  const sub = ctx.result as { id: number, planVersionId: number, trialEndsAt?: string | null, userId?: string | null }
+  const sub = ctx.result as { id: number, planVersionId: number, trialEndsAt?: string | null }
   if (sub?.id) await openFirstPeriod(subs().asSystem(), sub, { timeZone: $.config.timeZone })
 }
 

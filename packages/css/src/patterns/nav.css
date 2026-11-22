@@ -96,7 +96,7 @@
 }
 
 .pagination-link {
-  min-inline-size: 2rem;
+  min-inline-size: calc(2 * var(--rem));
   padding:         var(--space-xs) var(--space-md);
   border-radius:   var(--btn-radius);
   font-size:       var(--text-md);
@@ -163,7 +163,7 @@
   display:         flex;
   align-items:     center;
   gap:             var(--space-sm);
-  padding:         0.4375rem var(--space-md);
+  padding:         calc(0.4375 * var(--rem)) var(--space-md);
   border-radius:   var(--btn-radius);
   font-size:       var(--text-md);
   font-weight:     500;
@@ -268,8 +268,8 @@ summary.navlist-label:hover {
 summary.navlist-label::after {
   content:             "";
   margin-inline-start: auto;
-  inline-size:         0.35rem;
-  block-size:          0.35rem;
+  inline-size:         calc(0.35 * var(--rem));
+  block-size:          calc(0.35 * var(--rem));
   border-right:        var(--stroke-width) solid currentColor;
   border-bottom:       var(--stroke-width) solid currentColor;
   transform:           rotate(-45deg);

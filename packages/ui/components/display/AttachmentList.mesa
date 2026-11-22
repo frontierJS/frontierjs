@@ -29,7 +29,7 @@
         {#if fileKind(file.name, file.type) === 'image' && (file.thumbnail || file.url)}
           <img
             class="avatar"
-            style:--avatar-size="2.5rem"
+            style:--avatar-size="calc(2.5 * var(--rem))"
             style:--avatar-radius="var(--card-radius)"
             style:object-fit="cover"
             src={file.thumbnail || file.url}
@@ -41,7 +41,7 @@
           <FileType name={file.name} type={file.type} />
         {/if}
 
-        <div class="stack" style:gap="0.25rem" style:flex="1" style:min-inline-size="0">
+        <div class="stack" style:gap="calc(0.25 * var(--rem))" style:flex="1" style:min-inline-size="0">
           <span class="text-sm">{file.name}</span>
           {#if file.size != null}
             <span class="text-xs text-muted">{formatBytes(file.size)}</span>

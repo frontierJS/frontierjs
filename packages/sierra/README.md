@@ -1421,6 +1421,12 @@ of the ones it held back.
 With `theme` configured, the post-build pipeline injects an inline `<head>` script that
 applies the persisted preference before first paint, so there is no flash.
 
+An entry in `themes` may name several classes, which is how a mode and an accent are
+one choice: `@frontierjs/css`'s accent-only themes nest on a whole one, so
+`'theme-dark theme-sunset'` is the dark surfaces with sunset's `--color-*` (`FJS-D1000`).
+The entry stays one name to `setTheme`, `theme.value` and the stored preference, and a
+switch removes every class of every declared entry before writing the new ones.
+
 The preference is a `persisted()` value from `@frontierjs/mesa/browser`, stored as
 `<prefix>:<key>` — `key` defaults to `theme` and the prefix is the app's (`prefix` in
 `sierra.config.js`, else its `package.json` name), so `key` never carries the app's name.

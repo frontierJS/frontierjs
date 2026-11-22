@@ -213,8 +213,10 @@ function noop() {}
 
 // The parser turns a bare CR into LF, a line break in a `pre` row, and drops
 // NUL, which would move every column after it; a reference keeps one code unit.
+// Quotes pass through: this is a row's text, never an attribute value, which is
+// mesa's escapeHTML.
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\r': '&#13;', '\0': '&#xFFFD;' }
-export const escapeHTML = (s) => s.replace(/[&<>\r\0]/g, (c) => ESC[c])
+export const escapeLine = (s) => s.replace(/[&<>\r\0]/g, (c) => ESC[c])
 
 // A token is marked with the element @frontierjs/css's code palette keys off
 // (components/code.css, the shape glow() emits), so the editor takes the six
@@ -260,7 +262,7 @@ export function lineHTML(text, state, classes = true) {
   let runTo = 0
   const flush = () => {
     if (runTo === runFrom) return
-    const s = escapeHTML(text.slice(runFrom, runTo))
+    const s = escapeLine(text.slice(runFrom, runTo))
     const el = runType && ELEMENT[runType]
     if (!runType || (!el && !classes)) out += s
     else {

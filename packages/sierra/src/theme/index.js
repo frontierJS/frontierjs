@@ -9,7 +9,8 @@
  *
  * Config (sierra.config.js):
  *   theme: {
- *     themes:  ['theme-default', 'theme-dark']  // what this app offers
+ *     themes:  ['theme-default', 'theme-dark']  // what this app offers; an entry
+ *                                               // may name several: 'theme-dark theme-sunset'
  *     default: 'system'                         // a name, or 'system'
  *     system:  { light: 'theme-default', dark: 'theme-dark' }
  *     persist: true                             // save to localStorage
@@ -293,10 +294,13 @@ function applyTheme(value) {
 
   // Remove the ones this app declared rather than everything matching
   // `theme-*`: an app may name its themes anything, and a class it did not
-  // declare belongs to somebody else.
-  for (const name of _config.themes) root.classList.remove(name)
-  root.classList.add(value)
+  // declare belongs to somebody else. An entry may name several classes, a
+  // mode and an accent (FJS-D1000), and classList throws on a spaced token.
+  for (const entry of _config.themes) root.classList.remove(...classesOf(entry))
+  root.classList.add(...classesOf(value))
 }
+
+const classesOf = (entry) => entry.split(/\s+/).filter(Boolean)
 // ─── Inline script generation (used by post-build) ────────────────────────────
 // Implementation lives in ./script.js so the post-build pipeline can import it
 // without pulling this module — and with it the signal runtime — into Node-side

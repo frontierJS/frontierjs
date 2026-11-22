@@ -286,7 +286,7 @@
 
   .fjs-th-counts {
     position:    relative;
-    block-size:  1rem;
+    block-size:  var(--rem);
     inline-size: 100%;
   }
   .fjs-th-count {
@@ -301,7 +301,7 @@
 
   .fjs-th-plot {
     position:      relative;
-    block-size:    var(--fjs-th-height, 5rem);
+    block-size:    var(--fjs-th-height, calc(5 * var(--rem)));
     inline-size:   100%;
     border-radius: var(--card-radius);
     background:    var(--surface-sunken);
@@ -342,7 +342,7 @@
   .fjs-th-rows { display: grid; gap: 2px; }
   .fjs-th-row {
     display:               grid;
-    grid-template-columns: minmax(4rem, 8rem) 1fr 3rem;
+    grid-template-columns: minmax(calc(4 * var(--rem)), calc(8 * var(--rem))) 1fr calc(3 * var(--rem));
     align-items:           center;
     gap:                   var(--space-2xs);
   }

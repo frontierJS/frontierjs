@@ -32,7 +32,7 @@
 
 <style>
   .fjs-message {
-    max-inline-size: min(85%, 42rem);
+    max-inline-size: min(85%, calc(42 * var(--rem)));
     padding:         var(--space-md) var(--space-lg);
     line-height:     1.5;
     overflow-wrap:   anywhere;

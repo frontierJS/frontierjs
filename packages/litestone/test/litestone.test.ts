@@ -22810,6 +22810,65 @@ describe('groupBy() — fillGaps', () => {
     db.$close()
   })
 
+  test('fillGaps: gap rows carry every named aggregate and _stringAgg (FJS-4534)', async () => {
+    const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-named')
+    await db.event.create({ data: { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' } })
+    const rows = await db.event.groupBy({
+      by: ['createdAt'],
+      interval: { createdAt: 'day' },
+      fillGaps: { start: '2024-01-01', end: '2024-01-02' },
+      _n: { count: true },
+      _sales: { sum: 'amount', filter: sql`type = ${'sale'}` },
+      _top: { max: 'amount' },
+      _stringAgg: { field: 'type' },
+      orderBy: { createdAt: 'asc' },
+    })
+    expect(rows).toEqual([
+      { createdAt: '2024-01-01', _n: 1, _sales: 10, _top: 10, _stringAgg: { type: 'sale' } },
+      { createdAt: '2024-01-02', _n: 0, _sales: 0, _top: null, _stringAgg: { type: null } },
+    ])
+    db.$close()
+  })
+
+  test('fillGaps: a group key before the interval field keeps its own name', async () => {
+    const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-by-order')
+    await db.event.create({ data: { id: 1, type: 'sale', amount: 10, createdAt: '2024-01-01' } })
+    const rows = await db.event.groupBy({
+      by: ['type', 'createdAt'],
+      interval: { createdAt: 'day' },
+      fillGaps: { start: '2024-01-01', end: '2024-01-02' },
+      _count: true,
+      orderBy: { createdAt: 'asc' },
+    })
+    expect(rows).toEqual([
+      { type: 'sale', createdAt: '2024-01-01', _count: 1 },
+      { type: null,   createdAt: '2024-01-02', _count: 0 },
+    ])
+    db.$close()
+  })
+
+  test('fillGaps: a gap row carries a named aggregate over a Json member (FJS-4534)', async () => {
+    const db = await makeDb(`model Reading {
+      id    Int      @id
+      props Json
+      at    DateTime
+    }`, 'grp-fill-named-member')
+    await db.reading.create({ data: { id: 1, props: { gb: 1.5 }, at: '2024-01-01' } })
+    const rows = await db.reading.groupBy({
+      by: ['at'],
+      interval: { at: 'day' },
+      fillGaps: { start: '2024-01-01', end: '2024-01-02' },
+      _gb: { sum: { column: 'props', path: ['gb'] } },
+      _peak: { max: { column: 'props', path: ['gb'] } },
+      orderBy: { at: 'asc' },
+    } as any)
+    expect(rows).toEqual([
+      { at: '2024-01-01', _gb: 1.5, _peak: 1.5 },
+      { at: '2024-01-02', _gb: 0, _peak: null },
+    ])
+    db.$close()
+  })
+
   test('no range in where + fillGaps: true → sparse results (no throw)', async () => {
     const db = await makeDb(EVENTS_SCHEMA, 'grp-fill-norange')
     await db.event.createMany({ data: [
@@ -27805,6 +27864,38 @@ describe('an aggregate reads a member of a Json column by path', () => {
     // a where that leaves the strays out answers
     expect((await db.event.aggregate({ where: { code: 'cpu' }, _sum: { properties: { path: ['gb'] } } } as any))._sum)
       .toEqual({ 'properties.gb': 4 })
+  })
+
+  test('a groupBy having and orderBy name a member as the value aggregate does', async () => {
+    const db = (await mk('jpath-having', [[1, 'net', { gb: 9 }]])).$setAuth({ id: 1 })
+    const rows = (r: any[]) => r.map((g: any) => g.code)
+    // having { path, gt } filters on the member's sum; the member need not be selected
+    expect(rows(await db.event.groupBy({ by: ['code'], having: { _sum: { properties: { path: ['gb'], gt: 3.8 } } },
+      orderBy: { code: 'asc' } } as any))).toEqual(['cpu', 'net'])
+    expect(rows(await db.event.groupBy({ by: ['code'], having: { _max: { properties: { path: ['gb'], lte: 4 } } },
+      orderBy: { code: 'asc' } } as any))).toEqual(['cpu', 'gb'])
+    // orderBy { path, dir } sorts the groups by the member's aggregate
+    expect(rows(await db.event.groupBy({ by: ['code'], _sum: { properties: { path: ['gb'] } },
+      orderBy: { _sum: { properties: { path: ['gb'], dir: 'desc' } } } } as any))).toEqual(['net', 'cpu', 'gb'])
+    expect(rows(await db.event.groupBy({ by: ['code'],
+      orderBy: [{ _sum: { properties: { path: ['gb'] } } }] } as any))).toEqual(['gb', 'cpu', 'net'])
+    // the column is graded and the keys checked, as the value aggregate's are
+    const refused = (args: any, re: RegExp) => expect(db.event.groupBy({ by: ['code'], ...args })).rejects.toThrow(re)
+    await refused({ having: { _sum: { secret: { path: ['gb'], gt: 1 } } } }, /@guarded/)
+    await refused({ having: { _sum: { amount: { path: ['gb'], gt: 1 } } } }, /not a Json column/)
+    await refused({ having: { _sum: { properties: { path: ['gb'], dir: 'asc' } } } }, /'dir' is not a key/)
+    await refused({ having: { _sum: { properties: { path: ['gb'] } } } }, /add one of gt/)
+    await refused({ orderBy: { _sum: { properties: { path: ['gb'], gt: 1 } } } }, /'gt' is not a key/)
+    await refused({ orderBy: { _sum: { properties: { path: ['gb'], dir: 'up' } } } }, /asc.*desc/)
+  })
+
+  test('a having or orderBy over a member refuses a stray rather than filtering it out', async () => {
+    const db = (await mk('jpath-having-stray', [[1, 'gb', { gb: '12' }]])).$setAuth({ id: 1 })
+    // the stray group would fail gt: 5 on its numeric rows alone and vanish
+    await expect(db.event.groupBy({ by: ['code'], having: { _sum: { properties: { path: ['gb'], gt: 5 } } } } as any))
+      .rejects.toThrow(/rather than a number/)
+    await expect(db.event.groupBy({ by: ['code'], orderBy: { _sum: { properties: { path: ['gb'], dir: 'desc' } } } } as any))
+      .rejects.toThrow(/rather than a number/)
   })
 
   test('a sum past 2^53 refuses', async () => {

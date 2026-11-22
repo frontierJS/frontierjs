@@ -381,7 +381,12 @@ export function wrapDocument(bodyHTML, {
   hydrateJson = null,
 } = {}) {
   const parts = documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass, bodyAttrs, head, bodyEnd })
-  const skipLink = hasSkipLink(bodyHTML) ? '' : `${SKIP_LINK}\n`
+  // The guard rides with the link it hides: an app loading no `a11y.css` has
+  // nothing else keeping the link off-screen, and first in <head> keeps its
+  // layer the lowest.
+  const writesSkip = !hasSkipLink(bodyHTML)
+  const skipLink = writesSkip ? `${SKIP_LINK}\n` : ''
+  const skipGuard = writesSkip ? `\n  ${SKIP_LINK_GUARD}` : ''
   // `hydrate()` adopts every child of its target as the server's, so the root
   // holds the render and nothing else: the skip link, the data and `bodyEnd`
   // sit outside it, where the client's tree never looks for them.
@@ -425,7 +430,7 @@ export function wrapDocument(bodyHTML, {
 
   return `<!DOCTYPE html>
 <html${parts.htmlAttr}>
-<head>
+<head>${skipGuard}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${rootStyle}${parts.head}

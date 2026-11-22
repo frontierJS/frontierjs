@@ -54,6 +54,12 @@ declare module '@frontierjs/junction' {
 
 // ─── caravan ────────────────────────────────────────────────────────────
 
+/** What a row-bound schedule asks of a Litestone client to follow its writes. */
+type ScheduleClient = {
+  $tapEvents?: (fn: (e: { model?: string }) => void) => () => void
+  $schema?:    { models?: Array<{ name: string; fields: Array<{ name: string; type?: { name?: string } }> }> }
+}
+
 // ─── What a payload may be (FJS-D480) ────────────────────────────────────────
 // A payload is a receipt — ids and scalars — stored as JSON and handed to the
 // handler parsed. What JSON would turn into something else is refused here,
@@ -160,13 +166,14 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // The running app, or null standalone. Held so dispatch can read who is in
   // scope and the worker can open a scope to run the handler in.
   let   host: CaravanApp | null = null
-  // Per job declaring `schedules`, the rows it has bound and their rule. `chain`
+  // Per job declaring `schedules`, the rows it has bound and their rule, per
+  // database: `null` is the app's one client, a string a tenant's. `chain`
   // serializes the re-reads, since two writes in a row must not let the older
   // read land last and rebind a rule that is gone.
   const rowBound = new Map<string, {
     spec:  RowSchedules
     queue: string
-    bound: Map<string, { cron: string; timeZone: string | undefined }>
+    bound: Map<string | null, Map<string, { cron: string; timeZone: string | undefined }>>
     chain: Promise<void>
   }>()
   let   untapRows: (() => void) | null = null
@@ -742,7 +749,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     unbindRows(name)
     if (o.schedules) {
       rowBound.set(name, { spec: o.schedules, queue, bound: new Map(), chain: Promise.resolve() })
-      if (started) void rebind(name)
+      if (started) for (const tenant of scheduleDatabases()) void rebind(name, tenant)
     }
 
     // WHEN it runs is declared beside WHAT it does. The schedule is
@@ -788,80 +795,122 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // once across a daylight gap or overlap — the row id joins the minute in the
   // fire's id so two rows on one rule are two fires. The rows are read as the
   // app itself (`runAs(null)`), so the model's read policy must admit it.
+  //
+  // Under `createApp({ tenants })` there is no one client: each tenant's rows
+  // are read in that tenant, its client tapped as it opens (`onTenantClient`),
+  // and its fires carry the tenant in their dispatch and their id, so two
+  // tenants' row 1 on one rule are two fires.
 
-  const rowScheduleName = (job: string, id: string): string => `${job}[${id}]`
+  // A tenant id holds no `:` (Litestone's SAFE_ID), so the name stays one per row.
+  const rowScheduleName = (job: string, tenant: string | null, id: string): string =>
+    tenant === null ? `${job}[${id}]` : `${job}[${tenant}:${id}]`
+
+  /** The registry's tenants under `createApp({ tenants })`, else the app's one client. */
+  function scheduleDatabases(): Array<string | null> {
+    const registry = host?.tenants as { list?: () => string[] } | null | undefined
+    if (!registry) return [null]
+    // A registry that cannot list binds each tenant as its client first opens.
+    return typeof registry.list === 'function' ? registry.list() : []
+  }
 
   function unbindRows(job: string): void {
     const entry = rowBound.get(job)
     if (!entry) return
-    for (const id of entry.bound.keys()) cron.remove(rowScheduleName(job, id))
+    for (const [tenant, rows] of entry.bound)
+      for (const id of rows.keys()) cron.remove(rowScheduleName(job, tenant, id))
     rowBound.delete(job)
   }
 
-  /** Re-read a job's rows, queued behind any read still in flight for it. */
-  function rebind(job: string): Promise<void> {
+  /** Re-read a job's rows in one database, queued behind any read still in flight for it. */
+  function rebind(job: string, tenant: string | null): Promise<void> {
     const entry = rowBound.get(job)
     if (!entry) return Promise.resolve()
-    entry.chain = entry.chain.then(() => bindRows(job)).catch((err: unknown) => {
+    entry.chain = entry.chain.then(() => bindRows(job, tenant)).catch((err: unknown) => {
       if ((err as { name?: string })?.name !== 'ClientClosedError')
-        console.warn(`[Caravan] job "${job}": rebinding its ${entry.spec.model} rows failed:`, err)
+        console.warn(`[Caravan] job "${job}": rebinding its ${entry.spec.model} rows${tenant === null ? '' : ` in tenant "${tenant}"`} failed:`, err)
     })
     return entry.chain
   }
 
-  async function bindRows(job: string): Promise<void> {
+  async function bindRows(job: string, tenant: string | null): Promise<void> {
     const entry = rowBound.get(job)
     if (!entry) return
     const { spec, queue } = entry
-    const rows = await readScheduleRows(job, spec)
+    // Marked read before the read: opening a tenant's client inside it calls
+    // the onTenantClient observer, which binds only a tenant not yet read.
+    const prior = entry.bound.get(tenant) ?? new Map<string, { cron: string; timeZone: string | undefined }>()
+    entry.bound.set(tenant, prior)
+    const rows = await readScheduleRows(job, spec, tenant)
     if (rowBound.get(job) !== entry) return
 
     const next = new Map<string, { cron: string; timeZone: string | undefined; id: unknown }>()
     for (const r of rows) if (r.cron) next.set(String(r.id), r as { cron: string; timeZone: string | undefined; id: unknown })
 
-    for (const id of entry.bound.keys())
-      if (!next.has(id)) cron.remove(rowScheduleName(job, id))
+    for (const id of prior.keys())
+      if (!next.has(id)) cron.remove(rowScheduleName(job, tenant, id))
 
     const bound = new Map<string, { cron: string; timeZone: string | undefined }>()
     for (const [key, r] of next) {
-      const was = entry.bound.get(key)
+      const was = prior.get(key)
       // An unchanged rule keeps its schedule: add() drops the walk's mark, and
       // a mark dropped inside an autumn repeat walks the doubled hour again.
       if (was && was.cron === r.cron && was.timeZone === r.timeZone) { bound.set(key, was); continue }
+      const fireId = (fireMinute: number) => tenant === null
+        ? occurrenceKey('cron', job, key, fireMinute)
+        : occurrenceKey('cron', job, tenant, key, fireMinute)
       try {
         cron.add({
-          name:     rowScheduleName(job, key),
+          name:     rowScheduleName(job, tenant, key),
           cron:     r.cron,
           timeZone: r.timeZone,
           fn: (fireMinute: number) =>
-            caravan.dispatch(job, { id: r.id }, { queue, actor: null, id: occurrenceKey('cron', job, key, fireMinute) })
+            caravan.dispatch(job, { id: r.id }, { queue, actor: null, tenant, id: fireId(fireMinute) })
               .catch(err => console.error(`[Caravan] Cron dispatch "${job}" for ${spec.model} ${key} failed:`, err)),
         })
         bound.set(key, { cron: r.cron, timeZone: r.timeZone })
       } catch (err) {
         // A rule stored before `@cron` guarded the column, or written in raw
         // SQL, refuses one row's schedule and leaves every other row bound.
-        if (was) cron.remove(rowScheduleName(job, key))
+        if (was) cron.remove(rowScheduleName(job, tenant, key))
         console.warn(`[Caravan] job "${job}": ${spec.model} ${key} is not bound — ${(err as Error).message}`)
       }
     }
-    entry.bound = bound
+    entry.bound.set(tenant, bound)
   }
 
   async function readScheduleRows(
-    job: string, spec: RowSchedules,
+    job: string, spec: RowSchedules, tenant: string | null,
   ): Promise<Array<{ id: unknown; cron: string | null; timeZone: string | undefined }>> {
     const app = host
     if (!app?.withDb)
       throw new Error(`[Caravan] job "${job}" binds its schedules from ${spec.model} rows, and this host has no Data client to read them through`)
-    const read = (db: unknown) => readRowsFrom(job, spec, db)
-    return app.runAs
+    const read = (db: unknown) => readRowsFrom(job, spec, db, tenant)
+    if (!app.runAs) return app.withDb(read)
+    return tenant === null
       ? app.runAs(null, () => app.withDb!(read))
-      : app.withDb(read)
+      : app.runAs(null, { tenant }, () => app.withDb!(read))
+  }
+
+  /**
+   * A tenant's client as the app first opens it: its writes rebind that
+   * tenant's rows, and a tenant created after start is read now. Writes the
+   * process makes before start rebind nothing — start reads every tenant.
+   */
+  function tapTenantSchedules(client: unknown, tenant: string): void {
+    const db = client as ScheduleClient
+    if (typeof db.$tapEvents !== 'function') return
+    db.$tapEvents(e => {
+      if (!started) return
+      for (const [job, entry] of rowBound)
+        if (e?.model && scheduleReaches(db, entry.spec).includes(e.model)) void rebind(job, tenant)
+    })
+    if (!started) return
+    for (const [job, entry] of rowBound)
+      if (!entry.bound.has(tenant)) void rebind(job, tenant)
   }
 
   async function readRowsFrom(
-    job: string, spec: RowSchedules, raw: unknown,
+    job: string, spec: RowSchedules, raw: unknown, tenant: string | null,
   ): Promise<Array<{ id: unknown; cron: string | null; timeZone: string | undefined }>> {
     type Client = Record<string, { findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>> } | undefined> & {
       $primaryKey?: (accessor: string) => string[]
@@ -887,7 +936,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     const select: Record<string, unknown> = { [key]: true, [spec.cron]: true }
     if (zoneHead) select[zoneHead] = zoneField ? { select: { [zoneField]: true } } : true
 
-    tapScheduleWrites(db)
+    if (tenant === null) tapScheduleWrites(db)
     const rows = await table.findMany({ select })
     return rows.map(r => {
       const zoneAt = zoneField ? (r[zoneHead] as Record<string, unknown> | null)?.[zoneField] : zoneHead ? r[zoneHead] : undefined
@@ -903,22 +952,21 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // `asSystem()` one's, a commitment's fire — which a service announcement
   // would not. A write to the model, or to the model a zone path reaches,
   // re-reads that job's rows.
-  function tapScheduleWrites(db: {
-    $tapEvents?: (fn: (e: { model?: string }) => void) => () => void
-    $schema?:    { models?: Array<{ name: string; fields: Array<{ name: string; type?: { name?: string } }> }> }
-  }): void {
+  function tapScheduleWrites(db: ScheduleClient): void {
     if (untapRows || typeof db.$tapEvents !== 'function') return
-    const reaches = (spec: RowSchedules): string[] => {
-      const rel = spec.timeZone?.includes('.') ? spec.timeZone.split('.')[0] : null
-      const through = rel
-        ? db.$schema?.models?.find(m => m.name === spec.model)?.fields.find(f => f.name === rel)?.type?.name
-        : undefined
-      return through ? [spec.model, through] : [spec.model]
-    }
     untapRows = db.$tapEvents(e => {
       for (const [job, entry] of rowBound)
-        if (e?.model && reaches(entry.spec).includes(e.model)) void rebind(job)
+        if (e?.model && scheduleReaches(db, entry.spec).includes(e.model)) void rebind(job, null)
     })
+  }
+
+  /** The models whose write can change a job's rows: its own, and the one a zone path reaches. */
+  function scheduleReaches(db: ScheduleClient, spec: RowSchedules): string[] {
+    const rel = spec.timeZone?.includes('.') ? spec.timeZone.split('.')[0] : null
+    const through = rel
+      ? db.$schema?.models?.find(m => m.name === spec.model)?.fields.find(f => f.name === rel)?.type?.name
+      : undefined
+    return through ? [spec.model, through] : [spec.model]
   }
 
   // The whole of one dispatch, synchronously: nothing in it awaits, which is
@@ -1298,7 +1346,8 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
 
       // Before the clock starts, so the first tick sees every row's schedule,
       // and awaited, so a model the client lacks refuses the start by name.
-      for (const job of rowBound.keys()) await bindRows(job)
+      for (const job of rowBound.keys())
+        for (const tenant of scheduleDatabases()) await bindRows(job, tenant)
 
       started = true
       pool.start()
@@ -1313,7 +1362,8 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       untapRows = null
       // A start() after this binds every row afresh, from a re-read.
       for (const [job, entry] of rowBound) {
-        for (const id of entry.bound.keys()) cron.remove(rowScheduleName(job, id))
+        for (const [tenant, rows] of entry.bound)
+          for (const id of rows.keys()) cron.remove(rowScheduleName(job, tenant, id))
         entry.bound = new Map()
       }
       if (ownerTimer) {
@@ -1364,6 +1414,10 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       // backfill covers a queue that a dispatch before configure() built.
       host = app
       pool.each(worker => { worker._app = app })
+
+      // Before the first request, since a tenant client already opened is not
+      // replayed to an observer registered after it.
+      if (typeof app.onTenantClient === 'function') app.onTenantClient(tapTenantSchedules)
 
       // Wire Junction telemetry — job lifecycle events flow to devtools feed
       if (app.telemetry) {

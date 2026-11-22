@@ -11,9 +11,14 @@
   --field-bg:     var(--cell-fill, var(--surface));
   --field-color:  var(--ink);
 
-  /* Any tone class sets the border; untoned falls back to the rule color.
-     No tone-name list — see the recipe note in surface.css. */
-  --field-border: var(--bg-mix, var(--rule-strong));
+  /* Any tone class sets the border, through the edge window (tokens.css) so
+     a light tone still reaches 3:1; untoned, --bg-mix is unset, --_field-edge
+     with it, and the border is the rule color. No tone-name list — see the
+     recipe note in surface.css. */
+  --_field-edge:  oklch(from var(--bg-mix)
+                    clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                          calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
+  --field-border: var(--_field-edge, var(--rule-strong));
 
   /*
    * Full width is right in a form column and wrong everywhere else — a
@@ -32,7 +37,7 @@
   /* Vertical padding is shared with .btn — see --control-padding-block. */
   padding:     var(--control-padding-block, var(--space-sm)) var(--space-lg);
   font-size:   var(--text-md);
-  line-height: 1.25rem;
+  line-height: calc(1.25 * var(--rem));
 
   background:    var(--field-bg);
   color:         var(--field-color);
@@ -55,7 +60,9 @@
  * focus.css, which reads the same --bg-mix so the two always agree.
  */
 .field:focus {
-  border-color: var(--bg-mix, var(--ring, var(--color-primary)));
+  border-color: oklch(from var(--bg-mix, var(--ring, var(--color-primary)))
+                  clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                        calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
 }
 
 .field:disabled {
@@ -133,7 +140,7 @@ input[type="file"]::file-selector-button {
   font-family:       var(--font-primary), sans-serif;
   font-size:         var(--text-md);
   font-weight:       var(--btn-font-weight);
-  line-height:       1.25rem;
+  line-height:       calc(1.25 * var(--rem));
   cursor:            pointer;
   transition:        background-color var(--motion-base), border-color var(--motion-base);
 }
@@ -258,16 +265,16 @@ input[type="file"]:disabled::file-selector-button {
 .switch {
   appearance:    none;
   flex-shrink:   0;
-  inline-size:   2.25rem;
-  block-size:    1.25rem;
+  inline-size:   calc(2.25 * var(--rem));
+  block-size:    calc(1.25 * var(--rem));
   border-radius: 999px;
   cursor:        pointer;
 
   background-color: var(--rule-strong);
   background-image: radial-gradient(circle at center, #fff 42%, transparent 44%);
-  background-size:     1rem 1rem;
+  background-size:     var(--rem) var(--rem);
   background-repeat:   no-repeat;
-  background-position: 0.125rem center;
+  background-position: calc(0.125 * var(--rem)) center;
 
   transition: background-color var(--motion-base) var(--motion-ease),
               background-position var(--motion-base) var(--motion-ease);
@@ -282,7 +289,7 @@ input[type="file"]:disabled::file-selector-button {
  */
 .switch:checked {
   background-color:    var(--bg-mix, var(--check-accent, var(--color-primary)));
-  background-position: calc(100% - 0.125rem) center;
+  background-position: calc(100% - calc(0.125 * var(--rem))) center;
 }
 /* Focus ring: focus.css. */
 .switch:disabled {

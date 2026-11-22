@@ -68,4 +68,26 @@ for (const file of files) {
 
 const passed = files.length - failed
 console.log(`${passed}/${files.length} components compile and emit parseable JS`)
-if (failed) process.exit(1)
+
+// ─── No bare rem ────────────────────────────────────────────────────
+// A component inside a widget's shadow root reads rem off the HOST page's
+// root, so a 62.5% marketing page draws it at 10/16 size (FJS-2072). Sizes
+// are spelled calc(N * var(--rem)) (FJS-D1164); an @media or @container
+// condition cannot read a var() and is exempt.
+const BARE_REM = /(^|[^\w.$-])-?\d*\.?\d+rem\b/
+let bareRem = 0
+for (const file of files) {
+  // A comment opens after whitespace, so 'image/*' in a string opens none.
+  const src = readFileSync(file, 'utf8')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/(^|\s)\/\*[\s\S]*?\*\//g, '$1')
+    .replace(/(^|\s)\/\/.*$/gm, '$1')
+  src.split('\n').forEach((line) => {
+    if (/^\s*@(media|container)\b/.test(line) || !BARE_REM.test(line)) return
+    console.error(`✗ ${relative(ROOT, file)}: bare rem — ${line.trim()}`)
+    bareRem++
+  })
+}
+if (bareRem) console.error(`${bareRem} bare rem in components; write calc(N * var(--rem))`)
+
+if (failed || bareRem) process.exit(1)

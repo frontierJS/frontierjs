@@ -39,8 +39,8 @@
   export let dismissible = true   // allow Escape / backdrop click
 
   const sizeMap = {
-    xs: '20rem', sm: '24rem', md: '30rem', lg: '36rem', xl: '48rem',
-    full: 'calc(100vw - 2rem)',
+    xs: 'calc(20 * var(--rem))', sm: 'calc(24 * var(--rem))', md: 'calc(30 * var(--rem))', lg: 'calc(36 * var(--rem))', xl: 'calc(48 * var(--rem))',
+    full: 'calc(100vw - calc(2 * var(--rem)))',
   }
   const maxWidth = sizeMap[size] ?? sizeMap.md
 

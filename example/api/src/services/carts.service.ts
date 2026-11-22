@@ -534,11 +534,10 @@ export default createService({
     // themselves, and this is the only moment anything knows it: the order is
     // written here, and afterwards it is a receipt.
     //
-    // Two writes, and they are not the same fact. The order carries the id so
-    // `@@allow(read, userId == auth().id)` can answer without traversing a
-    // relation; the customer record carries it so the NEXT sale, and the
-    // order history screen, find the person rather than a second record with
-    // the same address.
+    // The customer record carries the id, and every billing row reaches the
+    // person through it (`customer.userId == auth().id`), so the order history
+    // screen and the NEXT sale find the person rather than a second record
+    // with the same address.
     //
     // The customer link is written only when it is empty. It is `@unique`, so
     // overwriting one is taking somebody else's record — an address shared by
@@ -558,7 +557,6 @@ export default createService({
     const order = await system.order.create({ data: {
       reference:  `ORD-${Date.now().toString(36).toUpperCase().slice(-6)}`,
       customerId: customer.id,
-      userId:     buyerId,
       ...money,
       note:       note ?? null,
     } })

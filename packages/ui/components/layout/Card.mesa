@@ -32,7 +32,7 @@
 
   // .card ships 1.25rem. Only a non-default value needs an inline override,
   // and unlayered styles beat every layer in this system, so no !important.
-  const paddingMap = { none: '0', sm: '0.75rem', md: '', lg: '1.75rem' }
+  const paddingMap = { none: '0', sm: 'calc(0.75 * var(--rem))', md: '', lg: 'calc(1.75 * var(--rem))' }
   const pad = paddingMap[padding] ?? ''
 
   const t = toTone(tone)

@@ -609,22 +609,38 @@ export function buildHost(ctx, t) {
   // The DOM path's `boundaryBlock` on a server: an error wins, a loading
   // state shows `pending`, and content otherwise -- and nothing is caught
   // (`FJS-D377`), so a throw from the content fails the render here as
-  // there. `reset` has nothing to rebuild and is a no-op.
+  // there. `reset` has nothing to rebuild and is a no-op. Under the flag it
+  // waits for its states as `{#await}` does and brackets the branch it wrote
+  // under the boundary's own key, which the client's `hydBoundary` adopts: a
+  // client seeded with those consts never shows `pending`, so a `pending`
+  // written here stayed on the page beside the client's fresh content.
   const emitBoundary = (n, ind) => {
+    if (hyd) hydrationSite(ctx, 'block', n.start)
+    const branch = (state, call) => {
+      const parts = hyd ? [`$$out.push($$host.blockOpen(${idVar}, ${keyOf36(n)}, '${state}'));`, call, `$$out.push($$host.blockClose(${idVar}, ${keyOf36(n)}));`] : [call]
+      return `{${parts.filter(Boolean).map((p) => ' ' + p).join('')} }`
+    }
     line(ind, '{')
     for (const c of n.children) if (c.kind === 'snippet') emitSnippet(c, c.varName, ind + 1)
     const content = n.children.filter((c) => c.kind !== 'snippet')
     let bodyInd = ind + 1
     if (n.states.length) {
       line(ind + 1, `const $$states = [${n.states.join(', ')}];`)
+      if (hyd) {
+        line(ind + 1, '$$host.boundaryWait($$out, $$runtime.captureScope(), $$states, ($$out) => {')
+        ind++
+      }
       line(ind + 1, 'const $$err = $$states.find((s) => s.error !== null);')
-      line(ind + 1, `if ($$err) {${n.failed ? ` ${n.failed}($$out, () => $$err.error, () => {});` : ''} }`)
-      line(ind + 1, `else if ($$states.some((s) => s.loading)) {${n.pending ? ` ${n.pending}($$out);` : ''} }`)
+      line(ind + 1, `if ($$err) ${branch('failed', n.failed && `${n.failed}($$out, () => $$err.error, () => {});`)}`)
+      line(ind + 1, `else if ($$states.some((s) => s.loading)) ${branch('pending', n.pending && `${n.pending}($$out);`)}`)
       line(ind + 1, 'else {')
       bodyInd = ind + 2
     }
+    if (hyd) hole(bodyInd, `$$host.blockOpen(${idVar}, ${keyOf36(n)}, 'content')`)
     emitChildren(content, '$$out', bodyInd)
+    if (hyd) hole(bodyInd, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
     if (n.states.length) line(ind + 1, '}')
+    if (n.states.length && hyd) line(--ind + 1, '});')
     line(ind, '}')
   }
 
@@ -781,12 +797,12 @@ export function buildHost(ctx, t) {
     line(ind, "}, { a: '' });")
   }
 
-  // The string mode writes the parse `$$host.html` makes of the markup; a
+  // The string mode writes the parse `$$host.parsedHTML` makes of the markup; a
   // node target paints the text a browser's `innerText` reads from it,
   // since a terminal has text and no markup.
   const emitHtml = (n, parent, ind) => {
     dep(n.value)
-    if (string) return hole(ind, `$$host.html(${n.value.code})`)
+    if (string) return hole(ind, `$$host.parsedHTML(${n.value.code})`)
     let value = `$$host.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
     liveText(parent, ind, value, '$$host.markup()')

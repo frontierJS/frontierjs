@@ -56,8 +56,9 @@ its file. Nothing else a server prints is dropped: it is held until the summary
 prints, and a surface that exits or never reports (an older package, a custom
 script) lets the summary print without it after 15 seconds. `--verbose` starts
 the servers without the variable, so each prints the banner it always has. In a
-terminal, `o` opens the web surface, `r` restarts every surface, `v` restarts
-them in the other mode, `q` quits.
+terminal, `o` opens the web surface, `s` opens it in surf where surf is
+installed, `r` restarts every surface, `v` restarts them in the other mode,
+`q` quits.
 
 **An app the ports table does not name gets a slot of its own.** Every app
 `fli new` writes is project 0, so two of them derive the same 8000/8100. `fli
@@ -455,25 +456,29 @@ async function openPublicTunnel($, session, share) {
   return tunnel
 }
 
-// The keys wait for the summary, so the first thing on screen is whether the app came up.
-function keyHints({ chalk }, run) {
-  return run.summarized && [
-    `${chalk.bold('o')} open`, `${chalk.bold('r')} restart`,
-    `${chalk.bold('v')} ${run.compact ? 'verbose' : 'compact'}`, `${chalk.bold('q')} quit`,
-  ].map(chalk.dim)
+// `s` is offered only where surf is installed, so no key on screen does nothing.
+async function devKeys() {
+  const { onPath } = await core('doctor')
+  return { o: 'open', ...(onPath('surf') && { s: 'surf' }), r: 'restart', v: 'verbose', q: 'quit' }
 }
 
-async function keyLoop({ tty }, run, footer) {
-  const { openUrl } = await core('open-url')
-  const KEYS = { o: 'open', r: 'restart', v: 'verbose', q: 'quit' }
+// The keys wait for the summary, so the first thing on screen is whether the app came up.
+function keyHints({ chalk }, run, keys) {
+  return run.summarized && Object.entries(keys)
+    .map(([key, label]) => `${chalk.bold(key)} ${key === 'v' && !run.compact ? 'compact' : label}`)
+    .map(chalk.dim)
+}
+
+async function keyLoop({ tty }, run, footer, keys) {
+  const { openUrl, openUrlIn } = await core('open-url')
   let exited = false
   run.done.then(() => { exited = true })
   while (!exited) {
-    const key = await Promise.race([tty.keys(null, KEYS), run.done.then(() => null)])
+    const key = await Promise.race([tty.keys(null, keys), run.done.then(() => null)])
     if (key === 'q' || key === null) break
-    if (key === 'o') {
+    if (key === 'o' || key === 's') {
       const url = run.frontUrl()
-      if (url) openUrl(url)
+      if (url) key === 's' ? openUrlIn('surf', url) : openUrl(url)
     }
     if (key === 'r') await run.restart()
     if (key === 'v') await run.restart({ compact: !run.compact })
@@ -575,8 +580,9 @@ const run = runSurfaces({
 })
 
 if (tty.interactive) {
-  footer = tty.live(() => keyHints($, run))
-  await keyLoop($, run, footer)
+  const keys = await devKeys()
+  footer = tty.live(() => keyHints($, run, keys))
+  await keyLoop($, run, footer, keys)
 }
 process.exitCode = await run.done
 ```

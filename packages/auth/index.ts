@@ -23,6 +23,7 @@ export {
 } from './oauth.ts'
 export type {
   OAuthProvider, OAuthProviderOptions, OAuthProviderSpec, OAuthIdentity, TokenSet, BeginResult, AuthOAuth,
+  OAuthPurpose, OAuthGrantTarget, OAuthGrantEvent,
 } from './oauth.ts'
 
 // ─── Errors ───────────────────────────────────────────────────────────────

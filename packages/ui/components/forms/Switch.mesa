@@ -70,7 +70,7 @@
   }
 </script>
 
-<div class="stack" style:gap="0.25rem" {class}>
+<div class="stack" style:gap="calc(0.25 * var(--rem))" {class}>
   <label
     class={cx('field-check', t)}
     for={switchId}

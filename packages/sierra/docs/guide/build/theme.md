@@ -18,6 +18,7 @@ if (theme.value !== 'theme-dark') throw new Error(`expected theme-dark, got ${th
 - `setTheme('system')` follows the operating system again
 - The choice is saved under `<prefix>:<key>` and reaches the app's other open tabs
 - `theme: { themes, default, system, persist, key, apply, attribute }` in the config sets the list and the default
+- An entry may name several classes, a mode and an accent: `'theme-dark theme-sunset'`
 - `setScheme('light' | 'dark')` is for a page whose window a host owns, and is never saved
 
 **In depth:** [README § Theme](../../../README.md#theme)

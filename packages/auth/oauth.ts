@@ -98,6 +98,31 @@ export interface OAuthProvider {
   trustEmail:    boolean
   /** userinfo body (+ a fetcher, for providers that need a second call) → identity. */
   identify:      (raw: any, get: (url: string) => Promise<any>) => Promise<OAuthIdentity>
+  /**
+   * `'grant'` connects a tenant's third-party account to a row of the app's
+   * (`FJS-D1313`): it never signs anybody in and is absent from the sign-in
+   * names, so a provider declared with `business.manage` cannot become a login.
+   */
+  purpose?:      OAuthPurpose
+  /** A grant provider's landing: where the tokens go. */
+  onGrant?:      (event: OAuthGrantEvent) => Promise<void> | void
+}
+
+export type OAuthPurpose = 'signIn' | 'grant'
+
+/** The app row a grant flow lands on, named by the service that graded the caller. */
+export interface OAuthGrantTarget {
+  model: string
+  id:    string
+}
+
+export interface OAuthGrantEvent {
+  provider:  string
+  tokens:    TokenSet
+  identity:  OAuthIdentity
+  grant:     OAuthGrantTarget
+  /** The user id of whoever started the flow; the callback itself has no session. */
+  initiator: string | null
 }
 
 /** What an app states. The preset supplies everything else. */
@@ -111,6 +136,13 @@ export interface OAuthProviderOptions {
   authorizeUrl?: string
   tokenUrl?:     string
   userinfoUrl?:  string
+  /** Default `'signIn'`. `'grant'` requires `onGrant`. */
+  purpose?:      OAuthPurpose
+  /**
+   * Hook: writes the tokens to `grant`'s row, as the system. A throw refuses
+   * the connection and the browser gets `oauth_error=exchange`.
+   */
+  onGrant?:      (event: OAuthGrantEvent) => Promise<void> | void
 }
 
 export interface OAuthProviderSpec extends OAuthProviderOptions {
@@ -120,7 +152,7 @@ export interface OAuthProviderSpec extends OAuthProviderOptions {
   preset: string
 }
 
-type Preset = Omit<OAuthProvider, 'name' | 'clientId' | 'clientSecret'>
+type Preset = Omit<OAuthProvider, 'name' | 'clientId' | 'clientSecret' | 'purpose' | 'onGrant'>
 
 // ─── The presets ────────────────────────────────────────────────────────────
 
@@ -219,6 +251,15 @@ export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
   if (!opts.clientId || !opts.clientSecret) {
     throw new OAuthError(`OAuth provider '${name}' needs both clientId and clientSecret`)
   }
+  const purpose = opts.purpose ?? 'signIn'
+  if (purpose !== 'signIn' && purpose !== 'grant') {
+    throw new OAuthError(`OAuth provider '${name}' has purpose '${purpose}'; it is 'signIn' or 'grant'`)
+  }
+  if ((purpose === 'grant') !== (typeof opts.onGrant === 'function')) {
+    throw new OAuthError(purpose === 'grant'
+      ? `OAuth provider '${name}' is a grant provider and needs onGrant, where its tokens land`
+      : `OAuth provider '${name}' has onGrant but signs in; declare purpose: 'grant'`)
+  }
 
   const provider: OAuthProvider = {
     ...base,
@@ -230,6 +271,8 @@ export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
     authorizeUrl: opts.authorizeUrl ?? base.authorizeUrl,
     tokenUrl:     opts.tokenUrl     ?? base.tokenUrl,
     userinfoUrl:  opts.userinfoUrl  ?? base.userinfoUrl,
+    purpose,
+    ...(opts.onGrant ? { onGrant: opts.onGrant } : {}),
   }
 
   // The `oidc` preset ships three empty strings, so a missing endpoint would
@@ -489,7 +532,8 @@ export type OAuthResolution =
 
 export interface AuthOAuth {
   /** The provider names this app is configured for, in declaration order. */
-  oauthProviderNames(): string[]
+  /** The sign-in provider names, or with `'grant'` the grant ones. */
+  oauthProviderNames(purpose?: OAuthPurpose): string[]
 
   oauthBegin(
     providerName: string,
@@ -499,13 +543,31 @@ export interface AuthOAuth {
       extra?:      Record<string, string>
       /** An oauthLink invitation token: the flow ends at `confirmOAuthLink`. */
       link?:       string | null
+      /**
+       * The app row a grant provider's tokens land on. Set only by a service
+       * that has graded the caller against that row; the public begin route
+       * never passes one, so it cannot start a grant flow.
+       */
+      grant?:      OAuthGrantTarget | null
+      /** Who started a grant flow — the callback arrives with no session. */
+      initiator?:  string | null
     },
   ): Promise<{ authorizeUrl: string; state: string }>
 
   oauthCallback(
     providerName: string,
     args: { code: string; state: string; cookieState: string | null; redirectUri: string },
-  ): Promise<{ identity: OAuthIdentity; tokens: TokenSet; returnTo: string | null; link: string | null }>
+  ): Promise<{
+    identity:  OAuthIdentity
+    tokens:    TokenSet
+    returnTo:  string | null
+    link:      string | null
+    grant:     OAuthGrantTarget | null
+    initiator: string | null
+  }>
+
+  /** A grant flow's ending, in place of `oauthResolve`: the provider's `onGrant`. */
+  oauthGrant(providerName: string, event: Omit<OAuthGrantEvent, 'provider'>): Promise<void>
 
   oauthResolve(providerName: string, identity: OAuthIdentity, from?: import('@frontierjs/junction').SignInOrigin): Promise<OAuthResolution>
 

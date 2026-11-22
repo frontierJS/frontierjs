@@ -69,18 +69,20 @@ export default defineBackfill({
 
 // ─── api/src/app.ts ──────────────────────────────────────────────────────────
 
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath }    from 'node:url'
-import { backfill }         from '@frontierjs/junction/backfill'
-import { caravan }    from '@frontierjs/caravan'
-import { env }              from './core/env.ts'
-import orderShippedAt       from './backfills/order-shipped-at.ts'
+import { basename, dirname, resolve } from 'node:path'
+import { fileURLToPath }              from 'node:url'
+import { backfill }                   from '@frontierjs/junction/backfill'
+import { caravan }                    from '@frontierjs/caravan'
+import { env }                        from './core/env.ts'
+import orderShippedAt                 from './backfills/order-shipped-at.ts'
 
 // Beside the main database. A deploy mounts only the directory DATABASE_URL
 // points at, so a jobs database left on Caravan's default path is inside the
 // container and every deploy empties it -- pending jobs and a pause included.
+// Named for that database (app.db -> app-jobs.db), so a drive on its own
+// database does not share a queue with the dev server.
 const appRoot = fileURLToPath(new URL('../../', import.meta.url))
-const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), 'jobs.db')
+const jobsDb  = resolve(appRoot, dirname(env.DATABASE_URL), basename(env.DATABASE_URL).replace(/\\.db$/, '') + '-jobs.db')
 
 // Inside buildApp(), beside its other app.configure calls:
 app.configure(caravan({ db: jobsDb }))  // a chunk runs as a job

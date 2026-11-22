@@ -486,3 +486,99 @@ describe('GET /.well-known/oauth-authorization-server', () => {
     }
   })
 })
+
+// ─── A grant provider (FJS-D1313) ───────────────────────────────────────────
+//
+// Connects a tenant's third-party account to a row of the app's. The tokens go
+// to the app's `onGrant` and nobody is signed in, so a provider declared with a
+// business scope can never become a login.
+
+describe('a grant provider', () => {
+  let g: Harness
+  let gapp: any
+  const granted: any[] = []
+  const CALLBACK = `${PUBLIC_URL}/auth/oauth/google-business/callback`
+
+  beforeAll(async () => {
+    g = await makeAuth({
+      oauthProviders: {
+        google: defineProvider({ name: 'google', preset: 'google', clientId: 'cid', clientSecret: 'sec' }),
+        'google-business': defineProvider({
+          name: 'google-business', preset: 'google', clientId: 'cid', clientSecret: 'sec',
+          scope:   'openid email https://www.googleapis.com/auth/business.manage',
+          purpose: 'grant',
+          onGrant: (event) => { granted.push(event) },
+        }),
+      },
+      oauthReturnToAllow: ['/settings/'],
+    })
+    gapp = await createTestApp({ auth: g.auth as any, config: { publicUrl: PUBLIC_URL } as any })
+    gapp.setAuth(g.auth as any)
+    gapp.configure(auth({ auth: g.auth, cookieAuth: true, oauth: { errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } } }))
+  })
+  afterAll(() => g.cleanup())
+
+  function stubProvider() {
+    globalThis.fetch = (async (input: any) => {
+      const body = String(input).includes('token')
+        ? { access_token: 'at', refresh_token: 'rt', expires_in: 3600, scope: 'business.manage' }
+        : { sub: 'g-1', email: 'owner@agency.test', email_verified: true, name: 'Owner' }
+      return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
+    }) as unknown as typeof fetch
+  }
+
+  test('is not a sign-in provider', async () => {
+    const res = await request(gapp).get('/auth/oauth')
+    expect(res.body).toEqual({ providers: ['google'] })
+    expect(g.auth.oauthProviderNames('grant')).toEqual(['google-business'])
+  })
+
+  test('the public begin route cannot start it', async () => {
+    const res = await request(gapp).get('/auth/oauth/google-business')
+    expect(res.status).toBe(302)
+    expect(String(res.headers['location'])).toBe('/sign-in?oauth_error=unavailable')
+  })
+
+  test('a sign-in provider takes no grant target', async () => {
+    await expect(g.auth.oauthBegin('google', { redirectUri: CALLBACK, grant: { model: 'Integration', id: 'i-1' } }))
+      .rejects.toThrow(/takes no grant target/)
+  })
+
+  test("the callback lands the tokens at onGrant, on the row the service named, and signs nobody in", async () => {
+    granted.length = 0
+    const { state } = await g.auth.oauthBegin('google-business', {
+      redirectUri: CALLBACK,
+      returnTo:    '/settings/',
+      grant:       { model: 'Integration', id: 'i-1' },
+      initiator:   'u-1',
+    })
+    stubProvider()
+
+    const res = await request(gapp)
+      .get(`/auth/oauth/google-business/callback?code=c&state=${state}`)
+      .set('cookie', `${OAUTH_STATE_COOKIE}=${state}`)
+
+    expect(res.status).toBe(302)
+    expect(String(res.headers['location'])).toBe('/settings/')
+    expect(cookieOf(res)).not.toContain('session=')
+    expect(granted).toHaveLength(1)
+    expect(granted[0]).toMatchObject({
+      provider:  'google-business',
+      grant:     { model: 'Integration', id: 'i-1' },
+      initiator: 'u-1',
+      tokens:    { accessToken: 'at', refreshToken: 'rt' },
+      identity:  { providerId: 'g-1' },
+    })
+    expect(await g.sys.credential.count({ where: { type: 'oauth:google-business' } })).toBe(0)
+  })
+
+  test('cannot be resolved into a sign-in', async () => {
+    await expect(g.auth.oauthResolve('google-business', { providerId: 'g-1', email: 'owner@agency.test', isEmailVerified: true, name: null }))
+      .rejects.toThrow(/signs nobody in/)
+  })
+
+  test('is refused at definition without onGrant, and onGrant without the purpose', () => {
+    expect(() => defineProvider({ name: 'x', preset: 'google', clientId: 'c', clientSecret: 's', purpose: 'grant' })).toThrow(/needs onGrant/)
+    expect(() => defineProvider({ name: 'x', preset: 'google', clientId: 'c', clientSecret: 's', onGrant: () => {} })).toThrow(/purpose: 'grant'/)
+  })
+})

@@ -12,7 +12,7 @@
   padding:       var(--control-padding-block, var(--space-sm)) var(--space-xl);
   border-radius: var(--btn-radius);
   font-size:     var(--text-md);
-  line-height:   1.25rem;
+  line-height:   calc(1.25 * var(--rem));
   cursor:        pointer;
   transition:    background-color var(--motion-base), border-color var(--motion-base),
                  color var(--motion-base), box-shadow var(--motion-base),

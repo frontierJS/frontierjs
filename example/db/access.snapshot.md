@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 57 models · 1 view · 58 gated · 0 unrestricted
-20 with row policies · 27 with protected fields · 28 declared moves · 11 @system · 1 @seals
+20 with row policies · 25 with protected fields · 28 declared moves · 11 @system · 1 @seals
 ```
 
 ## Gates
@@ -113,7 +113,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `CreditNote`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `invoice.customer.userId == auth().id`
 
 ### `Customer`
 
@@ -144,14 +144,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Invoice`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `customer.userId == auth().id`
 - allow **update** — `auth().isStaff`
-- allow **update** — `userId == auth().id && status == 'draft'`
+- allow **update** — `customer.userId == auth().id && status == 'draft'`
 
 ### `InvoiceLine`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `invoice.customer.userId == auth().id`
 
 ### `Notification`
 
@@ -161,22 +161,23 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Order`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `customer.userId == auth().id`
 
 ### `OrderLine`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `order.userId == auth().id`
+- allow **read** — `order.customer.userId == auth().id`
 
 ### `Payment`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `order.customer.userId == auth().id`
+- allow **read** — `invoice.customer.userId == auth().id`
 
 ### `PaymentMethod`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `customer.userId == auth().id`
 
 ### `PushSubscription`
 
@@ -197,14 +198,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Subscription`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `customer.userId == auth().id`
 - allow **update** — `auth().isStaff`
-- allow **update** — `userId == auth().id`
+- allow **update** — `customer.userId == auth().id`
 
 ### `SubscriptionPeriod`
 
 - allow **read** — `auth().isStaff`
-- allow **read** — `userId == auth().id`
+- allow **read** — `subscription.customer.userId == auth().id`
 - allow **update** — `auth().isStaff`
 
 ### `User`
@@ -230,7 +231,6 @@ rather than refusing the row.
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
-| `CreditNote` | `userId` | `@system` |
 | `Customer` | `notes` | `@allow(read, auth().role == 'admin')` |
 | `Customer` | `userId` | `@system` |
 | `Customer` | `fieldsSlots` | `@system` |
@@ -243,13 +243,12 @@ rather than refusing the row.
 | `Invoice` | `total` | `@system` |
 | `Invoice` | `paidAt` | `@system` |
 | `Invoice` | `isReminded` | `@system` |
-| `Invoice` | `userId` | `@system` |
-| `InvoiceLine` | `userId` | `@system` |
 | `JournalEntry` | `postedAt` | `@system` |
 | `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `OauthFlow` | `invitation` | `@guarded` |
+| `OauthFlow` | `grant` | `@guarded` |
 | `Order` | `subtotal` | `@system` |
 | `Order` | `discountCode` | `@system` |
 | `Order` | `discountLabel` | `@system` |
@@ -260,12 +259,9 @@ rather than refusing the row.
 | `Order` | `taxRate` | `@system` |
 | `Order` | `tax` | `@system` |
 | `Order` | `trackingCode` | `@system` |
-| `Order` | `userId` | `@system` |
 | `Payment` | `actionUrl` | `@system` |
-| `Payment` | `userId` | `@system` |
 | `PaymentMethod` | `providerRef` | `@guarded` |
 | `PaymentMethod` | `isDefault` | `@system` |
-| `PaymentMethod` | `userId` | `@system` |
 | `PayRun` | `headcount` | `@system` |
 | `PayRun` | `approvedBy` | `@system` |
 | `PayRun` | `approvedAt` | `@system` |
@@ -283,9 +279,7 @@ rather than refusing the row.
 | `Session` | `previousRefreshToken` | `@guarded` |
 | `Subscription` | `cancelledAt` | `@system` |
 | `Subscription` | `isCancelingAtPeriodEnd` | `@system` |
-| `Subscription` | `userId` | `@system` |
 | `SubscriptionPeriod` | `endsOn` | `@system` |
-| `SubscriptionPeriod` | `userId` | `@system` |
 | `User` | `email` | `@allow(write, auth().isAdmin)` |
 | `User` | `isEmailVerified` | `@allow(write, auth().isAdmin)` |
 | `User` | `role` | `@allow(write, auth().isAdmin)` |

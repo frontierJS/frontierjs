@@ -28,20 +28,43 @@
  * image in Prose, a Divider and an edge-to-edge table on a phone need it as
  * much as a Band does. Two copies would drift on the first fix.
  *
- * `50%` is the parent's width and `50vw` the viewport's, so the margin is
- * exactly the distance from the parent's edge to the screen's. `inline-size`
- * is stated because an `<img>` is a replaced element whose `auto` width is
- * its intrinsic one, not what the margins leave. reset.css stops the half
- * scrollbar `vw` counts from scrolling the page sideways.
+ * `50%` is the parent's width and `50cqi` the page's, so the margin is
+ * exactly the distance from the parent's edge to the page's. The page is the
+ * nearest `container-type: inline-size` box, else the viewport: `vw` would
+ * draw a page previewed inside a Card wider than the Card and cut at both
+ * edges, and cannot see a scrollbar an inner scroller draws (FJS-4209). An
+ * app whose page is not the viewport declares that box a container.
+ * `inline-size` is stated because an `<img>` is a replaced element whose
+ * `auto` width is its intrinsic one, not what the margins leave. reset.css
+ * stops a scrollbar the viewport counts from scrolling the page sideways.
  *
  * In the `patterns` layer so it beats a component's own margin on the
  * element it lands on — `.bleed` on a `.table-wrap` must win.
  */
 .bleed,
 .band {
-  inline-size:     100vw;
+  inline-size:     100cqi;
   max-inline-size: none;
-  margin-inline:   calc(50% - 50vw);
+  margin-inline:   calc(50% - 50cqi);
+}
+
+/*
+ * On a Badge the escape is the status ribbon (FJS-D1237): it reaches its
+ * container's start edge, not the viewport's, by the `--bleed-inline` the
+ * container publishes (`.card` sets its own padding rung). Here and not in
+ * badges.css because a `components` rule loses to the escape above whatever
+ * its weight. A line of its own, since a negative margin after text in the
+ * same line would draw over it; the label keeps to the content column.
+ * Inside a padded box that publishes no knob, the inherited value is the
+ * outer container's and the ribbon over- or under-reaches silently.
+ */
+.badge.bleed {
+  display:                   flex;
+  inline-size:               fit-content;
+  margin-inline:             calc(var(--bleed-inline, 0px) * -1) 0;
+  padding-inline-start:      var(--bleed-inline, var(--space-sm));
+  border-start-start-radius: 0;
+  border-end-start-radius:   0;
 }
 
 /*

@@ -523,6 +523,46 @@ describe('a component tag must name a binding', () => {
   })
 })
 
+// ─── FJS-4516 · a {@render} of a name nothing declares ───────────────────────
+
+describe('a {@render} must name a binding', () => {
+  // It compiled to `$$snippet_children?.()` against an undeclared identifier,
+  // and the `?.` does not stop the ReferenceError: a layout without
+  // `export let children` failed its prerender with a name the author never wrote.
+  it('refuses {@render children?.()} with no declaration, naming both fixes', async () => {
+    const { errors } = await cx('<main>{@render children?.()}</main>')
+    const msg = errors.join('\n')
+    expect(msg).toContain('{@render children')
+    expect(msg).toContain('export let children = null')
+    expect(msg).toContain('<slot />')
+    expect(msg).toMatch(/Probe\.mesa:\d+:\d+$/)
+  })
+
+  it('accepts every way a rendered name is bound', async () => {
+    const bound = [
+      '<script>export let children = null</script>{@render children?.()}',
+      '<script>let { children } = $.props()</script>{@render children?.()}',
+      '{#snippet row()}<b>x</b>{/snippet}{@render row()}',
+      '{@render row()}{#snippet row()}<b>x</b>{/snippet}',
+      '{#if true}{#snippet row()}<b>x</b>{/snippet}{/if}{@render row()}',
+      '{#snippet outer(cell)}{@render cell()}{/snippet}',
+      '<script>let xs = []</script>{#each xs as s}{@render s()}{/each}',
+      '<script>let o = {}</script>{@const f = o.f}{@render f?.()}',
+      '<slot />',
+    ]
+    for (const src of bound) expect(await cx(src).then((r) => r.errors), src).toEqual([])
+  })
+
+  it('fails the render with the refusal, not a ReferenceError', async () => {
+    let msg = ''
+    try {
+      await renderComponent('<main>{@render children?.()}</main>', { filename: '/tmp/Layout.mesa' })
+    } catch (e) { msg = e.message }
+    expect(msg).toContain('export let children = null')
+    expect(msg).not.toContain('$$snippet_children')
+  })
+})
+
 // FJS-3656: a refusal the author cannot find is half a refusal. Every one of
 // these named no line; each now ends in `Probe.mesa:line:column`.
 describe('a refusal names where it happened', () => {

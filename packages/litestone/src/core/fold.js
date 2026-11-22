@@ -188,6 +188,38 @@ export function foldedDay(spec, db, params) {
   return { day: hit.day, key: Object.fromEntries(spec.keys.map((/** @type {any} */ k, /** @type {number} */ i) => [k.field, params[i]])) }
 }
 
+// ─── The update guard ─────────────────────────────────────────────────────────
+// An update naming the clock or a key can move a row into a folded day as
+// surely as a create can. The row's new key and day are computed in the
+// UPDATE's own scope, so a column the payload leaves alone reads as stored and
+// an operator's expression reads the row it is assigning to. COALESCE: a NULL
+// key matches no rollup row, as it does on create.
+
+/**
+ * A WHERE conjunct true when the written row stays out of every folded day,
+ * or null when the payload names neither the clock nor a key.
+ * `values` selects the row's new key and clock, for naming the refusal.
+ * @param {any} spec @param {Record<string, any>} row @param {{ col: string, expr: string, params: any[] }[]} ops
+ */
+export function foldMoveClause(spec, row, ops) {
+  const cols = [...spec.keys, spec.clock]
+  if (!cols.some(c => c.field in row || ops.some(o => o.col === c.field))) return null
+  const params = []
+  const exprs  = cols.map(c => {
+    const op = ops.find(o => o.col === c.field)
+    if (op) { params.push(...op.params); return `(${op.expr})` }
+    if (c.field in row) { params.push(row[c.field] ?? null); return '?' }
+    return q(c.column)
+  })
+  const clock = /** @type {string} */ (exprs.pop())
+  const into  = [...spec.keys.map((/** @type {any} */ k) => q(k.rollupColumn)), q(spec.day)].join(', ')
+  return {
+    sql:    `COALESCE((${[...exprs, dayOf(clock)].join(', ')}) IN (SELECT ${into} FROM ${q(spec.rollupTable)}), 0) = 0`,
+    params,
+    values: { sql: [...exprs, clock].map((e, i) => `${e} AS _f${i}`).join(', '), params },
+  }
+}
+
 // ─── The sweep ────────────────────────────────────────────────────────────────
 
 /** The fold's cutoff: the start of the UTC day `at - window` falls in. */

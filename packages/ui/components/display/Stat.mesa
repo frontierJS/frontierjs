@@ -32,7 +32,7 @@
   const deltaTone = toTone(tone) || t?.tone || ''
 </script>
 
-<div class="stack" style:gap="0.25rem" {class} {...$attributes}>
+<div class="stack" style:gap="calc(0.25 * var(--rem))" {class} {...$attributes}>
   {#if label}
     <div class="tile-label">{label}</div>
   {/if}

@@ -88,10 +88,25 @@ function rootProp(name) {
  * override. Reading the expectation on the element rather than on :root is
  * the same discipline: it is the only place the theme is visible.
  */
+/*
+ * The ring is that token through the edge window (FJS-D2133), so the
+ * expectation is too, resolved by a probe beside the node under the same
+ * theme; contrast.spec.js grades the window's 3:1.
+ */
+function focusEdge(node, color) {
+  var probe = document.createElement('span');
+  probe.style.color = 'oklch(from ' + color + ' clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,' +
+    ' calc(var(--tone-l-max) + var(--tone-l-slack))) c h)';
+  node.parentNode.appendChild(probe);
+  var resolved = getComputedStyle(probe).color;
+  probe.remove();
+  return resolved;
+}
+
 function expectedRing(node) {
   var cs = getComputedStyle(node);
-  return cs.getPropertyValue('--ring').trim() ||
-    cs.getPropertyValue('--color-primary').trim();
+  return focusEdge(node, cs.getPropertyValue('--ring').trim() ||
+    cs.getPropertyValue('--color-primary').trim());
 }
 
 FOCUSABLE.forEach(function (spec) {
@@ -192,7 +207,7 @@ test('focus: .field rings in its tone when it has one', function () {
   toned.focus();
   assert.sameColor(
     getComputedStyle(toned).outlineColor,
-    rootProp('--color-danger'),
+    focusEdge(toned, rootProp('--color-danger')),
     'a .field.danger should ring in danger, not in --ring'
   );
 });

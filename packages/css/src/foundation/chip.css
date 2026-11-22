@@ -69,8 +69,12 @@
  * Set --on-bg-mix on a tone or theme to pin the text color instead.
  * The consumer-side fallbacks keep pre-2024 browsers (no relative color
  * syntax) on the old behavior rather than unstyled.
+ *
+ * A `.solid` Block (surface.css) is the same problem at block size, so it
+ * reads this pair rather than deriving a second one.
  */
-:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker),
+:where(.surface, .card, .tile, .lane, .alert, .toast, .dialog, .popover, .drawer, .band):where(.solid) {
   --_fill: color(from var(--tone-fill) xyz-d65
     calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
@@ -81,8 +85,10 @@
       calc(clamp(0, (0.35 - y) * infinity, 1) * 0.9505)
            clamp(0, (0.35 - y) * infinity, 1)
       calc(clamp(0, (0.35 - y) * infinity, 1) * 1.089)));
+}
 
-  display:         inline-flex;
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
+  display:        inline-flex;
   align-items:     center;
   justify-content: center;
   gap:             var(--space-xs);

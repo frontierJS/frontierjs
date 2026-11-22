@@ -382,5 +382,22 @@ await db.event.aggregate({ _sum: { properties: { path: ['gb'] } } })
 // properties.gb as JSON text rather than a number, which SUM would count as 0 or …
 ```
 
-A sum past 2^53 is refused, as it is over an integer column. A path is not yet
-a `having` or a `groupBy` `orderBy` key.
+A sum past 2^53 is refused, as it is over an integer column.
+
+A `groupBy`'s `having` and `orderBy` name a member the same way, with the
+comparison or the direction beside the path; the member need not be selected:
+
+```js
+await db.event.createMany({ data: [
+  { id: 1, code: 'gb',  properties: { gb: 1.5 } },
+  { id: 2, code: 'gb',  properties: { gb: 2.25 } },
+  { id: 3, code: 'cpu', properties: { gb: 4 } },
+] })
+await db.event.groupBy({ by: ['code'], having: { _sum: { properties: { path: ['gb'], gt: 3.8 } } } })
+// [{ code: 'cpu' }]
+await db.event.groupBy({ by: ['code'], orderBy: { _sum: { properties: { path: ['gb'], dir: 'desc' } } } })
+// [{ code: 'cpu' }, { code: 'gb' }]
+```
+
+A group holding a stray member is refused there too, rather than filtered out on
+its numeric rows alone.

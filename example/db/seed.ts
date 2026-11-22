@@ -597,8 +597,8 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
 
   // A shopper with an account, so the storefront has somebody to be. Their
   // customer record is linked by `userId` — the same write `carts.checkout`
-  // makes when a signed-in person buys — which is what turns `@@allow(read,
-  // userId == auth().id)` on Order and Customer from a rule into a screen.
+  // makes when a signed-in person buys — which is what turns every billing
+  // model's `customer.userId == auth().id` from a rule into a screen.
   if (!await sys.user.findFirst({ where: { email: DEMO.buyer.email } })) {
     await auth.createUser(DEMO.buyer)
     await sys.user.updateMany({ where: { email: DEMO.buyer.email }, data: { isEmailVerified: true } })
@@ -618,13 +618,6 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   }
 
   // …and something in their history, so the account page has a page to be.
-  //
-  // `userId` on the order AND on every line. Two columns holding one fact,
-  // because a row policy cannot name a column on a related model (`FJS-499`) —
-  // the schema says so where the columns are declared. A seed that wrote only
-  // the order would give the account page an order it can open and an
-  // itemization it cannot read, which is the exact failure the second column
-  // exists to prevent, arriving as an empty table rather than an error.
   const buyerRecord = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
   if (buyerUser && buyerRecord && !await reseed<any>(sys.order, { reference: 'ORD-2001' })) {
     const lines = await orderLinesFor([
@@ -634,11 +627,10 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     const order = await sys.order.create({ data: {
       reference:  'ORD-2001',
       customerId: buyerRecord.id,
-      userId:     buyerUser.id,
       ...await priceOrder(lines, null, 'Standard'),
     } })
     await sys.orderLine.createMany({
-      data: lines.map(l => ({ ...l, orderId: order.id, userId: buyerUser.id })),
+      data: lines.map(l => ({ ...l, orderId: order.id })),
     })
     // Shipped, by the moves that reach it from `pending` (litestone `FJS-D470`).
     for (const move of ['pay', 'ship']) await sys.order.transition(order.id, move)
@@ -774,7 +766,6 @@ async function seedBilling() {
       planVersionId: soldAt.id,
       status: 'active',
       quantity: 2,
-      userId: buyerUser?.id ?? null,
     }, { startsOn: periodStart, endsOn: advancePeriod(periodStart, 'monthly') })
   }
 
@@ -792,7 +783,6 @@ async function seedBilling() {
       number:         INV,
       customerId:     buyerCustomer.id,
       subscriptionId: sub.id,
-      userId:         buyerUser?.id ?? null,
       periodStart:    sub.currentPeriodStart,
       periodEnd:      sub.currentPeriodEnd,
       issuedAt:       new Date(startOfDay(sub.currentPeriodStart, timeZone)).toISOString(),

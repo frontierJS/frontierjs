@@ -235,7 +235,6 @@ export async function issueInvoice(
     number:         string
     customerId:     number
     subscriptionId?: number | null
-    userId?:        string | null
     lines:          BillingLine[]
     periodStart:    string
     periodEnd:      string
@@ -266,11 +265,10 @@ export async function issueInvoice(
   // charged for nothing, and a frozen subtotal means it can never be corrected —
   // so the pair commits together or neither does.
   return await client.$transaction(async (tx: Client) => {
-    const invoice = await tx.invoice.create({ system: ['@@gate', 'subtotal', 'tax', 'total', 'userId'], data: {
+    const invoice = await tx.invoice.create({ system: ['@@gate', 'subtotal', 'tax', 'total'], data: {
       number:         args.number,
       customerId:     args.customerId,
       subscriptionId: args.subscriptionId ?? null,
-      userId:         args.userId ?? null,
       subtotal, tax, total: subtotal + tax,
       periodStart:    args.periodStart,
       periodEnd:      args.periodEnd,
@@ -279,7 +277,7 @@ export async function issueInvoice(
       dunningDays:    DUNNING_DAYS,
     } })
 
-    await tx.invoiceLine.createMany({ system: ['@@gate', 'userId'], data: args.lines.map(l => ({
+    await tx.invoiceLine.createMany({ system: ['@@gate'], data: args.lines.map(l => ({
       invoiceId:   invoice.id,
       description: l.description,
       quantity:    l.quantity,
@@ -287,7 +285,6 @@ export async function issueInvoice(
       amount:      l.amount,
       periodStart: l.periodStart ?? null,
       periodEnd:   l.periodEnd ?? null,
-      userId:      args.userId ?? null,
     })) })
 
     // The seal. Everything above this line was a draft the caller could still
@@ -434,7 +431,6 @@ export async function changePlan(
       number:         await nextInvoiceNumber(sys),
       customerId:     sub.customerId,
       subscriptionId: sub.id,
-      userId:         sub.userId,
       issuedAt:       at,
       periodStart:    plainDateIn(at, timeZone),
       periodEnd,
@@ -450,13 +446,12 @@ export async function changePlan(
     const last = await client.invoice.findFirst({
       where: { subscriptionId: sub.id }, orderBy: { id: 'desc' },
     })
-    const note = last && await client.creditNote.create({ system: ['@@gate', 'userId'], data: {
+    const note = last && await client.creditNote.create({ system: ['@@gate'], data: {
       number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
       invoiceId: last.id,
       amount:    -p.net,
       reason:    `Downgrade for ${describeSpan(plainDateIn(at, timeZone), periodEnd)} — unused time credited`,
       issuedAt:  at,
-      userId:    sub.userId,
     } })
     result = note ? { kind: 'credit-note', number: note.number, net: p.net } : { kind: 'none', net: p.net }
   }
@@ -486,7 +481,7 @@ export async function changePlan(
  *  no trial. Its close is the first renewal, and converts the trial. */
 export async function openFirstPeriod(
   sys: Client,
-  sub: { id: number, planVersionId: number, trialEndsAt?: string | null, userId?: string | null },
+  sub: { id: number, planVersionId: number, trialEndsAt?: string | null },
   opts: { timeZone: string, at?: string },
 ): Promise<void> {
   const startsOn = plainDateIn(opts.at ?? new Date().toISOString(), opts.timeZone)
@@ -496,7 +491,7 @@ export async function openFirstPeriod(
     const plan    = version && await sys.plan.findFirst({ where: { id: version.planId } })
     endsOn = advancePeriod(startsOn, plan?.interval ?? 'monthly')
   }
-  await sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
+  await sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn, endsOn } })
 }
 
 /** Start a subscription: the row and its first period, in one transaction —
@@ -505,7 +500,7 @@ export async function openFirstPeriod(
  *  so one asked for `active` starts `trialing` and makes the `activate` move. */
 export async function startSubscription(
   sys: Client,
-  data: Record<string, unknown> & { userId?: string | null, status?: string },
+  data: Record<string, unknown> & { status?: string },
   first: { startsOn: string, endsOn: string },
 ): Promise<any> {
   const { status, ...row } = data
@@ -515,7 +510,7 @@ export async function startSubscription(
     else if (status != null && status !== sub.status)
       throw new Error(`startSubscription: a subscription starts '${sub.status}' or 'active', not '${status}'`)
     await tx.subscriptionPeriod.create({ data: {
-      subscriptionId: sub.id, startsOn: first.startsOn, endsOn: first.endsOn, userId: sub.userId ?? null,
+      subscriptionId: sub.id, startsOn: first.startsOn, endsOn: first.endsOn,
     } })
     return await tx.subscription.findFirst({ where: { id: sub.id } })
   })
@@ -565,14 +560,13 @@ export async function renewPeriod(
     number:         await nextInvoiceNumber(client.asSystem()),
     customerId:     sub.customerId,
     subscriptionId: sub.id,
-    userId:         sub.userId,
     issuedAt:       opts.at,
     periodStart:    startsOn,
     periodEnd:      endsOn,
     timeZone:       opts.timeZone,
     lines: periodLines({ name: plan.name, quantity: sub.quantity, unitAmount: version.price, periodStart: startsOn, periodEnd: endsOn }),
   })
-  await client.subscriptionPeriod.create({ system: ['@@gate', 'endsOn', 'userId'], data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
+  await client.subscriptionPeriod.create({ system: ['@@gate', 'endsOn'], data: { subscriptionId: sub.id, startsOn, endsOn } })
 
   // A trial that ran out has converted, and *converted* is a declared move —
   // `@@transitions` refuses it from anywhere but `trialing`.
@@ -596,8 +590,7 @@ async function reanchorPeriod(sys: Client, subscriptionId: number, startsOn: str
     await sys.subscriptionPeriod.update({ where: { id: open.id }, data: { endsOn: startsOn }, system: ['endsOn'] })
     await sys.subscriptionPeriod.transition(open.id, 'close')
   }
-  await sys.subscriptionPeriod.create({ data: { subscriptionId, startsOn, endsOn,
-    userId: (await sys.subscription.findFirst({ where: { id: subscriptionId } }))?.userId ?? null } })
+  await sys.subscriptionPeriod.create({ data: { subscriptionId, startsOn, endsOn } })
 }
 
 // ─── Collection ───────────────────────────────────────────────────────────
@@ -720,11 +713,6 @@ export async function chargeInvoice(
     amount:          invoice.total,
     currency:        intent.currency ?? 'USD',
     status:          'pending',
-    // Copied from the invoice, so the row policy on `Payment` can answer
-    // *yours*. When the bank asks for the cardholder, the only person who can
-    // finish this is the one who owns it — and a row only staff may read
-    // cannot tell them.
-    userId:          invoice.userId ?? null,
   } })
 
   // Present it. Neither a decline nor a challenge is an error here: the

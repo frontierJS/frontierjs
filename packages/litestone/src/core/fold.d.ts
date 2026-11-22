@@ -39,6 +39,24 @@ export function foldedDay(spec: any, db: any, params: any[]): {
         [k: string]: any;
     };
 };
+/**
+ * A WHERE conjunct true when the written row stays out of every folded day,
+ * or null when the payload names neither the clock nor a key.
+ * `values` selects the row's new key and clock, for naming the refusal.
+ * @param {any} spec @param {Record<string, any>} row @param {{ col: string, expr: string, params: any[] }[]} ops
+ */
+export function foldMoveClause(spec: any, row: Record<string, any>, ops: {
+    col: string;
+    expr: string;
+    params: any[];
+}[]): {
+    sql: string;
+    params: any[];
+    values: {
+        sql: string;
+        params: any[];
+    };
+};
 /** The fold's cutoff: the start of the UTC day `at - window` falls in. */
 export function foldCutoff(at?: number, ms?: number): string;
 /**

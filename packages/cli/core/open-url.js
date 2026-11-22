@@ -18,6 +18,20 @@ const OPENERS = {
  */
 export function openUrl(url) {
   const [cmd, args] = (OPENERS[process.platform] ?? (u => ['xdg-open', [u]]))(url)
+  return launch(cmd, args)
+}
+
+/**
+ * Open `url` in one named program — `surf`, say — instead of the system's
+ * default browser, detached the same way.
+ *
+ * @returns {Promise<boolean>} false when the program is not installed; never rejects
+ */
+export function openUrlIn(program, url) {
+  return launch(program, [url])
+}
+
+function launch(cmd, args) {
   return new Promise(done => {
     try {
       const child = spawn(cmd, args, { detached: true, stdio: 'ignore' })

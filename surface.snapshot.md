@@ -26,22 +26,22 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4806 source file(s) read
+27 package(s) · 4812 source file(s) read
 369 entry point(s), 35 imported by nothing outside their package, 14 emitted
-1865 value export(s), 675 reached by nothing outside, 200 emitted
-473 type export(s), 344 reached by nothing outside
+1871 value export(s), 682 reached by nothing outside, 201 emitted
+476 type export(s), 347 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 41 | 5 | 279 | 130 | 45 | 1 | 1 |
+| `litestone` | 41 | 5 | 281 | 135 | 42 | 1 | 1 |
+| `mesa` | 34 | 4 | 362 | 123 | 88 | 0 | 0 |
 | `junction` | 28 | 3 | 287 | 123 | 14 | 278 | 213 |
-| `mesa` | 34 | 4 | 359 | 122 | 85 | 0 | 0 |
 | `sierra` | 49 | 6 | 206 | 87 | 20 | 0 | 0 |
-| `toolbelt` | 92 | 1 | 347 | 44 | 16 | 0 | 0 |
-| `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
+| `toolbelt` | 92 | 1 | 347 | 45 | 16 | 0 | 0 |
+| `auth` | 7 | 2 | 59 | 42 | 4 | 20 | 17 |
 | `ui` | 18 | 0 | 57 | 36 | 3 | 0 | 0 |
-| `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
+| `jetty` | 14 | 4 | 44 | 29 | 4 | 0 | 0 |
 | `outpost` | 26 | 2 | 70 | 21 | 4 | 0 | 0 |
 | `site-kit` | 10 | 5 | 36 | 9 | 1 | 0 | 0 |
 | `conduit` | 5 | 1 | 30 | 11 | 0 | 61 | 33 |
@@ -64,7 +64,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 ## `@frontierjs/auth`
 
-`packages/auth` · 7 entry point(s) · 59 value, 17 type export(s)
+`packages/auth` · 7 entry point(s) · 59 value, 20 type export(s)
 
 **Entries imported by nothing outside (2):** `./schema` `./seed-login`
 
@@ -74,7 +74,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 
 **Emitted (4):** `authMachineryModels` `authUserModel` `DEFAULT_LOGIN` `PROVIDER_PRESETS`
 
-**Unreached types (14):** `AuthCleanupHandle` `AuthOAuth` `AuthPluginOptions` `AuthServicesOptions` `BeginResult` `ConsoleCommand` `ConsoleCommandContext` `CredentialEvent` `OAuthIdentity` `OAuthProvider` `OAuthProviderOptions` `OAuthProviderSpec` `SeedLoginInput` `SeedLoginResult`
+**Unreached types (17):** `AuthCleanupHandle` `AuthOAuth` `AuthPluginOptions` `AuthServicesOptions` `BeginResult` `ConsoleCommand` `ConsoleCommandContext` `CredentialEvent` `OAuthGrantEvent` `OAuthGrantTarget` `OAuthIdentity` `OAuthProvider` `OAuthProviderOptions` `OAuthProviderSpec` `OAuthPurpose` `SeedLoginInput` `SeedLoginResult`
 
 ## `@frontierjs/basecamp`
 
@@ -158,7 +158,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/jetty`
 
-`packages/jetty` · 14 entry point(s) · 43 value, 0 type export(s)
+`packages/jetty` · 14 entry point(s) · 44 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./browser` `./runtime` `./island` `./audit`
 
@@ -166,7 +166,7 @@ Every entry is imported and every name reached.
 
 **Unreached values (29):** `_resetPermissionsCache` `bootstrapUnoMirror` `buildRegistration` `closePier` `defineDock` `defineOptions` `definePier` `formatAuditReport` `getActivePort` `getConnectionSignals` `httpOrigin` `injectPageScript` `isFreePermission` `makePageBridge` `makePortName` `onConnectionChange` `openOptions` `openPier` `parsePortName` `PERMISSION_CATALOG` `permissionFor` `PORT_NAME_PATTERN` `readPageNonce` `registerAllIslands` `registerIsland` `reloadIslandTabs` `runAudit` `scanSource` `unregisterIsland`
 
-**Emitted (3):** `_registerActivePort` `connectHarbor` `runIsland`
+**Emitted (4):** `_registerActivePort` `connectHarbor` `getActiveTab` `runIsland`
 
 ## `@frontierjs/junction`
 
@@ -184,15 +184,15 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 41 entry point(s) · 279 value, 1 type export(s)
+`packages/litestone` · 41 entry point(s) · 281 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
 **Entries not source (21, not graded):** `.` `./engine` `./browser` `./browser/worker` `./engines/sqlite-wasm` `./migrate` `./migrations` `./parser` `./device-schema` `./import` `./jsonschema` `./export` `./ddl` `./testing` `./types` `./storage` `./replicate` `./repl` `./transform` `./external-ref` `./references/*`
 
-**Unreached values (130):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `RateLimitError` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionGuardError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
+**Unreached values (135):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `BulkTransitionError` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `FoldedSpanError` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isNamedAgg` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `MonotonicError` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `RateLimitError` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionGuardError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError` `VersionRequiredError`
 
-**Emitted (45):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSearchModel` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_OPERATIONS` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
+**Emitted (42):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `COLLATIONS` `columnMapFor` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_OPERATIONS` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -208,7 +208,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 34 entry point(s) · 359 value, 0 type export(s)
+`packages/mesa` · 34 entry point(s) · 362 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -216,9 +216,9 @@ Every entry is imported and every name reached.
 
 **Entries not source (17, not graded):** `.` `./runtime` `./runtime/terminal` `./runtime/native` `./runtime/server` `./compiler` `./compiler-md` `./render` `./css-inliner` `./render-component` `./drive` `./browser` `./keys` `./vite` `./vite/client` `./vite/swap` `./vite/hmr`
 
-**Unreached values (122):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `collectState` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `hydAwait` `hydBlock` `hydEach` `hydIf` `hydrationSite` `hydrationVar` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `islandBind` `islandPush` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `REACHED_ELEMENT` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `renderToParts` `replaceKeyword` `resetAttributeWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `takeState` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
+**Unreached values (123):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `collectState` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `hydAwait` `hydBlock` `hydBoundary` `hydEach` `hydIf` `hydrationSite` `hydrationVar` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `islandBind` `islandPush` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `REACHED_ELEMENT` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `renderToParts` `replaceKeyword` `resetAttributeWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `takeState` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
-**Emitted (85):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `asyncState` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindingKey` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `blockClose` `blockOpen` `boundaryBlock` `captureRemount` `captureScope` `componentApi` `contentFallback` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `hydAsync` `hydIsland` `hydRender` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `keyBlock` `liveBinding` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `PLACED_PROP` `propDefault` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `textMark` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
+**Emitted (88):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `asyncState` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindingKey` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `blockClose` `blockOpen` `boundaryBlock` `boundaryWait` `captureRemount` `captureScope` `componentApi` `contentFallback` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `hydAsync` `hydIsland` `hydRender` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `islandThis` `keyBlock` `liveBinding` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `parsedHTML` `PLACED_PROP` `propDefault` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `textMark` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
 
 ## `@frontierjs/notifications`
 
@@ -312,7 +312,7 @@ Every entry is imported and every name reached.
 
 **Entries not source (46, not graded):** `./aria` `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./frontier` `./geo` `./docfences` `./env` `./frontmatter` `./glow` `./grammars` `./history` `./hooks` `./ids` `./inflect` `./json` `./jsonschema` `./keys` `./markdown` `./match` `./mailbox` `./mime` `./predicate` `./qr` `./query` `./transforms` `./rank` `./redact` `./seal` `./search` `./share` `./signature` `./sigv4` `./sse` `./sugar` `./textbox` `./textedit` `./trace` `./tty` `./typo` `./units`
 
-**Unreached values (44):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stateStack` `stringDoc` `STRUCTURE` `TRANSFORM_NAMES` `transportFlags` `visualRange`
+**Unreached values (45):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `escapeLine` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stateStack` `stringDoc` `STRUCTURE` `TRANSFORM_NAMES` `transportFlags` `visualRange`
 
 **Emitted (16):** `CRON_FIELDS` `dayHeader` `distinctDays` `FILE_PLAIN_MAX` `formatChord` `grammarFor` `inBoxes` `initialState` `lineHTML` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION` `stateGrammar`
 

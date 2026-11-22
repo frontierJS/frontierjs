@@ -57,7 +57,7 @@
 
 .steps {
   --step-accent:      var(--bg-mix, var(--color-primary));
-  --step-marker-size: 1.75rem;
+  --step-marker-size: calc(1.75 * var(--rem));
 
   display:     flex;
   align-items: flex-start;
@@ -322,17 +322,17 @@
 .steps.vertical .step-label {
   flex: 1;
   /* Optically center the first line of the label against the marker. */
-  padding-block-start: 0.3125rem;
+  padding-block-start: calc(0.3125 * var(--rem));
 }
 .steps.vertical .step-hint {
   flex-basis:          100%;
-  margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+  margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
   padding-block-start: var(--space-3xs);
 }
 /* An action beside the label (a button after the hint) otherwise starts
    under the marker, left of the text it belongs to. */
 .steps.vertical .step > :not(.step-marker, .step-label, .step-hint) {
-  margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+  margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
 }
 
 /*
@@ -375,7 +375,7 @@
     & .step.complete::after { background: var(--step-accent); }
     & .step-label {
       flex:                1;
-      padding-block-start: 0.3125rem;
+      padding-block-start: calc(0.3125 * var(--rem));
     }
     & .step-hint {
       flex-basis:          100%;
@@ -383,7 +383,7 @@
     }
     & .step-hint,
     & .step > :not(.step-marker, .step-label, .step-hint) {
-      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+      margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
     }
   }
 }
@@ -418,7 +418,7 @@
     & .step.complete::after { background: var(--step-accent); }
     & .step-label {
       flex:                1;
-      padding-block-start: 0.3125rem;
+      padding-block-start: calc(0.3125 * var(--rem));
     }
     & .step-hint {
       flex-basis:          100%;
@@ -426,7 +426,7 @@
     }
     & .step-hint,
     & .step > :not(.step-marker, .step-label, .step-hint) {
-      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+      margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
     }
   }
 }

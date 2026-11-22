@@ -15,7 +15,7 @@
   export let label   = ''
   export let spacing = 'md'   // 'sm' | 'md' | 'lg' — vertical margin
 
-  const spacingMap = { sm: '0.75rem', md: '', lg: '2rem' }
+  const spacingMap = { sm: 'calc(0.75 * var(--rem))', md: '', lg: 'calc(2 * var(--rem))' }
   const sp = spacingMap[spacing] ?? ''
 </script>
 

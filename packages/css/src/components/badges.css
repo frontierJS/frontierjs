@@ -22,7 +22,7 @@
      must resolve here, on the badge, to see .theme-* overrides. */
   border-radius: var(--badge-radius, var(--btn-radius));
   font-size:     var(--text-xs);
-  line-height:   1rem;
+  line-height:   var(--rem);
 
   /* Skin. --_fill is the effective background; chip.css derives readable
      text from it. See the auto-contrast note there. */

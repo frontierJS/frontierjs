@@ -1645,13 +1645,15 @@ export interface LoadReject {
 }
 
 export interface LoadResult {
-  /** `added + updated`; with `rejects.length`, every input row. */
-  loaded:  number
+  /** `added + updated + unchanged`; with `rejects.length`, every input row. */
+  loaded:    number
   /** Rows whose key no stored row held — under insert and replace, every row loaded. */
-  added:   number
-  /** Rows written over the stored row their key named — under upsert only. */
-  updated: number
-  rejects: LoadReject[]
+  added:     number
+  /** Rows that changed a value of the stored row their key named — under upsert only. */
+  updated:   number
+  /** Rows whose every value matched the stored row their key named — under upsert only. */
+  unchanged: number
+  rejects:   LoadReject[]
 }
 
 /**

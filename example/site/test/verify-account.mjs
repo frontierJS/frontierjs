@@ -19,7 +19,7 @@
  * ─── The assertion that matters most ──────────────────────────────────────
  *
  * `GET /api/orders` with no filter, and the answer is one order. The screen
- * does no filtering and must not: `@@allow(read, userId == auth().id)` is
+ * does no filtering and must not: `@@allow(read, customer.userId == auth().id)` is
  * declared at the Data boundary, and a page that filtered as well would be a
  * second copy of the rule in the one place it cannot be enforced. So the drive
  * asks for everything, twice — as a shopper and with no session at all — and
@@ -137,9 +137,18 @@ const buyerToken = loginBody?.token
 if (!buyerToken) { console.error('could not sign the shopper in — login limiter?'); stopAll(); process.exit(1) }
 
 const asBuyer = p => fetch(`${API}/api${p}`, { headers: { authorization: `Bearer ${buyerToken}` } })
-const mine = await (await asBuyer('/orders')).json()
-check('a shopper asking for every order gets their own', 
-      [mine.total, mine.data.map(o => o.reference)], [1, ['ORD-2001']])
+// Their own is every order of the customer their account is linked to — a
+// guest checkout under the same address included, which another drive may have
+// made (`FJS-D1027`) — so the expected list is read rather than written here.
+const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
+const sys = db.asSystem()
+const buyerRecord = await sys.customer.findFirst({ where: { email: BUYER.email } })
+const ownOrders   = (await sys.order.findMany({ where: { customerId: buyerRecord.id }, limit: 500 }))
+  .map(o => o.reference).sort()
+const mine = await (await asBuyer('/orders?$limit=200')).json()
+check('a shopper asking for every order gets their own',
+      [mine.total, mine.data.map(o => o.reference).sort(), ownOrders.includes('ORD-2001')],
+      [ownOrders.length, ownOrders, true])
 
 const theirs = await (await asBuyer('/customers')).json()
 check('…and for every customer, only their own record',
@@ -160,8 +169,6 @@ check('subscriptions and invoices are not public either',
 // something to be only-their-own AGAINST. Issued through the same function the
 // renewal job uses — a drive that wrote the columns itself would be a second
 // opinion about what an invoice is.
-const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
-const sys = db.asSystem()
 const { issueInvoice, periodLines, startSubscription } = await import(join(ROOT, 'api/src/domain/billing'))
 // The period is a pair of DAYS in the shop's calendar (`FJS-D143`); this drive
 // bills in UTC and names it on every call that mints a document.
@@ -212,10 +219,10 @@ const buyerCust = await sys.customer.findFirst({ where: { email: BUYER.email } }
 const anyVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null } })
 await startSubscription(sys, {
   reference: OWN_SUB, customerId: buyerCust.id, planVersionId: anyVersion.id,
-  status: 'active', quantity: 1, userId: buyerCust.userId,
+  status: 'active', quantity: 1,
 }, { startsOn: TODAY, endsOn: NEXT })
 await issueInvoice(sys, {
-  number: OTHER_INV, customerId: someoneElse.id, userId: someoneElse.userId,
+  number: OTHER_INV, customerId: someoneElse.id,
   periodStart: TODAY, periodEnd: NEXT, timeZone: 'UTC',
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
                        periodStart: TODAY, periodEnd: NEXT }),
@@ -232,7 +239,7 @@ await issueInvoice(sys, {
 // `verify:collect` is where the provider really sends this event.
 const OWN_INV = `INV-Q${RUN}`
 const ownBill = await issueInvoice(sys, {
-  number: OWN_INV, customerId: buyerCust.id, userId: buyerCust.userId,
+  number: OWN_INV, customerId: buyerCust.id,
   periodStart: TODAY, periodEnd: NEXT, timeZone: 'UTC',
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
                        periodStart: TODAY, periodEnd: NEXT }),
@@ -241,7 +248,6 @@ const CHALLENGE = `http://localhost:${TEST_SINK_ENV.PSP_SINK_PORT}/challenge/pi_
 await sys.payment.create({ data: {
   providerRef: `pi_acct${RUN}`, invoiceId: ownBill.id, amount: ownBill.total,
   currency: 'USD', status: 'requiresAction', actionUrl: CHALLENGE,
-  userId: buyerCust.userId,
 } })
 
 // These three tables grow with every drive that ever ran against this shop, and a
@@ -253,6 +259,15 @@ check('a shopper asking for an invoice gets their own, and not the one issued to
       [(await byKey('/invoices', 'number', 'INV-3001')).length,
        (await byKey('/invoices', 'number', OTHER_INV)).length], [1, 0])
 
+// The invoice names its customer and nothing else, and the customer names the
+// account (`FJS-915`). A row that carried its own copy of the account id would
+// read empty here for every document written before the account was linked.
+// `invoice-lines` declares no `paginate`, so its find answers a bare array.
+const ownLines = await (await asBuyer(`/invoice-lines?invoiceId=${ownBill.id}`)).json()
+check('…and reads it, its lines and its payment through the customer their account is linked to',
+      [(await byKey('/invoices', 'number', OWN_INV)).length, [ownLines].flat().length,
+       (await byKey('/payments', 'invoiceId', ownBill.id)).length], [1, 1, 1])
+
 // The subscriptions are asserted by SHAPE rather than by a list, because the
 // three billing drives mint one each per run against this same shopper. They
 // clear up after themselves now, and a drive that failed halfway through leaves
@@ -262,12 +277,17 @@ const buyerId  = loginBody.user?.id
 const mySubs   = await (await asBuyer('/subscriptions')).json()
 check('…and every subscription is theirs',
       [(await byKey('/subscriptions', 'reference', 'SUB-3001')).length,
-       mySubs.data.every(x => x.userId === buyerId)], [1, true])
+       buyerCust.userId === buyerId && mySubs.data.every(x => x.customerId === buyerCust.id)], [1, true])
 
+// A payment names an order or an invoice (`@@arc`), and either one names the
+// customer, so whose it is is read off whichever parent it has.
 const myPayments = await (await asBuyer('/payments')).json()
+const payerOf = async (p) => (p.orderId
+  ? await sys.order.findFirst({ where: { id: p.orderId } })
+  : await sys.invoice.findFirst({ where: { id: p.invoiceId } }))?.customerId
 check('a shopper can read the payment their bank is asking about',
       [(await byKey('/payments', 'actionUrl', CHALLENGE)).length,
-       myPayments.data.every(p => p.userId === (loginBody.user?.id))],
+       (await Promise.all(myPayments.data.map(payerOf))).every(c => c === buyerCust.id)],
       [1, true])
 
 const anonPayments = await fetch(`${API}/api/payments`)
@@ -323,7 +343,7 @@ const OTHER_SUB = `SUB-OTH${RUN}`
 const paidVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null, price: { gt: 0 } } })
 const otherSub = await startSubscription(sys, {
   reference: OTHER_SUB, customerId: someoneElse.id, planVersionId: paidVersion.id,
-  status: 'active', quantity: 1, userId: someoneElse.userId,
+  status: 'active', quantity: 1,
 }, { startsOn: TODAY, endsOn: NEXT })
 const documentsFor = async () => (await sys.invoice.findMany({ where: { subscriptionId: otherSub.id } })).length
 
@@ -346,15 +366,15 @@ check('staff changing the same plan moves the quantity and issues the invoice fo
 const MINE_SUB = `SUB-MIN${RUN}`
 const mineSub = await startSubscription(sys, {
   reference: MINE_SUB, customerId: buyerCust.id, planVersionId: paidVersion.id,
-  status: 'active', quantity: 1, userId: buyerCust.userId,
+  status: 'active', quantity: 1,
 }, { startsOn: TODAY, endsOn: NEXT })
 const repriceMine = await callAs(buyerToken, `/subscriptions/${mineSub.id}`, 'changePlan', { quantity: 2 })
 const mineChange  = repriceMine.ok ? await repriceMine.json() : null
 const mineDocs    = await sys.invoice.findMany({ where: { subscriptionId: mineSub.id } })
 check('a subscriber changing their own plan moves it and is issued the invoice, sealed and theirs',
       [repriceMine.status, (await sys.subscription.findFirst({ where: { id: mineSub.id } })).quantity,
-       mineChange?.data?.kind ?? mineChange?.kind, mineDocs.map(d => [d.status, d.userId])],
-      [200, 2, 'invoice', [['issued', buyerCust.userId]]])
+       mineChange?.data?.kind ?? mineChange?.kind, mineDocs.map(d => [d.status, d.customerId])],
+      [200, 2, 'invoice', [['issued', buyerCust.id]]])
 
 // ─── the browser ──────────────────────────────────────────────────────────
 
@@ -418,7 +438,7 @@ check('signing in on the storefront reaches the shop, cross-origin', who, BUYER.
 const listed = await until(async () => await evaluate(
   `(() => { const els = [...document.querySelectorAll('[data-order]')]
             return els.length ? els.map(e => e.dataset.order) : null })()`))
-check('and the history is their orders and only theirs', listed, ['ORD-2001'])
+check('and the history is their orders and only theirs', listed && [...listed].sort(), ownOrders)
 
 await evaluate(`(() => { document.querySelector('[data-open="ORD-2001"]').click(); return true })()`)
 const items = await until(async () => await evaluate(
@@ -475,7 +495,7 @@ check('the page tells them their bank is asking, and sends them to the provider'
 // What a person may do to their own arrangement, and it is NOT a move: all four
 // declared transitions are `@system`, so no request can ask for any of them.
 // `subscriptions.cancel` writes `isCancelingAtPeriodEnd`, and what lets a shopper do
-// it to their OWN row is `@@allow(update, userId == auth().id)` rather than
+// it to their OWN row is `@@allow(update, customer.userId == auth().id)` rather than
 // anything on this page.
 //
 // **The status must not move**, and that is the assertion rather than a detail

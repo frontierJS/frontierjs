@@ -25,7 +25,7 @@
   padding:       var(--space-3xs) var(--space-sm);
   border-radius: var(--pill-radius);
   font-size:     var(--text-xs);
-  line-height:   1rem;
+  line-height:   var(--rem);
 
   /* Skin. --_fill is the effective background; chip.css derives readable
      text from it. See the auto-contrast note there. */

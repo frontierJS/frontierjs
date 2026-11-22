@@ -34,15 +34,15 @@
 
 .feed-item {
   display:               grid;
-  grid-template-columns: 0.625rem 1fr;
+  grid-template-columns: calc(0.625 * var(--rem)) 1fr;
   gap:                   var(--space-lg);
   position:              relative;
 }
 
 .feed-dot {
-  width:         0.625rem;
-  height:        0.625rem;
-  margin-top:    0.3rem;
+  width:         calc(0.625 * var(--rem));
+  height:        calc(0.625 * var(--rem));
+  margin-top:    calc(0.3 * var(--rem));
   border-radius: 9999px;
   background:    var(--bg-mix, var(--color-muted));
   flex-shrink:   0;
@@ -53,9 +53,9 @@
 .feed > li:not(:last-child) .feed-item::after {
   content:    "";
   position:   absolute;
-  top:        0.95rem;
-  bottom:     -1.25rem;
-  left:       0.3125rem;
+  top:        calc(0.95 * var(--rem));
+  bottom:     calc(-1.25 * var(--rem));
+  left:       calc(0.3125 * var(--rem));
   transform:  translateX(-50%);
   width:      1px;
   background: var(--rule);

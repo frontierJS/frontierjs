@@ -22,6 +22,23 @@ test('band: a Band inside a held-width parent reaches both viewport edges', func
   cleanup();
 });
 
+test('band: inside a box declared a container, a Band reaches that box’s edges and no further', function () {
+  /*
+   * A page previewed inside a Card is the case: sized to the viewport, every
+   * section drew wider than the Card and was cut at both edges (FJS-4209).
+   * An inner scroller is the same case — its scrollbar is one `vw` never counts.
+   */
+  var page = el('<div style="container-type: inline-size; inline-size: 600px">' +
+    '<div style="inline-size: 400px; margin-inline: auto">' +
+    '<section class="band"><div class="container">x</div></section></div></div>');
+  var band = page.querySelector('.band').getBoundingClientRect();
+  var box = page.getBoundingClientRect();
+
+  assert.equal(Math.round(band.width), 600, 'the Band is as wide as its container, not the viewport');
+  assert.ok(Math.abs(band.left - box.left) < 1, 'and starts at the container’s edge');
+  cleanup();
+});
+
 test('band: .bleed escapes the same way, an <img> included', function () {
   var parent = el('<div class="prose" style="inline-size: 300px">' +
     '<img class="bleed" alt="" src="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2210%22 height=%2210%22/%3E"></div>');
@@ -112,5 +129,38 @@ test('band: over a WHITE photo, every ink clears AA through the scrim', function
     var ratio = contrast(bandCSS(bandOver(ink, ground)), bandCSS(ground));
     assert.atLeast(ratio, 4.5, name + ' over a white photo is ' + ratio.toFixed(2) + ':1');
   });
+  cleanup();
+});
+
+/*
+ * A Badge with `.bleed` is the status ribbon (FJS-D1237): it reaches its
+ * container's start edge by the `--bleed-inline` the container publishes,
+ * not the viewport's. A bleed that drifts from the container's padding still
+ * renders, so the offset is measured at two densities.
+ */
+test('band: .badge.bleed reaches its Card’s start edge at every density, not the viewport', function () {
+  ['', 'dense'].forEach(function (density) {
+    var card = el('<div class="' + density + '" style="inline-size: 400px">' +
+      '<article class="card"><span class="badge success bleed">Accepted</span><p>x</p></article></div>', '.card');
+    var badge = card.querySelector('.badge');
+    var box = card.getBoundingClientRect();
+    var edge = box.left + parseFloat(style(card, 'border-left-width'));
+    var at = badge.getBoundingClientRect();
+    var label = (density || 'density 1') + ': ';
+
+    assert.ok(Math.abs(at.left - edge) < 1, label + 'the fill starts at the card’s padding edge (' + at.left + ' vs ' + edge + ')');
+    assert.ok(at.width < box.width, label + 'it is a band, not a viewport escape');
+    assert.equal(style(badge, 'padding-left'), style(card, 'padding-left'), label + 'the label lines up with the content column');
+    assert.equal(style(badge, 'border-top-left-radius'), '0px', label + 'square at the edge it bleeds to');
+    assert.notEqual(style(badge, 'border-top-right-radius'), '0px', label + 'rounded on the end');
+    cleanup();
+  });
+});
+
+test('band: .badge.bleed outside a container that publishes --bleed-inline stays put', function () {
+  var parent = el('<div style="inline-size: 300px; padding-inline: 20px"><span class="badge bleed">Draft</span></div>');
+  var badge = parent.querySelector('.badge');
+  assert.ok(Math.abs(badge.getBoundingClientRect().left - parent.getBoundingClientRect().left - 20) < 1,
+    'no knob, no bleed');
   cleanup();
 });

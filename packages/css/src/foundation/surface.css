@@ -127,6 +127,24 @@
    * frosted glass reads as nothing over a gradient, and it costs --ink-soft
    * the margin it needs, so a tone on glass is its edge and its text.
    */
+  /*
+   * The tone as the ground, not a tint of it: a lead card headed in the
+   * brand color (FJS-D1173). --_fill and --_on-fill are chip.css's pair, so
+   * the ink clears AA for any hue. The inks are restated because a muted
+   * line or a rule inside reads --ink-soft and --rule, which are the page's
+   * and sit on a fill they were never graded against.
+   */
+  &.solid {
+    --tone-fill:       var(--bg-mix, var(--color-primary));
+    --surface-bg:      var(--_fill);
+    --_surface-border: var(--_fill);
+    --_surface-color:  var(--_on-fill);
+    --ink:             var(--_on-fill);
+    --ink-soft:        var(--_on-fill);
+    --ink-mute:        var(--_on-fill);
+    --rule:            color-mix(in srgb, var(--_on-fill) 30%, transparent);
+    background-image:  none;
+  }
   &.glass {
     --surface-bg:     color-mix(in srgb,
                         var(--surface-ground, var(--surface)) var(--glass-alpha), transparent);

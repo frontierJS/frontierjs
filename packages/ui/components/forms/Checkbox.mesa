@@ -68,7 +68,7 @@
   }
 </script>
 
-<div class="stack" style:gap="0.25rem" {class}>
+<div class="stack" style:gap="calc(0.25 * var(--rem))" {class}>
   <!--
     The <label> IS the wrapper, so the whole row is the hit target. The
     description sits outside it and is wired with aria-describedby instead —

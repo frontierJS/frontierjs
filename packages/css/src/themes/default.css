@@ -49,7 +49,7 @@
   --ink-mute:       #5f6e84;
 
   --rule:           #dfe5ec;
-  --rule-strong:    #c6d0dc;
+  --rule-strong:    #8a939e;
 
   /*
    * The topbar is chrome and the page is not, so it takes --surface while
@@ -94,5 +94,5 @@
    * rather than the default's.
    */
   --heading-font-weight: 600;
-  --text-4xl:            2rem;
+  --text-4xl:            calc(2 * var(--rem));
 }

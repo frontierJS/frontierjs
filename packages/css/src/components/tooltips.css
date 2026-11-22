@@ -56,7 +56,7 @@
 
   position:  absolute;
   z-index:   var(--z-tooltip);
-  inset-block-end:   calc(100% + 0.5rem);
+  inset-block-end:   calc(100% + calc(0.5 * var(--rem)));
   inset-inline-start: 50%;
   translate: -50% 0;
 
@@ -104,7 +104,7 @@
 /* ── Sides ──────────────────────────────────────────────────────────── */
 .tooltip.bottom {
   inset-block-end:   auto;
-  inset-block-start: calc(100% + 0.5rem);
+  inset-block-start: calc(100% + calc(0.5 * var(--rem)));
 }
 .tooltip.bottom::after {
   inset-block-start: auto;
@@ -120,11 +120,11 @@
   inset-inline-start: auto;
 }
 .tooltip.start {
-  inset-inline-end: calc(100% + 0.5rem);
+  inset-inline-end: calc(100% + calc(0.5 * var(--rem)));
   translate:        0 -50%;
 }
 .tooltip.end {
-  inset-inline-start: calc(100% + 0.5rem);
+  inset-inline-start: calc(100% + calc(0.5 * var(--rem)));
   translate:          0 -50%;
 }
 .tooltip.start::after,
@@ -147,6 +147,6 @@
 /* Long tooltips wrap instead of running off the viewport. */
 .tooltip.wrap {
   white-space:     normal;
-  max-inline-size: 16rem;
+  max-inline-size: calc(16 * var(--rem));
   text-align:      center;
 }

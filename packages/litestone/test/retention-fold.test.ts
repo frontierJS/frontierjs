@@ -115,6 +115,34 @@ describe('a day lives in the raw table XOR in the rollup', () => {
     db.$close()
   })
 
+  test('an update that moves a row into a folded day is refused by name, by its clock or by its key', async () => {
+    const { db, sys } = await open()
+    await sys.check.create({ data: { monitorId: 1, checkedAt: at('2026-05-10'), ok: true, latencyMs: 5 } })
+    await sys.$retain()
+    const row = await sys.check.create({ data: { monitorId: 1, checkedAt: at('2026-05-12'), ok: true, latencyMs: 5 } })
+    const two = await sys.check.create({ data: { monitorId: 2, checkedAt: at('2026-05-10'), ok: true, latencyMs: 5 } })
+
+    await expect(sys.check.update({ where: { id: row.id }, data: { checkedAt: at('2026-05-10', '18:00') } }))
+      .rejects.toMatchObject({ name: 'FoldedSpanError', into: 'DailyUptime', day: '2026-05-10', key: { monitorId: 1 } })
+    await expect(sys.check.update({ where: { id: two.id }, data: { monitorId: 1 } }))
+      .rejects.toMatchObject({ name: 'FoldedSpanError', day: '2026-05-10', key: { monitorId: 1 } })
+    await expect(sys.check.updateMany({ where: { id: row.id }, data: { checkedAt: at('2026-05-10', '18:00') } }))
+      .rejects.toBeInstanceOf(FoldedSpanError)
+    await expect(sys.check.upsert({ where: { id: row.id }, create: { monitorId: 1, checkedAt: at('2026-05-12'), ok: true, latencyMs: 5 },
+      update: { checkedAt: at('2026-05-10', '18:00') } })).rejects.toBeInstanceOf(FoldedSpanError)
+    // The conflict half writing the key and keeping the clock lands on a day the insert guard never checked.
+    await expect(sys.check.upsertMany({ data: [{ id: two.id, monitorId: 1, checkedAt: at('2026-05-12'), ok: true, latencyMs: 5 }],
+      conflictTarget: ['id'], update: ['monitorId'] })).rejects.toThrow(/folds into DailyUptime/)
+    expect((await sys.check.findMany({ orderBy: { id: 'asc' } })).map((c: any) => [c.monitorId, c.checkedAt]))
+      .toEqual([[1, at('2026-05-12')], [2, at('2026-05-10')]])
+
+    // A write naming neither, or moving to a day no rollup holds, lands.
+    await sys.check.update({ where: { id: two.id }, data: { latencyMs: 9 } })
+    await sys.check.update({ where: { id: row.id }, data: { checkedAt: at('2026-05-13') } })
+    expect((await sys.check.findFirst({ where: { id: row.id } })).checkedAt).toBe(at('2026-05-13'))
+    db.$close()
+  })
+
   test('a sealed rollup is not folded into: the sweep reports it and keeps the raw rows', async () => {
     const { db, sys } = await open(MODELS.replace('ok         Int      @default(0)', 'ok         Int      @default(0) @immutable(after: publish)'))
     // The app made and published the day itself, then a raw row of it was left.

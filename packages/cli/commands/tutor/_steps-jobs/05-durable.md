@@ -5,11 +5,11 @@ description: The row that recorded it, in a file you can open
 
 ## The row
 
-The job is finished, and there is still a record of it — in `db/jobs.db`, which
+The job is finished, and there is still a record of it — in `db/app-jobs.db`, which
 is an ordinary SQLite file:
 
 ```console
-sqlite3 db/jobs.db 'select name, status, attempts from jobs'
+sqlite3 db/app-jobs.db 'select name, status, attempts from jobs'
 ```
 
 That is the argument for a queue built this way. There is nothing to keep alive
@@ -40,9 +40,9 @@ $.config.__step = 5
 
 if (!needs($, ['appDir', 'jobNoteId'], { from: '04-job' })) return
 
-const jobsDb = join($.config.appDir, 'db', 'jobs.db')
+const jobsDb = join($.config.appDir, 'db', 'app-jobs.db')
 
-if (!await must($, probe.fileExists({ path: jobsDb, name: 'db/jobs.db — the queue is a file' }), {
+if (!await must($, probe.fileExists({ path: jobsDb, name: 'db/app-jobs.db — the queue is a file' }), {
   likely: 'the queue never opened its database, which means nothing was ever dispatched',
 })) return
 

@@ -115,4 +115,4 @@
  * number. Not a --text-* rung: 32px is not on the type ladder, and putting
  * it there would imply an app could reach it with a class.
  */
-.empty-icon { --icon-size: 2rem; }
+.empty-icon { --icon-size: calc(2 * var(--rem)); }

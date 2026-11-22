@@ -39,7 +39,7 @@ export function tokenizeLine(text: string, state: State, emit?: Emit): State;
  * @param {boolean} [classes]
  */
 export function lineHTML(text: string, state: State, classes?: boolean): string;
-export function escapeHTML(s?: any): any;
+export function escapeLine(s?: any): any;
 export namespace ELEMENT {
     export let heading: string;
     export let link: string;

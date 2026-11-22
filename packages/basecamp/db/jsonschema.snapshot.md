@@ -366,6 +366,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `provider` | `string` | yes | — | — | — |
 | `returnTo` | `string`? | — | — | — | — |
+| `initiator` | `string`? | — | — | — | — |
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 
 **On create**: required — `provider`, `expiresAt` · not accepted — `id`

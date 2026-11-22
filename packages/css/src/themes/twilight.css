@@ -70,7 +70,7 @@
    * --surface reads too heavy on --surface-sunken.
    */
   --rule:        rgba(255, 255, 255, 0.08);
-  --rule-strong: rgba(255, 255, 255, 0.15);
+  --rule-strong: rgba(255, 255, 255, 0.34);
 
   /*
    * The default shadows are near-black at 4–10% alpha and invisible against

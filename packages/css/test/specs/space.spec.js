@@ -153,13 +153,11 @@ test('space: no component or pattern declares a literal padding or gap', functio
    * that its font-size carries the whole control, which already responds to
    * the type scale. Same for code and kbd.
    *
-   * The four exceptions are named rather than counted. A number would let
-   * a fifth in as long as a fourth left.
+   * The exceptions are named rather than counted. A number would let a
+   * third in as long as a second left.
    */
   var EXCEPT = {
     'form-core.css': ['36px'],   /* room for the select chevron — an icon, not a rhythm */
-    'nav.css':       ['0.4375rem'], /* 7px, off the 2px grid; a rung for it would be a rung for one caller */
-    'steps.css':     ['0.3125rem'], /* 5px, same */
     'pills.css':     ['3px']     /* an optical nudge on the remove button, not spacing */
   };
 
@@ -216,7 +214,7 @@ test('space: every named exception is still there', function () {
    * left behind after the literal it excuses has gone silently pre-approves
    * the next one — same reasoning as vocabulary.spec.js's NOT_A_TERM check.
    */
-  var EXPECTED = ['36px', '0.4375rem', '0.3125rem', '3px'];
+  var EXPECTED = ['36px', '3px'];
   var DECL = /(padding[a-z-]*|gap|row-gap|column-gap)\s*:\s*([^;}]+)/g;
   var seen = {};
 

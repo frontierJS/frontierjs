@@ -119,7 +119,7 @@ function windowDays(/** @type {any} */ model, /** @type {any} */ schema, /** @ty
     if (path.length === 1) {
       const zf = model.fields.find((/** @type {any} */ f) => f.name === path[0])
       const zc = quoteIdent(col(path[0]))
-      out[name] = { column: col(name), offset: zf?.type.name === 'Int', zone: `${self}${zc}`,
+      out[name] = { column: col(name), offset: zf?.type.name === 'Int', zone: `${self}${zc}`, zoneField: path[0],
         distinct: `SELECT DISTINCT ${zc} FROM ${quoteIdent(table)} WHERE ${zc} IS NOT NULL` }
       continue
     }
@@ -133,7 +133,9 @@ function windowDays(/** @type {any} */ model, /** @type {any} */ schema, /** @ty
       `"zone_parent".${quoteIdent(pcol(hop.refFields[i]))} = ${self}${quoteIdent(col(f))}`).join(' AND ')
     out[name] = { column: col(name), offset: hop.targetModel.fields.find((/** @type {any} */ f) => f.name === path[1])?.type.name === 'Int',
       zone:     `(SELECT "zone_parent".${zc} FROM ${ptab} AS "zone_parent" WHERE ${on})`,
-      distinct: `SELECT DISTINCT ${zc} FROM ${ptab} WHERE ${zc} IS NOT NULL` }
+      distinct: `SELECT DISTINCT ${zc} FROM ${ptab} WHERE ${zc} IS NOT NULL`,
+      parent:   { fkFields: hop.fkFields,
+        sql: `SELECT ${zc} AS "zone" FROM ${ptab} WHERE ${hop.refFields.map((/** @type {string} */ f) => `${quoteIdent(pcol(f))} = ?`).join(' AND ')}` } }
   }
   return Object.keys(out).length ? out : null
 }
@@ -165,6 +167,24 @@ export function zonedDayCompare(/** @type {any} */ src, /** @type {string} */ op
     sql: `${lhs} ${op} (CASE WHEN ${src.zone} ${inList} THEN ? WHEN ${src.zone} ${inList} THEN ? ELSE ? END)`,
     params: [JSON.stringify(behind), before, JSON.stringify(ahead), after, utc],
   }
+}
+
+/**
+ * The day `row` is on at the instant `at`, in its own zone — `zonedDayCompare`'s
+ * rule for a row in hand, which a broadcast grades with no query to filter through.
+ * `get(sql, params)` answers one row; a parent's zone is read through it.
+ */
+export function zonedDayOf(/** @type {any} */ src, /** @type {any} */ row, /** @type {string} */ at,
+  /** @type {(sql: string, params: any[]) => any} */ get) {
+  let zone = null
+  if (src.zoneField) zone = row[src.zoneField]
+  else if (src.parent) {
+    const key = src.parent.fkFields.map((/** @type {string} */ f) => row[f])
+    if (key.every((/** @type {any} */ v) => v != null)) zone = get(src.parent.sql, key)?.zone ?? null
+  }
+  if (zone == null) return at.slice(0, 10)
+  if (src.offset) return new Date(Date.parse(at) + Number(zone) * 60_000).toISOString().slice(0, 10)
+  try { return plainDateIn(at, zone) } catch { return at.slice(0, 10) }   // not a zone: UTC, as the SQL reads it
 }
 
 // ─── The instant ────────────────────────────────────────────────────────────

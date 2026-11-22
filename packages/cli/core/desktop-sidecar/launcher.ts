@@ -6,7 +6,7 @@
 //
 // The shell passes everything by environment:
 //   FRONTIER_SIDECAR_APP      the app's own files (the bundle's resources/app)
-//   DATABASE_URL         <app data>/api/app.db — jobs.db lands beside it
+//   DATABASE_URL         <app data>/api/app.db — app-jobs.db lands beside it
 //   AUDIT_PATH           <app data>/api/audit.db
 //   STORAGE_ROOT         <app data>/api/storage
 //   ENCRYPTION_KEY_FILE  <app data>/api/encryption.key, made on first run

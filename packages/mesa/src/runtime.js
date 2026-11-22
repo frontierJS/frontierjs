@@ -3249,6 +3249,44 @@ export function hydAwait(anchor, getPromise, pendingBlock, thenBlock, catchBlock
 }
 
 /**
+ * `boundaryBlock` under the flag: the server's content is adopted when the
+ * client's first branch is content too, which a seeded `$async` const makes it.
+ * Until a branch mounts, whatever the server wrote stays on screen as the
+ * pending branch, so a const loaded again does not blank the page first.
+ */
+export function hydBoundary(anchor, getStates, contentBlock, pendingBlock, failedBlock) {
+  const b = anchor?.__hyd
+  if (!b) return boundaryBlock(anchor, getStates, contentBlock, pendingBlock, failedBlock)
+  anchor.__hyd = null
+  let nodes = null
+  const grab = () => {
+    if (nodes) return null
+    nodes = _takeRange(b.open, b.close)
+    b.open.remove()
+    return nodes
+  }
+  const what = `<mesa:boundary> ${b.key} in ${b.inst.id}`
+  const content = () => {
+    const frag = grab()
+    if (!frag) return contentBlock()
+    if (b.state !== 'content') {
+      _hydWarn(b.opts, `[Mesa hydrate] ${b.opts.file}: ${what} wrote ${b.state} on the server and content here; re-rendered the block`)
+      return _fresh(contentBlock)
+    }
+    return _adopt(_handle(b.page, b.inst, b.opts, frag.firstChild, frag), b.opts, what, contentBlock)
+  }
+  const pending = (...a) => grab() ?? pendingBlock?.(...a)
+  const failed = failedBlock && ((...a) => { grab(); return failedBlock(...a) })
+  // With no `failed` to mount, an error mounts nothing, and the server's nodes would stay.
+  const states = () => {
+    const s = getStates()
+    if (!nodes && s.some((x) => x.error !== null)) grab()
+    return s
+  }
+  return boundaryBlock(anchor, states, content, pending, failed)
+}
+
+/**
  * Adopt the page a `hydratable: true` server render wrote into `target`: the
  * server's nodes stay, and the component's bindings attach to them. A mismatch
  * at a component root re-renders the whole target (FJS-D2260).
@@ -6784,7 +6822,7 @@ export function hydIsland(anchor, load, props, meta) {
     anchor.__claim = { page: site.page, id: site.inst.id + '.' + site.key }
   }
   const claimed = !!anchor.__claim
-  const wait = anchor.__island = { props, binds: [] }
+  const wait = anchor.__island = { props, binds: [], refs: [] }
   let stopped = false
 
   const mountIt = (Comp) => {
@@ -6802,6 +6840,7 @@ export function hydIsland(anchor, load, props, meta) {
     }
     registerComponentAnchor(anchor)
     for (const [name, set] of wait.binds) bindProp(anchor, name, set)
+    for (const set of wait.refs) set(componentApi(anchor))
   }
   const run = (Comp) => {
     if (stopped || !anchor.isConnected) return
@@ -6841,6 +6880,17 @@ export function islandBind(anchor, name, setParent) {
   const wait = anchor.__island
   if (wait) wait.binds.push([name, setParent])
   else bindProp(anchor, name, setParent)
+}
+
+/**
+ * `bind:this` on a `client:*` child under the flag: the ref stays unset until
+ * the child attaches, since its interface is read off a registry that does not
+ * exist before then.
+ */
+export function islandThis(anchor, setRef) {
+  const wait = anchor.__island
+  if (wait) wait.refs.push(setRef)
+  else setRef(componentApi(anchor))
 }
 
 

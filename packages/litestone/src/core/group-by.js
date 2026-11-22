@@ -11,22 +11,21 @@ import { buildNamedAggExpr, extractNamedAggs, pageSql, quoteIdent } from './quer
 import { offsetSpans, partsIn, plainDateIn } from '@frontierjs/toolbelt/datetime'
 
 // ─── HAVING clause builder for groupBy() ─────────────────────────────────────
-// Converts { gt: 5 } or scalar 5 into a SQL fragment like "COUNT(*) > ?"
-function buildAggHaving(expr, cond, params) {
+// Converts { gt: 5 } or scalar 5 into a SQL fragment like "COUNT(*) > ?".
+// `exprParams` are the expression's own binds, repeated with each operator
+// because the expression is.
+const HAVING_OPS = { gt: '>', gte: '>=', lt: '<', lte: '<=', not: '!=' }
+function buildAggHaving(expr, cond, params, exprParams = []) {
   if (cond == null) return null
   if (typeof cond !== 'object') {
-    params.push(cond)
+    params.push(...exprParams, cond)
     return `${expr} = ?`
   }
   const parts = []
   for (const [op, val] of Object.entries(cond)) {
-    switch (op) {
-      case 'gt':  params.push(val); parts.push(`${expr} > ?`);  break
-      case 'gte': params.push(val); parts.push(`${expr} >= ?`); break
-      case 'lt':  params.push(val); parts.push(`${expr} < ?`);  break
-      case 'lte': params.push(val); parts.push(`${expr} <= ?`); break
-      case 'not': params.push(val); parts.push(`${expr} != ?`); break
-    }
+    if (!(op in HAVING_OPS)) continue
+    params.push(...exprParams, val)
+    parts.push(`${expr} ${HAVING_OPS[op]} ?`)
   }
   return parts.length ? parts.join(' AND ') : null
 }
@@ -37,7 +36,7 @@ export function makeGroupBy(shape, ctx, deps) {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, needsTiming, fireQuery,
     hydrateCols, exactSum, buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue,
-    refuseValueAggKeys,
+    memberAggExpr, refuseValueAggKeys,
   } = deps
 
   // ── groupBy ──────────────────────────────────────────────────────────────
@@ -133,9 +132,27 @@ export function makeGroupBy(shape, ctx, deps) {
     //
     // Checked here rather than beside the other refusals because `orderBy`
     // may name the interval field, which is resolved just above.
+    //
+    // A `{ path }` term names a member of a Json column (FJS-D1062), so its
+    // column is graded at the naming tier, as the value aggregate's is. Its
+    // aggregate reads a stray as NULL, so each term also selects the stray
+    // count (`checks`, keyed by the term) and the read refuses as the
+    // value aggregate does, rather than a HAVING dropping the group.
     const AGG_FNS = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }
+    const checks = new Map()
+    const sortNames = (op, agg, spec, names, memberNames) => {
+      if (!spec || typeof spec !== 'object') return
+      for (const [field, term] of Object.entries(spec)) {
+        if (!isMemberSpec(term)) { names.push(field); continue }
+        memberNames.push(field)
+        checks.set(term, { fn: AGG_FNS[agg], field, alias: `__check${checks.size}` })
+        if (op === 'orderBy' && term.dir != null && term.dir !== 'asc' && term.dir !== 'desc')
+          throw new ValidationError([{ path: ['orderBy', agg, field, 'dir'], message:
+            `orderBy dir over a member of '${field}' on ${modelName}.groupBy is 'asc' or 'desc', got ${JSON.stringify(term.dir)}` }])
+      }
+    }
     if (having && typeof having === 'object') {
-      const names = []
+      const names = [], memberNames = []
       for (const [aggKey, spec] of Object.entries(having)) {
         if (aggKey === '_count') continue
         if (!(aggKey in AGG_FNS))
@@ -143,14 +160,15 @@ export function makeGroupBy(shape, ctx, deps) {
             `Unknown having key '${aggKey}' on ${modelName}.groupBy. A HAVING filters an aggregate: ` +
             `_count, ${Object.keys(AGG_FNS).join(', ')}. A named aggregate cannot be filtered here — it is ` +
             `computed in the SELECT, so filter the returned rows.` }])
-        if (spec && typeof spec === 'object') names.push(...Object.keys(spec))
+        sortNames('having', aggKey, spec, names, memberNames)
       }
       refuseAggregateKeys('having', names)
+      refuseAggregateKeys('having', memberNames, false)
     }
     if (orderBy) {
       const groupKeys = new Set(by)
       if (intervalField) groupKeys.add(intervalField)
-      const names = []
+      const names = [], memberNames = []
       for (const [key, val] of orderBy) {
         if (key === '$raw')
           // A fragment written for findMany names columns this statement does
@@ -160,10 +178,7 @@ export function makeGroupBy(shape, ctx, deps) {
             `orderBy $raw is not supported on groupBy — its ORDER BY is over the group keys and aggregates, ` +
             `not over ${modelName}'s columns. Put the expression in the aggregate, or sort the result in JS` }])
         if (key === '_count' || key === '_stringAgg') continue
-        if (key in AGG_FNS) {
-          if (val && typeof val === 'object') names.push(...Object.keys(val))
-          continue
-        }
+        if (key in AGG_FNS) { sortNames('orderBy', key, val, names, memberNames); continue }
         if (key.startsWith('_'))
           throw new ValidationError([{ path: ['orderBy', key], message:
             `Cannot orderBy '${key}' on ${modelName}.groupBy — a named aggregate is computed in the SELECT and ` +
@@ -175,6 +190,7 @@ export function makeGroupBy(shape, ctx, deps) {
             `${Object.keys(AGG_FNS).join(', ')}.` }])
       }
       refuseAggregateKeys('orderBy', names)
+      refuseAggregateKeys('orderBy', memberNames, false)
     }
 
     // Days since the week began, from %w (Sunday is 0).
@@ -333,6 +349,11 @@ export function makeGroupBy(shape, ctx, deps) {
         return m.sql
       }))
     }
+    for (const [term, check] of checks) {
+      const m = memberAggCols('groupBy', check.fn, check.field, { path: term.path }, check.alias, selectParams)
+      check.key = m.key
+      selectCols.push(m.sql)
+    }
 
     // ── Gap filling — infer range from where clause if fillGaps: true ───
     // fillGaps: true        → infer from where[intervalField].gte/lte
@@ -434,30 +455,27 @@ export function makeGroupBy(shape, ctx, deps) {
         ? `STRFTIME('%Y', d) || '-Q' || (((CAST(STRFTIME('%m', d) AS INTEGER) - 1) / 3) + 1)`
         : `STRFTIME('${fmt}', d)`
 
-      // Gap rows: SELECT from intervals LEFT JOIN, emit cteLabel for the interval field
-      // Data rows: SELECT from main table with strftimeExpr — same as non-gap path
-      // We need two separate SELECT column lists:
-      //   gapCols: uses cteLabel (references intervals.d)
-      //   dataCols: uses strftimeExpr (references tableName.intervalField)
-
-      const otherByFields = by.filter(f => f !== intervalField)
-
-      // Gap row columns
+      // A gap row labels its bucket from intervals.d. UNION ALL pairs columns
+      // by position and names them from this half, so this list holds one
+      // entry for every column selectCols pushes, in the same order; a
+      // member aggregate is three columns.
+      const member = (alias, empty) =>
+        [`${empty} AS ${quoteIdent(alias)}`, `0 AS ${quoteIdent(`${alias}__strays`)}`, `NULL AS ${quoteIdent(`${alias}__stray`)}`]
+      const pad = (alias, empty) => members.has(alias) ? member(alias, empty) : [`${empty} AS ${quoteIdent(alias)}`]
       const gapCols = [
-        `${cteLabel} AS "${intervalField}"`,
-        ...otherByFields.map(f => `NULL AS "${f}"`),
+        ...by.map(f => f === intervalField ? `${cteLabel} AS "${f}"` : `NULL AS "${f}"`),
         ...(_count ? [`0 AS "__count"`] : []),
         ...['_sum', '_avg', '_min', '_max'].flatMap(agg => {
           const spec = args[agg]
           if (!spec || spec === true) return []
           return Object.entries(spec)
             .filter(([, v]) => v)
-            .flatMap(([field]) => {
-              const alias = `${agg}__${field}`
-              const value = `${agg === '_sum' ? '0' : 'NULL'} AS ${quoteIdent(alias)}`
-              return members.has(alias) ? [value, `0 AS ${quoteIdent(`${alias}__strays`)}`, `NULL AS ${quoteIdent(`${alias}__stray`)}`] : [value]
-            })
+            .flatMap(([field]) => pad(`${agg}__${field}`, agg === '_sum' ? '0' : 'NULL'))
         }),
+        ...(_stringAgg ? [`NULL AS ${quoteIdent(`__stringAgg__${_stringAgg.field}`)}`] : []),
+        ...namedAggs.flatMap(([key, spec]) =>
+          pad(`__nagg__${key}`, 'count' in spec || 'sum' in spec ? '0' : 'NULL')),
+        ...[...checks.values()].flatMap(({ alias }) => member(alias, 'NULL')),
       ]
 
       // Data row columns (same as selectCols — already built above with strftimeExpr)
@@ -530,8 +548,21 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[aggKey]
           if (!fn) continue
           for (const [field, cond] of Object.entries(spec)) {
-            const expr = buildAggHaving(`${fn}(${_aggCol(field)})`, cond, params)
-            if (expr) havingParts.push(expr)
+            const check = checks.get(cond)
+            if (!check) {
+              const expr = buildAggHaving(`${fn}(${_aggCol(field)})`, cond, params)
+              if (expr) havingParts.push(expr)
+              continue
+            }
+            const exprParams = []
+            const { path, ...ops } = cond
+            const m = memberAggExpr('having', fn, field, cond, ['path', ...Object.keys(HAVING_OPS)], exprParams)
+            const expr = buildAggHaving(m.sql, ops, params, exprParams)
+            if (!expr) throw new ValidationError([{ path: ['having', aggKey, field], message:
+              `having over a member of '${field}' on ${modelName}.groupBy compares it — add one of ` +
+              `${Object.keys(HAVING_OPS).join(', ')} beside the path` }])
+            // A group holding a stray passes, so the read sees it and refuses.
+            havingParts.push(`(${quoteIdent(`${check.alias}__strays`)} > 0 OR (${expr}))`)
           }
         }
       }
@@ -553,7 +584,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[key]
           if (fn && typeof val === 'object') {
             for (const [field, dir] of Object.entries(val)) {
-              orderParts.push(`${fn}(${_aggCol(field)}) ${dir === 'desc' ? 'DESC' : 'ASC'}`)
+              if (!checks.has(dir)) { orderParts.push(`${fn}(${_aggCol(field)}) ${dir === 'desc' ? 'DESC' : 'ASC'}`); continue }
+              const m = memberAggExpr('orderBy', fn, field, dir, ['path', 'dir'], params)
+              orderParts.push(`${m.sql} ${dir.dir === 'desc' ? 'DESC' : 'ASC'}`)
             }
           }
         } else if (key === intervalField) {
@@ -580,6 +613,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // Shape results
     return raw.map(r => {
+      for (const { fn, key, alias } of checks.values()) memberAggValue('groupBy', fn, key, alias, r)
       let out = {}
       for (const f of by) out[f] = r[f]
       out = hydrateCols(out)

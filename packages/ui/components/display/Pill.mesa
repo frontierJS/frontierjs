@@ -40,8 +40,8 @@
     -->
     <span
       aria-hidden="true"
-      style:inline-size="0.375rem"
-      style:block-size="0.375rem"
+      style:inline-size="calc(0.375 * var(--rem))"
+      style:block-size="calc(0.375 * var(--rem))"
       style:border-radius="50%"
       style:background="currentColor"
       style:opacity="0.7"

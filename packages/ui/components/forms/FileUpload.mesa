@@ -141,7 +141,7 @@
 </script>
 
 {#snippet dropzone()}
-  <div class="stack" style:gap="0.75rem">
+  <div class="stack" style:gap="calc(0.75 * var(--rem))">
     <!--
       A real <button> for the drop area, not a div with role="button" and a
       hand-written Enter/Space handler — the platform already does that, and
@@ -175,7 +175,7 @@
         <path d="M20 16.7A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
       </svg>
 
-      <span class="stack" style:gap="0.125rem">
+      <span class="stack" style:gap="calc(0.125 * var(--rem))">
         <span>{dragging ? 'Drop to add' : 'Drag & drop or click to browse'}</span>
         <span class="text-xs text-muted">
           {accept !== '*/*' ? accept : 'Any file type'}
@@ -210,7 +210,7 @@
             {#if isImage(file)}
               <img
                 class="avatar"
-                style:--avatar-size="2.5rem"
+                style:--avatar-size="calc(2.5 * var(--rem))"
                 style:--avatar-radius="var(--card-radius)"
                 style:object-fit="cover"
                 src={previews.url(file)}
@@ -220,7 +220,7 @@
             {:else}
               <span
                 class="avatar muted"
-                style:--avatar-size="2.5rem"
+                style:--avatar-size="calc(2.5 * var(--rem))"
                 style:--avatar-radius="var(--card-radius)"
                 aria-hidden="true"
               >
@@ -231,13 +231,13 @@
             {/if}
 
             <!-- Info -->
-            <div class="stack" style:gap="0.25rem" style:flex="1" style:min-inline-size="0">
+            <div class="stack" style:gap="calc(0.25 * var(--rem))" style:flex="1" style:min-inline-size="0">
               <span class="text-sm">{file.name}</span>
               <span class="text-xs text-muted">{formatBytes(file.size)}</span>
               {#if progress !== null}
                 <progress
                   class="progress {progress >= 100 ? 'success' : ''}"
-                  style:block-size="0.25rem"
+                  style:block-size="calc(0.25 * var(--rem))"
                   value={progress}
                   max="100"
                   aria-label="Upload progress for {file.name}"
@@ -292,9 +292,9 @@
     flex-direction: column;
     align-items:    center;
     justify-content:center;
-    gap:            0.5rem;
+    gap:            calc(0.5 * var(--rem));
     inline-size:    100%;
-    padding:        2rem 1.5rem;
+    padding:        calc(2 * var(--rem)) calc(1.5 * var(--rem));
     text-align:     center;
     cursor:         pointer;
     font:           inherit;
@@ -316,8 +316,8 @@
     cursor:  not-allowed;
   }
   .fjs-dropzone-icon {
-    inline-size: 2rem;
-    block-size:  2rem;
+    inline-size: calc(2 * var(--rem));
+    block-size:  calc(2 * var(--rem));
     flex-shrink: 0;
   }
 </style>

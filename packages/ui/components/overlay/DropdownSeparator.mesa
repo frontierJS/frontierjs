@@ -8,4 +8,4 @@
     <DropdownSeparator />
     <DropdownItem tone="danger" onclick={remove}>Delete</DropdownItem>
 -->
-<hr class="divider" style="margin-block: 0.25rem" {class} {...$attributes} />
+<hr class="divider" style="margin-block: calc(0.25 * var(--rem))" {class} {...$attributes} />

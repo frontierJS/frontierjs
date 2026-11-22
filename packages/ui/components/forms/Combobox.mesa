@@ -446,8 +446,8 @@
         bind:this={panelEl}
         class="popover fjs-combobox-panel"
         style:inset-block-start={flip ? 'auto' : null}
-        style:inset-block-end={flip ? 'calc(100% + 0.25rem)' : null}
-        style:max-block-size={capH == null ? null : `min(12rem, ${capH}px)`}
+        style:inset-block-end={flip ? 'calc(100% + calc(0.25 * var(--rem)))' : null}
+        style:max-block-size={capH == null ? null : `min(calc(12 * var(--rem)), ${capH}px)`}
         {@attach dropdownAnim}
       >
         <ul class="items menu" id={listId} role="listbox" aria-label="Options">
@@ -540,17 +540,17 @@
   .fjs-combobox-control { position: relative; }
   /* Room for the chevron, and for the × and its divider when they draw, so
      a long label never runs under them. */
-  .fjs-combobox-input { padding-inline-end: 2.25rem; }
-  .fjs-combobox-control[data-clear] .fjs-combobox-input { padding-inline-end: 4.25rem; }
+  .fjs-combobox-input { padding-inline-end: calc(2.25 * var(--rem)); }
+  .fjs-combobox-control[data-clear] .fjs-combobox-input { padding-inline-end: calc(4.25 * var(--rem)); }
   /* Pointer-transparent except the ×: a click on the chevron lands on the
      input under it, which is what opens the list. */
   .fjs-combobox-trail {
     position:          absolute;
     inset-block:       0;
-    inset-inline-end:  0.5rem;
+    inset-inline-end:  calc(0.5 * var(--rem));
     display:           flex;
     align-items:       center;
-    gap:               0.25rem;
+    gap:               calc(0.25 * var(--rem));
     color:             var(--ink-mute);
     pointer-events:    none;
   }
@@ -563,23 +563,23 @@
   .fjs-combobox-divider {
     align-self:   stretch;
     inline-size:  1px;
-    margin-block: 0.5rem;
+    margin-block: calc(0.5 * var(--rem));
     background:   var(--rule-strong);
   }
   /* .popover is absolute by default; this only anchors and sizes it. */
   .fjs-combobox-panel {
     inset-inline:      0;
-    inset-block-start: calc(100% + 0.25rem);
+    inset-block-start: calc(100% + calc(0.25 * var(--rem)));
     max-inline-size:   none;
-    max-block-size:    12rem;
+    max-block-size:    calc(12 * var(--rem));
     overflow-y:        auto;
-    padding:           0.25rem;
+    padding:           calc(0.25 * var(--rem));
     z-index:           50;
   }
   .fjs-combobox-option {
     display:     flex;
     align-items: center;
-    gap:         0.5rem;
+    gap:         calc(0.5 * var(--rem));
     cursor:      pointer;
   }
   /* Keyboard-active row. A data attribute rather than a class because it is

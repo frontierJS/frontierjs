@@ -306,6 +306,7 @@ table `app` · db `main` · gate `2.4.4.4` · @@softDelete(cascade)
 @@index(backupDestinationId)
 @@index(blueprintId)
 @@index(environmentId)
+@@index(projectId)
 @@index(status)
 @@index(workspaceId)
 @@deny(create, auth().workspaceId == null && auth().workspaceIdAdmitted == null || auth().workspaceId != null && workspaceId != null && workspaceId != auth().workspaceId || auth().workspaceId == null && workspaceId != auth().workspaceIdAdmitted)
@@ -1854,7 +1855,9 @@ table `oauth_flow` · db `main` · gate `8`
 | --- | --- | --- | --- | --- |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `expiresAt` | `DateTime` | no | — | **required on write** |
+| `grant` | `Json` | yes | — | @guarded |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `initiator` | `String` | yes | — | — |
 | `invitation` | `String` | yes | — | @guarded |
 | `provider` | `String` | no | — | **required on write** |
 | `returnTo` | `String` | yes | — | — |

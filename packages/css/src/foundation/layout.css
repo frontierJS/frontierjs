@@ -114,7 +114,7 @@
  */
 .grid {
   display:               grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, calc(16 * var(--rem))), 100%), 1fr));
   gap:                   var(--space-2xl);
   inline-size:           100%;
 }
@@ -158,7 +158,7 @@
 }
 .switcher > * {
   flex-grow:  var(--fr, 1);
-  flex-basis: max(var(--side, 0px), calc((var(--switch-at, 48rem) - 100%) * 999));
+  flex-basis: max(var(--side, 0px), calc((var(--switch-at, calc(48 * var(--rem))) - 100%) * 999));
 }
 .switcher > [style*="--side:"] {
   flex-grow: 0;
@@ -206,8 +206,8 @@
 .container.wide   { max-width: none; }
 
 @media (min-width: 768px) {
-  .container { --container-pad: 1.5rem; }
+  .container { --container-pad: calc(1.5 * var(--rem)); }
 }
 @media (min-width: 1280px) {
-  .container { --container-pad: 2rem; }
+  .container { --container-pad: calc(2 * var(--rem)); }
 }

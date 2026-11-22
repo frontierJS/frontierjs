@@ -64,9 +64,10 @@
    */
   --surface-ground: var(--dialog-bg, var(--surface-raised));
 
-  --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  /* Mixed into the ground above, not --surface, or a themed dialog wears a header cut from another ground. */
+  --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface-ground));
   --dialog-header-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
-  --dialog-header-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+  --dialog-header-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface-ground));
 }
 .dialog > .surface-header {
   background:          var(--dialog-header-bg,     transparent);

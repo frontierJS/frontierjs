@@ -461,6 +461,31 @@ database (or tenant) to one value, `test1234` by default, hashed the way a login
 checks it. OAuth credentials are untouched and an account without a password
 does not gain one. Under `NODE_ENV=production` it refuses unless given `--force`.
 
+## Connecting a tenant's account
+
+A provider declared `purpose: 'grant'` connects a third-party account to a row
+of the app's (`FJS-D1313`): its tokens go to the app's `onGrant`, never to a
+`Credential` or a session.
+
+```ts
+'google-business': defineProvider({
+  name: 'google-business', preset: 'google', clientId, clientSecret,
+  scope:   'openid email https://www.googleapis.com/auth/business.manage',
+  purpose: 'grant',
+  onGrant: async ({ tokens, identity, grant, initiator }) => { /* write grant.id's row, as the system */ },
+}),
+```
+
+It is absent from `GET /auth/oauth`, and `GET /auth/oauth/{provider}` refuses to
+start it, so it can never become a login. The app starts it from a service that
+has graded the caller against the row: `auth.oauthBegin(name, { redirectUri,
+grant: { model, id }, initiator, extra })`, with `redirectUri` the plugin's own
+callback (`<publicUrl><apiPrefix>/auth/oauth/<name>/callback`). The raw route in
+front of that service sets `OAUTH_STATE_COOKIE` to the returned `state` on that
+callback's path, as the begin route does, and answers `authorizeUrl` for the
+browser to navigate to. The callback is auth's, and it ends at `onGrant` and the
+flow's `returnTo`; a throw from `onGrant` lands on `oauth_error=exchange`.
+
 ## Escape hatch
 
 OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).

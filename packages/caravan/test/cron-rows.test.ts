@@ -16,8 +16,12 @@
 import { describe, it, expect, afterEach, jest } from 'bun:test'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
 
-import { createClient }  from '../../litestone/src/index.js'
-import { createTestApp } from '../../junction/index.ts'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir }        from 'node:os'
+import { join }          from 'node:path'
+
+import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
+import { createApp, createTestApp } from '../../junction/index.ts'
 import { caravan } from '../src/index.ts'
 
 const SCHEMA = `
@@ -192,5 +196,59 @@ model Window {
     }
     expect(queue.list({ limit: 50 }).filter(r => r.name === JOB).map(r => r.id))
       .toEqual([occurrenceKey('cron', JOB, w.id, wall(2026, 6, 1, 3, 0))])
+  })
+})
+
+describe('under tenancy { strategy database } (FJS-4536)', () => {
+  // Each tenant is a file of its own, so there is no one client to read the
+  // rows from or to tap: a tenant's rows bind at start, a write in one rebinds
+  // it, and each fire carries its tenant and names it in its id — two tenants'
+  // row 1 on one rule are two fires.
+  it('binds every tenant\'s rows, rebinds on a tenant\'s write, and fires in the row\'s tenant', async () => {
+    const dir  = mkdtempSync(join(tmpdir(), 'cron-rows-'))
+    const path = join(dir, 'schema.lite')
+    writeFileSync(path, `
+tenancy {
+  strategy database
+  dir      "${dir}/tenants"
+  registry "${dir}/registry.db"
+}
+${SCHEMA}
+`)
+    const registry: any = await createTenantRegistry({ path })
+    for (const id of ['acme', 'globex']) await registry.create(id)
+    closers.push(() => registry.close?.())
+    const rows: Record<string, any> = {}
+    for (const id of ['acme', 'globex'])
+      rows[id] = await (await registry.get(id)).asSystem().window.create({ data: { name: id, rule: '0 3 * * *', timeZone: 'UTC' } })
+
+    const app = createApp({ tenants: registry }) as any
+    let at = new Date('2026-06-01T00:00:00Z')
+    const queue = caravan({ db: ':memory:', pollInterval: 60_000, cronClock: () => at })
+    app.configure(queue)
+    queue.handle(JOB, async () => {}, { schedules: { model: 'Window', cron: 'rule', timeZone: 'timeZone' } })
+    jest.useFakeTimers()
+    await app._startForTest()
+    closers.push(() => queue.stop())
+    await settle()
+
+    // A tenant's client opened after start is tapped like the first: acme's
+    // window moves to 04:00 and a second one is added there.
+    const acme = (await registry.get('acme')).asSystem()
+    await acme.window.update({ where: { id: rows.acme.id }, data: { rule: '0 4 * * *' } })
+    const added = await acme.window.create({ data: { name: 'added', rule: '0 5 * * *', timeZone: 'UTC' } })
+    await settle()
+
+    while (at < new Date('2026-06-01T06:00:00Z')) {
+      at = new Date(at.getTime() + 10 * 60_000)
+      jest.advanceTimersByTime(10_000)
+      await settle()
+    }
+    const fired = queue.list({ limit: 50 }).filter(r => r.name === JOB)
+    expect(fired.map(r => [r.id, r.tenant_id]).sort()).toEqual([
+      [occurrenceKey('cron', JOB, 'acme',   rows.acme.id,   wall(2026, 6, 1, 4, 0)), 'acme'],
+      [occurrenceKey('cron', JOB, 'acme',   added.id,       wall(2026, 6, 1, 5, 0)), 'acme'],
+      [occurrenceKey('cron', JOB, 'globex', rows.globex.id, wall(2026, 6, 1, 3, 0)), 'globex'],
+    ].sort())
   })
 })

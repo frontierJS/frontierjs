@@ -290,6 +290,12 @@ model OauthFlow {
   /// subject the invitation stored: the token proves the mailbox and the
   /// subject proves the identity, and neither proves the other (FJS-D611).
   invitation  String?  @guarded
+  /// A grant flow's target, `{ model, id }`: the app row its tokens land on
+  /// (FJS-D1313). Written only by `oauthBegin` from a service that graded the
+  /// caller; the callback has no session and trusts nothing else to say it.
+  grant       Json?    @guarded
+  /// The user id that started a grant flow.
+  initiator   String?
 
   expiresAt   DateTime
   createdAt   DateTime @default(now())

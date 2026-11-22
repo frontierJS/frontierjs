@@ -25,7 +25,7 @@
   const visible  = users.slice(0, max)
   const overflow = users.length - visible.length
 
-  const sizeMap = { xs: '1.5rem', sm: '2rem', md: '2.25rem', lg: '2.75rem' }
+  const sizeMap = { xs: 'calc(1.5 * var(--rem))', sm: 'calc(2 * var(--rem))', md: 'calc(2.25 * var(--rem))', lg: 'calc(2.75 * var(--rem))' }
   const sz = sizeMap[size] ?? sizeMap.sm
 
   const total = users.length

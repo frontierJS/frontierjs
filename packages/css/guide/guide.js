@@ -2900,6 +2900,26 @@ function cardsPage() {
       )}
 
       ${section(
+        "Solid",
+        `
+        <p>
+          The tone as the ground rather than a tint of it: the fill a
+          <code>.btn</code> of that tone paints, with ink that clears AA on it
+          in every theme. Untoned it is the brand color. Keep it to a heading
+          and a line or two; a paragraph on a saturated fill is hard to read.
+          A header band is a <code>.solid</code> card over a plain one.
+        </p>
+        ${preview(`
+          <div class="tiles gap-lg sg-card-grid">
+            <div class="card solid success"><strong>Lead</strong><p class="sg-card-text">Has an email.</p></div>
+            <div class="card solid danger"><strong>Lead</strong><p class="sg-card-text">No email on file.</p></div>
+            <div class="card solid muted"><strong>Lead</strong><p class="sg-card-text">Lost.</p></div>
+          </div>`)}
+        ${code(`<div class="card solid success">...</div>
+<section class="band solid">...</section>`)}`,
+      )}
+
+      ${section(
         "Toned",
         `
         <p>
@@ -8273,7 +8293,7 @@ const KINDS = [
     "Treatment",
     "onto anything",
     "Orthogonal and element-agnostic. Works the same wherever you put it.",
-    ".primary .secondary .muted .info .success .warning .danger  ·  .raised .outlined .ghost .glass  ·  .text-*  ·  .stack .cluster .center .split",
+    ".primary .secondary .muted .info .success .warning .danger  ·  .raised .outlined .ghost .glass .solid  ·  .text-*  ·  .stack .cluster .center .split",
   ],
   [
     "Density",

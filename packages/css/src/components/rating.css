@@ -1,0 +1,103 @@
+/*
+ * rating.css — Rating: a score of 1 to N drawn as stars.
+ *
+ *   <fieldset class="rating">
+ *     <legend>How was the visit?</legend>
+ *     <input type="radio" name="score" id="s1" value="1"><label for="s1">1 star</label>
+ *     <input type="radio" name="score" id="s2" value="2"><label for="s2">2 stars</label>
+ *     …
+ *   </fieldset>
+ *
+ *   <span class="rating readonly" role="img" aria-label="3.4 of 5" style="--rating: 3.4"></span>
+ *
+ * The input is native radios in reading order, so a form post, arrow keys
+ * and "3 stars, 3 of 5" are the browser's. Earlier stars are reached with
+ * :has() rather than a row reversed for `~`: a reversed row moves the arrow
+ * keys against the picture (FJS-D1236).
+ *
+ * The star is the label's ::before. A mask on the label would cut its focus
+ * ring away with everything else (focus.css rings the label).
+ *
+ * A tone does not inherit (tones.css), so the group resolves it once into
+ * --_rating-fill for the stars to read. --rating and --rating-max are knobs
+ * the display's caller sets; an average is fractional and fills part of a star.
+ */
+.rating {
+  --_rating-fill: var(--bg-mix, var(--color-primary));
+  --_rating-off:  var(--rule-strong);
+  --_rating-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5l2.94 6.1 6.56.9-4.78 4.6 1.17 6.6L12 17.6l-5.89 3.1 1.17-6.6L2.5 9.5l6.56-.9z'/%3E%3C/svg%3E");
+
+  position:       relative;
+  display:        inline-flex;
+  align-items:    center;
+  margin:         0;
+  padding:        0;
+  border:         0;
+  min-inline-size: 0;
+  font-size:      var(--text-2xl);
+  line-height:    1;
+}
+
+.rating > input {
+  position:       absolute;
+  inline-size:    1px;
+  block-size:     1px;
+  margin:         0;
+  opacity:        0;
+  pointer-events: none;
+}
+
+.rating > label {
+  --_star:     var(--_rating-off);
+  position:    relative;
+  flex-shrink: 0;
+  inline-size: 1em;
+  block-size:  1em;
+  overflow:    hidden;
+  white-space: nowrap;
+  color:       transparent;
+  cursor:      pointer;
+}
+.rating > label::before {
+  content:          '';
+  position:         absolute;
+  inset:            0;
+  background-color: var(--_star);
+  mask:             var(--_rating-star) center / 100% 100% no-repeat;
+  transition:       background-color var(--motion-base) var(--motion-ease);
+}
+
+/* Every star fills once one is checked, then the ones after it empty again. */
+.rating:has(> :checked) > label       { --_star: var(--_rating-fill); }
+.rating > :checked + label ~ label    { --_star: var(--_rating-off); }
+
+/* Hover previews the same way, and outranks the checked rules by coming later at equal weight. */
+@media (hover: hover) {
+  .rating:not(:has(> :disabled)):has(> label:hover) > label { --_star: var(--_rating-fill); }
+  .rating:not(:has(> :disabled)) > label:hover ~ label       { --_star: var(--_rating-off); }
+}
+
+.rating > :disabled + label {
+  cursor:  not-allowed;
+  opacity: 0.5;
+}
+
+/*
+ * The display is one masked strip: the star repeats across --rating-max
+ * star widths and a hard-stop gradient fills the first --rating of them.
+ */
+.rating.readonly {
+  --_rating-to:     right;
+  display:          inline-block;
+  vertical-align:   middle;
+  inline-size:      calc(var(--rating-max, 5) * 1em);
+  block-size:       1em;
+  background-image: linear-gradient(to var(--_rating-to),
+                      var(--_rating-fill) calc(var(--rating, 0) / var(--rating-max, 5) * 100%),
+                      var(--_rating-off) 0);
+  mask:             var(--_rating-star) left center / 1em 1em repeat-x;
+}
+.rating.readonly:dir(rtl) {
+  --_rating-to: left;
+  mask-position: right center;
+}

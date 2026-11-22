@@ -54,7 +54,7 @@
    * passes under it, which is the price of the block scrolling in its own box.
    */
   .fjs-code:has(> .fjs-code-actions) > pre {
-    padding-inline-end: calc(var(--space-2xl) + 2.25rem);
+    padding-inline-end: calc(var(--space-2xl) + calc(2.25 * var(--rem)));
   }
 
   .fjs-code-actions {

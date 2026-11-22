@@ -276,7 +276,7 @@
   mask-image:      none;
   animation-name:  none;
   flex-shrink:     0;
-  min-inline-size: 11rem;
+  min-inline-size: calc(11 * var(--rem));
 }
 
 .tabs.vertical .tab {

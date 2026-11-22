@@ -1225,3 +1225,67 @@ test('meter: a <meter> is drawn as the fill bar .progress is, in the tone it is 
   assert.equal(style(m, '--_bar-fill').trim(), style(m, '--bg-mix').trim(), 'the meter does not hand its tone to the fill');
   cleanup();
 });
+
+/* ── Rating ──────────────────────────────────────────────────────────*/
+
+var RATING =
+  '<fieldset class="rating" id="rt"><legend class="visually-hidden">Score</legend>' +
+  [1, 2, 3, 4, 5].map(function (n) {
+    return '<input type="radio" name="rt" id="rt' + n + '" value="' + n + '"' + (n === 3 ? ' checked' : '') + '>' +
+      '<label for="rt' + n + '" id="rl' + n + '">' + n + ' stars</label>';
+  }).join('') +
+  '</fieldset>';
+
+/* The star is the label's ::before, so a mask cutting it out does not cut the label's focus ring too. */
+function ratingStar(n) {
+  return getComputedStyle(document.getElementById('rl' + n), '::before').backgroundColor;
+}
+
+test('rating: the checked star and every star before it fill, and nothing after it', function () {
+  /*
+   * FJS-2112, ruled FJS-D1236. Native radios in reading order, so a form
+   * post, arrow keys and a screen reader's "3 stars, 3 of 5" are the
+   * browser's. A row reversed to reach earlier stars with `~` moves the
+   * arrow keys against the picture, which is why the fill reads :has().
+   */
+  el(RATING);
+  var bg = ratingStar;
+  assert.equal(bg(1), bg(3), 'a star before the checked one is not filled');
+  assert.equal(bg(4), bg(5), 'the stars after the checked one differ');
+  assert.differentColor(bg(3), bg(4), 'the checked star is drawn like the empty ones');
+  var input = document.getElementById('rt3');
+  assert.ok(parseFloat(style(input, 'opacity')) === 0, 'the radio is drawn beside its star');
+  var label = document.getElementById('rl3');
+  assert.ok(parseFloat(style(label, 'inline-size')) > 0, 'a star has no box');
+  assert.equal(style(label, 'color'), 'rgba(0, 0, 0, 0)', 'the label text is painted over the star');
+  cleanup();
+});
+
+test('rating: a tone on the group reaches the stars, and the empty group fills nothing', function () {
+  /* A tone does not inherit (tones.css), so the group hands it down as --_rating-fill. */
+  el(RATING);
+  var plain = ratingStar(1);
+  cleanup();
+  el(RATING.replace('class="rating"', 'class="rating danger"'));
+  assert.differentColor(ratingStar(1), plain, 'a danger rating fills in the default tone');
+  cleanup();
+  el(RATING.replace(' checked', ''));
+  var empty = ratingStar(1);
+  assert.equal(empty, ratingStar(5), 'an unanswered rating draws a filled star');
+  assert.differentColor(empty, plain, 'an empty star is the filled color');
+  cleanup();
+});
+
+test('rating: a readonly rating draws --rating of --rating-max as one masked strip', function () {
+  /* The display has no radios to check, and an average is fractional: 3.4 of 5. */
+  var r = el('<span class="rating readonly" role="img" aria-label="3.4 of 5" style="--rating: 3.4"></span>');
+  var w = parseFloat(style(r, 'inline-size'));
+  var h = parseFloat(style(r, 'block-size'));
+  assert.ok(h > 0 && Math.abs(w - 5 * h) < 1, 'five stars are not five star-widths wide: ' + w + ' by ' + h);
+  assert.ok(/68%/.test(style(r, 'background-image')), 'the fill does not stop at 3.4 of 5: ' + style(r, 'background-image'));
+  assert.ok(style(r, 'mask-image') !== 'none', 'the strip is not cut into stars');
+  cleanup();
+  var three = el('<span class="rating readonly" style="--rating: 3; --rating-max: 3"></span>');
+  assert.ok(/100%/.test(style(three, 'background-image')), '--rating-max does not set the whole');
+  cleanup();
+});
