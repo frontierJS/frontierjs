@@ -26,7 +26,7 @@ describe('read', () => {
     const c = captureConfig({ file })
     expect(c).toMatchObject({
       exists: false, invalid: null, saveToFile: true, nameTemplate: 'Screenshot_%Y-%m-%d_%H-%M-%S', delaySecs: 5,
-      uiScale: null, fileFormat: 'webp', captureMode: 'screenshot', videoFps: 30, videoInkSecs: 3,
+      uiScale: null, fileFormat: 'webp', borderWidth: 0, borderColor: '#000000', captureMode: 'screenshot', videoFps: 30, videoInkSecs: 3,
       videoNameTemplate: 'Recording_%Y-%m-%d_%H-%M-%S', videoCursorHighlight: true, recordAudio: false,
       recordSystemAudio: false, webcam: false, webcamSize: 'medium', webUrl: '', webKeySet: false, shareOn: false,
     })
@@ -53,7 +53,7 @@ describe('read', () => {
 describe('write', () => {
   const every = {
     saveToFile: false, saveDir: '/tmp/shots', nameTemplate: '%Y%m%d-%H%M%S', delaySecs: 12, uiScale: 1.5,
-    fileFormat: 'png256', captureMode: 'video', videoFps: 60, videoInkSecs: 4.5, videoNameTemplate: 'Rec_%n',
+    fileFormat: 'png256', borderWidth: 6, borderColor: '#3366ff', captureMode: 'video', videoFps: 60, videoInkSecs: 4.5, videoNameTemplate: 'Rec_%n',
     videoCursorHighlight: false, recordAudio: true, recordSystemAudio: true, webcam: true, webcamSize: 'large',
     webUrl: 'https://share.example.com/', webKey: SECRET,
   }
@@ -155,6 +155,9 @@ describe('refusals', () => {
     refuses({ fileFormat: 'gif' })
     refuses({ captureMode: 'photo' })
     refuses({ webcamSize: 'huge' })
+    refuses({ borderWidth: 2.5 })
+    refuses({ borderWidth: -1 })
+    refuses({ borderColor: 'red' })
     refuses({ uiScale: 'big' })
     refuses({ saveDir: 7 })
     refuses({ webUrl: null })
@@ -168,6 +171,7 @@ describe('refusals', () => {
     refuses({ uiScale: 5 })
     refuses({ videoFps: 45 })
     refuses({ videoInkSecs: 0.2 })
+    refuses({ borderWidth: 65 }, /0 to 64/)
     refuses({ saveDir: '  ' })
   })
 
@@ -218,6 +222,7 @@ describe('reset', () => {
     const fresh = defaultsRead()
     set({
       saveToFile: false, saveDir: '/tmp/shots', nameTemplate: 'x_%n', delaySecs: 12, uiScale: 1.5, fileFormat: 'png',
+      borderWidth: 4, borderColor: '#FF0000',
       captureMode: 'video', videoFps: 60, videoInkSecs: 0, videoNameTemplate: 'r_%n', videoCursorHighlight: false,
       recordAudio: true, recordSystemAudio: true, webcam: true, webcamSize: 'large',
       webUrl: 'https://share.example.com/', webKey: SECRET,

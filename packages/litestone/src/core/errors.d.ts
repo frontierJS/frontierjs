@@ -234,7 +234,7 @@ export class UniqueConflictError extends Error {
     errors: any;
     status: number;
     retryable: boolean;
-    constraintFields: any;
+    constraint: any;
 }
 export class ForeignKeyError extends Error {
     constructor(model?: any, { relation, field, value, target, child, archived }?: {
@@ -268,6 +268,28 @@ export class OverlapConflictError extends Error {
     errors: {
         path: any[];
         message: any;
+    }[];
+    status: number;
+    retryable: boolean;
+}
+export class RateLimitError extends Error {
+    constructor(model?: any, { key, max, per, count, retryAt, now }?: {
+        key?: {};
+        max?: number;
+        per?: any;
+        count?: number;
+        retryAt?: any;
+        now?: number;
+    });
+    model: any;
+    key: {};
+    max: number;
+    per: any;
+    retryAt: any;
+    retryAfter: number;
+    errors: {
+        path: string[];
+        message: string;
     }[];
     status: number;
     retryable: boolean;

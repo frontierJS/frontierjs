@@ -123,6 +123,22 @@ test('parse: rel.some(expr) is its own node, the condition parsed whole', functi
   assert.equal(ast.where.type, 'and')
 })
 
+// `FJS-D2291`: every and none are the some node carrying the word, and some
+// carries none, so a walker that ignores the field still sees one node type.
+test('parse: rel.every and rel.none are the some node with a quantifier', function () {
+  const call = (word) => parseExpression(cursor([
+    tok(T.IDENT, 'checks'), tok(T.DOT, '.'), tok(T.IDENT, word), tok(T.LPAREN, '('),
+    tok(T.IDENT, 'state'), tok(T.EQ, '=='), tok(T.STRING, 'green'), tok(T.RPAREN, ')'),
+  ]))
+  assert.equal(call('every').type, 'some')
+  assert.equal(call('every').quantifier, 'every')
+  assert.equal(call('none').quantifier, 'none')
+  assert.equal('quantifier' in call('some'), false)
+  assert.throws(() => parseExpression(cursor(SOME([
+    tok(T.IDENT, 'checks'), tok(T.DOT, '.'), tok(T.IDENT, 'every'), tok(T.LPAREN, '('), tok(T.BOOL, true), tok(T.RPAREN, ')'),
+  ]))), /'checks\.every\(…\)' inside 'members\.some\(…\)' nests one to-many test/)
+})
+
 test('parse: a field NAMED some is still a path — only a call is the test', function () {
   const ast = parseExpression(cursor([tok(T.IDENT, 'owner'), tok(T.DOT, '.'), tok(T.IDENT, 'some'), tok(T.EQ, '=='), tok(T.NUMBER, 1)]))
   assert.equal(JSON.stringify(ast.left), JSON.stringify({ type: 'path', rel: 'owner', name: 'some' }))

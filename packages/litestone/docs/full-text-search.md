@@ -240,3 +240,46 @@ value the row carries, `null` where the model has none. The index is `trigram`
 whatever the models' own tokenizers, so a word under three characters is a
 scan over title and body, and a query of only such words answers with `_rank`
 null, in index order.
+
+### Keeping a model out — `multisearch: false`
+
+Every word a member writes is stored twice: once in its own index for
+`search()` and once in `_search`. A model searched only through its own
+`search()`, such as a corpus of millions of short rows, pays for the second
+copy on every write and in the file's size. `@@fts([...], multisearch: false)`
+keeps the model out of `_search` (`FJS-D2301`). Its own `search()` and index are
+unchanged, it needs no `@@label`, and `$search` naming it in `models` is a 400
+by name, since its rows were never copied and an empty answer would read as
+"nothing matched". Plain `@@fts` stays a member.
+
+A migration that adds the argument to an existing model drops the model's
+`_search` triggers and deletes its rows from `_search`. Without the delete, the
+old copy would stay in the file.
+
+```lite
+model Article {
+  id    Int    @id
+  title String
+  @@fts([title])
+  @@label(title)
+}
+
+model Verse {
+  id   Int    @id
+  text String
+  @@fts([text], multisearch: false)
+}
+```
+
+```js
+await db.article.create({ data: { id: 1, title: 'in the beginning' } })
+await db.verse.create({ data: { id: 1, text: 'in the beginning was the word' } })
+
+const own = await db.verse.search('beginning')
+const all = await db.$search('beginning')
+let refused = null
+try { await db.$search('beginning', { models: ['verse'] }) } catch (e) { refused = e }
+
+if (own.length !== 1 || all.map(h => h.model).join() !== 'article' || refused?.status !== 400)
+  throw new Error('multisearch: false changed')
+```

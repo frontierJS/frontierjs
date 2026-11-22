@@ -1121,7 +1121,8 @@ re-runnable; the default is `insert`, and a second run then refuses every row th
 first one stored. Rows go through the ORM, so defaults, validators, `@encrypted`
 and hooks all apply — a fixture is an ordinary write; `asSystem: true` takes it
 past gates and policies. CSV is RFC-4180 (quoted fields, embedded commas, `""`
-escapes). A cell is text and the column decides what it means — `20` lands in an
+escapes), or tab-separated when the header line holds a tab, as cells copied out
+of a spreadsheet are. A cell is text and the column decides what it means — `20` lands in an
 `Int` column as a number — and an empty unquoted cell is `null`.
 
 ### Seeder.once — idempotent blocks

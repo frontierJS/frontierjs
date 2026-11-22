@@ -27,6 +27,9 @@
 //   POST /laptop         probeService    { id } run that CLI service's login check -> { ok, who, ms }; the one verb that shells out, and only on a press
 //   GET  /laptop         setup       what this laptop can and cannot do, by goal: { goals: [{ id, label, why, required, state, rows }] }; each failing row's fix is a copy, a url or a go, never a verb that shells
 //   GET  /laptop         running     fli dev sessions with their ports and which answer, and the tree holds -> { sessions, holds }
+//   GET  /laptop         builds      the Rust build folders (target/ beside a Cargo.toml) under the code root, each with size, last built and the cargo pid holding it -> { root, exists, builds, bytes, walkMs }; a walk, so the page asks on a press
+//   POST /laptop         clearBuild  { id } remove one of those folders unless cargo or rustc is working in it -> { freed }
+//   GET  /laptop         vitals      the machine itself: free disk per drive, memory and swap, load, heat, battery, uptime, a pending reboot and queued updates
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
 import { LEVELS }                       from '@frontierjs/litestone'
@@ -37,10 +40,12 @@ import { ping, setPing }                from '../../domain/laptop/ping.ts'
 import { running }                      from '../../domain/laptop/running.ts'
 import { servicesList, probeService }  from '../../domain/laptop/services.ts'
 import { setup }                      from '../../domain/laptop/setup.ts'
+import { vitals }                     from '../../domain/laptop/vitals.ts'
+import { builds, clearBuild }         from '../../domain/laptop/builds.ts'
 
-const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services', 'setup']
+const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services', 'setup', 'vitals', 'builds']
 // probeService shells out to a CLI, so it is a write: a keyed retry must run it again.
-const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService']
+const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService', 'clearBuild']
 
 export default createService({
   name: 'laptop',
@@ -152,6 +157,22 @@ export default createService({
 
   async setup() {
     return setup()
+  },
+
+  async vitals() {
+    return vitals()
+  },
+
+  async builds() {
+    return builds()
+  },
+
+  async clearBuild() {
+    const { id } = ($.data ?? {}) as { id?: unknown }
+    if (typeof id !== 'string') throw new BadRequest('clearBuild takes { id } as a string')
+    const out = clearBuild(id)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
   },
 
   async probeService() {

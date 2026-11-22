@@ -20,7 +20,6 @@ import { compileDerived, compileFromWhere, checkDerivedType, dependsOnClock, eva
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
 import { tenantAdmission }                                         from './tenancy.js'
 
-
 // ─── Relation keys ────────────────────────────────────────────────────────────
 
 /**
@@ -1108,8 +1107,59 @@ export function buildCardinalityMap(schema, pluralize = false) {
   for (const [name, rules] of Object.entries(byChild))
     fkColumns[name] = new Set(rules.flatMap(r => r.fkFields))
 
-  return { byParent, byChild, requiresChildren, fkColumns,
-           any: Object.keys(byParent).length > 0 }
+  // `@@rate` is the same count with the key on the row itself rather than on
+  // a parent, and a window (`FJS-D2295`), so it is graded by the same ledger.
+  // A soft-deleted comment still counts toward its author's quota: deleting
+  // the flood must not reopen the window it filled.
+  const byRate = {}
+  for (const model of schema.models) {
+    const cols = columnMapFor(model)
+    const col  = f => cols[f] ?? f
+    const htField = model.attributes.find(a => a.kind === 'hasTemplates')?.field ?? null
+    for (const attr of model.attributes) {
+      if (attr.kind !== 'rate') continue
+      // `per: days(account.gap)` and `max: slot.cap` — the parent the written
+      // row names holds the number, read at the grade (`FJS-D1119`, `FJS-D2295`).
+      const readFrom = path => {
+        const hop = inferToOneFrom(model, schema, { rel: path[0] })
+        if (hop.error) return undefined                           // validate() already named it
+        const pcols = columnMapFor(hop.targetModel)
+        const pcol  = f => pcols[f] ?? f
+        return {
+          fkFields:   hop.fkFields,
+          table:      modelToTableName(hop.targetModel, pluralize),
+          refColumns: hop.refFields.map(pcol),
+          column:     pcol(path[1]),
+        }
+      }
+      const perFrom = attr.perPath ? readFrom(attr.perPath) : null
+      const maxFrom = attr.maxPath ? readFrom(attr.maxPath) : null
+      if (perFrom === undefined || maxFrom === undefined) continue
+      const filters = htField ? [`${quoteIdent(col(htField))} = 0`] : []
+      // `where:` — a row outside it is not one the limit counts: a waitlisted
+      // Signup does not take a confirmed place.
+      if (attr.whereSql) filters.push(`(${mapExprCols(attr.whereSql, cols)})`)
+      ;(byRate[model.name] ??= []).push({
+        model:      model.name,
+        table:      modelToTableName(model, pluralize),
+        keyFields:  attr.key,
+        keyColumns: attr.key.map(col),
+        max:        attr.maxPath ? null : attr.max,
+        per:        attr.per,
+        perFrom,
+        maxFrom,
+        // The parents a note carries, in this order: the window's, then the limit's.
+        viaFields:  [...(perFrom?.fkFields ?? []), ...(maxFrom?.fkFields ?? [])],
+        viaColumns: [...(perFrom?.fkFields ?? []), ...(maxFrom?.fkFields ?? [])].map(col),
+        whereFields: attr.whereFields ?? [],
+        atColumn:   attr.at ? col(attr.at) : null,
+        filters,
+      })
+    }
+  }
+
+  return { byParent, byChild, requiresChildren, fkColumns, byRate,
+           any: Object.keys(byParent).length > 0 || Object.keys(byRate).length > 0 }
 }
 
 // ─── Exclusion scopes ─────────────────────────────────────────────────────────

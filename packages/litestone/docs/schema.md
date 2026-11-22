@@ -349,8 +349,18 @@ does not make a finer value mandatory.
 column at the path must be `@zone`, so a value no zone resolves is refused at
 its own write rather than inside every read that resolves it. Litestone
 describes the pairing (`x-zoned`, the path as written) and reads it in one place,
-a `@@commitment` on a zoned day; the instant a wall clock resolves to stays a
-column the application writes.
+a `@@commitment` on a zoned day.
+
+On a `DateTime` the same word takes a day and a time first, and the column is
+the instant they resolve to, which litestone alone writes (`FJS-D963`,
+`FJS-D1434`): `startsAt DateTime @zoned(onDate, startLocal, site.timeZone)`.
+An end that may fall on the next day names its start, and is read on the day
+after when it resolves at or before it (`FJS-D2294`) — `22:00`–`06:00` ends
+the next morning, and an end equal to its start is 24 hours:
+
+```
+endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt)
+```
 
 An array column also carries two rules that come from its TYPE rather than an
 attribute: the value must be an array, and on `Int[]` / `String[]` the elements
@@ -784,6 +794,8 @@ model Person {
                                  OUT of the tuple to get there. Not combinable with
                                  nullsDistinct — a predicate already says which rows are
                                  constrained. See § Conditional uniqueness below
+@@unique([a], "sentence")        any form takes a trailing message: the 409's sentence
+                                 in place of "a is already taken"
 @@map("table_name")              custom DB table name
 @@label(fullName)                which column identifies a row to a person — what a
                                  (a list, `@@label([group.name, label])`, is joined with " · "
@@ -846,6 +858,26 @@ clause is what makes the index reachable on such a model. Here the predicate IS
 the constraint, and ANDing it would free the `@unique` slot a soft-deleted row
 holds — which is the derivation `FJS-204` refused. Uniqueness among live rows is
 `where: deletedAt == null`, written by you.
+
+**A trailing string is the refusal's sentence.** A second active bet otherwise
+answers `Bet: productId is already taken` — true of the column and silent about
+the slot, which is the whole meaning of the predicate:
+
+```lite
+model Bet {
+  id        Int    @id
+  productId Int
+  status    String
+
+  @@unique([productId], where: status == "active", "this product already has an active bet")
+}
+```
+
+The message replaces the per-field sentence in `errors[]` and the summary's
+tail; the predicate goes on `err.constraint`, for the developer, as a CHECK's
+expression does. Every `@@unique` takes one, plain or partial. Two declarations
+over one column set carrying different messages are refused at parse: SQLite's
+refusal names the columns and not the index, so it could not say which fired.
 
 **Adding one is a contract for `release:check`**, like any row invariant: the
 release still serving knows nothing about it and writes rows the new one forbids.

@@ -424,8 +424,9 @@ export class UniqueConflictError extends Error {
     const pairs = fields.map((f, i) => (
       values[i] === undefined || isKey(f) ? f : `${f} ${JSON.stringify(values[i])}`
     ))
-    const taken = pairs.length === 0 ? 'a @unique value is already taken'
-      : pairs.length === 1           ? `${pairs[0]} is already taken`
+    const taken = opts.message ? opts.message.replace(/[.!?]$/, '')
+      : pairs.length === 0 ? 'a @unique value is already taken'
+      : pairs.length === 1 ? `${pairs[0]} is already taken`
       : `${pairs.join(' + ')} is already taken — those values must be unique together`
     super(`${model}: ${taken}.`)
     this.name      = 'UniqueConflictError'
@@ -437,7 +438,10 @@ export class UniqueConflictError extends Error {
     // column, which the label beside it already says — EXCEPT on a composite,
     // where naming the value would be false: `"red" is already taken` under
     // `team` is untrue on its own, and the constraint is about the tuple.
-    const each = fields.length > 1
+    // An author's @@unique message (FJS-D2302) replaces both sentences; the
+    // predicate stays on `constraint`, as a CHECK's expression does.
+    const each = opts.message ? () => opts.message
+      : fields.length > 1
       ? () => `this combination is already taken (${fields.join(' + ')})`
       : (i) => (values[i] === undefined || isKey(fields[i]) ? 'is already taken'
                                         : `${JSON.stringify(values[i])} is already taken`)
@@ -446,7 +450,7 @@ export class UniqueConflictError extends Error {
     // the same value at the same row and fails the same way.
     this.status    = 409
     this.retryable = false
-    if (opts.constraint) this.constraintFields = opts.constraint
+    if (opts.constraint) this.constraint = opts.constraint
   }
 }
 
@@ -517,6 +521,30 @@ export class OverlapConflictError extends Error {
     this.errors    = [{ path: field ? [field] : [], message }]
     this.status    = 409
     this.retryable = false
+  }
+}
+
+// A key that already holds the rows `@@rate` allows it (`FJS-D1119`). A 409
+// as a unique is: the rows are there and the same write fails the same way
+// until enough of them age out of the window, so `retryAt` and `retryAfter`
+// (seconds) say when that is, and are null for a cap with no window.
+export class RateLimitError extends Error {
+  constructor(model, { key = {}, max = 0, per = null, count = 0, retryAt = null, now = Date.now() } = {}) {
+    const named  = Object.entries(key).map(([f, v]) => `${f} ${JSON.stringify(v)}`).join(', ')
+    const window = per ? ` within ${per}` : ''
+    const when   = retryAt ? `; the window reopens at ${retryAt}` : ''
+    const message = `${named} may write at most ${max} row(s)${window} and this write makes ${count}${when}`
+    super(`${model}: ${message}.`)
+    this.name       = 'RateLimitError'
+    this.model      = model
+    this.key        = key
+    this.max        = max
+    this.per        = per
+    this.retryAt    = retryAt
+    this.retryAfter = retryAt ? Math.max(0, Math.ceil((Date.parse(retryAt) - now) / 1000)) : null
+    this.errors     = [{ path: Object.keys(key), message }]
+    this.status     = 409
+    this.retryable  = false
   }
 }
 

@@ -453,6 +453,86 @@ model Access {
     }
   }, 30000)
 
+  // `FJS-D2291` — `every` and `none` beside `some`. The empty set is vacuously
+  // true for both; a child whose condition is NULL fails `every` (the test is
+  // `IS NOT TRUE`) and is not a hit for `none`. A soft-deleted child is not one
+  // of the relation's rows, so the red check on P5 does not count. The chained
+  // form runs a different compiler (`chainedSomeSql`), so Merge asks it too.
+  it('agrees across every(…) and none(…), and pins the empty set and NULL', async () => {
+    const schema = `
+model PullRequest {
+  id      String  @id
+  headSha String
+  checks  Check[]
+  merges  Merge[]
+  @@allow(read, EXPR)
+}
+model Check {
+  id            String      @id
+  pullRequestId String
+  pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id])
+  sha           String
+  state         String?
+  deletedAt     DateTime?
+  @@softDelete
+}
+model Merge {
+  id            String      @id
+  pullRequestId String
+  pullRequest   PullRequest @relation(fields: [pullRequestId], references: [id])
+  @@allow(read, CHAINED)
+}
+`
+    const cases: [string, string[]][] = [
+      [`checks.every(state == 'green')`,                         ['P1', 'P3', 'P5', 'P6']],
+      [`checks.every(state == 'green' && sha == this.headSha)`,  ['P1', 'P3', 'P5']],
+      [`!checks.every(state == 'green')`,                        ['P2', 'P4']],
+      [`checks.none(state == 'red')`,                            ['P1', 'P3', 'P4', 'P5', 'P6']],
+      [`!checks.none(state == 'red')`,                           ['P2']],
+      [`checks.none(sha != this.headSha)`,                       ['P1', 'P2', 'P3', 'P4', 'P5']],
+    ]
+    for (const [expr, want] of cases) {
+      const chained = expr.replace('checks.', 'pullRequest.checks.').replaceAll('this.headSha', 'this.pullRequest.headSha')
+      const usable  = !chained.includes('this.pullRequest')
+      const db: any = await createClient({ db: ':memory:', schema: schema
+        .replaceAll('EXPR', expr).replaceAll('CHAINED', usable ? chained : 'true') })
+      const sys = db.asSystem()
+      for (const id of ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'])
+        await sys.pullRequest.create({ data: { id, headSha: id === 'P6' ? 'h2' : 'h1' } })
+      for (const [id, pullRequestId, state] of [
+        ['c1', 'P1', 'green'], ['c2', 'P1', 'green'], ['c3', 'P2', 'green'], ['c4', 'P2', 'red'],
+        ['c5', 'P4', 'green'], ['c6', 'P4', null],    ['c7', 'P5', 'green'], ['c8', 'P5', 'red'],
+        ['c9', 'P6', 'green'],
+      ]) await sys.check.create({ data: { id, pullRequestId, state, sha: 'h1' } })
+      await sys.check.remove({ where: { id: 'c8' } })
+      for (const id of ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'])
+        await sys.merge.create({ data: { id: `m${id}`, pullRequestId: id } })
+
+      const sql = (await db.pullRequest.findMany()).map((x: any) => x.id).sort()
+      const js  = []
+      for (const row of await sys.pullRequest.findMany()) if ((await db.$readAs('pullRequest', row, null)) != null) js.push(row.id)
+      expect({ expr, sql, js: js.sort() }).toEqual({ expr, sql: want, js: want })
+
+      if (usable) {
+        const msql = (await db.merge.findMany()).map((x: any) => x.pullRequestId).sort()
+        const mjs  = []
+        for (const row of await sys.merge.findMany()) if ((await db.$readAs('merge', row, null)) != null) mjs.push(row.pullRequestId)
+        expect({ chained, msql, mjs: mjs.sort() }).toEqual({ chained, msql: want, mjs: want })
+      }
+      db.$close()
+    }
+  }, 30000)
+
+  it('prints every(…) and none(…) back as written', async () => {
+    const { policyExprToString } = await import('../src/core/policy.js') as any
+    const { parse } = await import('../src/core/parser.js') as any
+    for (const src of [`checks.every(state == 'green')`, `checks.none(state == 'red')`, `p.checks.every(state == 'green')`]) {
+      const { schema } = parse(`model P { id Int @id; p P? @relation(fields: [pId], references: [id]); pId Int?; checks C[]; ` +
+        `@@allow(read, ${src}) } model C { id Int @id; pId Int; p P @relation(fields: [pId], references: [id]); state String? }`)
+      expect(policyExprToString(schema.models[0].attributes.find((x: any) => x.kind === 'allow').expr)).toBe(src)
+    }
+  })
+
   it('refuses this.col where it cannot mean the declaring row', async () => {
     const at = (expr: string, cols = '') => createClient({ db: ':memory:', schema: `
 model Repository {

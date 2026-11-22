@@ -11,7 +11,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | Subpath | Kit | State |
 | --- | --- | --- |
 | `/glow` | source code → highlighted HTML | shipping |
-| `/grammars` | a line-at-a-time tokenizer whose state carries across lines, and eight grammars, for an editor or viewer (glow highlights a whole block) | shipping |
+| `/grammars` | a line-at-a-time tokenizer whose state carries across lines, and eight grammars, for an editor or viewer; glow paints through it wherever a grammar exists | shipping |
 | `/cron` | what a five-field cron expression admits | shipping |
 | `/datetime` | an instant read as a place's wall clock, formatted, and written back | shipping |
 | `/inflect` | how a name is spelled — number and shape | shipping |
@@ -381,7 +381,7 @@ With `prefix` on, a line beginning `+`, `-` or `>` is a marker and **the charact
 
 ### A viewer that paints one line at a time
 
-A file viewer that renders a window of lines — a virtual list, an editor gutter — calls `glowLine(line, opts, open)` per line and carries `open`, the answer to *is a block comment still open after this line*, into the next call. `glowLanguage(source)` makes the document-level guess once. **A viewer passes `prefix: false, mark: false`**: with either on, a line's leading `+`, `-`, `>` or `\` or a pair of bullets is read as markup and removed, so the painted text is no longer the file's bytes.
+A file viewer that renders a window of lines — a virtual list, an editor gutter — calls `glowLine(line, opts, state)` per line and carries the `state` it answers into the next call, nothing for the first line. The state is opaque, compared with `===`: the `/grammars` tokenizer's for a language with a grammar, so a comment, string or template literal that spans lines is known, and *is a block comment open* for the rest. `glowLanguage(source)` makes the document-level guess once. **A viewer passes `prefix: false, mark: false`**: with either on, a line's leading `+`, `-`, `>` or `\` or a pair of bullets is read as markup and removed, so the painted text is no longer the file's bytes.
 
 ---
 

@@ -1,0 +1,88 @@
+---
+title: Captures
+---
+<script>
+  // The files the Capture tool has saved: the folder `save_dir` names in its config, read
+  // through api services/capture `files`, newest first. A screenshot is an image, a recording
+  // a video, a call audio with its transcript beside it; the kind is the file's extension, so
+  // what you dropped in the folder shows too. Each card's actions are in CaptureCard; the
+  // bytes come through the member's credentials (lib/capture-files.js).
+  import { capture } from '../../resources/Capture.mesa'
+  import CaptureCard from '../../components/capture/CaptureCard.mesa'
+
+  const FILTERS = [
+    { id: 'all',   label: 'All',         kinds: null },
+    { id: 'image', label: 'Screenshots', kinds: ['image'] },
+    { id: 'video', label: 'Recordings',  kinds: ['video'] },
+    { id: 'audio', label: 'Calls',       kinds: ['audio'] },
+  ]
+
+  let view = null
+  let loadErr = null
+  let filter = 'all'
+
+  async function load() {
+    try {
+      view = await capture.service.invoke('files')
+      loadErr = null
+    } catch (err) {
+      loadErr = err.message
+    }
+  }
+
+  const gone = (name) => { view = { ...view, files: view.files.filter(f => f.name !== name) } }
+
+  const countOf = (files, f) => f.kinds ? files.filter(x => f.kinds.includes(x.kind)).length : files.length
+  $: shown = view ? view.files.filter(f => filter === 'all' || f.kind === filter) : []
+
+  load()
+</script>
+
+<header class="stack gap-sm">
+  <h1 class="h3">Captures</h1>
+  <p class="text-sm text-muted">
+    What the Capture tool has saved{#if view}, in <code>{view.dir}</code>{/if}. Newest first.
+    <button type="button" class="btn ghost sm" onclick={load} data-testid="refresh">Refresh</button>
+  </p>
+</header>
+
+{#if loadErr}
+  <div class="alert danger" role="alert"><div class="alert-content">{loadErr}</div></div>
+{:else if !view}
+  <p class="text-muted">…</p>
+{:else}
+  <div class="cluster" role="group" aria-label="Kind of capture">
+    {#each FILTERS as f (f.id)}
+      <button type="button" class="btn sm outlined" aria-pressed={filter === f.id} onclick={() => (filter = f.id)} data-testid={`filter-${f.id}`}>
+        {f.label} ({countOf(view.files, f)})
+      </button>
+    {/each}
+  </div>
+
+  {#if shown.length === 0}
+    <div class="empty" data-testid="empty">
+      <div class="empty-title">{view.files.length ? 'Nothing of this kind' : 'No captures yet'}</div>
+      <div class="empty-text">
+        {#if !view.exists}
+          The save folder <code>{view.dir}</code> does not exist yet.
+        {:else if !view.files.length}
+          Nothing is saved in <code>{view.dir}</code>.
+        {:else}
+          Try another filter.
+        {/if}
+        The folder is set in <a class="link" href="/capture/">Capture settings</a>.
+      </div>
+    </div>
+  {:else}
+    <div class="grid shots" data-testid="captures">
+      {#each shown as file (file.name)}
+        <CaptureCard {file} onremoved={gone} />
+      {/each}
+    </div>
+  {/if}
+{/if}
+
+<style>
+  .shots { --grid-min: 18rem; margin-top: var(--space-lg); align-items: start }
+  h1, p { margin: 0 }
+</style>

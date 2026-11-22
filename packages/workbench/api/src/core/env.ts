@@ -57,6 +57,10 @@ export const spec = {
   // `prototypesDir()` takes fjs-prototypes beside this repo.
   PROTOTYPES_DIR: {},
 
+  // The folder Disk's Build output scans for Rust build folders (`target/`
+  // beside a Cargo.toml). Absent, `~/code`.
+  CODE_DIR: {},
+
   // The team chat server (`IDEAS/workbench-messages.md`). Unset, chat is off:
   // no socket is dialed and the mirrored models answer only what they hold.
   // No default, on purpose -- a dev value that named a real server would post
@@ -89,3 +93,10 @@ export const env = defineEnv(spec)
  */
 export const workbenchDir = () =>
   process.env.WORKBENCH_DIR || join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'workbench')
+
+/**
+ * The folder Disk's Build output scans. `CODE_DIR`, else `~/code`. Read per
+ * call, like `workbenchDir()`, so a test that sets the variable after this
+ * module loaded is heard.
+ */
+export const codeDir = () => process.env.CODE_DIR || join(homedir(), 'code')

@@ -129,4 +129,26 @@ describe('a real shell', () => {
     })
     expect(refused.status).toBe(403)
   }, 15000)
+
+  // The untrim hooks run `resize-pane -T` from a shell, and a CLI client's resize fires
+  // after-resize-pane again. Unguarded that doubles every round, hundreds of tmux
+  // processes within a second, until the server dies under the panes (lathe's pane
+  // chords found it). A split and a resize from outside, as an app's pane ops arrive.
+  test.skipIf(!Bun.which('tmux'))('a split and a pane resize untrim once, and the server lives', async () => {
+    const tmux = Bun.which('tmux')!
+    const ws = new WebSocket(`ws://localhost:${app.http.port}/terminal?cols=120&rows=30`)
+    await new Promise<void>((res, rej) => { ws.onopen = () => res(); ws.onerror = () => rej(new Error('refused')) })
+    const q = (...a: string[]) => Bun.spawnSync([tmux, '-L', SOCKET, ...a]).stdout.toString().trim()
+    for (let i = 0; i < 50 && !q('list-panes', '-t', 'round-trip:', '-F', '#{pane_id}'); i++) await Bun.sleep(100)
+    q('split-window', '-h', '-t', 'round-trip:')
+    q('resize-pane', '-L', '-t', 'round-trip:', '2')
+    await Bun.sleep(1000)
+    const procs = Bun.spawnSync(['pgrep', '-fc', SOCKET]).stdout.toString().trim()
+    const panes = q('list-panes', '-t', 'round-trip:', '-F', '#{pane_id}').split('\n').filter(Boolean)
+    const lock = q('show-options', '-gqv', '@fjs_untrim')
+    ws.close()
+    expect(panes.length).toBe(2)
+    expect(Number(procs)).toBeLessThan(10)
+    expect(lock).toBe('')
+  }, 15000)
 })

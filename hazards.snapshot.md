@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 202**.
+Graded: **13 of 210**.
 
-## data — 3 of 69
+## data — 3 of 76
 
 ### Schema and parse
 
@@ -44,6 +44,7 @@ Graded: **13 of 202**.
 | `auth().x` is graded against a DECLARED set, and only where there is one | **none** |
 | A `@@gate` refuses, a `@@allow` filters — so a wrong policy is an empty screen, not an error. | **none** |
 | A freeze that depends on STATE is not expressible, and `@@gate` is where you notice. | **none** |
+| A write that must cover a COMPLETE set is not expressible, and `$transaction` plus a count is THE spelling | **none** |
 | `asSystem()` grades at 8, and `9` is LOCKED — not reachable through the ORM by any client. | **none** |
 | A cache keyed on the ctx OBJECT is shared across principals | **none** |
 | You cannot run without gates. | **none** |
@@ -59,6 +60,8 @@ Graded: **13 of 202**.
 | A foreign key is a read: a parent the caller cannot read once the row exists answers as missing | **none** |
 | A `9`-gated table cannot be tidied up, by anything | **none** |
 | A policy reading a `@from` aggregate counts every child row that exists, and the read shows the caller's count | **none** |
+| A `@@rate` key that is NULL is nobody's count, so a quota over `@createdBy` admits every visitor | **none** |
+| `rel.every(…)` is TRUE over no children, on `create` included, and a child whose condition is NULL fails it | **none** |
 
 ### `@@transitions`
 
@@ -90,6 +93,7 @@ Graded: **13 of 202**.
 | A row scoped through a parent that names NO parent is `asSystem()`'s alone | **none** |
 | A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only | **none** |
 | A default `backup` or `replicate` leaves out every place that declares no destination | **none** |
+| Under `strategy row` every copy of the database carries every tenant | **none** |
 
 ### Migrations and release
 
@@ -100,6 +104,7 @@ Graded: **13 of 202**.
 | A rename is a statement, never an inference | **none** |
 | A table in the database and not in the schema is a loss, not a leftover | **none** |
 | A new column with an EXPRESSION default costs a table rebuild, and one with no default at all is refused. | **none** |
+| A record kept as a directory of files lives under `db/`, and the same directory beside `db/` is in neither the backup nor the release volume, without a word | **none** |
 
 ### Columns and clocks
 
@@ -108,6 +113,7 @@ Graded: **13 of 202**.
 | Litestone emits columns verbatim camelCase and `DateTime` as ISO-8601 TEXT. | **none** |
 | Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing. | **none** |
 | A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes | **none** |
+| A `File` column's stored object is its row's own, so the same bytes on two rows are two objects | **none** |
 
 ### The audit trail and the log
 
@@ -120,6 +126,7 @@ Graded: **13 of 202**.
 | `@@trail(audit)` records a WRITE; `db.$audit()` records an EVENT — and the second one throws. | **none** |
 | "Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`. | **none** |
 | An entry names ONE row, so a read of a page files an entry per row | **none** |
+| The trail records reads only at the READER's grain; a count of use is an `@@anonymous` model the app writes | **none** |
 
 ### Reads and windows
 
@@ -133,7 +140,7 @@ Graded: **13 of 202**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 75
+## api — 6 of 76
 
 ### `ctx` and the call
 
@@ -171,6 +178,7 @@ Graded: **13 of 202**.
 | `ctx.enqueue(job, payload)` is the durable half, and it is a second VERB because a closure cannot be persisted | **none** |
 | ↳ A row that keeps failing is given up on, and `dead` is the only thing that says so | **none** |
 | ↳ The relay's walk is COLD, and a tick is ONE walk. | **none** |
+| `ctx.hold({ name, commit, rollback })` settles an outside write with the transaction, and a side that fails is LOGGED, never thrown | **none** |
 
 ### Routes, query and headers
 

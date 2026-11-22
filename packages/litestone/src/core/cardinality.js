@@ -33,18 +33,21 @@
 // the rows already there.
 
 import { ValidationError } from './validate.js'
+import { RateLimitError }  from './errors.js'
+import { quoteIdent }      from './query.js'
+import { parseDuration }   from './retention.js'
 
 // The ledger is an ARRAY rather than a Set because a SAVEPOINT rollback
 // truncates it to a mark, exactly as the announcement queue beside it does —
 // a rolled-back savepoint that left its parent in the ledger would grade a row
 // the transaction no longer holds.
-export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} */ readRow) {
+export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} */ readRow, /** @type {() => number} */ nowMs = Date.now) {
   /** @type {any[]} */
   const dirty = []
 
-  const push = (/** @type {any} */ rule, /** @type {any} */ key) => {
+  const push = (/** @type {any} */ rule, /** @type {any} */ key, /** @type {any} */ via = null) => {
     if (key.some((/** @type {any} */ v) => v == null)) return        // an unparented child is nobody's count
-    dirty.push({ rule, key })
+    dirty.push({ rule, key, via })
   }
 
   return {
@@ -67,6 +70,18 @@ export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} 
       }
     },
 
+    // A row of a `@@rate` model was written; its own key is the count that moved.
+    // Only a row LANDING is noted, never a delete: removing a row cannot take a
+    // key over its limit, and grading it would refuse a delete for a flood it
+    // did not cause.
+    // A window or a limit read through a relation is the parent's that THIS
+    // row names, so the parent's key rides with the note.
+    noteRate(/** @type {any} */ model, /** @type {any} */ row) {
+      for (const rule of map.byRate?.[model] ?? [])
+        push(rule, rule.keyFields.map((/** @type {any} */ f) => row?.[f]),
+          rule.viaFields.length ? rule.viaFields.map((/** @type {any} */ f) => row?.[f]) : null)
+    },
+
     // A bulk write matched rows by a WHERE, so the parents are whatever those
     // rows name — which only the database knows, and only before the write.
     noteChildRows(/** @type {any} */ model, /** @type {any} */ rows) {
@@ -78,10 +93,11 @@ export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} 
       // One COUNT per distinct (rule, parent), not per row: a createMany of 500
       // lines on one order is one query.
       const seen = new Set()
-      for (const { rule, key } of dirty) {
-        const sig = `${rule.parent}.${rule.field}\u0000${key.join('\u0000')}`
+      for (const { rule, key, via } of dirty) {
+        const sig = `${rule.parent ?? rule.model}.${rule.field ?? rule.keyFields}\u0000${rule.per ?? ''}\u0000${key.join('\u0000')}\u0000${via?.join('\u0000') ?? ''}`
         if (seen.has(sig)) continue
         seen.add(sig)
+        if (rule.keyFields) { gradeRate(db, rule, key, via, nowMs); continue }
 
         // A cascade took the parent with the children, so there is no row to
         // hold to a minimum. Asked of the parent table rather than assumed
@@ -99,6 +115,73 @@ export function createCardinalityLedger(/** @type {any} */ map, /** @type {any} 
       }
     },
   }
+}
+
+// ─── @@rate ─────────────────────────────────────────────────────────────────
+//
+// Graded inside the write unit, so SQLite's single writer makes the count and
+// the INSERT one step: two callers cannot each see max - 1 and both land.
+// `asSystem()` is held to it for `@@check`'s reason — the limit is about the
+// data. The window is read off the client's clock, the one `@default(now())`
+// stamps `at` with, so an injected clock moves both together.
+//
+// A window or a limit read through a relation is read here, inside the same
+// unit, so a change to the parent's number holds from the next write. A null
+// number, or a row naming no parent, has no window or no limit and so no cap
+// (`FJS-D1119`, `FJS-D2295`).
+function gradeRate(/** @type {any} */ db, /** @type {any} */ rule, /** @type {any[]} */ key, /** @type {any[]|null} */ via, /** @type {() => number} */ nowMs) {
+  let per = rule.per, max = rule.max
+  const perVia = via?.slice(0, rule.perFrom?.fkFields.length ?? 0) ?? null
+  const maxVia = via?.slice(rule.perFrom?.fkFields.length ?? 0) ?? null
+  if (rule.perFrom) {
+    const days = readParentInt(db, rule.perFrom, perVia)
+    if (days == null || days <= 0) return
+    per = `${days}d`
+  }
+  if (rule.maxFrom) {
+    max = readParentInt(db, rule.maxFrom, maxVia)
+    if (max == null) return
+  }
+  const where  = [...rule.keyColumns.map((/** @type {string} */ c) => `${quoteIdent(c)} = ?`), ...rule.filters]
+  const params = [...key]
+  const now    = nowMs()
+  const perMs  = per ? parseDuration(per, '@@rate') : null
+  const at     = rule.atColumn ? quoteIdent(rule.atColumn) : null
+  if (perMs != null) {
+    where.push(`${at} > ?`)
+    params.push(new Date(now - perMs).toISOString())
+  }
+  const from = `FROM ${quoteIdent(rule.table)} WHERE ${where.join(' AND ')}`
+  const n = db.query(`SELECT COUNT(*) AS n ${from}`).get(...params)?.n ?? 0
+  if (n <= max) return
+
+  // The window reopens when enough of the rows in it have aged out for one
+  // more to fit: the (n - max)th oldest leaves at its own `at` plus the window.
+  let retryAt = null
+  if (perMs != null) {
+    const oldest = db.query(`SELECT ${at} AS at ${from} ORDER BY ${at} LIMIT 1 OFFSET ?`)
+      .get(...params, n - max - 1)?.at
+    const t = oldest != null ? Date.parse(oldest) : NaN
+    if (!Number.isNaN(t)) retryAt = new Date(t + perMs).toISOString()
+  }
+  throw new RateLimitError(rule.model, {
+    key:      Object.fromEntries(rule.keyFields.map((/** @type {string} */ f, /** @type {number} */ i) => [f, key[i]])),
+    max,
+    per,
+    count:    n,
+    retryAt,
+    now,
+  })
+}
+
+// The number a parent row holds for a window or a limit; a row naming no
+// parent, or a parent holding no number, is null. A window of no more than
+// zero days counts nothing, so the caller reads that as no window.
+function readParentInt(/** @type {any} */ db, /** @type {any} */ from, /** @type {any[]|null} */ via) {
+  if (!via || via.some(v => v == null)) return null
+  const where = from.refColumns.map((/** @type {string} */ c) => `${quoteIdent(c)} = ?`).join(' AND ')
+  const v     = db.query(`SELECT ${quoteIdent(from.column)} AS v FROM ${quoteIdent(from.table)} WHERE ${where}`).get(...via)?.v
+  return typeof v === 'number' ? Math.floor(v) : null
 }
 
 function refusal(/** @type {any} */ rule, /** @type {any} */ key, /** @type {any} */ n, /** @type {any} */ which) {

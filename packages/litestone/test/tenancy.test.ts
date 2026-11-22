@@ -453,7 +453,10 @@ describe('createTenantRegistry reads the block', () => {
   })
 
   it('refuses a place outside strategy database, twice, or named default', () => {
-    expect(parse(`tenancy { strategy row  column w  place eu "x" }`).errors[0]).toContain(`'place' is not a property of strategy row`)
+    const row = parse(`tenancy { strategy row  column w  place eu "x" }`).errors[0]
+    expect(row).toContain(`'place' is not a property of strategy row`)
+    // FJS-D2293: residency is a property of a file, so the refusal names the strategy that has one.
+    expect(row).toContain('strategy database')
     expect(parse(`tenancy { strategy database  place eu "a"  place eu "b" }`).errors[0]).toContain('declared twice')
     expect(parse(`tenancy { strategy database  place default "a" }`).errors[0]).toContain(`'default' names the tenancy dir`)
   })

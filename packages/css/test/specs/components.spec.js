@@ -1209,7 +1209,9 @@ test('tabs: .divided rules the tabs off from each other and from the title befor
 test('meter: a <meter> is drawn as the fill bar .progress is, in the tone it is given', function () {
   /*
    * FJS-1930. The UA paints a <meter> in its own green/yellow/red bands, so
-   * the tone has to reach the fill through the meter pseudos.
+   * the tone has to reach the fill through the meter pseudos. A pseudo is a
+   * child and a tone does not inherit (tones.css), so a fill reading --bg-mix
+   * itself always paints the fallback; it reads the meter's --_bar-fill.
    */
   var m = el('<meter class="meter danger" id="m" value="70" max="100">70%</meter>');
   assert.equal(style(m, 'appearance'), 'none', 'the UA meter look was kept');
@@ -1218,6 +1220,8 @@ test('meter: a <meter> is drawn as the fill bar .progress is, in the tone it is 
   var rules = allRules().filter(function (r) {
     return r.selectorText && r.selectorText.indexOf('.meter::-webkit-meter-optimum-value') !== -1;
   });
-  assert.ok(rules.length > 0 && /--bg-mix/.test(rules[0].cssText), 'the meter fill does not read the tone');
+  assert.ok(rules.length > 0 && /--_bar-fill/.test(rules[0].cssText), 'the meter fill does not read the inherited tone');
+  assert.ok(style(m, '--bg-mix').trim(), 'the danger meter carries no tone');
+  assert.equal(style(m, '--_bar-fill').trim(), style(m, '--bg-mix').trim(), 'the meter does not hand its tone to the fill');
   cleanup();
 });

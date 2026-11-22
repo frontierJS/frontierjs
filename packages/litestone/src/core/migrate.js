@@ -1146,6 +1146,15 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   const searchBackfills = [...new Set(changedSearch
     ? searchMembers.filter(inScope)
     : changedTriggers.filter(t => SEARCH_TRIGGER.test(t.name)).map(t => t.table))]
+  // A member that left the index keeps its rows there unless they are deleted:
+  // dropping its triggers stops new copies and keeps every old one
+  // (FJS-D2301). Read from the live triggers rather than `droppedTriggers`, which
+  // leaves out a table being rebuilt, and the accessor from the trigger's own
+  // body, which is there when the model is gone too.
+  const searchPurges = droppedSearch ? [] : Object.entries(liveTrigs)
+    .filter(([name, l]) => name.endsWith('_search_insert') && !pristineTrigs[name] && inScope(l.table))
+    .map(([, l]) => ({ table: l.table, accessor: /VALUES\s*\(\s*'([^']+)'/i.exec(l.sql)?.[1] }))
+    .filter(p => p.accessor)
 
   // A rebuild drops the table, and a trigger the app wrote exists only in the
   // live database — there is nothing to restate it from. Litestone does not
@@ -1255,6 +1264,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     changedSearch,
     droppedSearch,
     searchBackfills,
+    searchPurges,
     residue,
     dbName,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
@@ -1262,7 +1272,8 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
                 changedTriggers.length > 0 || droppedTriggers.length > 0 ||
                 changedFts.length > 0 || droppedFts.length > 0 ||
-                changedSearch != null || droppedSearch || searchBackfills.length > 0,
+                changedSearch != null || droppedSearch || searchBackfills.length > 0 ||
+                searchPurges.length > 0,
   }
 }
 
@@ -1502,7 +1513,7 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [], backfills = [] } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
           changedTriggers, droppedTriggers, changedFts, droppedFts,
-          changedSearch, droppedSearch, searchBackfills } = diffResult
+          changedSearch, droppedSearch, searchBackfills, searchPurges } = diffResult
   const lines = []
 
   lines.push(`PRAGMA foreign_keys = OFF;`)
@@ -1765,6 +1776,14 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     lines.push(``)
   }
 
+  if (searchPurges?.length) {
+    lines.push(`-- ─── shared search index (members that left) ${'─'.repeat(23)}`)
+    lines.push(``)
+    for (const p of searchPurges)
+      lines.push(`DELETE FROM ${quoteIdent(SEARCH_TABLE)} WHERE model = '${p.accessor.replace(/'/g, "''")}';`)
+    lines.push(``)
+  }
+
   // After the tables and the triggers: the rows and the rowids are final.
   if (searchBackfills?.length) {
     lines.push(`-- ─── shared search index (re-index) ${'─'.repeat(32)}`)
@@ -1852,6 +1871,8 @@ export function summarizeDiff(diffResult) {
     lines.push(`  ~ ${SEARCH_TABLE}  shared search index  (recreate)`)
   if (diffResult.droppedSearch)
     lines.push(`  - ${SEARCH_TABLE}  shared search index  (retired)`)
+  for (const p of diffResult.searchPurges ?? [])
+    lines.push(`  - ${p.table}  rows removed from ${SEARCH_TABLE}`)
   for (const t of diffResult.searchBackfills ?? [])
     lines.push(`  ~ ${t}  re-indexed in ${SEARCH_TABLE}`)
 

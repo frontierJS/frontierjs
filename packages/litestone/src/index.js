@@ -7,7 +7,7 @@ export { createClient, ValidationError,
          VersionRequiredError, VersionConflictError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError, SoftDeleteWriteError,
-         UniqueConflictError, ForeignKeyError, OverlapConflictError, SealedDocumentError,
+         UniqueConflictError, ForeignKeyError, OverlapConflictError, RateLimitError, SealedDocumentError,
          CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { LitestonePlugin, PluginRunner, AccessDeniedError } from './core/plugin.js'

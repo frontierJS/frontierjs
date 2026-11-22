@@ -52,6 +52,8 @@ Detail: `references/gates-policies-and-claims.md`
 - **A foreign key is a read: a parent the caller cannot read once the row exists answers as missing** (`FJS-D576`, `FJS-D1705`)
 - **A `9`-gated table cannot be tidied up, by anything**
 - **A policy reading a `@from` aggregate counts every child row that exists, and the read shows the caller's count** (`FJS-D2240`)
+- **A `@@rate` key that is NULL is nobody's count, so a quota over `@createdBy` admits every visitor** (`FJS-3027`)
+- **`rel.every(…)` is TRUE over no children, on `create` included, and a child whose condition is NULL fails it** (`FJS-D2291`)
 
 ## `@@transitions`
 Detail: `references/transitions.md`
@@ -80,6 +82,7 @@ Detail: `references/tenancy.md`
 - **A row scoped through a parent that names NO parent is `asSystem()`'s alone** (`FJS-D481`)
 - **A tenant read of a `@@tenant` view runs `@@sql` over the reader's rows only** (`FJS-D1149`)
 - **A default `backup` or `replicate` leaves out every place that declares no destination** (`FJS-D1743`)
+- **Under `strategy row` every copy of the database carries every tenant** (`FJS-D2293`)
 
 ## Migrations and release
 Detail: `references/migrations-and-release.md`
@@ -89,6 +92,7 @@ Detail: `references/migrations-and-release.md`
 - **A rename is a statement, never an inference** (`FJS-D603`)
 - **A table in the database and not in the schema is a loss, not a leftover** (`FJS-2758`)
 - **A new column with an EXPRESSION default costs a table rebuild, and one with no default at all is refused.**
+- **A record kept as a directory of files lives under `db/`, and the same directory beside `db/` is in neither the backup nor the release volume, without a word** (`FJS-D493`, `FJS-D2297`)
 
 ## Columns and clocks
 Detail: `references/columns-and-clocks.md`

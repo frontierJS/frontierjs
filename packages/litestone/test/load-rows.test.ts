@@ -46,7 +46,7 @@ describe('loadRows', () => {
       'o2,c17,2025-10-01T04:54:29Z,pending,JPY,1050,3,0123',
       'o3,c29,2025-10-02T00:00:00Z,refunded,KWD,8.125,1,',
     ))
-    expect(out).toEqual({ loaded: 3, rejects: [] })
+    expect(out).toEqual({ loaded: 3, added: 3, updated: 0, rejects: [] })
     const rows = await db.order.findMany({ orderBy: { id: 'asc' } })
     expect(rows.map((r: any) => r.amount)).toEqual([105024, 1050, 8125])
     expect(rows[0].placedAt).toBe('2025-10-01T03:45:27.000Z')
@@ -192,7 +192,7 @@ describe('loadRows keeps what no column takes in an overflow column', () => {
   it('a CSV column the model lacks lands per row in the Json column, as text', async () => {
     const db = await open()
     const out = await loadRows(db, 'Wide', 'id,amount,channel,coupon\na,1,web,\nb,2,store,SPRING\n', { overflow: '_extra' })
-    expect(out).toEqual({ loaded: 2, rejects: [] })
+    expect(out).toEqual({ loaded: 2, added: 2, updated: 0, rejects: [] })
     const rows = await db.wide.findMany({ orderBy: { id: 'asc' } })
     expect(rows.map((r: any) => r._extra)).toEqual([{ channel: 'web', coupon: null }, { channel: 'store', coupon: 'SPRING' }])
     db.$close()
@@ -250,7 +250,7 @@ describe('loadRows reads its source as it writes', () => {
       }
     }
     const out = await loadRows(db, 'Landed', pages(), { key: 'id', batch: 1000 })
-    expect(out).toEqual({ loaded: 2500, rejects: [] })
+    expect(out).toEqual({ loaded: 2500, added: 2500, updated: 0, rejects: [] })
     expect(seen).toEqual([0, 0, 0, 1000, 1000])
     db.$close()
   })
@@ -314,7 +314,7 @@ model Note {
 `
   it('a list relation, one-to-many or implicit many-to-many, is not a column the file must carry', async () => {
     const db = (await createClient({ schema: tagSchema, db: ':memory:' })) as any
-    expect(await loadRows(db, 'Tag', 'name\nx\ny\n')).toEqual({ loaded: 2, rejects: [] })
+    expect(await loadRows(db, 'Tag', 'name\nx\ny\n')).toEqual({ loaded: 2, added: 2, updated: 0, rejects: [] })
     await expect(loadRows(db, 'Tag', 'name,posts\nz,1\n')).rejects.toThrow("'posts' is not a column a source fills")
     db.$close()
   })
@@ -335,7 +335,7 @@ model Job {
     const db = await openStamped()
     const old = '2020-01-02T03:04:05.000Z'
     const out = await loadRows(db, 'Job', [{ id: 'a', name: 'x', updatedAt: old }, { id: 'b', name: 'y' }])
-    expect(out).toEqual({ loaded: 2, rejects: [] })
+    expect(out).toEqual({ loaded: 2, added: 2, updated: 0, rejects: [] })
     expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
     expect((await db.job.findFirst({ where: { id: 'b' } })).updatedAt > old).toBe(true)
     const older = '2019-05-06T07:08:09.000Z'
@@ -347,8 +347,8 @@ model Job {
   it('reads the column from a file, and a file without it still loads', async () => {
     const db = await openStamped()
     const old = '2020-01-02T03:04:05.000Z'
-    expect(await loadRows(db, 'Job', `id,name,updatedAt\na,x,${old}\n`)).toEqual({ loaded: 1, rejects: [] })
-    expect(await loadRows(db, 'Job', 'id,name\nb,y\n')).toEqual({ loaded: 1, rejects: [] })
+    expect(await loadRows(db, 'Job', `id,name,updatedAt\na,x,${old}\n`)).toEqual({ loaded: 1, added: 1, updated: 0, rejects: [] })
+    expect(await loadRows(db, 'Job', 'id,name\nb,y\n')).toEqual({ loaded: 1, added: 1, updated: 0, rejects: [] })
     expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
     db.$close()
   })
@@ -427,6 +427,73 @@ model Part {
     const out = await loadRows(db, 'Part', 'sku,price\nA,150\nZ,900\n', { key: 'sku', mode: 'upsert', dryRun: true })
     expect([out.loaded, out.rejects.length]).toEqual([1, 1])
     expect((await db.part.findFirst({ where: { sku: 'A' } })).price).toBe(100)
+    db.$close()
+  })
+})
+
+describe('loadRows reads cells pasted from a spreadsheet (FJS-4420)', () => {
+  it('a header holding a tab reads the text as tab-separated, quoted cells and lines kept', async () => {
+    const db = await open()
+    const tsv = [
+      HEADER.replaceAll(',', '\t'),
+      'o1\tc01\t2025-10-01T00:00:00Z\tpaid\tUSD\t1,050.00\t1\t1',
+      'o2\tc01\t2025-10-01T00:00:00Z\tpaid\tUSD\t10.00\t1\t"a\tb',
+      'c"',
+      'o3\tc01\t2025-10-01T00:00:00Z\tshipped\tUSD\t10.00\t1\t1',
+    ].join('\r\n') + '\r\n'
+    const out = await loadRows(db, 'Order', tsv, { key: 'id' })
+    accounted(3, out)
+    expect(out.rejects.map((r: any) => [r.line, r.key, r.field])).toEqual([
+      [2, 'o1', 'amount'],
+      [5, 'o3', 'status'],
+    ])
+    expect((await db.order.findFirst({ where: { id: 'o2' } })).postcode).toBe('a\tb\nc')
+    db.$close()
+  })
+
+  it('a byte-order mark before the header is not part of the first column name', async () => {
+    const db = await open()
+    const out = await loadRows(db, 'Order', '﻿' + csv('o1,c01,2025-10-01T00:00:00Z,paid,USD,1.00,1,1'))
+    expect(out).toEqual({ loaded: 1, added: 1, updated: 0, rejects: [] })
+    db.$close()
+  })
+})
+
+// FJS-4419: an import preview said only how many rows a load wrote, so a screen
+// that says "will add 2, will update 5" snapshotted the table before and after.
+describe('loadRows says how many rows it added and how many it updated', () => {
+  const parts = `
+model Part {
+  id    Int    @id
+  sku   String @unique
+  name  String
+  price Int
+}
+`
+  const openParts = async () => {
+    const db = (await createClient({ schema: parts, db: ':memory:' })) as any
+    await db.part.createMany({ data: [{ sku: 'A', name: 'Alpha', price: 100 }, { sku: 'B', name: 'Beta', price: 200 }] })
+    return db
+  }
+
+  it('an upsert splits its rows by whether the key was stored, a dry run and a batch of one included', async () => {
+    const db = await openParts()
+    const csvText = 'sku,name,price\nA,Alpha,150\nC,Gamma,300\nB,Beta,x\nD,Delta,400\n'
+    expect(await loadRows(db, 'Part', csvText, { key: 'sku', mode: 'upsert', dryRun: true }))
+      .toMatchObject({ loaded: 3, added: 2, updated: 1 })
+    expect(await loadRows(db, 'Part', 'sku,price\nA,150\nB,250\nZ,900\n', { key: 'sku', mode: 'upsert' }))
+      .toMatchObject({ loaded: 2, added: 0, updated: 2 })
+    expect(await loadRows(db, 'Part', [{ sku: 'E', name: 'Eps', price: 5 }, { sku: 'A', name: 'Alpha', price: 1 }], { key: 'sku', mode: 'upsert', batch: 1 }))
+      .toMatchObject({ loaded: 2, added: 1, updated: 1 })
+    db.$close()
+  })
+
+  it('an insert or a replace adds every row it loads, a batch refused and retried a row at a time included', async () => {
+    const db = await openParts()
+    expect(await loadRows(db, 'Part', 'sku,name,price\nA,Alpha,1\nC,Gamma,3\n', { key: 'sku' }))
+      .toMatchObject({ loaded: 1, added: 1, updated: 0 })
+    expect(await loadRows(db, 'Part', 'sku,name,price\nA,Alpha,1\n', { mode: 'replace' }))
+      .toMatchObject({ loaded: 1, added: 1, updated: 0 })
     db.$close()
   })
 })

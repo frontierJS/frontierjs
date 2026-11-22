@@ -192,3 +192,83 @@ model AuditRow {
     })
   }
 })
+
+describe('@zoned after: — an end on the day after its date (FJS-4479, FJS-D2294)', () => {
+  const OVERNIGHT = SCHEMA.replace('@zoned(onDate, endLocal, site.timeZone)', '@zoned(onDate, endLocal, site.timeZone, after: startsAt)')
+  async function seedOvernight() {
+    const { createClient } = await import('../src/index.js')
+    const db = (await createClient({ db: ':memory:', schema: OVERNIGHT })) as any
+    const sys = db.asSystem()
+    const ny    = await sys.site.create({ data: { name: 'ny', timeZone: 'America/New_York' } })
+    const tokyo = await sys.site.create({ data: { name: 'tokyo', timeZone: 'Asia/Tokyo' } })
+    return { sys, ny, tokyo }
+  }
+  const shift = (siteId: number, onDate: string, startLocal: string, endLocal: string, employeeId = 1) =>
+    ({ data: { employeeId, siteId, onDate, startLocal, endLocal } })
+
+  test('after: parses as the named anchor', () => {
+    const r = parse(OVERNIGHT)
+    expect(r.errors).toEqual([])
+    const at = r.schema.models.find((m: any) => m.name === 'Shift').fields.find((f: any) => f.name === 'endsAt')
+      .attributes.find((a: any) => a.kind === 'zoned')
+    expect(at.after).toBe('startsAt')
+    expect(at.path).toEqual(['site', 'timeZone'])
+    expect(at.sources).toEqual(['onDate', 'endLocal'])
+  })
+
+  test('after: names a @zoned DateTime on this model with the same day, read in the same zone', () => {
+    const anchor = (name: string) => OVERNIGHT.replace('after: startsAt', `after: ${name}`)
+    expect(errs(anchor('nope'))).toContain("after: names no field 'nope' on this model")
+    expect(errs(anchor('endsAt'))).toContain('after: names the field itself')
+    expect(errs(anchor('employeeId'))).toContain("after: 'employeeId' must be a DateTime @zoned(date, time, zone)")
+    expect(errs(OVERNIGHT.replace('startsAt   DateTime @zoned(onDate, startLocal, site.timeZone)',
+      'startsAt   DateTime @zoned(otherDate, startLocal, site.timeZone)\n  otherDate  String   @date')))
+      .toContain("after: 'startsAt' reads its day from 'otherDate', not 'onDate'")
+    expect(errs(OVERNIGHT.replace('@zoned(onDate, startLocal, site.timeZone)', '@zoned(onDate, startLocal, site.timeZone, after: endsAt)')))
+      .toContain("after: 'startsAt' is itself anchored")
+    expect(errs(OVERNIGHT.replace('onDate     String   @date', 'onDate     String   @date\n  zone       String   @zone')
+      .replace('@zoned(onDate, startLocal, site.timeZone)', '@zoned(onDate, startLocal, zone)')))
+      .toContain("after: 'startsAt' is read in zone, not site.timeZone")
+    expect(errs(SCHEMA.replace('onDate     String   @date', 'onDate     String   @date @zoned(site.timeZone, after: startsAt)')))
+      .toContain('after: belongs to the three-argument form')
+  })
+
+  test('an end before its start falls on the next day', async () => {
+    const { sys, ny } = await seedOvernight()
+    const s = await sys.shift.create(shift(ny.id, '2026-07-01', '22:00', '06:00'))
+    expect(s.startsAt).toBe('2026-07-02T02:00:00.000Z')
+    expect(s.endsAt).toBe('2026-07-02T10:00:00.000Z')
+    const day = await sys.shift.create(shift(ny.id, '2026-07-03', '09:00', '17:00'))
+    expect(day.endsAt).toBe('2026-07-03T21:00:00.000Z')
+  })
+
+  test('an end equal to its start reads as 24 hours, and a month end rolls into the next month', async () => {
+    const { sys, ny } = await seedOvernight()
+    const s = await sys.shift.create(shift(ny.id, '2026-07-31', '08:00', '08:00'))
+    expect(s.startsAt).toBe('2026-07-31T12:00:00.000Z')
+    expect(s.endsAt).toBe('2026-08-01T12:00:00.000Z')
+  })
+
+  test('a write to the anchor’s clock alone re-derives the end', async () => {
+    const { sys, ny } = await seedOvernight()
+    const s = await sys.shift.create(shift(ny.id, '2026-07-01', '09:00', '17:00'))
+    const moved = await sys.shift.update({ where: { id: s.id }, data: { startLocal: '18:00' } })
+    expect(moved.endsAt).toBe('2026-07-02T21:00:00.000Z')
+  })
+
+  test('a zone write recomputes the end on its next day', async () => {
+    const { sys, ny } = await seedOvernight()
+    const s = await sys.shift.create(shift(ny.id, '2026-07-01', '22:00', '06:00'))
+    await sys.site.update({ where: { id: ny.id }, data: { timeZone: 'Asia/Tokyo' } })
+    const after = await sys.shift.findUnique({ where: { id: s.id } })
+    expect(after.startsAt).toBe('2026-07-01T13:00:00.000Z')
+    expect(after.endsAt).toBe('2026-07-01T21:00:00.000Z')
+  })
+
+  test('@@exclude grades the overnight range as it is worked', async () => {
+    const { sys, ny } = await seedOvernight()
+    await sys.shift.create(shift(ny.id, '2026-07-01', '22:00', '06:00'))
+    expect((await refusal(sys.shift.create(shift(ny.id, '2026-07-02', '05:00', '09:00'))))?.name).toBe('OverlapConflictError')
+    expect((await sys.shift.create(shift(ny.id, '2026-07-02', '06:00', '09:00'))).endsAt).toBe('2026-07-02T13:00:00.000Z')
+  })
+})

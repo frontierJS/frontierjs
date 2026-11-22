@@ -40,6 +40,11 @@ export function createClient({ path: schemaFilePath, schema: schemaInline, parse
     $attach: (filePath: any, alias: any) => any;
     $detach: (alias: any) => any;
     $db: import("./databases.js").RawDb;
+    $hold: (h: {
+        name?: string;
+        commit?: () => any;
+        rollback?: () => any;
+    }) => any;
     asSystem: () => any;
     $setAuth: (user: any) => any;
 }>;

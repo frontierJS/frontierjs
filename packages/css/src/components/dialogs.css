@@ -62,7 +62,7 @@
    * surface.css's base layer, and this file is a later one, so writing it
    * here would beat both variants on every dialog.
    */
-  --surface-ground: var(--dialog-bg, var(--surface));
+  --surface-ground: var(--dialog-bg, var(--surface-raised));
 
   --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
   --dialog-header-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));

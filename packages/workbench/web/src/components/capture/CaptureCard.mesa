@@ -1,0 +1,124 @@
+<script>
+  // components/capture/CaptureCard.mesa -- one file in the save folder. An image draws from
+  // a blob URL; a recording or a call draws a Play button, because its bytes are fetched
+  // through the member's credentials (lib/capture-files.js) and a recording is large, so
+  // they are fetched when it is asked for. Open, Show in folder and Share run on the API's
+  // machine; Copy runs in this window; Delete takes two clicks and takes the transcripts too.
+  import { capture } from '../../resources/Capture.mesa'
+  import { toasts }  from '@frontierjs/ui/stores/toastStore'
+  import { at }      from '@frontierjs/mesa/browser'
+  import { captureImageUrl, captureMediaUrl, copyImage, fileSize } from '../../lib/capture-files.js'
+
+  export let file = null          // a row of the service's `files`
+  export let onremoved = null     // called with the name once it is gone
+
+  let src = ''
+  let failed = false
+  let loading = false
+  let confirming = false
+  let busy = ''
+  let link = null
+  let linkCopied = false
+  let copied = false
+  let showText = false
+
+  const call = (method) => capture.service.invoke(method, null, { name: file.name })
+
+  async function load() {
+    if (!file) return
+    failed = false
+    if (file.kind !== 'image') return
+    try { src = await captureImageUrl(file) } catch { failed = true }
+  }
+  $.onMount(load)
+
+  async function play() {
+    loading = true
+    failed = false
+    try { src = await captureMediaUrl(file) } catch { failed = true } finally { loading = false }
+  }
+  $.onDestroy(() => { if (src && file?.kind !== 'image') URL.revokeObjectURL(src) })
+
+  async function act(method, done) {
+    busy = method
+    try { await done(await call(method)) } catch (err) { toasts.error(err.message) } finally { busy = '' }
+  }
+
+  const open   = () => act('open',   () => {})
+  const reveal = () => act('reveal', () => {})
+  const share  = () => act('share',  (out) => { link = out.url; toasts.success('Link copied on this machine') })
+  const remove = () => act('removeFile', () => { confirming = false; onremoved?.(file.name) })
+
+  async function copy() {
+    try { await copyImage(file); copied = true; await $.sleep(2000); copied = false } catch (err) { toasts.error(err.message) }
+  }
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(link); linkCopied = true } catch { toasts.error('The browser would not copy the link') }
+  }
+</script>
+
+{#if file}
+  <article class="card stack gap-sm" data-testid="capture-file" data-name={file.name} data-kind={file.kind}>
+    <div class="media" data-media>
+      {#if failed}
+        <p class="text-sm text-muted">Could not read this file.</p>
+      {:else if file.kind === 'image'}
+        {#if src}<img class="thumb" {src} alt={file.name} loading="lazy" />{:else}<span class="skeleton thumb" aria-hidden="true"></span>{/if}
+      {:else if src && file.kind === 'video'}
+        <video class="thumb" {src} controls preload="metadata" autoplay></video>
+      {:else if src}
+        <audio class="wide" {src} controls preload="metadata" autoplay></audio>
+      {:else}
+        <button type="button" class="btn outlined" onclick={play} disabled={loading} data-testid="play">
+          {loading ? 'Loading…' : file.kind === 'video' ? 'Play recording' : 'Play call'} ({fileSize(file.size)})
+        </button>
+      {/if}
+    </div>
+
+    <p class="name text-sm" title={file.name}>{file.name}</p>
+    <div class="cluster text-sm text-muted">
+      <span class="badge" data-testid="size">{fileSize(file.size)}</span>
+      <span data-testid="made">{at(file.modifiedAt)}</span>
+    </div>
+
+    {#if file.transcript}
+      <div class="stack gap-xs">
+        <button type="button" class="btn ghost sm" aria-expanded={showText} onclick={() => (showText = !showText)} data-testid="transcript-toggle">
+          {showText ? 'Hide transcript' : 'Show transcript'}
+        </button>
+        {#if showText}<pre class="transcript text-sm" data-testid="transcript">{file.transcript}</pre>{/if}
+      </div>
+    {/if}
+
+    {#if link}
+      <p class="text-sm link-row" data-testid="link">
+        <a class="link" href={link} target="_blank" rel="noopener">{link}</a>
+        <button type="button" class="btn ghost sm" onclick={copyLink}>{linkCopied ? 'Copied' : 'Copy link'}</button>
+      </p>
+    {/if}
+
+    <div class="cluster">
+      <button type="button" class="btn outlined sm" onclick={open} disabled={!!busy} data-testid="open">Open</button>
+      <button type="button" class="btn outlined sm" onclick={reveal} disabled={!!busy} data-testid="reveal">Show in folder</button>
+      <button type="button" class="btn outlined sm" onclick={share} disabled={!!busy} data-testid="share">{busy === 'share' ? 'Sharing…' : 'Share'}</button>
+      {#if file.kind === 'image'}
+        <button type="button" class="btn outlined sm" onclick={copy} disabled={!!busy || failed} data-testid="copy">{copied ? 'Copied' : 'Copy'}</button>
+      {/if}
+      {#if confirming}
+        <button type="button" class="btn danger sm" onclick={remove} disabled={!!busy} data-testid="confirm-delete">Delete for good</button>
+        <button type="button" class="btn outlined sm" onclick={() => (confirming = false)} disabled={!!busy}>Keep it</button>
+      {:else}
+        <button type="button" class="btn outlined danger sm" onclick={() => (confirming = true)} disabled={!!busy} data-testid="delete">Delete</button>
+      {/if}
+    </div>
+  </article>
+{/if}
+
+<style>
+  .thumb { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: var(--surface-sunken); border-radius: var(--card-radius); }
+  .wide { display: block; inline-size: 100%; }
+  .media { display: flex; align-items: center; justify-content: center; min-block-size: var(--space-4xl); }
+  .name { margin: 0; overflow-wrap: anywhere; }
+  .transcript { margin: 0; white-space: pre-wrap; max-block-size: calc(var(--space-4xl) * 3); overflow: auto; background: var(--surface-sunken); padding: var(--space-sm); border-radius: var(--card-radius); }
+  .link-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm); margin: 0; overflow-wrap: anywhere; }
+</style>

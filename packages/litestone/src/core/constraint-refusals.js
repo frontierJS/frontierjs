@@ -86,10 +86,24 @@ export function makeConstraintRefusals(shape, ctx, deps) {
     // A live row holds the value, which is the ordinary case and the one that
     // used to escape as a 500 carrying `product_variant.sku`.
     const named = rows.find(r => r && typeof r === 'object' && cols.some(c => r[c] !== undefined))
+    const declared = uniquesDeclaredOver(cols)
     return new UniqueConflictError(
       modelName, cols,
       cols.map(c => (named?.[c] === undefined ? undefined : redactValue(c, named[c]))),
-      { keys: _parentKeys.flatMap(p => p.fields) })
+      { keys:       _parentKeys.flatMap(p => p.fields),
+        message:    declared.find(a => a.message)?.message,
+        constraint: declared.length === 1 ? declared[0].whereSql : undefined })
+  }
+
+  // The @@unique declarations a refusal over these columns may have come from.
+  // SQLite names columns and not the index: validate() refuses two over one set
+  // whose messages differ, so any message found is the only one, and a
+  // predicate is named only when no second declaration could have fired.
+  function uniquesDeclaredOver(cols) {
+    const want = [...cols].sort().join('\0')
+    return (shape.model.attributes ?? []).filter(a =>
+      (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && Array.isArray(a.fields)
+      && [...a.fields].sort().join('\0') === want)
   }
 
   // A CHECK the row did not satisfy.

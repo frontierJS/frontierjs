@@ -551,11 +551,20 @@ export async function clearCustomStatus(mm: MattermostSend, profileExternalId: M
 // ─── Typing ──────────────────────────────────────────────────
 
 /**
- * The `user_typing` action for a channel, or one thread's reply box, as the text
- * a client writes on its own socket. It rides the socket and has no REST form;
- * conduit's broker holds the connection and offers an app no way to write to it,
- * so a caller that wants to relay typing writes this frame on a link of its own.
- * `seq` counts the frames that link has sent.
+ * `POST /users/{id}/typing`: the person is typing in a channel, or in one thread's
+ * reply box. The server pushes `typing` to the channel's other members. Conduit's
+ * broker socket is receive-only (`FJS-D2303`), so this is how an app sends typing.
+ * Replayable, because a second signal is the same signal.
+ */
+export async function publishTyping(mm: MattermostSend, profileExternalId: MattermostId, channelExternalId: MattermostId, parentExternalId?: MattermostId | null): Promise<Done> {
+  const body = { channel_id: needId(channelExternalId, 'channelExternalId'), parent_id: parentExternalId ? needId(parentExternalId, 'parentExternalId') : '' }
+  return done(await mm.api({ method: 'POST', path: `${API}/users/${user(profileExternalId)}/typing`, body, ...LIST }))
+}
+
+/**
+ * The `user_typing` action as the text a client writes on a socket it dialed
+ * itself. The broker's socket takes no writes, so `publishTyping` is the path for
+ * an app on conduit. `seq` counts the frames that link has sent.
  */
 export function typingFrame(seq: number, channelExternalId: MattermostId, parentExternalId?: MattermostId | null): string {
   return JSON.stringify({ action: 'user_typing', seq, data: { channel_id: needId(channelExternalId, 'channelExternalId'), parent_id: parentExternalId ? needId(parentExternalId, 'parentExternalId') : '' } })

@@ -3,7 +3,7 @@
  *
  * For an editor or a viewer that paints a window of a long file and must know,
  * at any line, whether it starts inside a block comment. `tokenizeLine` carries
- * a state from line to line; `glow` highlights a whole block and carries none.
+ * a state from line to line, and `glow` paints through it.
  * A grammar is a plain object, and a region that hands its inside to another
  * language holds that grammar object, so nothing is looked up by name and an
  * app that wants a language this kit lacks writes the object and passes it.

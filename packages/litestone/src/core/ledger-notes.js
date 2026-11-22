@@ -20,11 +20,13 @@ export function makeLedgerNotes(/** @type {any} */ shape, /** @type {any} */ dep
   // itself is at the outermost commit (`cardinality.js`).
   const _cardNotes = tx.ledger
     && (shape.cardinality.byParent.length
-      + shape.cardinality.byChild.length) > 0
+      + shape.cardinality.byChild.length
+      + shape.cardinality.byRate.length) > 0
   function noteCardinality(/** @type {any} */ row, before = null) {
     if (!_cardNotes || !row) return
     tx.ledger.noteParent(modelName, row)
     tx.ledger.noteChild(modelName, row, before)
+    tx.ledger.noteRate(modelName, row)
   }
   // A write that names its rows with a WHERE moves parents only the database
   // knows, and only BEFORE the statement runs. Takes the SQL the caller has
@@ -34,15 +36,36 @@ export function makeLedgerNotes(/** @type {any} */ shape, /** @type {any} */ dep
   // The columns are aliased back to FIELD names because that is what the ledger
   // reads; under `@map` the two differ and an unaliased row would note
   // `undefined` for every parent, which is silently no parents at all.
-  function noteCardinalityBySql(/** @type {any} */ whereSql, /** @type {any} */ params) {
+  //
+  // A bulk update passes its payload: a `@@rate` key is the one the row holds
+  // AFTER it, and the WHERE that named the rows may no longer match them once
+  // they are written (a waitlist promoted by `status: 'waitlisted'`), so the
+  // rows are read before and the payload laid over them.
+  function noteCardinalityBySql(/** @type {any} */ whereSql, /** @type {any} */ params, /** @type {any} */ data = null) {
     if (!_cardNotes) return
+    const where = whereSql ? ` WHERE ${whereSql}` : ''
     const rules = shape.cardinality.byChild
-    if (!rules.length) return
-    const pairs = [...new Map(rules.flatMap((/** @type {any} */ r) =>
-      r.fkColumns.map((/** @type {any} */ c, /** @type {any} */ i) => [c, r.fkFields[i]]))).entries()]
-    const sel = pairs.map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
-    const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
-    for (const row of writeDb.query(sql).all(...params)) tx.ledger.noteChild(modelName, row)
+    if (rules.length) {
+      const pairs = [...new Map(rules.flatMap((/** @type {any} */ r) =>
+        r.fkColumns.map((/** @type {any} */ c, /** @type {any} */ i) => [c, r.fkFields[i]]))).entries()]
+      const sel = pairs.map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
+      for (const row of writeDb.query(`SELECT DISTINCT ${sel} FROM "${tableName}"${where}`).all(...params)) tx.ledger.noteChild(modelName, row)
+    }
+    // Only a payload naming a key, a parent or a field of `where:` can take a
+    // key over its limit.
+    const rates = data ? shape.cardinality.byRate.filter((/** @type {any} */ r) =>
+      [...r.keyFields, ...r.viaFields, ...r.whereFields].some(f => Object.hasOwn(data, f))) : []
+    if (!rates.length) return
+    const pairs = [...new Map(rates.flatMap((/** @type {any} */ r) => [
+      ...r.keyFields.map((/** @type {string} */ f, /** @type {number} */ i) => [f, r.keyColumns[i]]),
+      ...r.viaFields.map((/** @type {string} */ f, /** @type {number} */ i) => [f, r.viaColumns[i]]),
+    ])).entries()]
+    const sel  = pairs.map(([f, c]) => `${quoteIdent(c)} AS ${quoteIdent(f)}`).join(', ')
+    // An operator payload (`{ increment: 1 }`) is no value to bind (`FJS-199`).
+    const over = Object.fromEntries(pairs.filter(([f]) => Object.hasOwn(data, f) && (data[f] === null || typeof data[f] !== 'object'))
+      .map(([f]) => [f, data[f]]))
+    for (const row of writeDb.query(`SELECT DISTINCT ${sel} FROM ${quoteIdent(tableName)}${where}`).all(...params))
+      tx.ledger.noteRate(modelName, { ...row, ...over })
   }
 
   // ── Exclusion scopes ───────────────────────────────────────────────────────

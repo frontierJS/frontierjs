@@ -765,6 +765,7 @@
   --dialog-bg:            initial;
   --toast-bg:             initial;
   --toast-radius:         initial;
+  --popover-bg:           initial;
   --popover-x:            initial;
   --popover-y:            initial;
   --sheet-offset:         initial;

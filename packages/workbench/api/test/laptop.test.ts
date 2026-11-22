@@ -7,7 +7,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -18,6 +18,8 @@ import { globalEnv, setGlobalEnv, unsetGlobalEnv, commands, profiles, profileLis
 import { running } from '../src/domain/laptop/running.ts'
 import { servicesList, probeService } from '../src/domain/laptop/services.ts'
 import { setup, stateOf } from '../src/domain/laptop/setup.ts'
+import { vitals } from '../src/domain/laptop/vitals.ts'
+import { builds, clearBuild } from '../src/domain/laptop/builds.ts'
 import { DEV_ENCRYPTION_KEY, DEV_WORKBENCH_KEY } from '../src/core/env.ts'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
@@ -464,5 +466,144 @@ describe('setup', () => {
     expect(stateOf(false, [r(false, 'warn')])).toBe('unset')
     expect(stateOf(false, [r(false, 'warn'), r(true, 'ok')])).toBe('warn')
     expect(stateOf(false, [r(true, 'ok')])).toBe('ok')
+  })
+})
+
+describe('vitals', () => {
+  const GB = 1024 ** 3
+  const files: Record<string, string> = {
+    '/proc/mounts': [
+      '/dev/nvme1n1p2 / ext4 rw 0 0',
+      '/dev/nvme1n1p1 /boot/efi vfat rw 0 0',
+      '/dev/loop3 /snap/core/1 squashfs ro 0 0',
+      '/dev/nvme1n1p2 /var/snap/bind ext4 rw 0 0',
+      '/dev/sdb1 /media/My\\040Drive ext4 rw 0 0',
+      'tmpfs /run tmpfs rw 0 0',
+    ].join('\n'),
+    '/proc/meminfo': 'MemTotal:  1000 kB\nMemFree: 10 kB\nMemAvailable:   40 kB\nSwapTotal: 200 kB\nSwapFree: 0 kB\n',
+    '/proc/loadavg': '3.5 2.0 1.0 2/300 99',
+    '/sys/class/thermal/thermal_zone0/type': 'acpitz', '/sys/class/thermal/thermal_zone0/temp': '99000',
+    '/sys/class/thermal/thermal_zone1/type': 'x86_pkg_temp', '/sys/class/thermal/thermal_zone1/temp': '71400',
+    '/sys/class/power_supply/BAT0/capacity': '8', '/sys/class/power_supply/BAT0/status': 'Discharging',
+    '/run/reboot-required': '*** System restart required ***',
+    '/run/reboot-required.pkgs': 'linux-base\nlinux-base\n',
+    '/var/lib/update-notifier/updates-available': '\n7 updates can be applied immediately.\n',
+  }
+  const dirs: Record<string, string[]> = {
+    '/sys/class/thermal': ['cooling_device0', 'thermal_zone0', 'thermal_zone1'],
+    '/sys/class/power_supply': ['AC', 'BAT0'],
+  }
+  // 100 GB drives: / has 3 GB available and 2 GB reserved for root, so df says 97%.
+  const sizes: Record<string, { blocks: number, bfree: number, bavail: number }> = {
+    '/':                { blocks: 100, bfree: 5, bavail: 3 },
+    '/media/My Drive':  { blocks: 100, bfree: 60, bavail: 60 },
+  }
+  const deps = {
+    readText: (p: string) => files[p] ?? null,
+    listDir:  (p: string) => dirs[p] ?? [],
+    statfs:   async (p: string) => { if (!sizes[p]) throw new Error('ENOENT'); return { bsize: GB, ...sizes[p] } },
+    home:     '/home/ada',
+  }
+
+  test('one row per real drive, the home drive first, graded by what df would print', async () => {
+    const v = await vitals(deps)
+    expect(v.disks.map(d => d.mount)).toEqual(['/', '/media/My Drive'])
+    expect(v.disks[0]).toMatchObject({ home: true, avail: 3 * GB, pct: 96.9, state: 'critical' })
+    expect(v.disks[1]).toMatchObject({ home: false, pct: 40, state: 'ok' })
+  })
+
+  test('memory counts page cache as free, and swap is reported apart', async () => {
+    const v = await vitals(deps)
+    expect(v.memory).toMatchObject({ pct: 96, state: 'critical', swap: { total: 200 * 1024, used: 200 * 1024 } })
+  })
+
+  test('the CPU package sensor wins over a hotter zone; a draining battery at 8% is critical', async () => {
+    const v = await vitals(deps)
+    expect(v.temp).toEqual({ celsius: 71, sensor: 'x86_pkg_temp', state: 'ok' })
+    expect(v.battery).toEqual({ percent: 8, status: 'Discharging', state: 'critical' })
+    expect(v.load).toMatchObject({ one: 3.5, five: 2 })
+  })
+
+  test('a pending reboot names its packages once, and the update count is read', async () => {
+    const v = await vitals(deps)
+    expect(v.reboot).toEqual({ required: true, packages: ['linux-base'] })
+    expect(v.updates).toBe(7)
+  })
+
+  test('a machine with none of these files answers null, not zero', async () => {
+    const v = await vitals({ readText: () => null, listDir: () => [], statfs: deps.statfs, home: '/home/ada' })
+    expect(v.battery).toBeNull()
+    expect(v.temp).toBeNull()
+    expect(v.reboot).toBeNull()
+    expect(v.updates).toBeNull()
+    expect(v.disks.map(d => d.mount)).toEqual(['/'])
+  })
+})
+
+describe('builds', () => {
+  const code = join(home, 'code')
+  const none = () => []
+  const proc = (cwd: string) => () => [{ pid: 4242, comm: 'cargo', cwd }]
+
+  beforeAll(() => {
+    put(join(code, 'a', 'Cargo.toml'), '[package]')
+    put(join(code, 'a', 'target', 'debug', 'x'), 'z'.repeat(1000))
+    put(join(code, 'b', 'target', 'x'), 'not a rust build')
+    put(join(code, 'node_modules', 'c', 'Cargo.toml'), '[package]')
+    put(join(code, 'node_modules', 'c', 'target', 'x'), 'skipped')
+    put(join(code, 'd', 'Cargo.toml'), '[package]')
+    mkdirSync(join(code, 'elsewhere'), { recursive: true })
+    symlinkSync(join(code, 'elsewhere'), join(code, 'd', 'target'))
+    put(join(code, 'e', 'Cargo.toml'), '[package]')
+    put(join(code, 'e', 'target', 'release', 'y'), 'y'.repeat(50))
+  })
+
+  test('lists a target beside a Cargo.toml, and skips the rest', async () => {
+    const out = await builds({ root: code, listProcs: none })
+    expect(out.exists).toBe(true)
+    expect(out.builds.map(b => b.id)).toEqual(['a/target', 'e/target'])
+    expect(out.builds[0]).toMatchObject({ project: 'a', kind: 'rust', bytes: 1000, held: null })
+    expect(out.builds[0].mtime).toMatch(/^\d{4}-\d\d-\d\dT/)
+    expect(out.bytes).toBe(1050)
+  })
+
+  test('a cargo running in the project, or below it, holds the build', async () => {
+    const held = await builds({ root: code, listProcs: proc(join(code, 'a', 'src')) })
+    expect(held.builds.find(b => b.id === 'a/target')!.held).toBe(4242)
+    expect(held.builds.find(b => b.id === 'e/target')!.held).toBeNull()
+  })
+
+  test('a root that is not there answers exists: false, not an error', async () => {
+    const out = await builds({ root: join(home, 'no-code'), listProcs: none })
+    expect(out).toMatchObject({ exists: false, builds: [], bytes: 0 })
+  })
+
+  test('clearBuild refuses what is not a listed build folder', () => {
+    const d = { root: code, listProcs: none }
+    expect(clearBuild('../x', d)).toHaveProperty('refused')
+    expect(clearBuild('a/../../x/target', d)).toHaveProperty('refused')
+    expect(clearBuild(join(code, 'a', 'target'), d)).toHaveProperty('refused')
+    expect(clearBuild('', d)).toHaveProperty('refused')
+    expect(clearBuild('a', d)).toHaveProperty('refused')
+    expect(clearBuild('a/target/debug', d)).toHaveProperty('refused')
+    expect(clearBuild('zz/target', d)).toHaveProperty('refused')
+    expect(clearBuild('b/target', d)).toHaveProperty('refused')
+    expect(clearBuild('d/target', d)).toHaveProperty('refused')
+    expect(existsSync(join(code, 'elsewhere'))).toBe(true)
+    expect(existsSync(join(code, 'a', 'target'))).toBe(true)
+    expect(existsSync(join(code, 'b', 'target'))).toBe(true)
+  })
+
+  test('clearBuild refuses a project a cargo is working in, naming the pid', () => {
+    const out = clearBuild('a/target', { root: code, listProcs: proc(join(code, 'a')) })
+    expect(out).toHaveProperty('refused')
+    expect((out as { refused: string }).refused).toContain('4242')
+    expect(existsSync(join(code, 'a', 'target'))).toBe(true)
+  })
+
+  test('clearBuild removes the real one and answers its bytes', () => {
+    expect(clearBuild('a/target', { root: code, listProcs: none })).toEqual({ freed: 1000 })
+    expect(existsSync(join(code, 'a', 'target'))).toBe(false)
+    expect(existsSync(join(code, 'a', 'Cargo.toml'))).toBe(true)
   })
 })

@@ -857,8 +857,11 @@ export function searchRankExpr() {
   return `bm25(${quoteIdent(SEARCH_TABLE)}, ${SEARCH_COLUMNS.map(c => (SEARCH_WEIGHTS[c] ?? 1).toFixed(1)).join(', ')})`
 }
 
+// The one reader of `multisearch: false` (FJS-D2301): every trigger, backfill
+// and `$search` branch goes through here, so a second reader is a model half in.
 export function isSearchModel(model) {
-  return model.attributes.some(a => a.kind === 'fts') && !model.attributes.some(a => a.kind === 'external')
+  return model.attributes.some(a => a.kind === 'fts' && a.multisearch !== false) &&
+    !model.attributes.some(a => a.kind === 'external')
 }
 
 export function searchModels(schema) {
@@ -877,7 +880,7 @@ export function searchColumnsFor(model) {
   const cmap  = columnMapFor(model)
   const fts   = model.attributes.find(a => a.kind === 'fts')
   const label = model.attributes.find(a => a.kind === 'labelField')
-  if (!fts || !labelColumn(label)) return null
+  if (!isSearchModel(model) || !labelColumn(label)) return null
   return { title: mapCol(cmap, labelColumn(label)), body: fts.fields.map(f => mapCol(cmap, f)) }
 }
 

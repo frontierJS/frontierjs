@@ -3,12 +3,13 @@
 The file-by-file map of `@frontierjs/toolbelt`, moved out of `CLAUDE.md` so a turn in this package does not pay for it. `CLAUDE.md` keeps the owners and the traps; hazards are `hazards.md`.
 
 ```
-src/glow/glow.js     source code → highlighted HTML. The first kit.
+src/glow/glow.js     source code → highlighted HTML. The first kit. Paints
+                     through `/grammars` where a grammar exists, by its own
+                     regex rules elsewhere (`FJS-D2304`).
 src/grammars/        a line-at-a-time tokenizer for an editor or viewer:
                      `tokenizeLine` takes the state a line starts in and
                      answers the state it ends in, so a block comment that
-                     spans lines is known without reading from the top (glow
-                     highlights a whole block and keeps nothing between calls).
+                     spans lines is known without reading from the top.
                      `tokenize.js` is the engine and the painter (`lineHTML`);
                      `css.js`, `html.js`, `js.js` (also `ts`), `json.js`,
                      `lite.js`, `markdown.js`, `mesa.js` and `yaml.js` are one

@@ -20,7 +20,8 @@ export function compare(L?: any, op?: any, R?: any, affL?: any, affR?: any): boo
  *   `affinityOf`    (node) → 'NUMERIC' | 'TEXT' | 'BLOB' | null
  *   `resolvePath`   (node) → value, for a one-hop read. Default null.
  *   `resolveCheck`  (node) → boolean, for `check(field)`. Default true.
- *   `resolveSome`   (node) → boolean, for `rel.some(…)`. Default null.
+ *   `resolveSome`   (node) → boolean, for `rel.some(…)`, and for `rel.every(…)`
+ *                   and `rel.none(…)`, which carry `node.quantifier`. Default null.
  *   `truthOf`       value → true | false | null, how `and`/`or`/`not` and a
  *                   ternary's condition read an operand. Default `truth`, the
  *                   SQLite reading a policy is held to; a value template passes

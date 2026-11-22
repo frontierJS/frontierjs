@@ -10,7 +10,7 @@
  *   centerOnCursor?: boolean,
  *   delayTouchStart?: boolean | number,
  *   dragHandleSelector?: string,
- *   announcements?: (event: 'lifted' | 'moved' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement}) => string | undefined,
+ *   announcements?: (event: 'lifted' | 'moved' | 'onto' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement, target?: any}) => string | undefined,
  *   dropOnto?: boolean | ((item: any) => boolean),
  *   accept?: (dragged: any) => {id: any} | null | undefined,
  *   dragSet?: () => Array<{id: any}>,
@@ -31,11 +31,12 @@ export function dndzone(getOptions: () => {
     centerOnCursor?: boolean;
     delayTouchStart?: boolean | number;
     dragHandleSelector?: string;
-    announcements?: (event: "lifted" | "moved" | "dropped" | "cancelled", info: {
+    announcements?: (event: "lifted" | "moved" | "onto" | "dropped" | "cancelled", info: {
         label: string;
         position: number;
         total: number;
         zone: HTMLElement;
+        target?: any;
     }) => string | undefined;
     dropOnto?: boolean | ((item: any) => boolean);
     accept?: (dragged: any) => {

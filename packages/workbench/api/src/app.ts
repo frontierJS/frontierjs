@@ -20,6 +20,7 @@ import { chatProvider }                   from './providers/chat/index.ts'
 import { bc3Provider }                    from './providers/bc3/index.ts'
 import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH, MAX_UPLOAD_BYTES } from './domain/chat/files.ts'
 import { connectedRoute, CONNECTED_PATH } from './domain/capture/connect.ts'
+import { captureFileRoute, FILE_PATH as CAPTURE_FILE_PATH } from './domain/capture/files.ts'
 import { peerKeys, peerRoute, PEER_PATH }     from './peer.ts'
 import { createBasecamp }                     from './domain/peer/basecamp.ts'
 import { conduitSend, type SendFor }          from './domain/servers/servers.ts'
@@ -132,6 +133,8 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
     a.get(FILE_PATH, fileRoute(app))
     // The share app's browser lands here with no Workbench cookie; the pending state is its proof.
     a.get(CONNECTED_PATH, connectedRoute())
+    // A capture's bytes for an <img>, <video> or <audio> the page draws from a blob (graded on the member's bearer).
+    a.get(CAPTURE_FILE_PATH, captureFileRoute(app))
     a.post(FILES_PATH, uploadRoute(app), { body: 'stream', maxBodySize: MAX_UPLOAD_BYTES } as any)
   })
 

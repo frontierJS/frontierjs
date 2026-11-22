@@ -394,6 +394,7 @@ const FIELD_AXIS: Record<string, Axis> = {
   error:        'call',
   afterCommit:  'call',
   enqueue:      'call',   // the verb is the call's; the table is the outbox battery's (FJS-D643)
+  hold:         'call',   // the verb is the call's; holding is the call's client's $hold (FJS-D2296)
   telemetryId:  'call',
   parentTelemetryId: 'call',
   transport:    'carriage',

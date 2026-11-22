@@ -460,10 +460,16 @@ class Parser {
     const wrong = strategy === 'database'
       ? [['column', column], ['claim', claim]]
       : [['dir', dir], ['registry', registry], ['key', key], ['maxOpen', maxOpen], ['place', places[0]]]
+    // Every tenant under strategy row shares one file, so every copy of it
+    // carries them all; a tenant that needs residency needs its own file (FJS-D2293).
     for (const [name, value] of wrong) {
       if (value != null)
         throw new ParseError(
-          `tenancy: '${name}' is not a property of strategy ${strategy}`, start,
+          `tenancy: '${name}' is not a property of strategy ${strategy}` + (name === 'place'
+            ? `. Under row tenancy every tenant's rows share one database file, so no place, backup or replica ` +
+              `can hold one tenant apart. A tenant that needs residency is a strategy database tenant: ` +
+              `tenancy { strategy database  place eu "data/eu" }, or run one fleet per region`
+            : ''), start,
         )
     }
 
@@ -2217,7 +2223,12 @@ class Parser {
         let nullsDistinct = false
         let where = null
         let global_ = false
-        if (this.maybeEat(TK.COMMA)) {
+        // The author's sentence is the LAST argument, as on `@check` (FJS-D2302):
+        // SQLite's refusal names only columns, so without it a conditional
+        // unique says "productId is already taken" and never which slot.
+        let message = null
+        let comma   = !!this.maybeEat(TK.COMMA)
+        if (comma && !this.check(TK.STRING)) {
           const argName = this.eat(TK.IDENT).value
           if (argName !== 'nullsDistinct' && argName !== 'where' && argName !== 'global')
             throw new ParseError(`@@unique: unknown argument '${argName}' — expected 'nullsDistinct', 'where' or 'global'`, this.peek())
@@ -2233,7 +2244,9 @@ class Parser {
               throw new ParseError(`@@unique(nullsDistinct: …): expected true or false`, this.peek())
             nullsDistinct = this.eat(TK.BOOL).value === true
           }
+          comma = !!this.maybeEat(TK.COMMA)
         }
+        if (comma) message = this.eat(TK.STRING).value
         this.eat(TK.RPAREN)
         // Refused together rather than ranked. `nullsDistinct` says the rows
         // with a NULL member are deliberately unconstrained and a predicate
@@ -2246,9 +2259,11 @@ class Parser {
           throw new ParseError(
             `@@unique: 'where' and 'nullsDistinct' cannot both be given — a predicate already says which rows are ` +
             `constrained. Put the NULL rows in or out of the predicate instead`, this.peek())
-        return where
+        const node = where
           ? { kind: 'partialUnique', fields, where, global: global_ }
           : { kind: 'uniqueIndex', fields, nullsDistinct, global: global_ }
+        if (message) node.message = message
+        return node
       }
       // @@arc([orderId, productId])                  — exactly one is set
       // @@arc([orderId, productId], optional: true)  — at most one is set
@@ -2331,21 +2346,36 @@ class Parser {
         // @@fts([field1], tokenize: trigram)        — typo-tolerant char-level matching
         // @@fts([title], tokenize: porter)          — English stemming
         // @@fts([title], tokenize: ascii)           — ASCII-only folding
+        // @@fts([text], multisearch: false)         — own search() only, not in `_search`
         //
         // The tokenizer choice affects what the FTS5 virtual table indexes and
         // therefore what `search()` matches. unicode61 is word-based; trigram
         // is character-overlap (fuzzy); porter applies English stemming;
         // ascii is lowercase-ASCII fold. The model picks one. Unknown values
         // throw at parse time.
+        //
+        // `multisearch: false` keeps the model out of the shared index
+        // (FJS-D2301): a corpus searched only through its own search() would
+        // otherwise store every word a second time.
         this.eat(TK.LPAREN)
         const fields = this.parseFieldList()
-        let tokenize = 'unicode61'   // FTS5 default — same behavior as before this change
-        if (this.maybeEat(TK.COMMA)) {
-          // Named arg: tokenize: <ident>
+        let tokenize    = 'unicode61'
+        let multisearch = true
+        const seenArgs  = new Set()
+        while (this.maybeEat(TK.COMMA)) {
+          const argTok  = this.peek()
           const argName = this.eat(TK.IDENT).value
-          if (argName !== 'tokenize')
-            throw new ParseError(`@@fts: unknown argument '${argName}' — expected 'tokenize'`, this.peek())
+          if (argName !== 'tokenize' && argName !== 'multisearch')
+            throw new ParseError(`@@fts: unknown argument '${argName}' — expected 'tokenize' or 'multisearch'`, argTok)
+          if (seenArgs.has(argName))
+            throw new ParseError(`@@fts: '${argName}' given twice`, argTok)
+          seenArgs.add(argName)
           this.eat(TK.COLON)
+          if (argName === 'multisearch') {
+            const val = this.eat(TK.BOOL).value
+            multisearch = val === 'true' || val === true
+            continue
+          }
           tokenize = this.eat(TK.IDENT).value
           if (!ALLOWED_TOKENIZERS.has(tokenize))
             throw new ParseError(
@@ -2355,7 +2385,7 @@ class Parser {
             )
         }
         this.eat(TK.RPAREN)
-        return { kind: 'fts', fields, tokenize }
+        return { kind: 'fts', fields, tokenize, multisearch }
       }
       case 'map':    return { kind: 'map',          name: this.parseParenString() }
       // @@label(fullName) — which column a picker SHOWS for a row of this model.
@@ -2920,6 +2950,65 @@ class Parser {
           throw new ParseError(`@@exclude(${scope}): range names two fields, [start, end] — got ${range.length}`, close)
         return where ? { kind: 'exclude', scope, range, where } : { kind: 'exclude', scope, range }
       }
+      // @@rate([key, …], max: <Int> | rel.col, per: <duration> | days(rel.col)?,
+      // at: <DateTime field>?, where: <predicate>?) — at most `max` rows share
+      // the key, counting only rows whose `at` (createdAt unless said) falls
+      // within `per` of now and which `where:` admits (`FJS-D1119`,
+      // `FJS-D2295`). The key is a column, so a per-principal quota keys a
+      // `@createdBy` column (`FJS-3027`). `max: slot.cap` and
+      // `per: days(account.gap)` read off the written row's to-one relation at
+      // the write, a null there meaning no cap.
+      case 'rate': {
+        this.eat(TK.LPAREN)
+        const key = this.parseFieldList()
+        let max = null, maxPath = null, per = null, perPath = null, at = null, where = null
+        while (this.maybeEat(TK.COMMA)) {
+          if (this.check(TK.RPAREN)) break
+          const arg = this.eat(TK.IDENT)
+          if (!['max', 'per', 'at', 'where'].includes(arg.value))
+            throw new ParseError(`@@rate: unknown argument '${arg.value}' — expected 'max', 'per', 'at' or 'where'`, arg)
+          this.eat(TK.COLON)
+          const valAt = this.peek()
+          if (arg.value === 'at') { at = this.eat(TK.IDENT).value; continue }
+          if (arg.value === 'where') { where = this.parsePolicyExpr(); continue }
+          if (arg.value === 'max') {
+            if (this.check(TK.IDENT)) {
+              maxPath = [this.eat(TK.IDENT).value]
+              while (this.maybeEat(TK.DOT)) maxPath.push(this.eat(TK.IDENT).value)
+              continue
+            }
+            if (!this.check(TK.NUMBER))
+              throw new ParseError(`@@rate: max: is a whole number, or a number read off a relation (max: slot.cap)`, valAt)
+            max = Number(this.eat(TK.NUMBER).value)
+            if (!Number.isInteger(max) || max < 0)
+              throw new ParseError(`@@rate: max: ${max} — the limit is a whole number of rows, 0 or more`, valAt)
+            continue
+          }
+          if (this.check(TK.IDENT) && this.peek(1)?.type === TK.LPAREN) {
+            const fn = this.eat(TK.IDENT)
+            if (fn.value !== 'days')
+              throw new ParseError(`@@rate: per: ${fn.value}(…) — a window read from a column is days(relation.column), a whole number of days`, fn)
+            this.eat(TK.LPAREN)
+            perPath = [this.eat(TK.IDENT).value]
+            while (this.maybeEat(TK.DOT)) perPath.push(this.eat(TK.IDENT).value)
+            this.eat(TK.RPAREN)
+            per = `days(${perPath.join('.')})`
+            continue
+          }
+          per = this.parseDurationOrSize()
+          if (!/^\d+(?:\.\d+)?(ms|s|m|h|d|w|y)$/.test(per))
+            throw new ParseError(`@@rate: per: ${per} — the window is a duration: 60s, 1m, 24h, 30d`, valAt)
+        }
+        const close = this.eat(TK.RPAREN)
+        if (max == null && !maxPath)
+          throw new ParseError(`@@rate([${key.join(', ')}]): expected max: <n> — how many rows the key may hold${per ? ` within ${per}` : ''}`, close)
+        if (at && !per)
+          throw new ParseError(`@@rate([${key.join(', ')}]): at: ${at} names the clock of a window, and there is no per:`, close)
+        return {
+          kind: 'rate', key, max: maxPath ? maxPath.join('.') : max, per, at: per ? (at ?? 'createdAt') : null,
+          ...(maxPath ? { maxPath } : {}), ...(perPath ? { perPath } : {}), ...(where ? { where } : {}),
+        }
+      }
       // @@mirror(key: <field>) — this model's rows are a Provider's, and the
       // named column is the Provider's id for one (`FJS-D843`). A forward and a
       // sync both land a row by this key, so a key that can repeat or be absent
@@ -3127,16 +3216,27 @@ class Parser {
     this.eat(TK.LPAREN)
     // The LAST argument is the zone path in both forms (`FJS-D1434`); the ones
     // before it are the wall-clock sources a DateTime is derived from.
+    // A trailing `after: field` names the sibling instant an end rolls past
+    // (`FJS-D2294`).
     const args = []
+    let after = null
     do {
       if (args.length) this.eat(TK.COMMA)
-      const path = [this.eat(TK.IDENT).value]
+      const name = this.eat(TK.IDENT).value
+      if (name === 'after' && this.check(TK.COLON)) {
+        this.eat(TK.COLON)
+        after = this.eat(TK.IDENT).value
+        break
+      }
+      const path = [name]
       while (this.check(TK.DOT)) { this.eat(TK.DOT); path.push(this.eat(TK.IDENT).value) }
       args.push(path)
     } while (this.check(TK.COMMA))
     this.eat(TK.RPAREN)
     const path = args.pop()
-    return { kind: 'zoned', path, sources: args.map(p => p.join('.')) }
+    if (!path)
+      throw new ParseError('@zoned names the zone column before after: — @zoned(onDate, endLocal, site.timeZone, after: startsAt)', { line: t.line, col: t.col })
+    return { kind: 'zoned', path, sources: args.map(p => p.join('.')), ...(after ? { after } : {}) }
   }
 
   // ── @@commitment's `on:` ────────────────────────────────────────────────────
@@ -3859,7 +3959,7 @@ const MODEL_ATTRIBUTE_WORDS = [
   'expires', 'effective', 'retention', 'commitment', 'createdBy', 'updatedBy', 'allow',
   'deny', 'require', 'scope', 'tenant', 'check', 'export', 'gate', 'transitions', 'auth',
   'person', 'trail', 'db', 'trait', 'sync', 'anonymous', 'exclude', 'mirror',
-  'validate',
+  'validate', 'rate',
 ]
 
 // These are PARSE KINDS and not the words a reader types, which is the trap
@@ -3879,6 +3979,8 @@ export const REPEATABLE_MODEL_ATTRS = new Set([
   // and the runtime keys moves by field. The same field twice, and one move
   // name on two machines, are @@transitions' own refusals.
   'transitions',
+  // One per window — a key holds 60 a minute and 10,000 a day.
+  'rate',
 ])
 
 // Field attributes a field may legitimately carry more than one of. No field in
@@ -6117,7 +6219,8 @@ function validate(schema) {
     // — the per-model `search()` works without one, so a model missing it would
     // search fine alone and come back untitled in a palette with nothing saying
     // which model forgot.
-    const ftsAttr = model.attributes.find(a => a.kind === 'fts')
+    // `multisearch: false` puts no hit in that index, so nothing needs a title.
+    const ftsAttr = model.attributes.find(a => a.kind === 'fts' && a.multisearch !== false)
     if (ftsAttr && labelAttrs.length && !labelColumn(labelAttrs[0]))
       errors.push(`Model '${model.name}': @@fts titles a hit by an own @@label column, and this @@label names only fields read through a relation`)
     if (ftsAttr && !labelAttrs.length) {
@@ -6189,7 +6292,7 @@ function validate(schema) {
             errors.push(`${at} — scope '${scope.name}' serializes on '${name}', which is @${unstored(key)}, so there is no plain column to match the other members' rows on`)
         }
       }
-      if (attr.where) excludePredicate(model, attr, at)
+      if (attr.where) rowPredicate(model, attr, at)
       if (attr.range[0] === attr.range[1]) {
         errors.push(`${at} — a range is two different fields, a start and an end`)
         continue
@@ -6218,18 +6321,21 @@ function validate(schema) {
   // connection, with no caller in scope — so it refuses what a partial
   // @@unique refuses, and for the same reasons. Inlined because the grade's
   // statement binds only the key, and these are the schema's own literals.
-  function excludePredicate(model, attr, at) {
+  // `@@rate`'s `where:` is the same read, graded by the same kind of statement.
+  function rowPredicate(model, attr, at, {
+    holds = 'holds its range', starts = 'start or stop holding its range', hides = 'the overlap it hides',
+  } = {}) {
     const label = `${at.replace(/\)$/, '')}, where: …)`
     const names = predicateNames(attr.where, model)
     if (names.constant) return errors.push(constantPredicate(label, names.constant))
     if (names.auth)
       return errors.push(`${label} names auth(), which is a different answer for every caller — whether a row ` +
-        `holds its range cannot depend on who is writing the OTHER row`)
+        `${holds} cannot depend on who is writing the OTHER row`)
     if (names.now)
-      return errors.push(`${label} names now(), so a row that never moved would start or stop holding its range ` +
-        `on its own, and the overlap it hides would surface on some unrelated later write. Compare a stored column`)
+      return errors.push(`${label} names now(), so a row that never moved would ${starts} ` +
+        `on its own, and ${hides} would surface on some unrelated later write. Compare a stored column`)
     if (names.crossesModel)
-      return errors.push(`${label} reads another model. Whether a row holds its range is read off that row alone`)
+      return errors.push(`${label} reads another model. Whether a row ${holds} is read off that row alone`)
     if (names.unknown.length)
       return errors.push(`${label} names ${names.unknown.map(u => `'${u}'`).join(', ')}, which ` +
         `${names.unknown.length > 1 ? 'are not fields' : 'is not a field'} of ${model.name}`)
@@ -7032,6 +7138,26 @@ function validate(schema) {
         `Model '${model.name}': @@index([deletedAt]) duplicates the index @@softDelete already builds — ` +
         `both are named idx_<table>_deletedAt, so the database cannot be created. ` +
         `Remove the @@index: @@softDelete indexes the column over live rows only`)
+    }
+  }
+
+  // ── Two @@unique messages over one column set ───────────────────────────────
+  //
+  // SQLite's refusal names the columns and not the index, so the refusal
+  // cannot tell which declaration fired and would answer with either sentence
+  // (FJS-D2302). A relator's generated unique carries none and is not counted.
+  for (const model of schema.models) {
+    const bySet = new Map()
+    for (const a of model.attributes) {
+      if ((a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') || !Array.isArray(a.fields)) continue
+      if (a.generated === 'relator') continue
+      const key = [...a.fields].sort().join('\0')
+      if (!bySet.has(key)) { bySet.set(key, a); continue }
+      const first = bySet.get(key)
+      if ((first.message ?? null) === (a.message ?? null)) continue
+      errors.push(
+        `Model '${model.name}': two @@unique([${a.fields.join(', ')}]) declarations carry different messages, and a ` +
+        `refusal names only the columns, so it cannot say which one fired. Give both the same message`)
     }
   }
 
@@ -8322,8 +8448,13 @@ function validate(schema) {
       }
       const zoned = field.attributes.find(a => a.kind === 'zoned')
       if (!zoned) continue
-      const label = `@zoned(${[...zoned.sources, zoned.path.join('.')].join(', ')})`
+      const label = `@zoned(${[...zoned.sources, zoned.path.join('.'), ...(zoned.after ? [`after: ${zoned.after}`] : [])].join(', ')})`
       const isWall = field.attributes.some(a => a.kind === 'date' || a.kind === 'time')
+      const isInstant = field.type.name === 'DateTime' && !field.type.array && zoned.sources.length === 2
+      if (zoned.after && !isInstant) {
+        errors.push(`${at}: ${label} — after: belongs to the three-argument form on a DateTime, the end of a range that may fall on the next day`)
+        continue
+      }
       // On a DateTime the form is the derived instant (`FJS-D963`, `FJS-D1434`):
       // a day, a time of day on this row, and the zone they are read in.
       if (field.type.name === 'DateTime' && !field.type.array) {
@@ -8340,6 +8471,24 @@ function validate(schema) {
           return null
         }).filter(Boolean)
         if (bad.length) { errors.push(`${at}: ${label} — ${bad.join('; ')}`); continue }
+        // The end rolls one day when it resolves at or before the anchor
+        // (`FJS-D2294`). Both are read off one row, one day and one zone, so a
+        // zone write moves them together; a chain would make the roll depend on
+        // another roll.
+        if (zoned.after) {
+          const anchor = model.fields.find(f => f.name === zoned.after)
+          const az = anchor?.attributes.find(a => a.kind === 'zoned')
+          const why =
+            zoned.after === field.name ? 'names the field itself'
+            : !anchor ? `names no field '${zoned.after}' on this model`
+            : anchor.type.name !== 'DateTime' || anchor.type.array || az?.sources.length !== 2
+              ? `'${zoned.after}' must be a DateTime @zoned(date, time, zone), the start this end follows`
+            : az.sources[0] !== zoned.sources[0] ? `'${zoned.after}' reads its day from '${az.sources[0]}', not '${zoned.sources[0]}'`
+            : az.path.join('.') !== zoned.path.join('.') ? `'${zoned.after}' is read in ${az.path.join('.')}, not ${zoned.path.join('.')}`
+            : az.after ? `'${zoned.after}' is itself anchored — an end follows a start that does not roll`
+            : null
+          if (why) { errors.push(`${at}: ${label} — after: ${why}`); continue }
+        }
       } else if (zoned.sources.length) {
         errors.push(`${at}: ${label} — a String @date or @time takes one argument, the zone it is read in; the three-argument form derives a DateTime`)
         continue
@@ -9278,6 +9427,51 @@ function validate(schema) {
     const driver = (schema.databases ?? []).find(d => d.name === dbName)?.driver ?? 'sqlite'
     if (driver !== 'sqlite')
       errors.push(`Model '${model.name}': @@retention is per model on SQLite only — '${dbName}' is 'driver ${driver}', which compacts as one file; give the database block its retention`)
+  }
+
+  // ── @@rate's key and clock ────────────────────────────────────────────────
+  // The count compiles to `"<column>" = ?`, and SQLite reads an unknown quoted
+  // identifier as a string literal: a misspelled key would count nothing and
+  // admit every write. The clock is compared to an ISO instant, as retention's.
+  for (const model of schema.models) {
+    for (const rate of model.attributes.filter(a => a.kind === 'rate')) {
+      const tag = `@@rate([${rate.key.join(', ')}], max: ${rate.max}${rate.per ? `, per: ${rate.per}` : ''})`
+      for (const k of rate.key) {
+        const f = model.fields.find(x => x.name === k)
+        if (!f) errors.push(`Model '${model.name}': ${tag} — key '${k}' names no field of this model`)
+        else if (f.type?.kind === 'relation') errors.push(`Model '${model.name}': ${tag} — key '${k}' is a relation; name its foreign-key column`)
+      }
+      // A window or a limit is read off the written row's parent, so the path
+      // is one to-one hop, as `@zoned`'s is; a column of the row itself would
+      // give each row of one key its own number and no single count.
+      const ratePath = (path, shape, unit) => {
+        const [relName, colName] = path
+        const rel    = path.length === 2 ? model.fields.find(f => f.name === relName) : null
+        const target = rel && schema.models.find(m => m.name === rel.type?.name)
+        const col    = target?.fields.find(f => f.name === colName)
+        const ctype  = typeof col?.type === 'object' ? col.type.name : col?.type
+        if (path.length !== 2)
+          errors.push(`Model '${model.name}': ${tag} — the ${unit === 'days' ? 'window' : 'limit'} is read one relation away, ${shape}`)
+        else if (!target || rel.type.array || !rel.attributes.some(a => a.kind === 'relation' && a.fields))
+          errors.push(`Model '${model.name}': ${tag} — '${relName}' must be a to-one relation of '${model.name}' holding its own key`)
+        else if (!col)
+          errors.push(`Model '${model.name}': ${tag} — '${target.name}' has no field '${colName}'`)
+        else if (ctype !== 'Int' || col.type?.array)
+          errors.push(`Model '${model.name}': ${tag} — '${target.name}.${colName}' must be an Int, a whole number of ${unit} (got ${ctype})`)
+      }
+      if (rate.perPath) ratePath(rate.perPath, 'days(relation.column)', 'days')
+      if (rate.maxPath) ratePath(rate.maxPath, 'max: relation.column', 'rows')
+      if (rate.where) rowPredicate(model, rate, `Model '${model.name}': ${tag}`,
+        { holds: 'counts toward the limit', starts: 'start or stop counting', hides: 'the excess it admitted' })
+      if (!rate.at) continue
+      const field = model.fields.find(f => f.name === rate.at)
+      const tname = typeof field?.type === 'object' ? field.type.name : field?.type
+      if (!field) errors.push(rate.at === 'createdAt'
+        ? `Model '${model.name}': ${tag} clocks from 'createdAt' and this model has none — name its time column with at: <column>`
+        : `Model '${model.name}': ${tag} — at: '${rate.at}' names no field of this model`)
+      else if (tname !== 'DateTime' || field.type?.array || field.array)
+        errors.push(`Model '${model.name}': ${tag} — at: '${rate.at}' must be a DateTime column; the window compares it to an instant (got ${tname})`)
+    }
   }
 
   // ── @from over an @@expires model ─────────────────────────────────────────

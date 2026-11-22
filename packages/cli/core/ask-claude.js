@@ -362,7 +362,11 @@ export function askArgv({ session = null, edit = null, reads = [], work = null, 
 // tool AskUserQuestion and the plan tools silently vanish.
 const SESSION_MODES = ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions']
 
-export function sessionArgv({ session = null, model = null, effort = null, permissionMode = null } = {}) {
+// `allowBypass` is for a host whose mode picker offers bypassPermissions: Claude
+// Code refuses a `set_permission_mode` to it unless the process was launched
+// with `--allow-dangerously-skip-permissions`, which makes the mode reachable
+// without starting in it.
+export function sessionArgv({ session = null, model = null, effort = null, permissionMode = null, allowBypass = false } = {}) {
   const argv = [
     '-p',
     '--output-format',          'stream-json',
@@ -377,6 +381,7 @@ export function sessionArgv({ session = null, model = null, effort = null, permi
   if (model) argv.push('--model', String(model))
   if (effort && EFFORTS.includes(effort)) argv.push('--effort', effort)
   if (permissionMode && SESSION_MODES.includes(permissionMode)) argv.push('--permission-mode', permissionMode)
+  if (allowBypass) argv.push('--allow-dangerously-skip-permissions')
   if (session && SESSION_ID.test(String(session))) argv.push('--resume', String(session))
   return argv
 }

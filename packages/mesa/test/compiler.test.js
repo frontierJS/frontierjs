@@ -5040,11 +5040,11 @@ describe('markdown code fences — highlighting comes from @frontierjs/toolbelt'
     // also why no browser could put them back together (FJS-261).
     const r = await compileSource(['```html', '<div>x</div>', '```'].join('\n'), { filename: 'test.md' })
     expect(r.result).not.toContain('x3C')
-    expect(r.result).toContain('<i>&lt;</i><strong>div</strong><i>&gt;</i>')
+    expect(r.result).toContain('<strong>&lt;div&gt;</strong>')
 
     const amp = await compileSource(['```js', 'const a = b && c', '```'].join('\n'), { filename: 'test.md' })
     expect(amp.result).not.toContain('x26')
-    expect(amp.result).toContain('<i>&amp;</i><i>&amp;</i>')
+    expect(amp.result).toContain('b &amp;&amp; c')
   })
 
   it('a fence that literally writes an entity keeps it written', async () => {
@@ -5052,7 +5052,7 @@ describe('markdown code fences — highlighting comes from @frontierjs/toolbelt'
     // arrives as `&#x26;lt;`, and decoding numeric-then-named turns it into a
     // `<` the author never typed. One pass cannot decode its own output.
     const r = await compileSource(['```html', '&lt;b&gt;', '```'].join('\n'), { filename: 'test.md' })
-    expect(r.result).toContain('<i>&amp;</i>lt<i>;</i>b<i>&amp;</i>gt<i>;</i>')
+    expect(r.result).toContain('<label>&amp;lt;</label>b<label>&amp;gt;</label>')
   })
 
   it('a comment opening mid-line does not swallow the code before it', async () => {

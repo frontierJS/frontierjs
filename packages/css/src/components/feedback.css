@@ -62,18 +62,21 @@
   /* Firefox paints the track here; WebKit needs the pseudo below. */
   background:    var(--surface-sunken);
   color:         var(--bg-mix, var(--color-primary));
+  /* The fill is a pseudo-element, a child, and a tone does not inherit
+     (tones.css), so the fill reads the tone through this. */
+  --_bar-fill:   var(--bg-mix, var(--color-primary));
 }
 .progress::-webkit-progress-bar {
   background:    var(--surface-sunken);
   border-radius: 999px;
 }
 .progress::-webkit-progress-value {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
   transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .progress::-moz-progress-bar {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
 }
 
@@ -95,6 +98,7 @@
   overflow:      hidden;
   background:    var(--surface-sunken);
   color:         var(--bg-mix, var(--color-primary));
+  --_bar-fill:   var(--bg-mix, var(--color-primary));
 }
 .meter::-webkit-meter-bar {
   background:    var(--surface-sunken);
@@ -104,12 +108,12 @@
 .meter::-webkit-meter-optimum-value,
 .meter::-webkit-meter-suboptimum-value,
 .meter::-webkit-meter-even-less-good-value {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
   transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .meter::-moz-meter-bar {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
 }
 

@@ -345,7 +345,7 @@ import type { HookMap }        from '../src/core/hooks.ts'
 // hook test over one would pass against a pipeline nobody can use.
 // The overrides are the builder's half of the context: the fields
 // withCallEffects adds are what it refuses to be handed.
-type CtxSeed = Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'system'>
+type CtxSeed = Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'hold' | 'system'>
 
 function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
   return withCallEffects({

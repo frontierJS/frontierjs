@@ -46,6 +46,10 @@ export function translate(error: ConduitError, status?: number, headers?: Record
   if (code?.endsWith('license_error')) return { ...base, kind: 'unlicensed', retryable: false }
   if (status === 403 || (error.kind === 'auth_failed' && status === 403)) return { ...base, kind: 'forbidden', retryable: false }
   if (status === 404) return { ...base, kind: 'gone', retryable: false }
+  // A draft that is not there answers 500, not 404: the server's GetDraft wraps
+  // not-found as an internal error, so a discard of an already-gone draft would
+  // read as an outage and the stale row would never leave the mirror.
+  if (code === 'app.draft.get.app_error') return { ...base, kind: 'gone', retryable: false }
   if (status === 429) return { ...base, kind: 'rate_limited', retryable: true }
   if (error.kind === 'client_error') return { ...base, kind: 'refused', retryable: false }
   return base

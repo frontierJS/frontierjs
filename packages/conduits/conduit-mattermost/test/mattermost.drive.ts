@@ -31,7 +31,7 @@ import {
   pinPost, unpinPost, listPinned, markUnread, muteChannel, joinChannel, leaveChannel, createDirectChannel, createGroupChannel,
   followThread, unfollowThread, markAllThreadsRead, listDrafts, saveDraft, deleteDraft,
   listPreferences, savePost, unsavePost, favoriteChannel, unfavoriteChannel, listSavedPosts, getStatus, listStatuses, setStatus, setCustomStatus, clearCustomStatus, customStatusOf,
-  typingFrame, listCategories, createCategory, updateCategory, deleteCategory, reorderCategories, searchPosts, editHistory, setReminder,
+  typingFrame, publishTyping, listCategories, createCategory, updateCategory, deleteCategory, reorderCategories, searchPosts, editHistory, setReminder,
   mirror, postModel, channelModel, channelMemberModel, reactionModel, threadModel, teamModel, profileModel, fileInfoModel, memberKey, reactionKey, threadKey,
   mattermostWebhookDialect, mattermostCommandDialect, verifyMattermostToken, respond,
   mattermostSocketTarget, mattermostSocketDialect, MATTERMOST_SOCKET_TARGET, type SocketEvent,
@@ -720,6 +720,24 @@ try {
     readNamesNoThread: lBob.of('thread_read_changed').some(e => e.payload.rootExternalId === null && e.payload.unreadReplies === 0), notYours: (await followThread(bob, ids.alice, ids.team, root.row!.externalId)).error?.kind,
   })
 
+  // A follower who neither wrote the root, replied nor is named hears a reply; so does an earlier replier, and one who unfollowed does not.
+  const heard = (id: string) => lBob.of('thread_updated').filter(e => e.payload.thread.externalId === threadKey(ids.bob, id))
+  const watched = await postMessage(alice, { channelExternalId: ids.open, message: 'watch this' })
+  await followThread(bob, ids.bob, ids.team, watched.row!.externalId)
+  await postMessage(alice, { channelExternalId: ids.open, rootExternalId: watched.row!.externalId, message: 'an update' })
+  const followerHeard = await until(() => heard(watched.row!.externalId).length > 0, 1_000)
+  const asked = await postMessage(alice, { channelExternalId: ids.open, message: 'a question' })
+  await postMessage(bob, { channelExternalId: ids.open, rootExternalId: asked.row!.externalId, message: 'me too' })
+  await postMessage(alice, { channelExternalId: ids.open, rootExternalId: asked.row!.externalId, message: 'the answer' })
+  const replierHeard = await until(() => heard(asked.row!.externalId).length >= 2, 1_000)
+  await unfollowThread(bob, ids.bob, ids.team, asked.row!.externalId)
+  await postMessage(alice, { channelExternalId: ids.open, rootExternalId: asked.row!.externalId, message: 'a postscript' })
+  await new Promise(r => setTimeout(r, 200))
+  t('thread.everyFollowerHearsAReply', {
+    follower: [followerHeard, heard(watched.row!.externalId).map(e => e.payload.thread.unreadReplies)],
+    earlierReplier: [replierHeard, heard(asked.row!.externalId).map(e => e.payload.thread.unreadReplies)],
+  })
+
   // Direct and group channels, join and leave.
   const dm = await createDirectChannel(alice, ids.alice, ids.bob), dm2 = await createDirectChannel(bob, ids.bob, ids.alice)
   const group = await createGroupChannel(alice, [ids.alice, ids.bob, ids.bot]), group2 = await createGroupChannel(bob, [ids.bot, ids.bob, ids.alice])
@@ -813,6 +831,15 @@ try {
     senderOmitted: lAlice.of('typing').length, badTyping,
   })
 
+  // The same signal over REST: the broker holds the app's socket and is never written to (FJS-D2303).
+  const typed = await publishTyping(alice, ids.alice, ids.open)
+  await until(() => lBob.of('typing').length > 1)
+  const restTyping = lBob.of('typing')[1]
+  t('typing.publishedOverRest', {
+    ok: typed.ok, bob: [restTyping?.payload.profileExternalId === ids.alice, restTyping?.payload.channelExternalId === ids.open, restTyping?.payload.rootExternalId ?? null],
+    senderOmitted: lAlice.of('typing').length, notYours: (await publishTyping(bob, ids.alice, ids.open)).error?.kind,
+  })
+
   // Sidebar categories: create, move a channel in, rename, reorder, delete.
   const c0 = await listCategories(alice, ids.alice, ids.team)
   const created = await createCategory(alice, ids.alice, ids.team, { displayName: 'Work', channelExternalIds: [ids.open] })
@@ -893,7 +920,7 @@ try {
   const og = (await postMessage(alice, { channelExternalId: ids.open, message: 'see https://example.com/a for more' })).row!
   const img = (await postMessage(alice, { channelExternalId: ids.open, message: 'https://example.com/cat.png' })).row!
   await until(() => lBob.of('posted').some(e => e.payload.post.externalId === img.externalId))
-  const read = (await listPosts(alice, ids.open, { perPage: 10 })).rows ?? []
+  const read = (await listPosts(alice, ids.open, { perPage: 30 })).rows ?? []
   t('post.embedsFromMetadata', {
     opengraph: read.find(p => p.externalId === og.externalId)?.embeds,
     image: read.find(p => p.externalId === img.externalId)?.embeds.map(e => [e.type, e.image]),
@@ -968,12 +995,14 @@ process.exit(report(got, {
   'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2b00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},
   'thread.followUnfollowReadAll': {followed:[true,true],unfollowed:[true,true],frames:[true,false],allRead:true,readNamesNoThread:true,notYours:'forbidden'},
+  'thread.everyFollowerHearsAReply': {follower:[true,[1]],earlierReplier:[true,[0,1]]},
   'channel.directGroupJoinLeave': {direct:['direct',null,true],group:['group',null,true,'alice, bob, bot'],pairIsADirectChannel:'mattermost: a group channel is three to eight people; two is a direct channel',groupPushed:[1,1],joined:[true,true],joinSeen:true,privateNeedsAMember:'forbidden',left:true,leftAgain:'forbidden'},
   'channel.browseOpenOfATeam': { lounge: true, joinedIsListedToo: true, onlyOpen: true, noPrivate: true, noDirect: true, paged: [1, 1, true], noSuchTeam: 'gone', notAnId: 'mattermost: teamExternalId is not a Mattermost id' },
   'draft.saveListDelete': {one:['half a thou','half a thought',true],listed:[['half a thought',false],['reply draft',true]],deleted:[true,true],after:0,again:'gone',thread:true,pushed:['draft_created','draft_updated','draft_created','draft_deleted','draft_deleted'],bobSawNone:0},
   'preference.savedPostsAndFavorites': {saved:true,pref:[['flagged_post',true,'true']],flagged:[true],otherCategoryEmpty:0,favoritesMove:[false,true,true,false],fav:true,unfav:true,unsaved:true,flaggedAfter:0,backInChannels:true,pushed:['preferences_changed','preferences_changed','preferences_deleted','preferences_deleted'],bobSawNone:0,categoryPushed:true},
   'status.ownByIdsSetAndCustom': {own:['online',false],set:['dnd',true,4102444800],byIds:'dnd',rowsAsked:2,pushed:['dnd'],bobHeardNothing:0,badStatus:true,custom:[true,'palm_tree','On a beach','2100-01-01T00:00:00.000Z'],cleared:[true,null],userUpdated:true,notYours:'forbidden'},
   'typing.frameRelaysToTheOthers': {wire:{action:'user_typing',seq:3,data:{channel_id:'general5000000000000000000',parent_id:''}},bob:[true,true,true],senderOmitted:0,badTyping:'mattermost: channelExternalId is not a Mattermost id'},
+  'typing.publishedOverRest': {ok:true,bob:[true,true,null],senderOmitted:0,notYours:'forbidden'},
   'category.listCreateMoveDelete': {system:[['favorites','channels','direct_messages'],true,true],created:['custom','Work',['general5000000000000000000'],1,false],renamed:['Projects',['general5000000000000000000','ops60000000000000000000000'],true],reordered:true,sysDelete:'refused',gone:[true,false,true],tooLong:'mattermost: a category needs a display name',refusedLong:'refused',pushed:['sidebar_category_created','sidebar_category_deleted','sidebar_category_order_updated','sidebar_category_updated'],orderPushed:true},
   'category.moveIntoSystem': { back: ['channels', true], leftCustom: false, unchanged: 'channels' },
   'search.termsOrAndMembership': {and:[true],or:2,matches:['pineapple','pizza'],privateHidden:true,memberSees:true,phrase:1,none:0,noTerms:'mattermost: a search needs terms',s2:true},

@@ -73,9 +73,20 @@ const safe = (session: string) => session.replace(/[^A-Za-z0-9_-]/g, '_')
 // session's window after anything that narrows one: the browser resizing the
 // terminal (client-resized), a pane resize, a split. A pane in copy mode, or
 // in a full-screen program's alternate screen (no history), is left as it is.
+//
+// The `resize-pane -T` runs from a shell, as a tmux CLI client, and a client's command
+// fires its after- hook where a hook's own commands do not: each one fires
+// after-resize-pane again, which untrims every pane again, doubling until the server
+// dies of it. So the hook takes a lock first, natively, and the shell drops it when the
+// panes are done: `if-shell -F` reads it in the same command queue that fired the hook,
+// so the hooks the untrim's own resizes fire see it held and do nothing.
 const RESIZE_HOOKS = ['client-resized', 'after-resize-pane', 'after-split-window']
-const untrim = (tmux: string) =>
-  `run-shell -b "${tmux} -S '#{socket_path}' list-panes -t '#{session_name}' -F '##{pane_id}' | xargs -rn1 ${tmux} -S '#{socket_path}' resize-pane -T -t"`
+const LOCK = '@fjs_untrim'
+const untrim = (tmux: string) => {
+  const t = `${tmux} -S '#{socket_path}'`
+  const each = `${t} list-panes -t '#{session_name}' -F '##{pane_id}' | xargs -rn1 ${t} resize-pane -T -t; ${t} set-option -gu ${LOCK}`
+  return `if-shell -F '#{${LOCK}}' '' { set-option -g ${LOCK} 1 ; run-shell -b "${each}" }`
+}
 
 /** The argv a socket spawns: tmux attached-or-created when tmux is on PATH, a login shell when it is not. */
 export function shellArgv(socket: string, session: string, cwd: string): string[] {

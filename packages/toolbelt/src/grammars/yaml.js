@@ -9,7 +9,9 @@ export const yaml = {
     { match: /(?<=^|\s)#.*/, type: 'comment' },
     { match: /^(?:---|\.\.\.)(?=\s|$)/, type: 'punctuation' },
     // A key: plain, or quoted, before a colon that ends the line or a space follows.
-    { match: /(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#'"\-?:,[\]{}][^#:]*?|-[^\s#:][^#:]*?)(?=[ \t]*:(?:\s|$))/, type: 'property' },
+    // A key starts a line's content or follows a flow `{` or `,`: free to start
+    // anywhere, a colon-less line was rescanned to its end from every word.
+    { match: /(?<=^[ \t]*(?:[-?][ \t]+)*|[{,][ \t]*)(?:"(?:[^"\\]|\\.)*"|'(?:[^']|'')*'|[^\s#'"\-?:,[\]{}][^#:]*?|-[^\s#:][^#:]*?)(?=[ \t]*:(?:\s|$))/, type: 'property' },
     { match: /"(?:[^"\\]|\\.)*"?/, type: 'string' },
     { match: /'(?:[^']|'')*'?/, type: 'string' },
     { match: /[&*][^\s,[\]{}]+/, type: 'special' },

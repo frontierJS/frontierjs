@@ -33,6 +33,13 @@ export interface EnqueueOptions {
 /** A definition carries its own name; a string is the caller restating it. */
 export type EnqueueRef = string | { name: string }
 
+/** What `ctx.hold` takes — Litestone's `HeldEffect`, restated because junction names no Litestone type. */
+export interface HeldEffect {
+  name?:     string
+  commit?:   () => unknown
+  rollback?: () => unknown
+}
+
 /**
  * What the core calls through `app.outbox`. The slot is the outbox battery's
  * and stays empty until that module loads (`FJS-D643`), so the two places that
@@ -293,6 +300,22 @@ export interface ServiceContext {
    */
   enqueue: (job: EnqueueRef, payload: unknown, opts?: EnqueueOptions) => Promise<string>
 
+  /**
+   * Hold an effect outside the database until this call's transaction settles
+   * — the call's `$.db.$hold` (`FJS-D1873`, `FJS-D2296`). For a record kept
+   * outside the database (a git ref, a file): prepare it in the method, finish
+   * it in `commit`, undo it in `rollback`.
+   *
+   *   c.hold({ name: 'issue ref', commit: () => ref.commit(), rollback: () => ref.abort() })
+   *
+   * `commit` runs after the outermost COMMIT and `rollback` when the frame it
+   * was held in rolls back; with no transaction open — a service without
+   * `transactional:` — the write is already real and `commit` runs now.
+   * **Observer tier**: a side that throws or rejects is logged by `name`,
+   * never thrown, and a crash runs neither side, so the reconcile is the app's.
+   */
+  hold: (effect: HeldEffect) => unknown
+
   // instrumentation — set by callService, undefined for bypass (_find etc.)
   telemetryId?: string
   // the telemetryId of the call this one was made from. Read before the call's
@@ -365,10 +388,20 @@ export function setCallDb<T extends object>(ctx: T, db: unknown): T {
  * literal is still checked against every other field it owes.
  */
 export function withCallEffects(
-  base: Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'system'>
+  base: Omit<ServiceContext, 'afterCommit' | 'enqueue' | 'hold' | 'system'>
 ): ServiceContext {
   const ctx = base as ServiceContext
   ctx.afterCommit  = (fn) => { callSlots(ctx).afterCommit.push(fn) }
+  ctx.hold = (effect) => {
+    const db = callDb(ctx) as { $hold?: (e: HeldEffect) => unknown } | undefined
+    // Running `commit` now in place of holding it would move the outside
+    // record ahead of a write that may still roll back.
+    if (!db || !('$hold' in db) || typeof db.$hold !== 'function') throw new Error(
+      `ctx.hold('${effect.name ?? 'unnamed'}') in '${ctx.service}.${String(ctx.method)}': this call's client ($.db) has no $hold, ` +
+      `so the effect cannot settle with its transaction. It needs a Litestone client.`
+    )
+    return db.$hold(effect)
+  }
   ctx.enqueue = (job, payload, opts) => {
     // The table is the outbox battery's, so the write goes through its slot.
     // Refused here rather than there, because with no relay there is no there.

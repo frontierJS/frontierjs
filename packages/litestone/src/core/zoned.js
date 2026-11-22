@@ -42,9 +42,15 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
       const zoned = field.attributes.find((/** @type {any} */ a) => a.kind === 'zoned')
       if (!zoned || field.type.name !== 'DateTime' || zoned.sources?.length !== 2) continue
       const [date, time] = zoned.sources
+      // `after:` is validated to name a sibling on the same day and zone, so the
+      // end needs only the anchor's clock (`FJS-D2294`).
+      const anchorTime = zoned.after
+        ? model.fields.find((/** @type {any} */ f) => f.name === zoned.after)?.attributes.find((/** @type {any} */ a) => a.kind === 'zoned')?.sources?.[1] ?? null
+        : null
       const entry = { field: field.name, column: col(field.name), date, time, dateColumn: col(date), timeColumn: col(time),
+        anchorTime, anchorTimeColumn: anchorTime && col(anchorTime),
         zone: /** @type {string|null} */ (null), zoneDefault: /** @type {string|null} */ (null), via: /** @type {any} */ (null), label: '' }
-      entry.label = `@zoned(${date}, ${time}, ${zoned.path.join('.')})`
+      entry.label = `@zoned(${date}, ${time}, ${zoned.path.join('.')}${zoned.after ? `, after: ${zoned.after}` : ''})`
       if (zoned.path.length === 1) {
         entry.zone = zoned.path[0]
         const def = model.fields.find((/** @type {any} */ f) => f.name === entry.zone)
@@ -76,7 +82,7 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
           pairs:      hop.fkFields.map((/** @type {string} */ f, /** @type {number} */ i) => [col(f), pcol(hop.refFields[i])]),
           fields:     [],
         })
-        edge.fields.push({ column: entry.column, dateColumn: entry.dateColumn, timeColumn: entry.timeColumn })
+        edge.fields.push({ column: entry.column, dateColumn: entry.dateColumn, timeColumn: entry.timeColumn, anchorTimeColumn: entry.anchorTimeColumn })
       }
       ;(byModel[model.name] ??= []).push(entry)
     }
@@ -86,12 +92,19 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
 
 // ─── The instant ────────────────────────────────────────────────────────────
 
-/** `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is. */
-export function wallInstant(/** @type {any} */ date, /** @type {any} */ time, /** @type {any} */ zone) {
+/**
+ * `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is.
+ * With `after`, an instant at or before it is read on the next day — `22:00–06:00` ends the morning
+ * after, and an end equal to its start is 24 hours (`FJS-D2294`).
+ */
+export function wallInstant(/** @type {any} */ date, /** @type {any} */ time, /** @type {any} */ zone, /** @type {string|null} */ after = null) {
   if (date == null || time == null || zone == null) return null
   const [year, month, day] = String(date).split('-').map(Number)
   const [hour, minute, second = 0] = String(time).split(':').map(Number)
-  return new Date(fromWall({ year, month, day, hour, minute, second }, zone, { disambiguation: 'compatible' })).toISOString()
+  const on = (/** @type {Date} */ d) => new Date(fromWall({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
+    hour, minute, second }, zone, { disambiguation: 'compatible' })).toISOString()
+  const at = on(new Date(Date.UTC(year, month - 1, day)))
+  return after != null && at <= after ? on(new Date(Date.UTC(year, month - 1, day + 1))) : at
 }
 
 // ─── The writes ─────────────────────────────────────────────────────────────
@@ -115,7 +128,7 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
     })), { model: modelName, operation: 'write' })
   }
 
-  const sourcesOf = (/** @type {any} */ z) => [z.date, z.time, ...(z.zone ? [z.zone] : z.via.fkFields)]
+  const sourcesOf = (/** @type {any} */ z) => [z.date, z.time, ...(z.anchorTime ? [z.anchorTime] : []), ...(z.zone ? [z.zone] : z.via.fkFields)]
   const zoneOf = (/** @type {any} */ z, /** @type {any} */ row) => {
     if (z.zone) return row[z.zone]
     const key = z.via.fkFields.map((/** @type {string} */ f) => row[f])
@@ -145,7 +158,8 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
       }
       const values = [...new Set(rows.map(r => {
         const zone = z.zone && creating && r[z.zone] === undefined ? z.zoneDefault : zoneOf(z, r)
-        return wallInstant(r[z.date], r[z.time], zone)
+        const after = z.anchorTime ? wallInstant(r[z.date], r[z.anchorTime], zone) : null
+        return wallInstant(r[z.date], r[z.time], zone, after)
       }))]
       if (values.length > 1) throw new ValidationError([{ path: [z.field], message:
         `${z.field} is ${z.label}, and this write moves it to a different instant on each of the ${rows.length} rows it reaches — ` +
@@ -198,7 +212,8 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
           const sets = []
           const binds = []
           for (const f of e.fields) {
-            const value = wallInstant(child[f.dateColumn], child[f.timeColumn], __zone)
+            const after = f.anchorTimeColumn ? wallInstant(child[f.dateColumn], child[f.anchorTimeColumn], __zone) : null
+            const value = wallInstant(child[f.dateColumn], child[f.timeColumn], __zone, after)
             if (value === child[f.column]) continue
             sets.push(`${quoteIdent(f.column)} = ?`)
             binds.push(value)

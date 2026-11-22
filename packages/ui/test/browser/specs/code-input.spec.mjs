@@ -79,13 +79,13 @@ export async function run(t) {
     const c = (sel) => getComputedStyle(paint.querySelector(sel)).color;
     const r = text.getBoundingClientRect();
     return {
-      tokens:  new Set([c('b'), c('em'), c('i')]).size,
+      tokens:  new Set([c('b'), c('em'), c('strong')]).size,
       glyphs:  getComputedStyle(text).color,
       hit:     document.elementFromPoint(r.left + r.width / 2, r.top + 20) === text,
       hidden:  paint.getAttribute('aria-hidden'),
     };
   `)
-  t.is(look.tokens, 3, 'names, values and punctuation are painted in three colors from the theme')
+  t.is(look.tokens, 3, 'names, values and keywords are painted in three colors from the theme')
   t.is(look.glyphs, 'rgba(0, 0, 0, 0)', 'while the textarea draws its own glyphs transparent')
   t.ok(look.hit, 'a click lands on the textarea, not the paint')
   t.is(look.hidden, 'true', 'and the paint is hidden from assistive technology')

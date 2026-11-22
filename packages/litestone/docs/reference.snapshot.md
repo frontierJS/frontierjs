@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**133 words** — 13 declarations · 76 field attributes · 39 model attributes · 5 transition words.
+**134 words** — 13 declarations · 76 field attributes · 40 model attributes · 5 transition words.
 
 ## Index
 
@@ -41,7 +41,7 @@ and shows you the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@check`](#check-model) · [`@@validate`](#validate-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@retention`](#retention-model) · [`@@commitment`](#commitment-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@exclude`](#exclude-model) · [`@@rate`](#rate-model) · [`@@check`](#check-model) · [`@@validate`](#validate-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@retention`](#retention-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@require`](#require-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@person`](#person-model) · [`@@trail`](#trail-model) · [`@@mirror`](#mirror-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -1408,9 +1408,9 @@ model Example {
 - **Deeper** — [vectors.md](vectors.md)
 - **See also** — [`@point`](#point-field)
 
-#### `@zoned` `([<date>, <time>,] <field> | <relation>.<field>)` <a id="zoned-field"></a>
+#### `@zoned` `([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])` <a id="zoned-field"></a>
 
-The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant.
+The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.
 
 ```lite
 model Example {
@@ -1503,9 +1503,9 @@ model Example {
 - **Deeper** — [performance.md](performance.md)
 - **See also** — [`@@unique`](#unique-model)
 
-#### `@@unique` `([field, …][, nullsDistinct: true | where: <expr>])` <a id="unique-model"></a>
+#### `@@unique` `([field, …][, nullsDistinct: true | where: <expr>][, "<message>"])` <a id="unique-model"></a>
 
-A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author.
+A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author. A trailing string is the refusal's sentence: it replaces the per-field message and the summary's tail of the 409 `UniqueConflictError`, which otherwise says only which columns are taken, and a `where:` form's predicate goes on `err.constraint` for the developer. Two declarations over one column set carrying different messages are refused, because the refusal names columns and not the index (`FJS-D2302`).
 
 ```lite
 model Example {
@@ -1539,6 +1539,23 @@ model Example {
 - **Also typed** — `no overlap` · `exclusion constraint` · `double booking`
 - **Deeper** — [concurrency.md](concurrency.md)
 - **See also** — [`scope`](#scope-declaration) · [`@@unique`](#unique-model)
+
+#### `@@rate` `([<field>, …], max: <n> | <relation>.<field>[, per: <duration> | days(<relation>.<field>)][, at: <field>][, where: <predicate>])` <a id="rate-model"></a>
+
+At most `max` rows of this model share the key — within `per` of now when a window is given, counting rows whose `at` (a `DateTime`, `createdAt` unless said) is inside it; every row of the key when not. The key is a column, so a quota per caller keys a `@createdBy` column: `@@rate([authorId], max: 5, per: 1m)` holds each author to five comments a minute. Graded when the outermost write commits, inside the write, so a `createMany` or a `$transaction` past the limit rolls back whole and two writers cannot both see room for one; `asSystem()` is held to it, as to `@@check`. The refusal is a 409 `RateLimitError` naming the key, with `retryAt` and `retryAfter` saying when the window reopens. A row whose key is null is nobody's count, and a soft-deleted row still counts. One per window, so a key may hold 60 a minute and 10,000 a day. `per: days(account.surveyMinDaysBetween)` reads the window off the written row's to-one relation at the write, an `Int` number of days, and a null there is no cap (`FJS-D1119`). `max: slot.cap` reads the limit the same way, so with `where: status == 'confirmed'` and no `per:` it is a live-row cap per parent: a slot's confirmed places, with a waitlist that does not count (`FJS-D2295`). `where:` is read off the row alone, and an update moving a row into it is graded.
+
+```lite
+model Example {
+  id Int @id
+  authorId Int? @createdBy
+  createdAt DateTime @default(now())
+  @@rate([authorId], max: 5, per: 1m)
+}
+```
+
+- **Also typed** — `rate limit` · `throttle` · `per minute` · `capacity`
+- **Deeper** — [concurrency.md](concurrency.md)
+- **See also** — [`@createdBy`](#createdby-field) · [`@maxItems`](#maxitems-field) · [`@@check`](#check-model)
 
 #### `@@check` `("<sql>"[, "<message>"])` <a id="check-model"></a>
 
@@ -1667,9 +1684,9 @@ model Example {
 
 - **Deeper** — [schema.md](schema.md)
 
-#### `@@fts` `([field, …][, tokenize: unicode61|ascii|porter|trigram])` <a id="fts-model"></a>
+#### `@@fts` `([field, …][, tokenize: unicode61|ascii|porter|trigram][, multisearch: false])` <a id="fts-model"></a>
 
-Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse.
+Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse. multisearch: false keeps the model out of _search: its own search() still works, it needs no @@label, it stores its words once instead of twice, and $search naming it is a 400.
 
 ```lite
 model Example {
@@ -1683,6 +1700,7 @@ model Example {
 
 - **Legal** — in a model
 - **`tokenize`** — `unicode61` · `ascii` · `porter` · `trigram`
+- **`multisearch`** — `true` · `false`
 - **Deeper** — [full-text-search.md](full-text-search.md)
 
 #### `@@extensible` `(column, declaredBy: Model[, scope: field][, max: { kind: N }])` <a id="extensible-model"></a>
@@ -2426,3 +2444,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `deny-reads-nullable-column` — an @@deny compares a column that can be NULL, and a NULL row is refused
 
 *warn*. SQL compares with three values and a `@@deny` fires on TRUE and on UNKNOWN alike, so `@@deny('update', ok == false)` over an optional `ok` refuses every row where `ok` is NULL, not only the ones where it is false. `x == null` is the one compare that answers a boolean. Say what NULL does: `ok != null && ok == false` to let a NULL row through, or `ok == null || ok == false` to refuse it on purpose.
+
+### `locked-under-cascade` — a model locked for delete under an onDelete: Cascade makes its parents undeletable
+
+*info*. A parent delete whose cascade would take a row graded 9 for delete is refused, asSystem() included (FJS-D1281), so every parent the cascade reaches the locked model from cannot be deleted while one such row exists. The schema parses, so otherwise the first sign is a delete refused at runtime.

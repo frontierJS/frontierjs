@@ -297,6 +297,10 @@ The full hazard catalog for `@frontierjs/toolbelt`, moved out of `CLAUDE.md`. Th
   a line used to start a comment block and swallow the code before it, which
   reads as a disabled line. `isTrailingComment()` is the split; a comment
   that opens the line, or runs on, is still a block.
+- **glow has two engines and a language picks one.** A language `grammarFor`
+  knows paints through `/grammars`, so its element for a token is `ELEMENT`'s
+  in `tokenize.js`; a language list, jsx, tsx, sql, shell and the rest paint by
+  `renderRow`'s rules and carry only a block comment (`FJS-D2304`).
 - **glow's output is elements, never classes** — `<em>` a value, `<sup>` a
   comment. `@frontierjs/css`'s `components/code.css` themes exactly that shape,
   so emitting a class here would silently break the theme rather than fail.

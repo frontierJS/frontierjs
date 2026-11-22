@@ -71,17 +71,28 @@
   color:            var(--ink);
   font-family:      var(--font-primary), sans-serif;
   /*
-   * Body copy. --text-md is the body rung and --leading-body the body
-   * leading, and until FJS-4190 nothing on running text read either — a `p`
-   * was the UA's 16px and `normal`. These inherit as COMPUTED values, so a
-   * nested `.theme-*` retuning them reaches text below it only where a rule
-   * re-reads them: `.prose` and the Block tier (surface.css) do, exactly as
-   * they re-read --ink.
+   * Body copy. These inherit as COMPUTED values, so a nested `.theme-*`
+   * retuning the tokens reaches text below it only where a rule re-reads
+   * them: the theme root below, `.prose` and the Block tier (surface.css).
    */
   font-size:        var(--text-md);
   line-height:      var(--leading-body);
   letter-spacing:   var(--body-letter-spacing);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * A theme root inside an App re-reads the body tokens for its own subtree,
+ * or a bare `p` under it keeps the size `.app` resolved against the outer
+ * theme (FJS-4211). Zero specificity, so whatever else the element is — a
+ * heading, a Btn, a Prose, a `.text-*` — still sets its own type. Scoped to
+ * `.app` because body copy is the App's opt-in: a theme class alone sets no
+ * type. The prefix match reaches a theme the package does not ship.
+ */
+:where(.app [class^="theme-"], .app [class*=" theme-"]) {
+  font-size:      var(--text-md);
+  line-height:    var(--leading-body);
+  letter-spacing: var(--body-letter-spacing);
 }
 
 /* ── Shell — the grid that positions the frame ───────────────────────

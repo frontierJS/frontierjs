@@ -564,6 +564,25 @@ const result = await db.$transaction(async (tx) => {
 
 Transactions use `BEGIN IMMEDIATE` — no mid-transaction write-lock deadlocks. Throws on any error and automatically rolls back.
 
+### An effect outside the database — `$hold`
+
+A write the database cannot roll back (a file, a git ref, a remote call) is prepared inside the body and finished by `$hold`: `commit` runs after the outermost COMMIT, `rollback` when the frame it was held in rolls back (`FJS-D2296`). With git, `git update-ref --stdin`'s `prepare` goes in the body, its `commit` in `commit` and its `abort` in `rollback`.
+
+```js
+const log = []
+await db.$transaction(async (tx) => {
+  await tx.account.create({ data: { name: 'Acme' } })
+  log.push('prepared')
+  tx.$hold({
+    name:     'acme ref',
+    commit:   () => log.push('committed'),
+    rollback: () => log.push('aborted'),
+  })
+})
+```
+
+A side that throws or rejects is logged under `name` and never thrown, so the caller hears the database's answer. A crash between COMMIT and `commit` runs neither side, and nothing records the gap: the reconcile that finds it is the app's. Outside a transaction, `commit` runs at once.
+
 ## Write operations
 
 ```js

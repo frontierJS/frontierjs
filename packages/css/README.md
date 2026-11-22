@@ -140,9 +140,10 @@ rule of its own, the token that would have carried it is missing.
 | `--density` | the whole space ladder, uniformly |
 | `--space-*-base` | the ladder's **shape** — a rung is `base × density`, so this is how a theme is tight at the small rungs and generous at the large ones |
 | `--text-*` · `--leading-*` · `--font-*` | the type scale, the leading ladder, both faces |
-| `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content. `--app-bg` feeds the `background` shorthand, so it takes a gradient |
+| `--app-bg` · `--topbar-bg` · `--sidebar-bg` · `--dialog-bg` | the frame's own grounds, so the shell can differ from the content. `--dialog-bg` is a Dialog's and a Drawer's, defaulting to `--surface-raised` like every overlay. `--app-bg` feeds the `background` shorthand, so it takes a gradient |
 | `--navlink-current-bg` · `--navlink-current-ink` | the current `.navlink`'s fill and label (defaults a 12% tint of the primary, and the primary), so a theme can draw it as a solid fill with its own ink. Set both: a fill alone leaves the label on the primary |
-| `--toast-bg` · `--toast-radius` | a toast's own ground and corner (defaults `--surface`, `--card-radius`), so a dark pill can sit in a theme of rounded light cards; scope a ramp onto `<Toaster class="theme-dark">` |
+| `--toast-bg` · `--toast-radius` | a toast's own ground and corner (defaults `--surface-raised`, `--card-radius`), so a dark pill can sit in a theme of rounded light cards; scope a ramp onto `<Toaster class="theme-dark">` |
+| `--popover-bg` | a popover's own ground (defaults `--surface-raised`), so a menu can sit apart from a dialog |
 | `--glass-alpha` · `--glass-blur` | the `.glass` treatment. **`--glass-alpha` is a contrast floor, not a look** — at the default 85% `--ink` and `--ink-soft` clear AA over any ground, and below it the guarantee is gone. The suite grades every shipped theme, and an app's own with `bun test/run.js contrast --theme <file>` |
 | `--label-font-weight` · `--label-text-transform` · `--label-letter-spacing` | the small caps that name a region — table head, tile label, nav group. One role, one triple |
 | `--heading-font-weight` · `--heading-letter-spacing` · `--heading-text-transform` | all six heading levels at once. Unset, each keeps its own optical value — h6 stays in caps, h1–h5 do not |

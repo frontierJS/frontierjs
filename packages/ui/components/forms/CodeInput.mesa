@@ -108,8 +108,8 @@
   // one {@html} made it cost the size of the document instead: 37.7 s a key on
   // a 4.2 MB JSON text, most of it the collector clearing the paint the key
   // before had thrown away (FJS-1621). So only the lines between the first and
-  // last that differ are glowed, plus any after them whose block-comment state
-  // the edit changed, which is the one thing glow carries from line to line.
+  // last that differ are glowed, plus any after them whose starting state (an
+  // open comment, string or template literal) the edit changed.
   //
   // Replacing them is the other half. Adding or removing an element among a
   // block's lines re-lays every line in it: 200-460 ms of layout a key with
@@ -127,15 +127,15 @@
   const LINE  = { prefix: false, mark: false, numbered: true }
   const CHUNK = 64
 
-  function glowLines(lines, lang, from, to, open) {
+  function glowLines(lines, lang, from, to, state) {
     const opts = { ...LINE, language: lang || undefined }
-    const html = [], opens = []
+    const html = [], states = []
     for (let i = from; i < to; i++) {
-      const out = glowLine(lines[i], opts, open)
+      const out = glowLine(lines[i], opts, state)
       html.push(out.html)
-      opens.push(open = out.open)
+      states.push(state = out.state)
     }
-    return { html, opens }
+    return { html, states }
   }
 
   // `html[from..to)` as chunks; `last` is whether `to` ends the document.
@@ -151,9 +151,9 @@
   }
 
   function paintAll(lines, lang) {
-    const out = glowLines(lines, lang, 0, lines.length, false)
+    const out = glowLines(lines, lang, 0, lines.length, undefined)
     const c   = chunk(out.html, 0, lines.length, true, lang)
-    return { lines, lang, html: out.html, opens: out.opens, sizes: c.sizes, markup: c.markup }
+    return { lines, lang, html: out.html, states: out.states, sizes: c.sizes, markup: c.markup }
   }
 
   var shown      = paintAll(paintable.split(/\r?\n/), glowLanguage(paintable, language) || '')
@@ -185,13 +185,13 @@
       else { prevTo++; nextTo++ }
     }
 
-    const out = glowLines(next, lang, from, nextTo, from > 0 ? shown.opens[from - 1] : false)
-    // Opening or closing a comment recolors every line up to where the old and
-    // new paints agree on it again.
-    while (nextTo < next.length && out.opens[out.opens.length - 1] !== shown.opens[prevTo - 1]) {
-      const more = glowLines(next, lang, nextTo, nextTo + 1, out.opens[out.opens.length - 1])
+    const out = glowLines(next, lang, from, nextTo, from > 0 ? shown.states[from - 1] : undefined)
+    // Opening or closing a comment or a string recolors every line up to where
+    // the old and new paints agree on the state again.
+    while (nextTo < next.length && out.states[out.states.length - 1] !== shown.states[prevTo - 1]) {
+      const more = glowLines(next, lang, nextTo, nextTo + 1, out.states[out.states.length - 1])
       out.html.push(more.html[0])
-      out.opens.push(more.opens[0])
+      out.states.push(more.states[0])
       prevTo++
       nextTo++
     }
@@ -219,7 +219,7 @@
       lines: next,
       lang,
       html,
-      opens: shown.opens.slice(0, from).concat(out.opens, shown.opens.slice(prevTo)),
+      states: shown.states.slice(0, from).concat(out.states, shown.states.slice(prevTo)),
       sizes: sizes.slice(0, first).concat(c.sizes, sizes.slice(last + 1)),
     }
   }

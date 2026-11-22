@@ -23,6 +23,7 @@ export function makeTxManager(conns: {
     queueLog: (fire: () => void) => void;
     noteWrite: (model: string, anonymous: boolean) => string;
     hold: (h: {
+        name?: string;
         commit?: () => any;
         rollback?: () => any;
     }) => any;

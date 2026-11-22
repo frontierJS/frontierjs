@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-28 services · 22 routes · 8 plugins · prefix (none)
+28 services · 23 routes · 8 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -115,14 +115,19 @@ name when it declares none.
 
 ### `capture` · model `capture`
 
-- **methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`
-- **custom methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`
+- **methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`, `files`, `open`, `reveal`, `share`, `removeFile`
+- **custom methods** — `config`, `setConfig`, `resetConfig`, `connect`, `test`, `files`, `open`, `reveal`, `share`, `removeFile`
 - **who may call** —
   - `config` — standing 5 or above — declared `gate: 5`
   - `setConfig` — standing 5 or above — declared `gate: 5`
   - `resetConfig` — standing 5 or above — declared `gate: 5`
   - `connect` — standing 5 or above — declared `gate: 5`
   - `test` — standing 5 or above — declared `gate: 5`
+  - `files` — standing 5 or above — declared `gate: 5`
+  - `open` — standing 5 or above — declared `gate: 5`
+  - `reveal` — standing 5 or above — declared `gate: 5`
+  - `share` — standing 5 or above — declared `gate: 5`
+  - `removeFile` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -343,8 +348,8 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
-- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`
+- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
   - `keys` — standing 5 or above — declared `gate: 5`
@@ -356,6 +361,8 @@ name when it declares none.
   - `running` — standing 5 or above — declared `gate: 5`
   - `services` — standing 5 or above — declared `gate: 5`
   - `setup` — standing 5 or above — declared `gate: 5`
+  - `vitals` — standing 5 or above — declared `gate: 5`
+  - `builds` — standing 5 or above — declared `gate: 5`
   - `clear` — standing 5 or above — declared `gate: 5`
   - `removeLane` — standing 5 or above — declared `gate: 5`
   - `fixMode` — standing 5 or above — declared `gate: 5`
@@ -366,6 +373,7 @@ name when it declares none.
   - `unsetProfileKey` — standing 5 or above — declared `gate: 5`
   - `setPing` — standing 5 or above — declared `gate: 5`
   - `probeService` — standing 5 or above — declared `gate: 5`
+  - `clearBuild` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -672,6 +680,7 @@ once; everything else was registered by hand or by a plugin.
 | PUT | `/{service}/{id}` | service |
 | OPTIONS | `/*` | raw |
 | GET | `/capture-connected` | raw |
+| GET | `/capture-file/{name}` | raw |
 | POST | `/door/login` | raw |
 | POST | `/door/logout` | raw |
 | GET | `/door/me` | raw |

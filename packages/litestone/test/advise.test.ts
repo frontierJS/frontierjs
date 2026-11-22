@@ -1552,3 +1552,62 @@ describe('anonymous-quiets-its-transaction', () => {
     expect(findings('model Roster { id Int @id  answered Boolean }', rule)).toEqual([])
   })
 })
+
+describe('locked-under-cascade', () => {
+  // FJS-4411: a parent's delete is refused while a locked child row exists
+  // (FJS-D1281), and the schema that earns it parses clean.
+  const anvil = (logGate: string, onDelete = 'Cascade') => `
+    model Repository {
+      id   Int @id
+      runs WorkflowRun[]
+    }
+    model WorkflowRun {
+      id           Int @id
+      repositoryId Int
+      repository   Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+      jobs         WorkflowJob[]
+    }
+    model WorkflowJob {
+      id     Int @id
+      runId  Int
+      run    WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+      chunks WorkflowLogChunk[]
+    }
+    model WorkflowLogChunk {
+      id    Int @id
+      jobId Int
+      job   WorkflowJob @relation(fields: [jobId], references: [id], onDelete: ${onDelete})
+      @@gate(${logGate})
+    }`
+
+  test('names the locked model and every deletable parent the cascade reaches it from', () => {
+    const f = findings(anvil('0.4.9.9'), 'locked-under-cascade')
+    expect(f.length).toBe(1)
+    expect(f[0].severity).toBe('info')
+    expect(f[0].model).toBe('WorkflowLogChunk')
+    for (const parent of ['Repository', 'WorkflowRun', 'WorkflowJob'])
+      expect(f[0].message).toContain(parent)
+    expect(f[0].message).toContain('Repository > WorkflowRun > WorkflowJob > WorkflowLogChunk')
+  })
+
+  test('silent when the child is not locked, or its relation does not cascade', () => {
+    expect(findings(anvil('0.4.9.8'), 'locked-under-cascade')).toEqual([])
+    expect(findings(anvil('0.4.9.9', 'Restrict'), 'locked-under-cascade')).toEqual([])
+  })
+
+  test('silent when every parent above it is itself locked for delete', () => {
+    const f = findings(`
+      model Ledger {
+        id      Int @id
+        entries Entry[]
+        @@gate(0.4.9.9)
+      }
+      model Entry {
+        id       Int @id
+        ledgerId Int
+        ledger   Ledger @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+        @@gate(0.4.9.9)
+      }`, 'locked-under-cascade')
+    expect(f).toEqual([])
+  })
+})

@@ -326,14 +326,22 @@ var GROUNDS = [
   { name: '.app', html: '<div class="app">x</div>', token: '--app-bg', fallback: '--surface-sunken' },
   { name: '.topbar', html: '<header class="topbar">x</header>', token: '--topbar-bg', fallback: '--surface' },
   { name: '.sidebar', html: '<nav class="sidebar">x</nav>', token: '--sidebar-bg', fallback: '--surface' },
-  { name: '.dialog', html: '<div class="dialog">x</div>', token: '--dialog-bg', fallback: '--surface' },
-  { name: '.drawer', html: '<div class="drawer">x</div>', token: '--dialog-bg', fallback: '--surface' },
-  { name: '.toast', html: '<div class="toast">x</div>', token: '--toast-bg', fallback: '--surface' },
+  /* An overlay sits above the cards, so it takes the raised ground (FJS-4197). */
+  { name: '.dialog', html: '<div class="dialog">x</div>', token: '--dialog-bg', fallback: '--surface-raised' },
+  { name: '.drawer', html: '<div class="drawer">x</div>', token: '--dialog-bg', fallback: '--surface-raised' },
+  { name: '.toast', html: '<div class="toast">x</div>', token: '--toast-bg', fallback: '--surface-raised' },
+  { name: '.popover', html: '<div class="popover">x</div>', token: '--popover-bg', fallback: '--surface-raised' },
 ];
+
+/*
+ * Three distinct grounds: the default theme's --surface and --surface-raised
+ * are both white, so measured there a wrong fallback passes.
+ */
+var GROUNDS_APART = '--surface: rgb(10, 20, 30); --surface-raised: rgb(40, 50, 60); --surface-sunken: rgb(70, 80, 90)'
 
 GROUNDS.forEach(function (subject) {
   test('theming: ' + subject.name + ' takes ' + subject.token + ' and defaults to ' + subject.fallback, function () {
-    var plain = themedBy('', subject.html);
+    var plain = themedBy(GROUNDS_APART, subject.html);
     assert.sameColor(
       style(plain, 'background-color'), style(plain, subject.fallback),
       subject.name + ' no longer falls back to ' + subject.fallback
@@ -788,6 +796,33 @@ test('theming: a nested theme\'s --text-md, --leading-body and --body-letter-spa
     assert.equal(style(p, 'line-height'), '40px', 'a nested --leading-body did not reach a p in ' + pair[1]);
     assert.equal(style(p, 'letter-spacing'), '3px', 'a nested --body-letter-spacing did not reach a p in ' + pair[1]);
   });
+  cleanup();
+});
+
+test('theming: a nested theme root re-reads the body tokens for a bare p or li directly under it', function () {
+  /*
+   * FJS-4211: without a rule on the theme root, a `p` straight under
+   * `.theme-x` keeps the size, leading and tracking `.app` resolved against
+   * the outer tokens. The theme root outside `.app` is the control: body
+   * copy is `.app`'s opt-in, so a theme class alone sets no type.
+   */
+  var app = el(
+    '<div class="app" style="min-block-size: 0">' +
+      '<div class="theme-press" style="--text-md: 20px; --leading-body: 2; --body-letter-spacing: 3px">' +
+        '<p>a</p><ul><li>b</li></ul>' +
+      '</div>' +
+    '</div>'
+  );
+  [['p', 'a bare p'], ['li', 'a bare li']].forEach(function (pair) {
+    var node = app.querySelector('.theme-press ' + pair[0]);
+    assert.equal(style(node, 'font-size'), '20px', 'a nested theme\'s --text-md did not reach ' + pair[1]);
+    assert.equal(style(node, 'line-height'), '40px', 'a nested theme\'s --leading-body did not reach ' + pair[1]);
+    assert.equal(style(node, 'letter-spacing'), '3px', 'a nested theme\'s --body-letter-spacing did not reach ' + pair[1]);
+  });
+  cleanup();
+
+  var bare = el('<div class="theme-press" style="--text-md: 20px"><p>d</p></div>');
+  assert.ok(style(bare.querySelector('p'), 'font-size') !== '20px', 'a theme class outside .app set body type');
   cleanup();
 });
 

@@ -52,7 +52,7 @@ touching the client, a policy, a migration or a seam.
 - **Raw SQL keeps the policies only inside a where**; `db.sql` throws once a schema declares access rules; stored text that may not write goes through `sql.read` (`FJS-2412`).
 - **The clock is `now()`** — `datetime('now')` compares wrong against ISO-8601 TEXT and is refused by name (`FJS-226`).
 - **A bare array in a `where` is membership**; `{ equals: [...] }` is equality.
-- **`undefined` is omitted and only `null` clears.** A single-row write returns the row, a bulk write `{ count }`.
+- **`undefined` is omitted and only `null` clears.** A single-row write returns the row, a bulk write `{ count }`; `createMany`'s `select` adds `rows`, which a read policy can make shorter than `count` (`FJS-D2298`).
 - **`getLevel()` is synchronous and clamped to 0–7.** `@@allow` holds only on TRUE, `@@deny` fires on TRUE or UNKNOWN, an absent claim is UNKNOWN.
 - **Protection refuses by name rather than dropping.** `@guarded` is system-only both ways; `@encrypted` hides and stays writable.
 - **Three schemas, and a migration question compares two** — declared, shadow, live (`FJS-D123`); a rename is a drop plus an add unless `migrate create` was told (`--rename`, `src/core/operations.js`, `FJS-D603`).

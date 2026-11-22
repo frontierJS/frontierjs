@@ -213,3 +213,64 @@ describe('the shared _search index through a migration', () => {
     expect(plan(db, PLAIN).diff.hasChanges).toBe(false)
   })
 })
+
+// FJS-D2301: a model out of `_search` keeps its own index. A migration that
+// takes a member out has to delete its rows as well as its triggers, or the old
+// copy stays in the file for good.
+describe('@@fts(multisearch: false) through a migration', () => {
+  const MEMBER = `model Note {\n  id Int @id\n  title String @default("")\n  body String\n  @@fts([body])\n  @@label(title)\n}`
+  const OUT    = MEMBER.replace('@@fts([body])', '@@fts([body], multisearch: false)')
+  const OTHER  = `model Page {\n  id Int @id\n  title String\n  @@fts([title])\n  @@label(title)\n}`
+  const objects = (db: Database) =>
+    db.query(`SELECT name FROM sqlite_master WHERE name = '_search' OR name LIKE 'note_search_%' ORDER BY name`).all().map((r: any) => r.name)
+  const searchRows = (db: Database, model: string) =>
+    (db.query(`SELECT count(*) AS n FROM "_search" WHERE model = ?`).get(model) as any).n
+
+  it('creates the per-model index and no _search, with no @@label needed', () => {
+    const db = new Database(':memory:')
+    migrate(db, `model Note {\n  id Int @id\n  body String\n  @@fts([body], multisearch: false)\n}`)
+    expect(objects(db)).toEqual([])
+    db.run(`INSERT INTO note (id, body) VALUES (1, 'hello world')`)
+    expect(match(db, 'note', 'hello')).toEqual([1])
+  })
+
+  it('leaving deletes the model\'s rows and triggers, and keeps the other members\'', () => {
+    const db = new Database(':memory:')
+    migrate(db, `${MEMBER}\n${OTHER}`)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world'), (2, 'beta', 'goodbye')`)
+    db.run(`INSERT INTO page (id, title) VALUES (1, 'hello page')`)
+    expect(searchRows(db, 'note')).toBe(2)
+
+    const sql = migrate(db, `${OUT}\n${OTHER}`)
+    expect(sql).toContain(`DELETE FROM "_search" WHERE model = 'note';`)
+    expect(sql).not.toContain(`DROP TABLE IF EXISTS "_search"`)
+    expect(objects(db)).toEqual(['_search'])
+    expect(searchRows(db, 'note')).toBe(0)
+    expect(searchRows(db, 'page')).toBe(1)
+
+    db.run(`INSERT INTO note (id, title, body) VALUES (3, 'gamma', 'hello again')`)
+    expect(searchRows(db, 'note')).toBe(0)
+    expect(match(db, 'note', 'hello')).toEqual([1, 3])
+    expect(plan(db, `${OUT}\n${OTHER}`).diff.hasChanges).toBe(false)
+  })
+
+  it('leaving as the last member retires _search whole', () => {
+    const db = new Database(':memory:')
+    migrate(db, MEMBER)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world')`)
+    const sql = migrate(db, OUT)
+    expect(sql).toContain(`DROP TABLE IF EXISTS "_search"`)
+    expect(objects(db)).toEqual([])
+    expect(match(db, 'note', 'hello')).toEqual([1])
+    expect(plan(db, OUT).diff.hasChanges).toBe(false)
+  })
+
+  it('joining again backfills the rows written while out', () => {
+    const db = new Database(':memory:')
+    migrate(db, `${OUT}\n${OTHER}`)
+    db.run(`INSERT INTO note (id, title, body) VALUES (1, 'alpha', 'hello world')`)
+    migrate(db, `${MEMBER}\n${OTHER}`)
+    expect(searchRows(db, 'note')).toBe(1)
+    expect(plan(db, `${MEMBER}\n${OTHER}`).diff.hasChanges).toBe(false)
+  })
+})

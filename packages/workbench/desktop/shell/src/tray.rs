@@ -46,6 +46,7 @@ const SCREENS: &[(&str, &str)] = &[
     ("/atlas/decide/",    "Decide"),
     ("/atlas/autopilot/", "Autopilot"),
     ("/notifications/",   "Notifications"),
+    ("/captures/",        "Captures"),
 ];
 
 // The page's origin is tauri://localhost (http://tauri.localhost on Windows),

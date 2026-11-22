@@ -198,7 +198,7 @@ and the ported screen.
 - [x] 3.1 Drafts
 - [x] 3.2 Saved posts and the saved route
 - [x] 3.3 Status, custom status, presence
-- [x] 3.4 Typing — shown, not sent: the held socket has no outbound write (`FJS-4398`).
+- [x] 3.4 Typing — shown, not sent. The broker socket stays receive-only, and sending is conduit-mattermost's `publishTyping` over REST (`FJS-D2303`).
 - [x] 3.5 Search and the search route
 - [x] 3.6 Activity (mentions and replies)
 - [x] 3.7 Edit history

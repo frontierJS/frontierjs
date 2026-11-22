@@ -44,7 +44,7 @@
   export let session = ''                 // which shell this pane shows; a change reconnects
   export let passthrough = (_e) => false  // a key event the page answers instead of the shell
   export let onproblem = (_message) => {} // xterm failed to load
-  export let fontSize = 0                 // px; 0 reads the pane's computed font size
+  export let fontSize = 0                 // px; 0 reads the pane's computed font size; a change applies live
 
   let host = null
   let state = 'idle' // idle · connecting · open · closed
@@ -150,6 +150,14 @@
   }
 
   $: session, connect
+
+  // A new fontSize after the pane opened restyles it in place, the shell kept; 0 goes back to the pane's computed size.
+  // The refit hands the shell its new cols and rows; a hidden pane refits when it shows.
+  $: fontSize, () => {
+    if (!term || !host) return
+    term.options.fontSize = fontSize || parseFloat(getComputedStyle(host).fontSize) || 13
+    refit()
+  }
 
   $.onMount(() => { open() })
 

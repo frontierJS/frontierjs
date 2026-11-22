@@ -889,13 +889,19 @@ export async function loadRows(db, modelName, source, opts = {}) {
 
   const accessor = modelToAccessor(modelName)
   const requiredNames = mode === 'upsert' ? model.fields.filter(columns.required).map(f => f.name) : []
-  let loaded = 0
+  let added = 0, updated = 0
   // SQLite checks NOT NULL before it resolves ON CONFLICT, so a row lacking a
   // required value cannot ride upsertMany even when its key is stored: it is
   // an update by key, and a key no row holds makes it a new row that lacks it.
+  // Answers how many of `rows` it added; the rest updated a stored row.
   const write = async (tx, rows) => {
-    if (mode !== 'upsert') return tx[accessor].createMany({ data: rows.map(r => r.data) })
+    if (mode !== 'upsert') { await tx[accessor].createMany({ data: rows.map(r => r.data) }); return rows.length }
     const whole = rows.filter(r => !r.lacking.length)
+    // Asked through the caller's own accessor, so the split never counts a
+    // row the caller cannot read.
+    const held = whole.length
+      ? (await tx[accessor].findMany({ where: { [key]: whole.map(r => r.data[key]) }, select: { [key]: true } })).length
+      : 0
     if (whole.length) await tx[accessor].upsertMany({ data: whole.map(r => r.data), conflictTarget: [key] })
     for (const r of rows) {
       if (!r.lacking.length) continue
@@ -905,6 +911,7 @@ export async function loadRows(db, modelName, source, opts = {}) {
         : await tx[accessor].findFirst({ where: { [key]: keyValue } })
       if (!stored) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
     }
+    return whole.length - held
   }
 
   const run = async (tx) => {
@@ -918,12 +925,12 @@ export async function loadRows(db, modelName, source, opts = {}) {
       group = []; inGroup = new Set()
       if (!rows.length) return
       try {
-        await tx.$transaction(t => write(t, rows))
-        loaded += rows.length
+        const fresh = await tx.$transaction(t => write(t, rows))
+        added += fresh; updated += rows.length - fresh
       } catch (e) {
         if (!refusesARow(e)) throw e
         for (const r of rows) {
-          try { await tx.$transaction(t => write(t, [r])); loaded++ }
+          try { const fresh = await tx.$transaction(t => write(t, [r])); added += fresh; updated += 1 - fresh }
           catch (err) {
             if (!refusesARow(err)) throw err
             const why = reasonFor(err)
@@ -966,7 +973,7 @@ export async function loadRows(db, modelName, source, opts = {}) {
   catch (e) { if (e !== DRY_RUN) throw e }
 
   rejects.sort((a, b) => a.row - b.row)
-  return { loaded, rejects }
+  return { loaded: added + updated, added, updated, rejects }
 }
 
 // An upsert row lacking a required value whose key no stored row holds.
@@ -1154,6 +1161,11 @@ export function parseCsv(text) {
 // starts on — header included, so a reject names the line an editor shows. Not
 // the record's index: a quoted cell may hold a newline, and from then on the two
 // disagree. Lazy, so a load holds a row and not the file.
+//
+// Cells copied out of a spreadsheet arrive tab-separated, and a column name
+// holds neither a tab nor a comma, so a header line holding a tab says which.
+// A spreadsheet's CSV export opens with a byte-order mark that would otherwise
+// become part of the first column's name.
 function* csvRows(text) {
   let row       = []
   let field     = ''
@@ -1171,7 +1183,8 @@ function* csvRows(text) {
     return done.cells.length === 1 && done.cells[0] === null ? null : done
   }
 
-  const src = text.replace(/\r\n?/g, '\n')
+  const src   = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n')
+  const delim = (src.match(/[^\n]+/)?.[0] ?? '').includes('\t') ? '\t' : ','
   while (i < src.length) {
     const c = src[i]
     if (quoted) {
@@ -1181,7 +1194,7 @@ function* csvRows(text) {
       field += c; i++; continue
     }
     if (c === '"' && field === '') { quoted = true; wasQuoted = true; i++; continue }
-    if (c === ',')  { endField(); i++; continue }
+    if (c === delim) { endField(); i++; continue }
     if (c === '\n') { line++; const done = endRow(); if (done) yield done; i++; continue }
     field += c; i++
   }

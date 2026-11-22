@@ -31,10 +31,14 @@ export function tokenizeLine(text: string, state: State, emit?: Emit): State;
 /**
  * One line as markup: an element per run of one type (ELEMENT), and the
  * untyped text bare. Returns the markup; the end state is not needed to paint.
+ * With `classes` false a run whose type has no element is bare text and a
+ * STRUCTURE type drops its class: glow's output, which a theme styles by
+ * element alone (FJS-D2304).
  * @param {string} text
  * @param {State} state
+ * @param {boolean} [classes]
  */
-export function lineHTML(text: string, state: State): string;
+export function lineHTML(text: string, state: State, classes?: boolean): string;
 export function escapeHTML(s?: any): any;
 export namespace ELEMENT {
     export let heading: string;

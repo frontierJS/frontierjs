@@ -205,7 +205,7 @@ test('glow: a trailing block comment does not swallow the code before it', funct
   const lines = out.replace(/^<code[^>]*>/, '').replace(/<\/code>$/, '').split('\n')
 
   assert.ok(lines[0].startsWith('<sup>'), 'a whole-line comment is a comment')
-  assert.ok(/<em>--x<\/em>/.test(lines[1]), 'the annotated declaration is still highlighted')
+  assert.ok(/<b>--x<\/b>/.test(lines[1]), 'the annotated declaration is still highlighted')
   assert.ok(/<sup>\/\* trailing \*\/<\/sup>/.test(lines[1]), 'the trailing comment is a comment')
   assert.ok(lines[2].startsWith('<sup>'), 'a block that runs on is not stolen')
   assert.ok(lines[3].startsWith('<sup>'), 'and its second line stays inside it')
@@ -226,12 +226,23 @@ test('glow: glowLine, line by line, is glow', function () {
   // and all — every line after a change depends on whether one is still open.
   const src = ['const a = 1', '/* opens', '   still */', 'b("x") // c', '<p>&</p>', '+ kept', '•m•']
   for (const opts of [{ language: 'js' }, { language: 'js', numbered: true, prefix: false, mark: false }, { language: ['js', 'sql'] }]) {
-    let open = false
-    const lines = src.map((line) => { const out = glowLine(line, opts, open); open = out.open; return out.html })
+    let state
+    const lines = src.map((line) => { const out = glowLine(line, opts, state); state = out.state; return out.html })
     assert.equal(`<code language="js">${lines.join('\n')}</code>`, glow(src.join('\n'), opts))
   }
-  assert.equal(glowLine('/* x', {}).open, true, 'an opened comment is open after its line')
-  assert.equal(glowLine('x */', {}, true).open, false, 'and closed by the line that ends it')
+  assert.equal(glowLine('/* x', {}).state, true, 'an opened comment is open after its line')
+  assert.equal(glowLine('x */', {}, true).state, false, 'and closed by the line that ends it')
+})
+
+test('glow: glowLine carries a language with a grammar by the tokenizer state', function () {
+  // A comment flag is the only state a regex rule set can carry, so a `/*`
+  // inside a template literal opened a comment and every line below it
+  // painted as one.
+  const src = ['const s = `a', '/* text */ ${x}`', 'let y = 1 // c']
+  let state
+  const html = src.map((line) => { const out = glowLine(line, { language: 'js' }, state); state = out.state; return out.html })
+  assert.ok(!html[1].startsWith('<sup>'), `a /* inside a template literal is the string: ${html[1]}`)
+  assert.ok(html[2].startsWith('<strong>let</strong>'), `the line after it is code: ${html[2]}`)
 })
 
 test('glow: a multi-character token is escaped', function () {
@@ -260,17 +271,11 @@ test('glow: a multi-character token is escaped', function () {
 
 test('glow: JSON has three keywords and they are not the strings that spell them', function () {
   /*
-   * `getTags` withholds the COMMON_WORDS keyword pass from json, yaml and html
-   * — rightly, since in a JSON document every other bare word is inside a
-   * string. That left `true`, `false` and `null` as the only values in a
-   * highlighted document with no color at all (FJS-405).
-   *
-   * The half that matters is the negative one: a document where the same three
-   * words appear inside strings has to come back with those strings whole.
-   * Nothing in the tag ORDER protects them — a rule added to RULES.json is
-   * unshifted to the front of the list — so this is asserting the property
-   * renderRow provides instead, that a token opening inside one already
-   * emitted is dropped.
+   * `true`, `false` and `null` were once the only values in a highlighted JSON
+   * document with no color at all (FJS-405). They are constants, ELEMENT's
+   * `em`. The half that matters is the negative one: a document where the
+   * same three words appear inside strings has to come back with those
+   * strings whole.
    */
   const src = JSON.stringify(
     { ok: true, off: false, none: null, null: 'is null', note: 'true story' },
@@ -279,17 +284,15 @@ test('glow: JSON has three keywords and they are not the strings that spell them
   )
   const out = glow(src, { language: 'json', prefix: false })
 
-  assert.ok(out.includes('<strong>true</strong>'), 'true is not marked as a keyword')
-  assert.ok(out.includes('<strong>false</strong>'), 'false is not marked as a keyword')
-  assert.ok(out.includes('<strong>null</strong>'), 'null is not marked as a keyword')
+  assert.ok(out.includes('<em>true</em>'), 'true is not marked as a constant')
+  assert.ok(out.includes('<em>false</em>'), 'false is not marked as a constant')
+  assert.ok(out.includes('<em>null</em>'), 'null is not marked as a constant')
 
   assert.ok(out.includes('<em>"is null"</em>'), 'a keyword inside a string broke the string')
   assert.ok(out.includes('<em>"true story"</em>'), 'a keyword inside a string broke the string')
   assert.ok(out.includes('<b>"null"</b>'), 'a key spelled like a keyword stopped being a key')
 
-  // The three are keywords in every other language already, through
-  // COMMON_WORDS. This is the language that had to be told.
-  assert.ok(glow('const a = null', { language: 'js', prefix: false }).includes('<strong>null</strong>'))
+  assert.ok(glow('const a = null', { language: 'js', prefix: false }).includes('<em>null</em>'))
 })
 
 /* ── The languages this repo writes ────────────────────────────────── */
@@ -317,8 +320,8 @@ test('glow: a .lite schema is highlighted as one', function () {
   assert.ok(out.includes('<strong>model</strong>'), 'model is not a keyword')
   assert.ok(out.includes('<label>@@gate</label>'), 'a model attribute lost its first @')
   assert.ok(out.includes('<label>@default</label>'), 'a field attribute is not an attribute')
-  assert.ok(out.includes('<strong>DateTime</strong>'), 'a field type is not marked')
-  assert.ok(out.includes('<strong>Json</strong>'), 'a field type is not marked')
+  assert.ok(out.includes('<b>DateTime</b>'), 'a field type is not marked')
+  assert.ok(out.includes('<b>Json</b>'), 'a field type is not marked')
 })
 
 test('glow: a shell line has a command and no keywords', function () {

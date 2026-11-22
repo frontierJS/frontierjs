@@ -30,7 +30,7 @@
    * still draw a pill. The ground goes through --surface-ground and not
    * --surface-bg, so .outlined and .ghost keep winning (see dialogs.css).
    */
-  --surface-ground: var(--toast-bg, var(--surface));
+  --surface-ground: var(--toast-bg, var(--surface-raised));
   border-radius:    var(--toast-radius, var(--card-radius));
 }
 

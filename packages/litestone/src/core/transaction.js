@@ -174,7 +174,13 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
   // when the outermost transaction commits and `rollback` when the frame it was
   // held in rolls back; outside a transaction this context owns, the write is
   // already real and `commit` runs now. `exclusive` awaits what either started.
-  /** @typedef {{ commit?: () => any, rollback?: () => any }} Hold */
+  //
+  // A side that throws or rejects is logged by name and never thrown: after
+  // COMMIT the rows are durable and a throw would report a landed write as
+  // failed, and on rollback the body's own error is the one the caller is owed.
+  // Swallowing it left the outside record and the rows disagreeing with no
+  // trace (FJS-4364); the reconcile that closes the gap is the app's.
+  /** @typedef {{ name?: string, commit?: () => any, rollback?: () => any }} Hold */
   /** @type {Hold[]} */
   const holds = []
   /** @type {any[]} */
@@ -184,9 +190,21 @@ export function makeTxManager(conns, state = { depth: 0 }, ledger = null, exclus
     if (!ownsTx(state)) return h.commit?.()
     holds.push(h)
   }
+  /** @param {Hold} h @param {'commit' | 'rollback'} side @param {any} e */
+  function heldFailed(h, side, e) {
+    const landed = side === 'commit' ? 'the transaction committed' : 'the transaction rolled back'
+    console.error(
+      `[litestone] held effect '${h.name ?? 'unnamed'}' failed on ${side}: ${e?.message ?? e}. ` +
+      `${landed}, so the database and the effect outside it disagree until the app reconciles them`, e)
+  }
   /** @param {Hold[]} hs @param {'commit' | 'rollback'} side */
   function fire(hs, side) {
-    for (const h of hs) { try { settling.push(h[side]?.()) } catch {} }
+    for (const h of hs) {
+      try {
+        const r = h[side]?.()
+        if (r && typeof r.then === 'function') settling.push(Promise.resolve(r).catch(e => heldFailed(h, side, e)))
+      } catch (e) { heldFailed(h, side, e) }
+    }
   }
   const drain = () => Promise.allSettled(settling.splice(0, settling.length))
 

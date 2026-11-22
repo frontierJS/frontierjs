@@ -5,7 +5,7 @@ title: Home
   // What the page last read, held for the life of the tab: coming back from
   // another screen draws it at once, and the indicator says when it is re-read.
   const cache = {
-    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null, setup: null,
+    pins: [], status: {}, sessions: null, running: null, autopilot: null, quota: null, setup: null, machine: null,
     errors: {}, readAt: 0, quotaAt: 0,
   }
 </script>
@@ -13,7 +13,8 @@ title: Home
 <script>
   // What is live on this laptop, on one screen: the chats that need you, the
   // ones working, each pinned checkout, the latest Claude Code sessions, the dev
-  // servers, Autopilot and the unread notifications. Every panel reads a service
+  // servers, the laptop's own disk, memory and heat, Autopilot and the unread
+  // notifications. Every panel reads a service
   // another screen already owns and links there; nothing here writes.
   //
   // Each panel loads on its own, so a slow or failing read blanks one panel
@@ -27,12 +28,14 @@ title: Home
   import { laptop }    from '../../resources/Laptop.mesa'
   import { notifications, isUnread, titleOf, bodyOf, actionOf, INBOX } from '../../resources/Notification.mesa'
   import { ago } from '../../lib/datetime.js'
+  import { bytes } from '../../lib/bytes.js'
 
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Dot        from '@frontierjs/ui/components/display/Dot.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Bar        from '@frontierjs/ui/components/display/Bar.mesa'
   import ClaudeIndexBuild from '../../components/claude/ClaudeIndexBuild.mesa'
 
   const STATUS_MS = 3000
@@ -47,6 +50,7 @@ title: Home
   let autopilot = cache.autopilot
   let quota     = cache.quota
   let setup     = cache.setup        // the laptop's Setup checklist, read once per visit and on Refresh
+  let machine   = cache.machine      // the laptop's disk, memory, heat and battery
   let errors    = cache.errors       // panel → message
   let readAt    = cache.readAt
   let loaded    = readAt > 0
@@ -87,6 +91,10 @@ title: Home
     cache.setup = setup = await laptop.service.invoke('setup', null)
   })
 
+  const loadMachine = () => read('machine', async () => {
+    cache.machine = machine = await laptop.service.invoke('vitals', null)
+  })
+
   const loadAutopilot = () => read('autopilot', async () => {
     cache.autopilot = autopilot = await atlas.service.invoke('autopilot', null)
   })
@@ -99,7 +107,7 @@ title: Home
   let refreshing = false
   async function loadSlow({ withQuota = false } = {}) {
     refreshing = true
-    const reads = [loadPins(), loadSessions(), loadRunning(), loadAutopilot()]
+    const reads = [loadPins(), loadSessions(), loadRunning(), loadMachine(), loadAutopilot()]
     if (withQuota || Date.now() - cache.quotaAt > QUOTA_MS) reads.push(loadQuota())
     if (withQuota || !cache.setup) reads.push(loadSetup())
     await Promise.all(reads)
@@ -178,6 +186,20 @@ title: Home
   const blocked = (setup?.goals ?? []).filter(g => g.required && g.state === 'error')
   const busy  = working()
 
+  // A drive filling is the reading that creeps up unseen, so it is raised from
+  // low; memory and battery only once they are critical, since both swing.
+  function machineAlerts() {
+    if (!machine) return []
+    const out = machine.disks.filter(d => d.state !== 'ok')
+      .map(d => ({ key: `disk:${d.mount}`, state: d.state, text: `${d.mount} has ${bytes(d.avail)} free (${d.pct}% used)` }))
+    if (machine.memory?.state === 'critical')
+      out.push({ key: 'memory', state: 'critical', text: `memory ${machine.memory.pct}% used, ${bytes(machine.memory.available)} available` })
+    if (machine.battery?.state === 'critical')
+      out.push({ key: 'battery', state: 'critical', text: `battery at ${machine.battery.percent}% and draining` })
+    return out
+  }
+  const alerts = machineAlerts()
+
   const LABEL = { asks: 'asks', question: 'plan question', unread: 'finished' }
   const KIND_TONE = { asks: 'warning', question: 'warning', unread: 'success' }
 
@@ -234,6 +256,10 @@ title: Home
       { id: 'weekly',  label: 'Weekly', m: q.weekly },
     ].filter(x => x.m).map(x => ({ ...x, pct: Math.round(x.m.utilization) }))
   }
+  const STATE_TONE = { ok: 'success', low: 'warning', critical: 'danger' }
+  const homeDisk = () => machine?.disks.find(d => d.home) ?? machine?.disks[0]
+  const days = (seconds) => seconds >= 86400 ? `${Math.floor(seconds / 86400)}d` : `${Math.floor(seconds / 3600)}h`
+
   const meterTone = (pct) => pct >= 90 ? 'danger' : pct >= 70 ? 'warning' : 'success'
 
   // A paper with a next step is one still in flight.
@@ -253,10 +279,13 @@ title: Home
 </div>
 
 <div class="tiles" id="home-tiles">
-  <StatCard label="Needs you" value={loaded ? needs.length + (blocked.length ? 1 : 0) : '…'} tone={needs.length || blocked.length ? 'warning' : ''} href="#home-needs" />
+  <StatCard label="Needs you" value={loaded ? needs.length + (blocked.length ? 1 : 0) + alerts.length : '…'} tone={needs.length || blocked.length || alerts.length ? 'warning' : ''} href="#home-needs" />
   <StatCard label="Working" value={loaded ? busy.length : '…'} tone={busy.length ? 'info' : ''} href="#home-working" />
   <StatCard label="Spent today" value={loaded ? money(spentToday) : '…'} sub="across pinned checkouts" />
   <StatCard label="To rule" value={autopilot ? autopilot.council.decidable : '…'} sub={autopilot ? `${autopilot.council.open} more without options` : ''} href="/atlas/decide/" />
+  {#if homeDisk()}
+    <StatCard label="Disk free" value={bytes(homeDisk().avail)} tone={STATE_TONE[homeDisk().state]} sub={`${homeDisk().pct}% of ${bytes(homeDisk().total)} used`} href="#home-machine" />
+  {/if}
   {#each meters() as x (x.id)}
     <StatCard label={`Claude ${x.label}`} value={`${x.pct}%`} tone={meterTone(x.pct)} sub={x.m.resetsAt ? `resets ${ago(x.m.resetsAt)}` : ''} />
   {/each}
@@ -270,7 +299,7 @@ title: Home
       <article class="alert danger"><div class="alert-content">{errors.pins}</div></article>
     {:else if !loaded}
       <p class="text-sm text-muted">Reading…</p>
-    {:else if !needs.length && !blocked.length}
+    {:else if !needs.length && !blocked.length && !alerts.length}
       <p class="text-sm text-muted">Nothing is waiting on you.</p>
     {:else}
       <ul class="home-list">
@@ -285,6 +314,14 @@ title: Home
             </a>
           </li>
         {/if}
+        {#each alerts as a (a.key)}
+          <li data-kind="machine">
+            <a href="#home-machine" class="home-row">
+              <Badge tone={STATE_TONE[a.state]}>{a.state === 'critical' ? 'machine' : 'disk'}</Badge>
+              <span class="home-row-main"><strong>This laptop</strong> · {a.text}</span>
+            </a>
+          </li>
+        {/each}
         {#each needs as n (n.key)}
           <li data-kind={n.kind}>
             <a href={n.href} class="home-row">
@@ -458,6 +495,51 @@ title: Home
     {/if}
   </section>
 
+  <section class="home-panel" id="home-machine">
+    <h2><a href="/laptop/">This laptop</a></h2>
+    {#if errors.machine}
+      <article class="alert danger"><div class="alert-content">{errors.machine}</div></article>
+    {:else if !machine}
+      <p class="text-sm text-muted">Reading…</p>
+    {:else}
+      {#each machine.disks as d (d.mount)}
+        <div class="home-meter" data-mount={d.mount}>
+          <Bar label={d.mount} value={d.pct} unit="%" tone={STATE_TONE[d.state]} />
+          <span class="text-xs text-muted home-num">{bytes(d.avail)} free of {bytes(d.total)}</span>
+        </div>
+      {/each}
+      {#if machine.memory}
+        {@const m = machine.memory}
+        <div class="home-meter">
+          <Bar label="Memory" value={m.pct} unit="%" tone={STATE_TONE[m.state]} />
+          <span class="text-xs text-muted home-num">
+            {bytes(m.available)} available of {bytes(m.total)}{#if m.swap} · swap {bytes(m.swap.used)} of {bytes(m.swap.total)}{/if}
+          </span>
+        </div>
+      {/if}
+      <div class="cluster text-sm home-machine-facts" id="home-machine-facts">
+        {#if machine.load}
+          <span class="home-num" title="1, 5 and 15 minute load averages against the core count">
+            <Dot tone={STATE_TONE[machine.load.state]} label="load" /> load {machine.load.one.toFixed(1)} · {machine.load.five.toFixed(1)} · {machine.load.fifteen.toFixed(1)} on {machine.load.cores} cores
+          </span>
+        {/if}
+        {#if machine.temp}
+          <span class="home-num" title={machine.temp.sensor}><Dot tone={STATE_TONE[machine.temp.state]} label="temperature" /> CPU {machine.temp.celsius}°C</span>
+        {/if}
+        {#if machine.battery}
+          <span class="home-num"><Dot tone={STATE_TONE[machine.battery.state]} label="battery" /> battery {machine.battery.percent}% · {machine.battery.status.toLowerCase()}</span>
+        {/if}
+        <span class="home-num text-muted" title={`up since ${machine.uptime.since}`}>up {days(machine.uptime.seconds)}</span>
+        {#if machine.reboot?.required}
+          <Badge tone="warning" title={machine.reboot.packages.join(', ')}>reboot needed</Badge>
+        {/if}
+        {#if machine.updates}
+          <Badge tone="info">{machine.updates} update{machine.updates === 1 ? '' : 's'}</Badge>
+        {/if}
+      </div>
+    {/if}
+  </section>
+
   <section class="home-panel home-wide" id="home-autopilot">
     <h2><a href="/atlas/autopilot/">Autopilot</a></h2>
     {#if errors.autopilot}
@@ -565,5 +647,7 @@ title: Home
   .home-server-ports { flex: none; gap: var(--space-xs); }
   .home-server-age { flex: none; min-inline-size: 5.5rem; text-align: end; }
   .home-pin-head { align-items: center; }
+  .home-meter { display: grid; gap: var(--space-3xs); }
+  .home-machine-facts { align-items: center; gap: var(--space-xs) var(--space-md); }
   .home-pin-chats { align-items: center; gap: var(--space-3xs); }
 </style>

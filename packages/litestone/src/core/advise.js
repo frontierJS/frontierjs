@@ -1529,6 +1529,54 @@ export const RULES = [
       return out
     },
   },
+
+  {
+    id:       'locked-under-cascade',
+    // Info, not warn: the refusal is the ruled behavior (FJS-D1281), so this
+    // names a consequence for `litestone advise` and Studio and fails no
+    // `fli check` (schema-runs counts error and warn).
+    severity: 'info',
+    title:    'a model locked for delete under an onDelete: Cascade makes its parents undeletable',
+    blurb:    'A parent delete whose cascade would take a row graded 9 for delete is refused, asSystem() included ' +
+              '(FJS-D1281), so every parent the cascade reaches the locked model from cannot be deleted while one ' +
+              'such row exists. The schema parses, so otherwise the first sign is a delete refused at runtime.',
+    run(schema) {
+      const out    = []
+      const models = new Map((schema.models ?? []).map(m => [m.name, m]))
+      // Each model's parents through a Cascade, read off the child's own @relation.
+      const cascadeParents = model => (model.fields ?? [])
+        .filter(f => f.type?.kind === 'relation' && models.has(f.type.name))
+        .filter(f => (f.attributes ?? []).some(a => a.kind === 'relation' && a.onDelete === 'Cascade'))
+        .map(f => f.type.name)
+
+      for (const model of models.values()) {
+        if (gateOf(model)?.delete !== 9) continue
+        // A locked ancestor does not end the walk: SQLite cascades through it
+        // from its own parent all the same.
+        const chain = new Map([[model.name, [model.name]]])
+        const queue = [model.name]
+        while (queue.length) {
+          const name = queue.shift()
+          for (const parent of cascadeParents(models.get(name))) {
+            if (chain.has(parent)) continue
+            chain.set(parent, [parent, ...chain.get(name)])
+            queue.push(parent)
+          }
+        }
+        const deletable = [...chain.keys()].filter(n => n !== model.name && (gateOf(models.get(n))?.delete ?? 0) < 9)
+        if (!deletable.length) continue
+        const longest = deletable.map(n => chain.get(n)).reduce((a, b) => (b.length > a.length ? b : a))
+        out.push({
+          model: model.name,
+          message: `${model.name} is @@gate delete 9 and sits under an onDelete: Cascade (${longest.join(' > ')}), ` +
+            `so a delete of ${deletable.join(', ')} is refused while any ${model.name} row it would take exists, ` +
+            `asSystem() included. Grade its delete at 8 if asSystem() may remove it with its parent, or write ` +
+            `onDelete: Restrict on the relation if the parent must outlive it, so the schema says what the runtime does.`,
+        })
+      }
+      return out
+    },
+  },
 ]
 
 /** Every rule, over one schema. */

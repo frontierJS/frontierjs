@@ -101,7 +101,7 @@ export function durationOffset(p, base) {
 //              | round '(' expr ')'
 //              | '[' literal (',' literal)* ']'
 //              | ident | ident '.' ident   (one relation hop — FJS-D221)
-//              | ident '.' 'some' '(' expr ')'   (any row of a to-many — FJS-D566)
+//              | ident '.' ('some' | 'every' | 'none') '(' expr ')'   (a to-many — FJS-D566, FJS-D2291)
 //              | 'this' '.' ident   (inside some(…) only: the declaring row's column — FJS-D2239)
 //              | template | '{' [key ':' expr (',' key ':' expr)*] '}'   (a flow only — FJS-D513)
 //              | '[' expr (',' expr)* ']'   (a flow only: an array when any member is not a literal — FJS-D1429)
@@ -596,9 +596,9 @@ function value(p, ctx) {
       return { type: 'this', name }
     }
     if (ctx.within) {
-      if (p.peek(1)?.value === 'some' && p.peek(2)?.type === TK.LPAREN)
+      if (QUANTIFIERS.has(p.peek(1)?.value) && p.peek(2)?.type === TK.LPAREN)
         throw p.fail(
-          `'${t.value}.some(…)' inside '${ctx.within}.some(…)' nests one to-many test in another. The bound ` +
+          `'${t.value}.${p.peek(1).value}(…)' inside '${ctx.within}.some(…)' nests one to-many test in another. The bound ` +
           `is two to-one hops then ONE '.some(…)'.`, p.peek())
       throw p.fail(
         `'${t.value}.…' inside '${ctx.within}.some(…)' crosses a relation from the rows it tests. ` +
@@ -609,10 +609,10 @@ function value(p, ctx) {
     for (;;) {
       p.eat(TK.DOT)
       const name = p.eat(TK.IDENT).value
-      if (name === 'some' && p.check(TK.LPAREN)) return some(p, ctx, hops)
+      if (QUANTIFIERS.has(name) && p.check(TK.LPAREN)) return some(p, ctx, hops, name)
       if (!p.check(TK.DOT)) return chained({ type: 'path', rel: hops.at(-1), name }, hops)
       hops.push(name)
-      if (hops.length === 3 && !(p.peek(1)?.value === 'some' && p.peek(2)?.type === TK.LPAREN))
+      if (hops.length === 3 && !(QUANTIFIERS.has(p.peek(1)?.value) && p.peek(2)?.type === TK.LPAREN))
         throw p.fail(
           `'${hops.join('.')}.…' crosses three relations. A policy may cross TWO to-one relations, then ` +
           `name a column or run one '.some(…)' — put the rule on a model nearer the column, or carry the ` +
@@ -740,15 +740,23 @@ function object(p, ctx) {
 // a path: its names belong to another model, and a walker that descended into
 // it as though they were this model's would check them against the wrong
 // field list.
-function some(p, ctx, hops) {
+//
+// `every` and `none` are the same node with a `quantifier` (`FJS-D2291`), the
+// three words the `where` names: every walker that asks which model a
+// condition is read against treats them alike, and only a compiler reads the
+// word. `some` carries none, so a walker that forgets the field compiles a
+// `some` rather than missing a node it has never seen.
+const QUANTIFIERS = new Set(['some', 'every', 'none'])
+
+function some(p, ctx, hops, word) {
   const rel = hops.at(-1)
   const at  = hops.join('.')
   p.eat(TK.LPAREN)
   if (p.check(TK.RPAREN))
-    throw p.fail(`'${at}.some()' needs a condition — the columns it tests are the rows '${rel}' holds`, p.peek())
+    throw p.fail(`'${at}.${word}()' needs a condition — the columns it tests are the rows '${rel}' holds`, p.peek())
   const where = parseExpression(p, { ...ctx, within: at })
   p.eat(TK.RPAREN)
-  return chained({ type: 'some', rel, where }, hops)
+  return chained(word === 'some' ? { type: 'some', rel, where } : { type: 'some', rel, where, quantifier: word }, hops)
 }
 
 // `via` is the to-one hops before `rel`, absent for a relation on this model —

@@ -8,8 +8,12 @@ export function buildZonedMap(schema?: any, pluralize?: boolean): {
     byModel: Record<string, any[]>;
     byParent: Record<string, any[]>;
 };
-/** `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is. */
-export function wallInstant(date?: any, time?: any, zone?: any): string;
+/**
+ * `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is.
+ * With `after`, an instant at or before it is read on the next day — `22:00–06:00` ends the morning
+ * after, and an end equal to its start is 24 hours (`FJS-D2294`).
+ */
+export function wallInstant(date?: any, time?: any, zone?: any, after?: string | null): string;
 export function makeZoned(shape?: any, deps?: any): {
     refuseZonedWrite: (data: any) => void;
     deriveZoned: (data: any, { creating, where }?: {

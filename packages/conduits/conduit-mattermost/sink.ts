@@ -194,12 +194,14 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
       else if (mentions.includes(m.user_id)) { m.mention_count++; if (!p.root_id) m.mention_count_root = (m.mention_count_root ?? 0) + 1 }
     }
   }
-  // A reply: the root's count moves, its author, the replier and those named follow, and each follower hears of it.
+  // A reply: the root's count moves, its author, the replier and those named follow, and every follower hears of it,
+  // including one who followed by hand or replied earlier.
   function replied(p: Post, mentions: string[]) {
     const root = posts[p.root_id]
     if (!root) return
     root.reply_count = (root.reply_count ?? 0) + 1; root.last_reply_at = p.create_at
-    for (const u of new Set([root.user_id, p.user_id, ...mentions])) {
+    const followers = [...threadMembers.keys()].filter(k => k.endsWith(`:${root.id}`)).map(k => k.slice(0, -root.id.length - 1))
+    for (const u of new Set([root.user_id, p.user_id, ...mentions, ...followers])) {
       const key = `${u}:${root.id}`
       const tm = threadMembers.get(key) ?? { following: true, last_viewed_at: 0, unread_replies: 0, unread_mentions: 0, last_update_at: 0 }
       if (u === p.user_id || mentions.includes(u)) tm.following = true
@@ -570,7 +572,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
       if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/channels\/([a-z0-9]{26})\/drafts(?:\/([a-z0-9]{26}))?$/)) && req.method === 'DELETE') {
         if (own(x[1]) !== caller) return forbidden()
         const d = drafts.find(q => q.user_id === caller && q.channel_id === x![2] && q.root_id === (x![3] ?? '') && !q.delete_at)
-        if (!d) return record(refuse(404, 'app.draft.get.app_error', 'Unable to get the draft.'))
+        if (!d) return record(refuse(500, 'app.draft.get.app_error', 'Unable to get the Draft.'))
         d.delete_at = now(); d.update_at = d.delete_at
         emit('draft_deleted', { draft: JSON.stringify(d) }, { user_id: caller })
         return record(json({ status: 'OK' }))
@@ -601,6 +603,13 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
           .filter(p => p && !p.delete_at && isMember(p.channel_id, caller) && (!teamId || [teamId, ''].includes(channels[p.channel_id].team_id)))
           .sort((a, b) => b.create_at - a.create_at).slice(page * perPage, (page + 1) * perPage)
         return record(json({ order: list.map(p => p.id), posts: Object.fromEntries(list.map(p => [p.id, withMetadata(p)])), next_post_id: '', prev_post_id: '' }))
+      }
+      if ((x = m(/^\/api\/v4\/users\/(me|[a-z0-9]{26})\/typing$/)) && req.method === 'POST') {
+        if (own(x[1]) !== caller) return forbidden()
+        const channel_id = String(body.channel_id ?? '')
+        if (!channels[channel_id] || !isMember(channel_id, caller)) return forbidden()
+        emit('typing', { parent_id: String(body.parent_id ?? ''), user_id: caller }, { channel_id, omit_user: caller })
+        return record(json({ status: 'OK' }))
       }
       // ─── Status ───────────────────────────────────────────────
       if (path === '/api/v4/users/status/ids' && req.method === 'POST') {

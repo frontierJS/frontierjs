@@ -11,7 +11,7 @@ import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId
 import { resolveAnchor } from './db-path.js'
 import { readOnlyCopy, copyOptions } from './read-only-copy.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
-         SEARCH_TABLE, searchModels, searchRankExpr } from './ddl.js'
+         SEARCH_TABLE, searchModels, isSearchModel, searchRankExpr } from './ddl.js'
 import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
 import { buildEdgeMap, columnMapFor, } from './ddl.js'
@@ -2876,7 +2876,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     // The parents these rows name now — a where names rows only the database
     // knows, and only before the statement runs.
-    if (notes.before) noteCardinalityBySql(wSql, wBinds)
+    // A bulk update that returns no rows has only these to grade a rate key by.
+    if (notes.before) noteCardinalityBySql(wSql, wBinds, plan.op === 'update' && !returning ? statements[0]?.data : null)
     if (plan.exclusion) { noteExclusionBySql(wSql, wBinds, plan.exclusion) }
     const zoneMoved = plan.op !== 'delete' && plan.op !== 'remove'
       && (statements.some(st => zoneTouched(st.data)) || (plan.op === 'upsert' && zoneTouched(plan.args?.update)))
@@ -3270,7 +3271,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   // Everything a batch create decides before its unit opens: the refusals, the
   // hooks, the policy's own parent check. Null for an empty batch.
-  async function prepareCreateMany({ data, system, announce } = {}) {
+  async function prepareCreateMany({ data, select, system, announce } = {}) {
     if (!data?.length) return null
     // Resolved before any work: an unknown value is a caller that meant
     // something, and refusing it after the write has landed helps nobody.
@@ -3310,7 +3311,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     // A logged model already takes RETURNING, so opting in costs it nothing.
     // A plugin's onAfterWrite is told each row (FJS-1725).
-    return { data, system, hidden, deferred, mode, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites }
+    return { data, system, hidden, deferred, mode, select, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites || select != null }
   }
 
   // The rows as they will be written, and one statement per row. Runs INSIDE
@@ -3383,6 +3384,39 @@ function makeTable(readDb, writeDb, shape, ctx) {
       announce: { mode, event: 'create', operation: 'createMany', where: undefined },
       result: null, bare: false, refuse: null, before: null, transition: null,
     }
+  }
+
+  // The rows createMany's `select` hands back (FJS-D2298), from its RETURNING,
+  // so a bulk load needs no second query for its ids. A read rule can leave a
+  // written row out, which RETURNING cannot know, so a narrowed model reads
+  // the batch back by key through the caller's own findMany: `count` stays
+  // what was written and `rows` only what the caller may read.
+  async function batchRows(table, raw, select) {
+    if (!raw?.length) return []
+    const written = raw.map(r => read(r, { mode: 'single', hydrateFrom: true }))
+    if (!readNarrowed()) {
+      const ps = parseArgs(select, undefined)
+      if (ps) withIncludes(written, ps, undefined)
+      const out = written.map(r => finalizeOne(r, ps))
+      if (plugins?.hasPlugins) await plugins.shapeWriteResult(modelName, out, ctx, { select })
+      return out
+    }
+    const keys  = _keyCols()
+    const keyOf = (r) => JSON.stringify(keys.map(k => r[k]))
+    const where = keys.length === 1
+      ? { [keys[0]]: written.map(r => r[keys[0]]) }
+      : { OR: written.map(r => Object.fromEntries(keys.map(k => [k, r[k]]))) }
+    const asked = new Set(Object.keys(select).filter(k => select[k]))
+    const got = await table.findMany({ where, select: { ...select, ...Object.fromEntries(keys.map(k => [k, true])) } })
+    const byKey = new Map(got.map(r => [keyOf(r), r]))
+    const out = []
+    for (const r of written) {
+      const hit = byKey.get(keyOf(r))
+      if (!hit) continue
+      for (const k of keys) if (!asked.has(k)) delete hit[k]
+      out.push(hit)
+    }
+    return out
   }
 
   // The seam's view of createMany: planned outside any unit, so on a @sequence
@@ -4748,10 +4782,14 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // stamp is a write (see createManyPlan): the one verb that takes the
       // lock itself, and it runs the same unit the executor would.
       let plan
-      const { deferred } = prepared
+      const { deferred, select } = prepared
+      const answer = async (outcome) => {
+        const out = await finishWrite(plan, outcome)
+        return select == null ? out : { ...out, rows: await batchRows(this, outcome.rows, select) }
+      }
       if (!deferred.size) {
         const outcome = await tx.wrapExclusive(() => { plan = createManyPlan(prepared); return writeUnit(plan) })
-        return finishWrite(plan, outcome)
+        return answer(outcome)
       }
       // A deferred parent is asked once the whole batch is written, which
       // awaits; the throw is the rollback.
@@ -4766,7 +4804,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         }
         return out
       })
-      return finishWrite(plan, outcome)
+      return answer(outcome)
     },
 
     // The rows the engine owns, written with no await anywhere: a SQL trail's
@@ -4995,6 +5033,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (!ftsFields) {
         throw new CapabilityNotDeclaredError(modelName, '$search', '@@fts',
           `Add @@fts([field1, field2]) and @@label(field) to ${modelName} to put it in the shared index.`)
+      }
+      // Its rows were never copied into `_search`, so a branch for it would
+      // answer an empty list as though nothing matched (FJS-D2301).
+      if (!isSearchModel(shape.model)) {
+        throw new CapabilityNotDeclaredError(modelName, '$search', '@@fts in the shared index',
+          `Its @@fts says multisearch: false, so only ${accessor}.search() reads it. Drop the argument to put it in $search.`)
       }
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, { limit, offset }, ctx)
       const { where: w, policy } = visibleWhere('search', undefined, {})
@@ -6163,6 +6207,7 @@ export async function createClient({
       hasValidation:     every(validationMap, name, 'validationMap'),
       cardinality:       { byParent:         declared(cardinalityMap.byParent, name, []),
                            byChild:          declared(cardinalityMap.byChild, name, []),
+                           byRate:           declared(cardinalityMap.byRate, name, []),
                            requiresChildren: declared(cardinalityMap.requiresChildren, name, null) },
       exclusions:        declared(exclusionMap.byModel, name, []).flatMap(scope =>
                            exclusionMap.scopes[scope].members.filter(m => m.model === name).map(m => ({ scope, ...m }))),
@@ -6380,7 +6425,8 @@ export async function createClient({
   const cardinalityLedger = cardinalityMap.any
     ? createCardinalityLedger(cardinalityMap, (conn, rule, key) =>
         conn.query(`SELECT 1 FROM "${rule.parentTable}" WHERE ` +
-                   rule.refColumns.map(c => `"${c}" = ?`).join(' AND ') + ' LIMIT 1').get(...key))
+                   rule.refColumns.map(c => `"${c}" = ?`).join(' AND ') + ' LIMIT 1').get(...key),
+        () => Date.parse(nowISO(now)))
     : null
   // Read on the WRITE handle of each member's own file: the grade runs inside
   // the transaction, and a read handle cannot see the rows it is grading. A
@@ -8125,7 +8171,7 @@ export async function createClient({
     }
 
     const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -8267,7 +8313,7 @@ export async function createClient({
     }
 
     const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -8456,7 +8502,7 @@ export async function createClient({
       $transaction: (fn) => $transaction(fn, scopedProxy),
       $search: (q, opts) => $searchWith(tables, q, opts),
       asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb,
-      $lock: lockPrimitive, $locks: lockPrimitive.$locks,
+      $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
       get(t, prop) {
@@ -8688,7 +8734,7 @@ export async function createClient({
   }
 
   const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
+  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined

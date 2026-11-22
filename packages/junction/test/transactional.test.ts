@@ -15,7 +15,7 @@ import { createClient }   from '../../litestone/src/index.js'
 import { callService, resolveTransactional, buildService } from '../src/core/service.ts'
 import { withLitestoneDb } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/core/context.ts'
-import { $, setCallDb } from '../src/core/context.ts'
+import { $, setCallDb, withCallEffects } from '../src/core/context.ts'
 
 const SCHEMA = `model Post { id Int @id @default(autoincrement())  title String }`
 
@@ -269,5 +269,43 @@ describe('a method that calls out before it writes scopes the write itself (FJS-
 
     await callService(svc, ctx(db))
     expect(before).toBe(true)
+  })
+})
+
+// FJS-4364 / FJS-D2296: an outside write the method prepared is finished or
+// undone with the call's transaction, through the call's own client.
+describe('ctx.hold: an effect outside the database settles with the transaction', () => {
+  const holding = (seen: string[], extra: Record<string, unknown> = {}) => writes({
+    transactional: true,
+    async create(c: ServiceContext) {
+      const row = await ($.db as any).post.create({ data: c.data })
+      c.hold({ name: 'post ref', commit: () => seen.push('commit'), rollback: () => seen.push('rollback') })
+      return row
+    },
+    ...extra,
+  })
+
+  test('commit runs once the call commits', async () => {
+    const db = await mkDb()
+    const seen: string[] = []
+    await callService(buildService(holding(seen) as never), ctx(db))
+    expect(seen).toEqual(['commit'])
+    expect(await db.asSystem().post.count()).toBe(1)
+  })
+
+  test('rollback runs when a later hook refuses the write', async () => {
+    const db = await mkDb()
+    const seen: string[] = []
+    const svc = buildService(holding(seen, {
+      hooks: { after: { create: [function boom() { throw new Error('late refusal') }] } },
+    }) as never)
+    await expect(callService(svc, ctx(db))).rejects.toThrow(/late refusal/)
+    expect(seen).toEqual(['rollback'])
+    expect(await db.asSystem().post.count()).toBe(0)
+  })
+
+  test('a call whose client cannot hold is refused by name', () => {
+    const c = withCallEffects(ctx({ post: {} }))
+    expect(() => c.hold({ commit: () => {} })).toThrow(/ctx\.hold.*\$hold/)
   })
 })

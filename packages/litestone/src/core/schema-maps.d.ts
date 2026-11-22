@@ -143,6 +143,7 @@ export function buildCardinalityMap(schema?: any, pluralize?: boolean): {
     byChild: {};
     requiresChildren: {};
     fkColumns: {};
+    byRate: {};
     any: boolean;
 };
 export function buildExclusionMap(schema?: any, pluralize?: boolean): {

@@ -490,6 +490,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a read @@allow written for a claim the tenant's members do not carry hides the model from them** (warn). Under row tenancy a read @@allow is the WHOLE of who reads, not an addition to the tenant's scope: the generated @@deny still narrows to the tenant, and the allow then admits only the rows it names. One that compares a row to a claim only some principals carry (a share-link or widget bearer claim) reads as "and the link's holder may read this one", and is "only the link's holder" — every member reads an empty screen.
 - **an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass** (warn). A `claim … bearer` is carried by a principal the app mints for a link or widget holder, and that principal grades at STRANGER(0). When every @@allow for an operation reads only such claims and the gate for that operation is above 0, the gate refuses the one caller who could satisfy the rule, and whoever passes the gate carries no claim and fails it. The rule never holds and nothing else says so. Lower the gate to 0 and let the rule decide, or add a branch the gated callers can satisfy.
 - **an @@deny compares a column that can be NULL, and a NULL row is refused** (warn). SQL compares with three values and a `@@deny` fires on TRUE and on UNKNOWN alike, so `@@deny('update', ok == false)` over an optional `ok` refuses every row where `ok` is NULL, not only the ones where it is false. `x == null` is the one compare that answers a boolean. Say what NULL does: `ok != null && ok == false` to let a NULL row through, or `ok == null || ok == false` to refuse it on purpose.
+- **a model locked for delete under an onDelete: Cascade makes its parents undeletable** (info). A parent delete whose cascade would take a row graded 9 for delete is refused, asSystem() included (FJS-D1281), so every parent the cascade reaches the locked model from cannot be deleted while one such row exists. The schema parses, so otherwise the first sign is a delete refused at runtime.
 
 ## Opportunities
 
@@ -1431,11 +1432,11 @@ The Bytes column holds that many float32 dimensions and can be ordered by simila
 embedding Bytes? @vector(1536)
 ```
 
-#### `@zoned` ([<date>, <time>,] <field> | <relation>.<field>)
+#### `@zoned` ([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `zone`, `date`, `time`, `commitment`
 
-The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant.
+The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.
 
 ```lite
 endsOn String @date @zoned(timeZone)
@@ -1509,6 +1510,16 @@ No two rows sharing the scope's key may overlap on the range — uniqueness over
 
 ```lite
 @@exclude(person, range: [startsAt, endsAt])
+```
+
+#### `@@rate` ([<field>, …], max: <n> | <relation>.<field>[, per: <duration> | days(<relation>.<field>)][, at: <field>][, where: <predicate>])
+
+tier: **situational** · legal in: in a model, in a trait · also called: rate limit, throttle, per minute, capacity · see also: `createdBy`, `maxItems`, `check`
+
+At most `max` rows of this model share the key — within `per` of now when a window is given, counting rows whose `at` (a `DateTime`, `createdAt` unless said) is inside it; every row of the key when not. The key is a column, so a quota per caller keys a `@createdBy` column: `@@rate([authorId], max: 5, per: 1m)` holds each author to five comments a minute. Graded when the outermost write commits, inside the write, so a `createMany` or a `$transaction` past the limit rolls back whole and two writers cannot both see room for one; `asSystem()` is held to it, as to `@@check`. The refusal is a 409 `RateLimitError` naming the key, with `retryAt` and `retryAfter` saying when the window reopens. A row whose key is null is nobody's count, and a soft-deleted row still counts. One per window, so a key may hold 60 a minute and 10,000 a day. `per: days(account.surveyMinDaysBetween)` reads the window off the written row's to-one relation at the write, an `Int` number of days, and a null there is no cap (`FJS-D1119`). `max: slot.cap` reads the limit the same way, so with `where: status == 'confirmed'` and no `per:` it is a live-row cap per parent: a slot's confirmed places, with a waitlist that does not count (`FJS-D2295`). `where:` is read off the row alone, and an update moving a row into it is graded.
+
+```lite
+@@rate([authorId], max: 5, per: 1m)
 ```
 
 #### `@@check` ("<sql>"[, "<message>"])
@@ -1591,11 +1602,11 @@ Opt out of STRICT tables for this model.
 @@noStrict
 ```
 
-#### `@@fts` ([field, …][, tokenize: unicode61|ascii|porter|trigram])
+#### `@@fts` ([field, …][, tokenize: unicode61|ascii|porter|trigram][, multisearch: false])
 
 tier: **situational** · legal in: in a model
 
-Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse.
+Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse. multisearch: false keeps the model out of _search: its own search() still works, it needs no @@label, it stores its words once instead of twice, and $search naming it is a 400.
 
 ```lite
 @@fts([title, body], tokenize: porter)

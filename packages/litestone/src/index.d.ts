@@ -600,6 +600,13 @@ export interface AnyLitestoneClient {
   $close(): void | Promise<void>
 }
 
+/** What `$hold` takes: the two halves of an effect outside the database, and the name a failed half is logged under. */
+export interface HeldEffect {
+  name?:     string
+  commit?:   () => unknown
+  rollback?: () => unknown
+}
+
 /**
  * A key not named here is refused at the call — a dropped `wait` is `wait: 0`,
  * which refuses the second contender instead of queueing it (`FJS-1217`).
@@ -860,9 +867,19 @@ export interface LitestoneClient {
   $schemaGaps(): Promise<{ db: string; model: string; table: string; missing: 'table' | string[] }[]>
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
   /**
+   * Hold an effect outside the database until this context's transaction
+   * settles (`FJS-D1873`, `FJS-D2296`): `commit` runs after the outermost
+   * COMMIT, `rollback` when the frame it was held in rolls back. Outside a
+   * transaction the write is already real and `commit` runs now, its result
+   * returned. A side that throws or rejects is logged by `name`, never thrown —
+   * the reconcile is the app's. A crash runs neither side.
+   */
+  $hold(h: HeldEffect): unknown
+  /**
    * One ranked list across every `@@fts` model, graded per model before the
    * limit (`FJS-D970`). `models` names accessors and defaults to all of them;
-   * one outside `@@fts` is refused by name. `_rank` is bm25 on one scale, null
+   * one outside `@@fts`, or declaring `@@fts([...], multisearch: false)`
+   * (`FJS-D2301`), is refused by name. `_rank` is bm25 on one scale, null
    * for a query of only words too short to index.
    */
   $search(query: string, opts?: { models?: string[]; limit?: number; offset?: number; prefix?: boolean }): Promise<SearchHit[]>
@@ -1388,6 +1405,8 @@ export declare class UniqueConflictError extends Error {
   errors:    Array<{ path: string[], message: string }>
   status:    409
   retryable: false
+  /** A conditional `@@unique`'s predicate as SQL, for the developer; never in `errors`. */
+  constraint?: string
 }
 
 /**
@@ -1421,6 +1440,24 @@ export declare class OverlapConflictError extends Error {
   errors:    Array<{ path: string[], message: string }>
   status:    409
   retryable: false
+}
+
+/**
+ * A key already holds the rows `@@rate` allows it — graded when the outermost
+ * write commits, so the write unit rolls back whole. `retryAt` (ISO) and
+ * `retryAfter` (seconds) say when the window reopens; null for a cap with no
+ * window.
+ */
+export declare class RateLimitError extends Error {
+  model:      string
+  key:        Record<string, unknown>
+  max:        number
+  per:        string | null
+  retryAt:    string | null
+  retryAfter: number | null
+  errors:     Array<{ path: string[], message: string }>
+  status:     409
+  retryable:  false
 }
 
 /**
@@ -1573,7 +1610,7 @@ export interface LoadRowsOptions {
 export interface LoadReject {
   /** 0-based position in the source's records. */
   row:    number
-  /** 1-based line the record starts on, header included — CSV text only. */
+  /** 1-based line the record starts on, header included — a text source only. */
   line?:  number
   key:    string | null
   field:  string | null
@@ -1581,13 +1618,19 @@ export interface LoadReject {
 }
 
 export interface LoadResult {
+  /** `added + updated`; with `rejects.length`, every input row. */
   loaded:  number
+  /** Rows whose key no stored row held — under insert and replace, every row loaded. */
+  added:   number
+  /** Rows written over the stored row their key named — under upsert only. */
+  updated: number
   rejects: LoadReject[]
 }
 
 /**
- * Data somebody else wrote — CSV text or records, as an array or a (async)
- * iterable such as an API's pages — read against the schema row by row. A text
+ * Data somebody else wrote — CSV text (tab-separated when the header line holds
+ * a tab) or records, as an array or a (async) iterable such as an API's pages —
+ * read against the schema row by row. A text
  * cell is parsed as its column's type; a bad one is a reject and the load goes
  * on. A header naming no column, or a required column the file lacks, throws
  * before any row is read. Rows are read as they are written, a `batch` at a time.

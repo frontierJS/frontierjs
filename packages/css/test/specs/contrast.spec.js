@@ -192,6 +192,34 @@ TEXTUAL.forEach(function (subject) {
 });
 
 /*
+ * The tests above fail a dark theme that keeps the light tone window on
+ * every tone, and none of their messages says why: tokens.css declares
+ * --tone-l-min/--tone-l-max for a light surface and CSS cannot invert them
+ * from color-scheme, so a dark theme that forgets the pair renders every
+ * tone as dark text on a dark ground (FJS-4198). This names the cause.
+ */
+test('contrast: a dark theme declares its own tone window', function () {
+  var root = getComputedStyle(document.documentElement);
+  var light = [root.getPropertyValue('--tone-l-min').trim(), root.getPropertyValue('--tone-l-max').trim()];
+  var kept = [];
+
+  THEMES.forEach(function (theme) {
+    var cs = getComputedStyle(themed(theme, '<span>x</span>'));
+    var dark = /\bdark\b/.test(cs.getPropertyValue('color-scheme'));
+    var pair = [cs.getPropertyValue('--tone-l-min').trim(), cs.getPropertyValue('--tone-l-max').trim()];
+    if (dark && pair[0] === light[0] && pair[1] === light[1]) kept.push('theme-' + theme);
+    cleanup();
+  });
+
+  assert.equal(
+    kept.length,
+    0,
+    'color-scheme dark but the light tone window (--tone-l-min ' + light[0] + ', --tone-l-max ' + light[1] +
+      ') -- set the pair, as dark.css does:\n        ' + kept.join('\n        ')
+  );
+});
+
+/*
  * The third job, and the one nothing checked: a toned BLOCK, whose text is
  * --tint-ink on --tint-surface. Both sides move with the tone, which is why
  * it reads as safe and is not — measured across the grid, sunset's warning

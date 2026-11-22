@@ -45,6 +45,9 @@ export const css = {
     { begin: /\{/, end: /\}/, type: 'punctuation', rules: block },
     { match: /@[\w-]+/, type: 'special' },
     { match: /(?<=@[\w-]+[ \t]{1,4})[^{;"'\s][^{;"']*/, type: null },
+    // A custom property is never a selector, so a declaration quoted without
+    // its rule (a docs fragment) keeps its name whole.
+    { match: /--[\w-]+(?=[ \t]*:)/, type: 'property' },
     { match: /::?[A-Za-z-]+(?:\([^)]*\))?/, type: 'keyword' },
     { match: /\[[^\]]*\]/, type: 'attribute' },
     { match: /[#.][A-Za-z_-][\w-]*/, type: 'type' },

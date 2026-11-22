@@ -2,7 +2,7 @@
 export function makeLedgerNotes(shape?: any, deps?: any): {
     _cardNotes: boolean;
     noteCardinality: (row: any, before?: any) => void;
-    noteCardinalityBySql: (whereSql: any, params: any) => void;
+    noteCardinalityBySql: (whereSql: any, params: any, data?: any) => void;
     _exclNotes: boolean;
     exclTouched: (data: any) => boolean;
     noteExclusion: (row: any) => void;

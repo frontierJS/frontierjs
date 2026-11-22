@@ -43,6 +43,7 @@ Detail: `references/the-hook-pipeline.md`
 - **`ctx.enqueue(job, payload)` is the durable half, and it is a second VERB because a closure cannot be persisted** (`FJS-D35`)
   - **A row that keeps failing is given up on, and `dead` is the only thing that says so** (`FJS-778`)
   - **The relay's walk is COLD, and a tick is ONE walk.**
+- **`ctx.hold({ name, commit, rollback })` settles an outside write with the transaction, and a side that fails is LOGGED, never thrown** (`FJS-D2296`, `FJS-4364`)
 
 ## Routes, query and headers
 Detail: `references/routes-query-and-headers.md`

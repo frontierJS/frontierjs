@@ -55,6 +55,11 @@ describe('sessionArgv', () => {
     const bad = sessionArgv({ session: 'nope', effort: 'huge', permissionMode: 'yolo' })
     for (const f of ['--resume', '--effort', '--permission-mode']) expect(bad).not.toContain(f)
   })
+  test('bypass is reachable mid-session only when the host allows it', () => {
+    expect(sessionArgv()).not.toContain('--allow-dangerously-skip-permissions')
+    expect(sessionArgv({ allowBypass: true })).toContain('--allow-dangerously-skip-permissions')
+    expect(sessionArgv({ allowBypass: true })).not.toContain('--dangerously-skip-permissions')
+  })
 })
 
 describe('askArgv', () => {

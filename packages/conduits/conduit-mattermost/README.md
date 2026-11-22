@@ -24,7 +24,7 @@ without one.
 | socket | `mattermostSocketTarget({ address, id?, ref? })` — a `broker` target at `/api/v4/websocket`, one per person, dialed with that person's token (`FJS-D1153`) · `mattermostSocketDialect` — the `FrameDialect` `app.conduit.receive({ provider: 'mattermost', target: MATTERMOST_SOCKET_TARGET, dialect, apply })` takes (`FJS-D1127`); `mattermostFraming` beneath it |
 | types | Mattermost's own shapes (`Post`, `Channel`, `Team`, `User`, `ChannelMember`, `UserThread`, `Reaction`, `FileInfo`, `PostList`, `OutgoingWebhookPayload`, `SlashCommandPayload`) and the rows (`PostRow` …) |
 | sink | `sink.ts`; `/_sink/seed` answers the seeded ids; `POST /api/v4/channels/direct` makes a direct channel; `{ sinceLimit }` lowers `since`'s cap; `POST /api/v4/hooks/outgoing` and `POST /api/v4/commands` register what it delivers, `POST /api/v4/commands/execute` runs a command; `/api/v4/websocket` pushes what the REST writes did, `POST /_sink/socket` pushes a frame by hand |
-| client verbs | past the mirror, each `(mm, …)` bound `as: 'user'`: `pinPost` · `unpinPost` · `listPinned` · `markUnread` · `muteChannel` · `joinChannel` · `leaveChannel` · `createDirectChannel` · `createGroupChannel` · `followThread` · `unfollowThread` · `markAllThreadsRead` · `listDrafts` · `saveDraft` · `deleteDraft` · `listPreferences` · `savePost` · `unsavePost` · `favoriteChannel` · `unfavoriteChannel` · `listSavedPosts` (`PREFERENCE` names the two categories) · `getStatus` · `listStatuses` · `setStatus` · `setCustomStatus` · `clearCustomStatus` · `customStatusOf(user)` · `typingFrame` · `listCategories` · `createCategory` · `updateCategory` · `deleteCategory` · `reorderCategories` · `searchPosts` · `editHistory` · `setReminder`. Rows with no model claiming them (`DraftRow`, `PreferenceRow`, `StatusRow`, `CustomStatusRow`, `CategoryRow`, `UnreadRow`) are parsed in `mirror.ts` |
+| client verbs | past the mirror, each `(mm, …)` bound `as: 'user'`: `pinPost` · `unpinPost` · `listPinned` · `markUnread` · `muteChannel` · `joinChannel` · `leaveChannel` · `createDirectChannel` · `createGroupChannel` · `followThread` · `unfollowThread` · `markAllThreadsRead` · `listDrafts` · `saveDraft` · `deleteDraft` · `listPreferences` · `savePost` · `unsavePost` · `favoriteChannel` · `unfavoriteChannel` · `listSavedPosts` (`PREFERENCE` names the two categories) · `getStatus` · `listStatuses` · `setStatus` · `setCustomStatus` · `clearCustomStatus` · `customStatusOf(user)` · `publishTyping` · `typingFrame` · `listCategories` · `createCategory` · `updateCategory` · `deleteCategory` · `reorderCategories` · `searchPosts` · `editHistory` · `setReminder`. Rows with no model claiming them (`DraftRow`, `PreferenceRow`, `StatusRow`, `CustomStatusRow`, `CategoryRow`, `UnreadRow`) are parsed in `mirror.ts` |
 | drive | `bun run drive` — 71 rows, sink only |
 
 ## Team Edition, probed 2026-11-16
@@ -163,9 +163,11 @@ Every other event is *not an event* here: counted `ignored`, no receipt
 written. A `typing` frame is one receipt like any other, so a busy room
 writes one per keystroke burst.
 
-**Typing is sent over a socket the app holds.** `typingFrame(seq, channelId, parentId?)`
-builds the `user_typing` action; conduit's broker offers no outbound frame
-after the handshake, so the app writes it on a socket of its own.
+**Typing is sent over REST.** `publishTyping(mm, profileId, channelId, parentId?)`
+is `POST /users/{id}/typing`, and the server pushes the same `typing` event
+the socket's `user_typing` action would. Conduit's broker socket is receive-only
+(`FJS-D2303`). `typingFrame(seq, channelId, parentId?)` builds that action for
+a socket the app dials itself.
 
 ## Errors
 
@@ -186,10 +188,9 @@ after the handshake, so the app writes it on a socket of its own.
 - **Interactive messages and dialogs** (`trigger_id` spent on `POST /actions/dialogs/open`) — a `command` event carries the `triggerId`; opening a dialog with it is a verb with no caller yet.
 - **Login** (`POST /users/login`, the token in a response header) — the per-user token is a personal access token or a session the app obtained; obtaining it is the app's until a caller shows the shape.
 - **File bytes** — a proxied verb with no caller yet.
-- **Sending typing through conduit's held socket** — the broker has no outbound frame after the handshake; `typingFrame` is built and the app writes it.
 - **Scheduled posts and groups** — Team Edition refuses both (§ Team Edition); the sink refuses them the same way.
 
 ## Unverified
 
 Written from memory of the Mattermost API, not read off a server; the sink matches the memory, so a drive row passing proves the connector and the sink agree, not Mattermost:
-`POST /users/{id}/posts/{post}/set_unread` body and the `post_unread` fields (`msg_count`, `mention_count`); a followed thread's first `last_viewed_at`; `updatedCategories` and `sidebar_category_*` data; the system category id `<type>_<user>_<team>`; the `DELETE` category answer; `dnd_end_time` in seconds; `status_change` going to the person alone; `user_updated` after a custom status; a group channel adding its creator, naming itself a hash of the sorted ids, the `teammate_ids` in `group_added`, and the three-to-eight limit; the draft routes and refusal ids; the reminder and search refusal ids; `edit_history` ordering and its author-only 404; a favorite also moving a channel into the Favorites category; search reading plain terms only (`from:`, `in:` are not read); a single-category `PUT` replacing the whole row; a new category landing after Favorites; the `typing` reply `{ status: 'OK' }`.
+`POST /users/{id}/posts/{post}/set_unread` body and the `post_unread` fields (`msg_count`, `mention_count`); a followed thread's first `last_viewed_at`; `updatedCategories` and `sidebar_category_*` data; the system category id `<type>_<user>_<team>`; the `DELETE` category answer; `dnd_end_time` in seconds; `status_change` going to the person alone; `user_updated` after a custom status; a group channel adding its creator, naming itself a hash of the sorted ids, the `teammate_ids` in `group_added`, and the three-to-eight limit; the draft routes and refusal ids; the reminder and search refusal ids; `edit_history` ordering and its author-only 404; a favorite also moving a channel into the Favorites category; search reading plain terms only (`from:`, `in:` are not read); a single-category `PUT` replacing the whole row; a new category landing after Favorites; the `typing` reply `{ status: 'OK' }`; `POST /users/{id}/typing` taking `{ channel_id, parent_id }`, answering `{ status: 'OK' }`, and refusing another person's id or a channel the caller is not in with 403.

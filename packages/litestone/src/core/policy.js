@@ -77,6 +77,19 @@ function homeOf(relations, modelName, node) {
 // A path's or some's relations as written — `phoneNumber.org.members`.
 const relPath = (n) => n.via ? `${n.via.join('.')}.${n.rel}` : n.rel
 
+// `rel.every(c)` and `rel.none(c)` are a `some` node carrying the word
+// (`FJS-D2291`), compiled as the `where`'s own: none is NOT EXISTS, every is
+// NOT EXISTS of a child where the condition is not TRUE, so a child whose
+// condition is NULL fails `every`. Over no children both are true.
+const quantifierOf = (n) => n.quantifier ?? 'some'
+function quantified(node, scope, cond) {
+  switch (quantifierOf(node)) {
+    case 'every': return `NOT EXISTS (SELECT 1 FROM ${scope} AND (${cond}) IS NOT TRUE)`
+    case 'none':  return `NOT EXISTS (SELECT 1 FROM ${scope} AND (${cond}))`
+    default:      return `EXISTS (SELECT 1 FROM ${scope} AND (${cond}))`
+  }
+}
+
 export function policyExprToString(node) {
   if (!node) return '?'
 
@@ -108,7 +121,7 @@ export function policyExprToString(node) {
       : node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
     case 'field':   return node.name
     case 'path':    return `${relPath(node)}.${node.name}`
-    case 'some':    return `${relPath(node)}.some(${policyExprToString(node.where)})`
+    case 'some':    return `${relPath(node)}.${quantifierOf(node)}(${policyExprToString(node.where)})`
     case 'this':    return `this.${node.name}`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
     case 'literal': {
@@ -2088,7 +2101,7 @@ function someSql(node, params, ctx, modelName, op, visited, bound = null) {
   const outer = { model: modelName, table: selfTable, keys: rel.referencedKeys, key: bound }
   const cond  = compileSql(node.where, params, Object.assign(Object.create(ctx), { _outer: outer }), rel.targetModel, op, visited)
 
-  return `EXISTS (SELECT 1 FROM "${targetTable}" AS "__some" WHERE ${corr}${live} AND (${cond}))`
+  return quantified(node, `"${targetTable}" AS "__some" WHERE ${corr}${live}`, cond)
 }
 
 // ─── Chains (`FJS-D1027`) ──────────────────────────────────────────────────────
@@ -2182,7 +2195,7 @@ function chainedSomeSql(node, params, ctx, modelName, op, visited, bound) {
   // reached — read from the outer table, or from the row in hand.
   const outer = { model: modelName, table: tableOf(ctx, modelName), row: bound }
   const cond  = compileSql(node.where, params, Object.assign(Object.create(ctx), { _outer: outer }), rel.targetModel, op, visited)
-  return `EXISTS (SELECT 1 FROM ${scope}${live} AND (${cond}))`
+  return quantified(node, `${scope}${live}`, cond)
 }
 
 function compileSql(node, params, ctx, modelName, op, visited) {
@@ -2542,17 +2555,18 @@ function evalPath(node, ctx, data, modelName) {
 // two halves cannot come to disagree about which child counts — `evalCheck`'s
 // approach, for `evalCheck`'s reason.
 //
-// A row with no key has no children: false, which is what the EXISTS answers
-// for it too. On create that is the ordinary case — nothing can point at a row
-// that does not exist yet — so a create rule that needs a member fails closed.
+// A row with no key has no children: false for `some`, which is what the
+// EXISTS answers for it too. On create that is the ordinary case — nothing can
+// point at a row that does not exist yet — so a create rule that needs a
+// member fails closed, and an `every`/`none` rule passes, as NOT EXISTS does.
 function evalSome(node, ctx, data, modelName, op) {
   if (node.via) return evalChain(node, ctx, data, modelName, 'some', op)
   const rel = relationsOf(ctx, modelName)[node.rel]
   if (!rel || rel.kind !== 'hasMany')
-    throw new Error(`${modelName}.${node.rel}.some(…): only a to-many (hasMany) relation is tested with some()`)
+    throw new Error(`${modelName}.${node.rel}.${quantifierOf(node)}(…): only a to-many (hasMany) relation is tested with some()`)
 
   const key = rel.referencedKeys.map(r => data?.[r])
-  if (key.some(v => v == null)) return false
+  if (key.some(v => v == null)) return quantifierOf(node) !== 'some'
 
   const schema = ctx.schema
   const db     = ctx.readDbFor?.(modelName) ?? ctx.readDb
@@ -2562,16 +2576,17 @@ function evalSome(node, ctx, data, modelName, op) {
   const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), key)} AS hit`
   const hit    = db.query(sql).get(...params)?.hit
   if (ctx.policyDebug === 'verbose')
-    plog(ctx, op ?? 'read', modelName, `\x1b[2m${node.rel}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
+    plog(ctx, op ?? 'read', modelName, `\x1b[2m${node.rel}.${quantifierOf(node)}(…) →${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
   return !!hit
 }
 
 // A chain for one row: the SQL half's own subquery with the row's first-hop key
 // bound, so the halves walk the same joins. No first hop is no row at the end —
-// a path answers null and a `.some(…)` false, as the correlated half does. A
-// parent or grandparent the caller cannot read answers the same (FJS-1712).
+// a path answers null, a `.some(…)` false and an `.every(…)`/`.none(…)` true,
+// as the correlated half does. A parent or grandparent the caller cannot read
+// answers the same (FJS-1712).
 function evalChain(node, ctx, data, modelName, kind, op) {
-  const absent = kind === 'path' ? null : false
+  const absent = kind === 'path' ? null : quantifierOf(node) !== 'some'
   const first  = relationsOf(ctx, modelName)[node.via[0]]
   if (first?.kind !== 'belongsTo') return absent
   const key = first.foreignKeys.map(f => data?.[f])
@@ -2591,7 +2606,7 @@ function evalChain(node, ctx, data, modelName, kind, op) {
   const sql    = `SELECT ${someSql(node, params, ctx, modelName, op, new Set([modelName]), data)} AS hit`
   const hit    = db.query(sql).get(...params)?.hit
   if (ctx.policyDebug === 'verbose')
-    plog(ctx, op ?? 'read', modelName, `\x1b[2m${relPath(node)}.some(…) → ${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
+    plog(ctx, op ?? 'read', modelName, `\x1b[2m${relPath(node)}.${quantifierOf(node)}(…) →${hit ? 'true' : 'false'}\x1b[0m`, `(${sql})`)
   return !!hit
 }
 

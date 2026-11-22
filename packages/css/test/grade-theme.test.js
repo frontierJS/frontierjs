@@ -22,6 +22,7 @@ test('a theme under AA exits 1 and names the failing pairings', () => {
   expect(r.status).toBe(1)
   expect(r.output).toContain('in theme-graded-fail')
   expect(r.output).toContain('--ink-mute on --surface')
+  expect(r.output).toContain('the light tone window')
   expect(r.output).toMatch(/\d+ failing/)
 }, 60_000)
 

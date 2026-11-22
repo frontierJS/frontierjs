@@ -66,6 +66,8 @@ const MODEL_FIXTURES: Record<string, string> = {
   commitment:  's S @default(open)\n  at DateTime\n' +
                '  @@transitions(s, close: open -> closed @system, drop: open -> dropped @system)\n' +
                '  @@commitment(close, on: at + 1d)\n  @@commitment(drop, on: at + 2d)',
+  // One per window — 60 a minute and 10,000 a day.
+  rate:        'at DateTime\n  @@rate([a], max: 60, per: 1m, at: at)\n  @@rate([a], max: 10000, per: 1d, at: at)',
 }
 
 const FIELD_FIXTURES: Record<string, string> = {

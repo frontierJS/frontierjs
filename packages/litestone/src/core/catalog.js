@@ -928,8 +928,8 @@ const FIELD = [
     'zoned',
     'field',
     'shape',
-    '([<date>, <time>,] <field> | <relation>.<field>)',
-    "The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant.",
+    '([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])',
+    "The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.",
     'endsOn String @date @zoned(timeZone)',
     { seeAlso: ['zone', 'date', 'time', 'commitment'], extraFields: 'timeZone String @zone' }
   ),
@@ -1038,8 +1038,8 @@ const MODEL = [
     'unique',
     'model',
     'shape',
-    '([field, …][, nullsDistinct: true | where: <expr>])',
-    "A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author.",
+    '([field, …][, nullsDistinct: true | where: <expr>][, "<message>"])',
+    "A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author. A trailing string is the refusal's sentence: it replaces the per-field message and the summary's tail of the 409 `UniqueConflictError`, which otherwise says only which columns are taken, and a `where:` form's predicate goes on `err.constraint` for the developer. Two declarations over one column set carrying different messages are refused, because the refusal names columns and not the index (`FJS-D2302`).",
     '@@unique([accountId, number])',
     { kind: 'uniqueIndex', extraFields: 'accountId Int\n  number Int', seeAlso: ['index'] }
   ),
@@ -1051,6 +1051,15 @@ const MODEL = [
     "No two rows sharing the scope's key may overlap on the range — uniqueness over a range rather than over a value, across every model citing the same `scope`, so a shift and a leave request for one person are checked against each other. The scope's fields must each be a plain scalar column on this model; the range is two different stored fields of one kind that orders — Int, Float, DateTime, or a String with @date, @datetime or @time. Members may differ in kind — a day meets an instant at UTC midnight — but not numbers against times, nor a time of day (`@time`) against either: it shares no point with them. Graded when the outermost write commits, over every member row under each key the unit touched, read past the caller's row policy; an overlap is an `OverlapConflictError` (409). The range is `[start, end)`, a null end is still going, and soft-deleted and template rows occupy nothing. `where:` says which of this model's rows hold their range at all — `where: status != \"cancelled\"` — and refuses what a partial `@@unique` refuses: `auth()`, `now()`, another model, a quoted string. A write naming one of its fields is graded, so a row moved back into it is checked.",
     '@@exclude(person, range: [startsAt, endsAt])',
     { context: 'scope person(employeeId)', extraFields: 'employeeId Int\n  startsAt DateTime\n  endsAt DateTime', seeAlso: ['schema:scope', 'model:unique'] }
+  ),
+  t(
+    'rate',
+    'model',
+    'shape',
+    '([<field>, …], max: <n> | <relation>.<field>[, per: <duration> | days(<relation>.<field>)][, at: <field>][, where: <predicate>])',
+    "At most `max` rows of this model share the key — within `per` of now when a window is given, counting rows whose `at` (a `DateTime`, `createdAt` unless said) is inside it; every row of the key when not. The key is a column, so a quota per caller keys a `@createdBy` column: `@@rate([authorId], max: 5, per: 1m)` holds each author to five comments a minute. Graded when the outermost write commits, inside the write, so a `createMany` or a `$transaction` past the limit rolls back whole and two writers cannot both see room for one; `asSystem()` is held to it, as to `@@check`. The refusal is a 409 `RateLimitError` naming the key, with `retryAt` and `retryAfter` saying when the window reopens. A row whose key is null is nobody's count, and a soft-deleted row still counts. One per window, so a key may hold 60 a minute and 10,000 a day. `per: days(account.surveyMinDaysBetween)` reads the window off the written row's to-one relation at the write, an `Int` number of days, and a null there is no cap (`FJS-D1119`). `max: slot.cap` reads the limit the same way, so with `where: status == 'confirmed'` and no `per:` it is a live-row cap per parent: a slot's confirmed places, with a waitlist that does not count (`FJS-D2295`). `where:` is read off the row alone, and an update moving a row into it is graded.",
+    '@@rate([authorId], max: 5, per: 1m)',
+    { extraFields: 'authorId Int? @createdBy\n  createdAt DateTime @default(now())', seeAlso: ['field:createdBy', 'field:maxItems', 'model:check'] }
   ),
   t(
     'check',
@@ -1131,8 +1140,8 @@ const MODEL = [
     'fts',
     'model',
     'shape',
-    '([field, …][, tokenize: unicode61|ascii|porter|trigram])',
-    'Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse.',
+    '([field, …][, tokenize: unicode61|ascii|porter|trigram][, multisearch: false])',
+    'Full-text search over the named columns, which is what makes search() legal — calling it without this is a 400 naming the attribute. The tokenizer decides what matches: unicode61 is word-based, trigram is fuzzy character overlap, porter stems English. It also puts the model in the shared _search index that db.$search() ranks across models, titled by the @@label column, so a model declaring this and no @@label is refused at parse. multisearch: false keeps the model out of _search: its own search() still works, it needs no @@label, it stores its words once instead of twice, and $search naming it is a 400.',
     '@@fts([title, body], tokenize: porter)',
     {
       extraFields: 'title String\n  body String\n  @@label(title)',
@@ -1141,6 +1150,11 @@ const MODEL = [
           'tokenize',
           ['unicode61', 'ascii', 'porter', 'trigram'],
           '@@fts([title], tokenize: %s)'
+        ),
+        vals(
+          'multisearch',
+          ['true', 'false'],
+          '@@fts([title], multisearch: %s)'
         )
       ]
     }
@@ -1758,6 +1772,7 @@ export const DOCS = {
   'field:validate': 'schema.md',
   'model:validate': 'schema.md',
   'model:exclude': 'concurrency.md',
+  'model:rate': 'concurrency.md',
   'schema:scope': 'concurrency.md',
   'field:startsWith': 'schema.md',
   'field:endsWith': 'schema.md',
@@ -1993,6 +2008,7 @@ export const TIERS = {
     'model:validate',
     'field:validate',
     'model:exclude',
+    'model:rate',
     'model:extensible'
   ]
 }
@@ -2036,7 +2052,7 @@ export const AXES = {
     'field:datetime', 'field:time', 'field:zone', 'field:zoned', 'field:regex', 'field:length', 'field:startsWith',
     'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
-    'model:id', 'model:unique', 'model:exclude', 'model:check', 'model:arc', 'model:relator',
+    'model:id', 'model:unique', 'model:exclude', 'model:rate', 'model:check', 'model:arc', 'model:relator',
     'field:validate', 'model:validate',
     'model:map', 'model:label', 'model:noStrict', 'model:fts', 'model:extensible',
     'model:hasTemplates', 'model:db', 'model:trait', 'field:override'
@@ -2109,6 +2125,7 @@ export const SYNONYMS = {
   'field:required':    ['not null', 'notnull', 'mandatory'],
   'field:omit':        ['hide', 'private'],
   'model:exclude':     ['no overlap', 'exclusion constraint', 'double booking'],
+  'model:rate':        ['rate limit', 'throttle', 'per minute', 'capacity'],
   'field:relation':    ['fk', 'has many', 'belongs to'],
   'field:slug':        ['permalink', 'handle'],
   'field:values':      ['dropdown', 'options', 'picklist'],

@@ -58,7 +58,8 @@
  * where the item was; in a wrapped zone one is a hop only when no line lies
  * that way. One shared live region says where it is: in English, or as the
  * zone's `announcements(event, info)` words it — `event` is `lifted`, `moved`,
- * `dropped` or `cancelled`, `info` is `{ label, position, total, zone }`, and
+ * `onto`, `dropped` or `cancelled`, `info` is `{ label, position, total, zone }`
+ * plus `target` while on an item, and
  * a return that is not a string falls back to the English line.
  *
  * A wrapped zone — a flex-wrap in either direction, or a grid filled along
@@ -74,7 +75,9 @@
  *     pointer is there; a drop finalizes with trigger `droppedOntoItem` and
  *     `info.target`, and moves nothing — every list comes back as it was before
  *     the drag, the origin's (when another zone) with `droppedIntoAnother`.
- *     The keyboard does not reach it.
+ *     By keyboard the arrows along the axis stop on each item it allows,
+ *     between the slots either side, announced as `onto` with `info.target`;
+ *     Space there is the same drop.
  *   • `accept: (dragged) => record | null` on a zone turns an item from ANOTHER
  *     zone into the record it lands as. The placeholder is that record, so the
  *     host renders the shape that will land; `null` for any dragged item and
@@ -717,21 +720,24 @@ function announce(message) {
 const ENGLISH = {
   lifted:    (i) => `${i.label}, lifted, position ${i.position} of ${i.total}. Arrow keys move it, Space drops it, Escape cancels.`,
   moved:     (i) => `${i.label}, position ${i.position} of ${i.total}.`,
-  dropped:   (i) => `${i.label}, dropped at position ${i.position} of ${i.total}.`,
+  onto:      (i, on) => `${i.label}, on ${on}. Space drops it onto ${on}.`,
+  dropped:   (i, on) => (on ? `${i.label}, dropped onto ${on}.` : `${i.label}, dropped at position ${i.position} of ${i.total}.`),
   cancelled: (i) => `${i.label}, cancelled, back at position ${i.position} of ${i.total}.`,
 }
 
 /** Speak `event` for the zone `meta`, worded by that zone's `announcements`
  *  when it returns a string for it and in English otherwise. */
 function say(event, meta) {
+  const onto = session.onto?.meta === meta && session.onto.item ? session.onto : null
   const info = {
     label:    session.label,
     position: meta.placeholderIndex + 1,
     total:    itemsWithoutShadow(meta).length + 1,
     zone:     meta.node,
+    ...(onto && { target: onto.item }),
   }
   const worded = meta.config.announcements?.(event, info)
-  announce(typeof worded === 'string' ? worded : ENGLISH[event](info))
+  announce(typeof worded === 'string' ? worded : ENGLISH[event](info, onto && (onto.el ? labelOf(onto.el) : 'Item')))
 }
 
 function labelOf(el) {
@@ -797,10 +803,35 @@ function keyboardKey(e) {
   e.preventDefault()
   if (isPalette(meta)) return
   if (meta.neg) step = -step
+  if (stepOnto(meta, step)) return
   const idx = Math.min(itemsWithoutShadow(meta).length, Math.max(0, meta.placeholderIndex + step))
   if (idx === meta.placeholderIndex) return
   considerWithShadowAt(meta, idx, TRIGGERS.DRAGGED_OVER_INDEX)
   say('moved', meta)
+}
+
+/** The keyboard's half of `dropOnto`: from a slot the arrow lands on the item
+ *  that way when the zone allows it, and from an item on the slot past it, as
+ *  the pointer crosses edge, middle, edge. False when the step is a plain move.
+ *  The placeholder stays where it was while an item is marked, so the drop
+ *  that follows finalizes from the same state a pointer's would. */
+function stepOnto(meta, step) {
+  if (!meta.config.dropOnto) return false
+  const on = session.onto?.meta === meta && session.onto.item ? session.onto.k : -1
+  if (on >= 0) {
+    setOnto()
+    const idx = on + (step > 0 ? 1 : 0)
+    if (idx !== meta.placeholderIndex) considerWithShadowAt(meta, idx, TRIGGERS.DRAGGED_OVER_INDEX)
+    say('moved', meta)
+    return true
+  }
+  const k = meta.placeholderIndex + (step > 0 ? 0 : -1)
+  const item = itemsWithoutShadow(meta)[k]
+  const rule = meta.config.dropOnto
+  if (!item || (rule !== true && !rule(item))) return false
+  setOnto(meta, k)
+  say('onto', meta)
+  return true
 }
 
 // ─── crossing zones by keyboard ───────────────────────────────────────────
@@ -858,6 +889,7 @@ function hopZone(meta, hop) {
   const ph = meta.node.children[meta.placeholderIndex]
   const from = ph ? docRectNoTransform(ph) : null
 
+  setOnto()
   measureZone(target)
   let idx = itemsWithoutShadow(target).length
   if (from) {
@@ -1126,7 +1158,7 @@ function finishDrag(skipAnimation) {
  *   centerOnCursor?: boolean,
  *   delayTouchStart?: boolean | number,
  *   dragHandleSelector?: string,
- *   announcements?: (event: 'lifted' | 'moved' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement}) => string | undefined,
+ *   announcements?: (event: 'lifted' | 'moved' | 'onto' | 'dropped' | 'cancelled', info: {label: string, position: number, total: number, zone: HTMLElement, target?: any}) => string | undefined,
  *   dropOnto?: boolean | ((item: any) => boolean),
  *   accept?: (dragged: any) => {id: any} | null | undefined,
  *   dragSet?: () => Array<{id: any}>,

@@ -340,7 +340,7 @@ const guideJs = readFileSync(join(pkg, 'guide', 'guide.js'), 'utf8');
 const glowSamples = {
   css: glow(
     `/* the whole contract */
-.card { --bg-mix: var(--color-danger); color: #f4403a !important; }`,
+.card:hover { --bg-mix: var(--color-danger); color: #f4403a !important; }`,
     { language: 'css', prefix: false }
   ),
   marked: glow(

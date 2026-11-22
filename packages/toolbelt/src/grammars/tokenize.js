@@ -4,8 +4,7 @@
  * For an editor or a viewer that draws a window of a long file: `tokenizeLine`
  * takes the state a line starts in and answers the state it ends in, so a block
  * comment or a template literal that spans lines is known without reading from
- * the top. `glow` is the other kit: it highlights a whole block it is handed and
- * keeps nothing between calls.
+ * the top. `glow` paints through it wherever `grammarFor` finds a grammar.
  *
  * A STATE IS AN OPAQUE TOKEN. It is a small integer standing for a grammar plus
  * the stack of regions open at a line's end, interned so two states compare with
@@ -247,10 +246,14 @@ export const STRUCTURE = new Set(['heading', 'emphasis', 'strong', 'link'])
 /**
  * One line as markup: an element per run of one type (ELEMENT), and the
  * untyped text bare. Returns the markup; the end state is not needed to paint.
+ * With `classes` false a run whose type has no element is bare text and a
+ * STRUCTURE type drops its class: glow's output, which a theme styles by
+ * element alone (FJS-D2304).
  * @param {string} text
  * @param {State} state
+ * @param {boolean} [classes]
  */
-export function lineHTML(text, state) {
+export function lineHTML(text, state, classes = true) {
   let out = ''
   let runType = null
   let runFrom = 0
@@ -258,10 +261,10 @@ export function lineHTML(text, state) {
   const flush = () => {
     if (runTo === runFrom) return
     const s = escapeHTML(text.slice(runFrom, runTo))
-    if (!runType) out += s
+    const el = runType && ELEMENT[runType]
+    if (!runType || (!el && !classes)) out += s
     else {
-      const el = ELEMENT[runType]
-      const cls = STRUCTURE.has(runType) ? ` class="t-${runType}"` : ''
+      const cls = classes && STRUCTURE.has(runType) ? ` class="t-${runType}"` : ''
       out += el ? `<${el}${cls}>${s}</${el}>` : `<span class="t-${runType}">${s}</span>`
     }
   }

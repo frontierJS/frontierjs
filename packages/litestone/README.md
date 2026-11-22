@@ -1236,9 +1236,11 @@ db.user.restore({ where })                         // → TRow[]
 db.user.create({ data, select: false })            // → null
 db.user.update({ where, data, select: false })     // → null
 
-// Bulk ops — return { count: number } only, no row data
-// Use single-row ops in a $transaction if you need the affected rows back
+// Bulk ops — return { count: number }, no row data
 db.user.createMany({ data: [...] })                // → { count: number }
+// …except createMany's select, which adds the written rows the caller may
+// read, in insert order — the ids a bulk load needs for its child rows
+db.user.createMany({ data: [...], select: { id: true } })  // → { count, rows: [{ id }, …] }
 db.user.updateMany({ where, data })                // → { count: number }
 db.user.upsertMany({ data, conflictTarget, update })  // → { count: number }
 db.user.removeMany({ where })                      // → { count: number }
@@ -2361,7 +2363,9 @@ const { loaded, rejects } = await loadRows(db.asSystem(), 'Lead', csvText, {
 // rejects: [{ row: 1, line: 3, key: '2', field: 'score', reason: 'not a whole number' }]
 ```
 
-- `loaded + rejects.length` is always the number of input rows.
+- `loaded + rejects.length` is always the number of input rows, and `loaded` is
+  `added + updated`: under `mode: 'upsert'` a row whose key a stored row holds is
+  `updated`, so a `dryRun` is an import preview's *will add 2, will update 5*.
 - **A reason never quotes the cell**: the text may be what the column encrypts.
 - A header naming no column, or a required column with no default that the file
   lacks, **throws** before any row: every row would be rejected for it. Under

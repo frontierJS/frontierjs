@@ -25,7 +25,9 @@
  * marker; the combinators are not, so a CSS caller wants `prefix: false`.
  */
 
-const MIXED_HTML = ['html', 'jsx', 'php', 'astro', 'dhtml', 'vue', 'svelte', 'hb', 'mesa']
+import { grammarFor, initialState, lineHTML, plain, stateGrammar, tokenizeLine } from '../grammars/grammars.js'
+
+const MIXED_HTML =['html', 'jsx', 'php', 'astro', 'dhtml', 'vue', 'svelte', 'hb', 'mesa']
 const LINE_COMMENT = { clojure: ';;', lua: '--', python: '#', sql: '--' }
 const PREFIXES = { '+': 'ins', '-': 'del', '>': 'dfn' }
 const MARK = /(••?)([^•]+)\1/g // ALT + q
@@ -349,11 +351,13 @@ export function renderRow(row, lang, mark = true) {
   }
 
   ret.push(encode(row.substring(index)))
-  const res = ret.join('')
+  return marked(ret.join(''), mark)
+}
 
+function marked(html, mark) {
   return !mark
-    ? res
-    : res.replace(MARK, (_, marker, content) => {
+    ? html
+    : html.replace(MARK, (_, marker, content) => {
         return elem(marker[1] ? 'u' : 'mark', content)
       })
 }
@@ -392,10 +396,24 @@ function isTrailingComment(line) {
 }
 
 /*
-  A block comment carries state from one line to the next, and it is the only
-  thing that does: every other rule reads one line alone. So a line is fully
-  described by its text and whether a comment is open before it, which is what
-  lets a caller repaint only the lines that changed (`glowLine`).
+  A language with a grammar is painted by the tokenizer, which carries every
+  region that spans lines; the rules below carry only a block comment, so a
+  `/*` inside a template literal opened one (FJS-D2304). A list is a
+  transcript of two languages, which no one grammar reads. jsx and tsx name
+  the js grammar by extension, which reads no tags.
+*/
+const RULES_ONLY = ['jsx', 'tsx']
+
+function grammarOf(lang) {
+  const langs = asLangs(lang)
+  if (langs.length !== 1 || RULES_ONLY.includes(String(langs[0]).toLowerCase())) return null
+  const grammar = grammarFor(`x.${langs[0]}`)
+  return grammar === plain ? null : grammar
+}
+
+/*
+  For the rules, a block comment is the only state from one line to the next,
+  so a line is described by its text and whether a comment is open before it.
 */
 function commentStep(line, open) {
   const [comm_start, comm_end] = COMMENT
@@ -417,14 +435,19 @@ export function glowLanguage(source, language) {
 }
 
 /*
-  One line as glow paints it inside its <code>, and whether a block comment is
-  still open after it. `open` is the same answer for the line before; the first
-  line of a document has none open. `opts.language` is taken as given — the
-  document-level guess is `glowLanguage`.
+  One line as glow paints it inside its <code>, and the state the next line
+  starts in. `state` is that answer for the line before, nothing for a
+  document's first line. It is opaque: compare two with `===` and do nothing
+  else with one. `opts.language` is taken as given — the document-level guess
+  is `glowLanguage`.
 */
-export function glowLine(line, opts = {}, open = false) {
+export function glowLine(line, opts = {}, state) {
   const lang = opts.language
-  const step = commentStep(line, open)
+  const grammar = grammarOf(lang)
+  /* A state from another language, a caller that switched mid-document, is
+     the new language's start rather than a wrong grammar's stack. */
+  const at = grammar && (typeof state === 'number' && stateGrammar(state) === grammar ? state : initialState(grammar))
+  const step = grammar ? { comment: false } : commentStep(line, state === true)
   let html
 
   if (step.comment) html = elem('sup', encode(line))
@@ -443,11 +466,12 @@ export function glowLine(line, opts = {}, open = false) {
     // escape character
     if (prefix && c === '\\') line = line.slice(1)
 
-    html = renderRow(line, lang, opts.mark ?? true)
+    html = grammar ? marked(lineHTML(line, at, false), opts.mark ?? true) : renderRow(line, lang, opts.mark ?? true)
     if (wrap) html = elem(wrap, html)
   }
 
-  return { html: opts.numbered ? elem('span', html) : html, open: step.open }
+  const next = grammar ? tokenizeLine(line, at) : step.open
+  return { html: opts.numbered ? elem('span', html) : html, state: next }
 }
 
 // code, { language: 'js', numbered: true }
@@ -463,15 +487,14 @@ export function glow(str, opts = { prefix: true, mark: true }) {
   const lang = glowLanguage(lines, opts.language)
   const line = { ...opts, language: lang }
   const html = []
-  let open = false
+  let state
 
-  /* A comment still open at the end is painted as one. It used to be held
-     back until it closed, so an unclosed `/*` dropped every line after it —
-     in an editor, the paint went blank below the line being typed. */
+  /* A comment still open at the end is painted as one: held back until it
+     closed, an editor's paint goes blank below the line being typed. */
   for (const text of lines) {
-    const out = glowLine(text, line, open)
+    const out = glowLine(text, line, state)
     html.push(out.html)
-    open = out.open
+    state = out.state
   }
 
   return `${glowOpen(lang)}${html.join(NL)}</code>`

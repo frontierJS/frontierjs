@@ -87,6 +87,11 @@ what a declaration or the tenancy block already covers, `-wal`/`-shm`
 companions, dot-entries, and `db/backups/`. A schema outside `db/` is a bare
 project whose directory is its source, and gets none of this.
 
+A record kept as a directory of files, such as a store of git repositories, goes
+under `db/` too. The same directory beside `db/` is skipped by every backup
+without a warning, and outside the volume a deploy mounts. Under `db/` it is
+copied whole on every run, with no dedupe (`FJS-D2297`).
+
 Each copy carries `db-layout.json` — `{ sqlite: [{ name, rel }], files: [rel] }` —
 because a restore runs into a tree that is empty exactly when it is needed, and
 a name like `db-a-b` cannot say whether it was `a/b.db` or `a-b.db` (`FJS-D1103`).

@@ -91,6 +91,42 @@ title: Laptop
     : l.dirty ? 'holds work since its last sync — Remove will refuse'
     : 'idle and clean'
 
+  // Build output is asked for on a press, never with the Disk tab: the walk
+  // reads every folder under the code root and takes seconds.
+  let buildsReport  = null
+  let buildsError   = null
+  let buildsLoading = false
+
+  async function scanBuilds() {
+    buildsLoading = true
+    try {
+      buildsReport = await laptop.service.invoke('builds')
+      buildsError  = null
+    } catch (err) {
+      buildsError = err.message
+    } finally {
+      buildsLoading = false
+    }
+  }
+
+  // Clear gives bytes back from the code root, so it rescans the builds and leaves the rest of Disk alone.
+  async function clearBuild(b) {
+    const key = `b:${b.id}`
+    pressed = { ...pressed, [key]: true }
+    try {
+      const out = await laptop.service.invoke('clearBuild', null, { id: b.id })
+      toasts.success(`Cleared ${b.project}: freed ${bytes(out.freed)}`)
+      await scanBuilds()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [key]: false }
+    }
+  }
+
+  const buildSub = (b) => b.held ? `cargo is running (pid ${b.held})`
+    : `Rust build · ${b.mtime ? `last built ${ago(b.mtime)}` : 'last built unknown'}`
+
   // Keys loads when its tab first opens; the walk is cheap but a tab nobody opens costs nothing.
   let keysReport  = null
   let keysError   = null
@@ -473,6 +509,53 @@ title: Laptop
           <Button size="sm" treatment="outlined" id="disk-rescan" loading={loading} onclick={load}>Rescan</Button>
         </div>
       {/if}
+
+      <!-- ─── Build output ─────────────────────────────────────────────── -->
+      <section class="lp-pane" id="laptop-builds" aria-labelledby="laptop-builds-title">
+        <header class="pane-head builds-head">
+          <div class="pane-title">
+            <h2 class="h6" id="laptop-builds-title">Build output</h2>
+            <span class="text-sm text-muted">Rust target folders cargo rebuilds</span>
+          </div>
+          {#if buildsReport}<code class="path text-xs">{buildsReport.root}</code>{/if}
+        </header>
+
+        {#if buildsError}
+          <p class="row-sub pane-empty">{buildsError}</p>
+        {:else if !buildsReport}
+          <p class="row-sub pane-empty">Not scanned: the walk reads every folder under the code root and takes a few seconds.</p>
+        {:else if !buildsReport.exists}
+          <p class="row-sub pane-empty" id="builds-missing">{buildsReport.root} is not there. Set CODE_DIR to the folder your projects are in.</p>
+        {:else if buildsReport.builds.length}
+          <ul class="rows-list">
+            {#each buildsReport.builds as b (b.id)}
+              <li class="lp-row" data-build={b.id}>
+                <div class="row-main">
+                  <div class="row-name">{b.project}</div>
+                  <div class="row-sub" title={b.mtime ? at(b.mtime) : ''}>{buildSub(b)}</div>
+                </div>
+                <div class="row-size num">{bytes(b.bytes)}</div>
+                <div class="row-act">
+                  <ConfirmationPopover inline title={`Remove ${bytes(b.bytes)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => clearBuild(b)}>
+                    {#snippet trigger()}
+                      <Button size="sm" treatment="outlined" tone="danger" disabled={!!b.held} loading={!!pressed[`b:${b.id}`]}>Clear</Button>
+                    {/snippet}
+                  </ConfirmationPopover>
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="row-sub pane-empty">No Rust build folders under {buildsReport.root}.</p>
+        {/if}
+
+        <footer class="pane-foot">
+          <span class="text-sm text-muted" id="laptop-builds-walk">
+            {#if buildsReport && buildsReport.exists}{bytes(buildsReport.bytes)} in {buildsReport.builds.length} · Scanned in {(buildsReport.walkMs / 1000).toFixed(1)} s{/if}
+          </span>
+          <Button size="sm" treatment="outlined" id="builds-scan" loading={buildsLoading} onclick={scanBuilds}>{buildsReport ? 'Rescan' : 'Scan'}</Button>
+        </footer>
+      </section>
     </div>
   </TabPanel>
 
@@ -790,6 +873,7 @@ title: Laptop
 
   .num  { font-variant-numeric: tabular-nums; }
   .pane-head { cursor: pointer; }
+  .pane-head.builds-head { cursor: default; }
   .setup-sum { display: inline-flex; align-items: center; gap: var(--space-sm); }
   .setup-why { margin: 0; padding: var(--space-sm) var(--space-xl); }
   .lp-row.lp-setup { grid-template-columns: minmax(0, 1fr); }

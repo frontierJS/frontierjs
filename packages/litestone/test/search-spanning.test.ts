@@ -250,3 +250,42 @@ model Ox {
     expect(both.map((h: any) => h.model).sort()).toEqual(['ox', 'post'])
   })
 })
+
+// FJS-D2301: a model out of `_search` has no rows there, so a `$search` that
+// named it would answer [] as though nothing matched. Refused by name instead.
+describe('$search — a model declaring @@fts(multisearch: false)', () => {
+  const OUT = `
+model Article {
+  id    Int    @id @default(autoincrement())
+  title String
+  @@fts([title])
+  @@label(title)
+}
+
+model Verse {
+  id   Int    @id @default(autoincrement())
+  text String
+  @@fts([text], multisearch: false)
+}
+`
+  let out: any
+  beforeAll(async () => {
+    out = await createClient({ schema: OUT, databases: ':memory:' })
+    const sys = out.asSystem()
+    await sys.article.create({ data: { title: 'in the beginning' } })
+    await sys.verse.create({ data: { text: 'in the beginning was the word' } })
+  })
+
+  it('is searched through its own search(), and left out of $search', async () => {
+    expect((await out.asSystem().verse.search('beginning')).length).toBe(1)
+    const hits = await out.asSystem().$search('beginning')
+    expect(hits.map((h: any) => h.model)).toEqual(['article'])
+  })
+
+  it('is refused by name when $search names it', async () => {
+    const err: any = await out.asSystem().$search('beginning', { models: ['verse'] }).catch((e: any) => e)
+    expect(err.name).toBe('CapabilityNotDeclaredError')
+    expect(err.status).toBe(400)
+    expect(err.message).toMatch(/Verse.*multisearch: false.*verse\.search\(\)/)
+  })
+})

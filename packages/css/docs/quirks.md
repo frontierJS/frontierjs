@@ -452,10 +452,13 @@ Moved verbatim from `CLAUDE.md`; the short list that stays there points here.
   `.app` reads stops at a nested `.theme-*`.** `.app` reads `--text-md`,
   `--leading-body` and `--body-letter-spacing` (FJS-4190, FJS-4191), and a
   `.theme-x` div below it retuning them moves nothing until a rule under it
-  re-reads them. `.prose` and the Block tier (`surface.css`) do, the same way
-  they re-read `--ink`; a bare `p` directly under a nested theme root keeps
-  the outer values, exactly as it keeps the outer ink. `theming.spec.js`
-  measures a `p` inside a Prose and a Card under a nested override.
+  re-reads them. A theme root inside `.app` re-reads the three itself
+  (`frame.css`, FJS-4211), at zero specificity so a heading or a Btn carrying
+  a theme class keeps its own size; `.prose` and the Block tier re-read them
+  too. Ink does not get the same rule — a theme root without a ground of its
+  own keeps the outer ink, and a bare `p` under it does with it.
+  `theming.spec.js` measures a bare `p`/`li`, a Prose and a Card under a
+  nested override.
 - **`run.js --theme <file>` grades a theme the package does not ship**
   (FJS-4194). The file holds one `.theme-<name>` rule; it is inlined after
   `index.css` and only `contrast.spec.js` runs, against that class alone —

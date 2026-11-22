@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**133 words** — 13 declarations · 76 field attributes · 39 model attributes · 5 transition words.
+**134 words** — 13 declarations · 76 field attributes · 40 model attributes · 5 transition words.
 
 ## Declarations
 
@@ -96,7 +96,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |
 | `@time` | Refuse a bad value | [(seconds: true[, message: "..."])] |  |  |  |
 | `@zone` | Refuse a bad value | [(message)] |  |  |  |
-| `@zoned` | Shape the table | ([<date>, <time>,] <field> \| <relation>.<field>) |  |  |  |
+| `@zoned` | Shape the table | ([<date>, <time>,] <field> \| <relation>.<field>[, after: <field>]) |  |  |  |
 | `@regex` | Refuse a bad value | ("pattern"[, message]) |  |  |  |
 | `@length` | Refuse a bad value | (min[, max][, message]) |  |  |  |
 | `@startsWith` | Refuse a bad value | ("text"[, message]) |  |  |  |
@@ -117,8 +117,9 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | --- | --- | --- | --- | --- | --- |
 | `@@index` | Shape the table | ([field [(sort: Asc \| Desc)], …][, where: <expr>]) |  |  |  |
 | `@@id` | Identify a row | ([field, …]) | in a model |  |  |
-| `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
+| `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>][, "<message>"]) |  |  | parses as `uniqueIndex` |
 | `@@exclude` | Shape the table | (<scope>, range: [<start>, <end>][, where: <expr>]) |  |  |  |
+| `@@rate` | Shape the table | ([<field>, …], max: <n> \| <relation>.<field>[, per: <duration> \| days(<relation>.<field>)][, at: <field>][, where: <predicate>]) |  |  |  |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@validate` | Shape the table |  |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
@@ -127,7 +128,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@label` | Shape the table | (<field> \| [<field> \| <relation>.<field>, …]) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
-| `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
+| `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram][, multisearch: false]) | in a model | tokenize: unicode61 · ascii · porter · trigram<br>multisearch: true · false |  |
 | `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field · read |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, scope: field][, max: { kind: N }]) |  |  |  |
@@ -232,3 +233,4 @@ Shapes the parser accepts and something later refuses.
 | `read-allow-hides-tenant-members` | warn | a read @@allow written for a claim the tenant's members do not carry hides the model from them |
 | `allow-needs-bearer-claim-under-gate` | warn | an @@allow only a bearer can satisfy sits under a gate a bearer cannot pass |
 | `deny-reads-nullable-column` | warn | an @@deny compares a column that can be NULL, and a NULL row is refused |
+| `locked-under-cascade` | info | a model locked for delete under an onDelete: Cascade makes its parents undeletable |

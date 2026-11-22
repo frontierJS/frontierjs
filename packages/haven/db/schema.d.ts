@@ -181,11 +181,17 @@ export interface Member {
   nick: string
   /**
    * Who the member is: the root of their Frontier chain, so every machine in
-   * the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). A
-   * machine with no chain is its own key here until 3.2 refuses it, and an
-   * imported voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
+   * the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). An
+   * agent's is `agent:<nick>`, so a new key listed for the nick is the same
+   * member, and a voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
    */
   root: string
+  /**
+   * A member the Haven lists in `HAVEN_AGENTS` rather than a person's chain
+   * (`FJS-D1651`), so the room can mark them. Written by the login alone: a
+   * member flagging themselves would pass for a bot.
+   */
+  agent: boolean
   /**
    * The standing: `mod`, or none. Read off the row on every call and every
    * socket frame (`api/src/principal.ts`), written by the login from
@@ -211,9 +217,9 @@ export interface MemberCreate {
   nick: string
   /**
    * Who the member is: the root of their Frontier chain, so every machine in
-   * the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). A
-   * machine with no chain is its own key here until 3.2 refuses it, and an
-   * imported voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
+   * the chain walks in as one figure (`IDEAS/frontier-network.md` 3.1). An
+   * agent's is `agent:<nick>`, so a new key listed for the nick is the same
+   * member, and a voice's is `none:<nick>` (`api/src/keyless.ts`). Never moves.
    */
   root: string
   /**
@@ -238,10 +244,15 @@ export interface MemberUpdate {
   bannedAt?: string | Date | null
 }
 
+export interface MemberSystem {
+  agent?: boolean
+}
+
 export interface MemberWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   nick?: string | WhereOp<string> | null
   root?: string | WhereOp<string> | null
+  agent?: boolean | WhereOp<boolean> | null
   role?: string | WhereOp<string> | null
   bannedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -760,7 +771,8 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove ex
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
   create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
-  createMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; system?: K[] }): Promise<{ count: number }>
+  /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
+  createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
   update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>
   updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
   upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
@@ -828,7 +840,7 @@ type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
   'auditTrail' | 'member' | 'room' | 'message' | 'game' | 'vote' | 'miss' | 'session' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
   readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
-  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'role' | '@@gate'>
+  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'agent' | 'role' | '@@gate', MemberSystem>
   readonly room: TableClient<Room, RoomCreate, RoomUpdate, RoomWhere, RoomRelations, never, '@@gate'>
   readonly message: TableClient<Message, MessageCreate, MessageUpdate, MessageWhere, MessageRelations, never, '@@gate'>
   readonly game: TableClient<Game, GameCreate, GameUpdate, GameWhere, GameRelations, never, '@@gate'>
@@ -838,7 +850,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>
-  $setAuth(user: Record<string, unknown>): LitestoneClient
+  $setAuth(user: object | null): LitestoneClient
   $scopedBy(scope: Record<string, unknown>): LitestoneClient
 
   // Is this key filterable / sortable? Asked rather than copied — every

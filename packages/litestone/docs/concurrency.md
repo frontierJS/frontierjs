@@ -352,6 +352,101 @@ field). A delete is never graded.
   raw `asSystem().sql` write goes around the rule, as it goes around a CHECK
   litestone cannot emit.
 
+## At most N per key — `@@rate`
+
+How many rows one key may hold, and in what window. A `@@check` sees one row
+and cannot count, and a hook or route guard is where Invariant 6 says access
+does not live, so the count is a schema word (`FJS-D1119`, `FJS-D2295`). A
+quota per caller keys a `@createdBy` column, which the write stamps from the
+principal and the caller cannot name:
+
+```lite
+model User {
+  id   Int    @id @default(autoincrement())
+  name String
+  @@auth
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  body      String
+  authorId  Int?     @createdBy
+  createdAt DateTime @default(now())
+  @@rate([authorId], max: 5, per: 1m)
+  @@rate([authorId], max: 200, per: 1d)
+}
+```
+
+Every write that lands a row notes its key, and the count is graded where
+`@@exclude`'s is — at the outermost commit, inside `BEGIN IMMEDIATE` — so a
+`createMany` of six, or six creates in one `$transaction`, roll back whole, and
+two writers cannot each see room for one. The refusal is `RateLimitError`: 409,
+naming the key, with `retryAt` (ISO) and `retryAfter` (seconds) saying when the
+oldest row in the way leaves the window.
+
+- **`per:` is read off the client's clock**, the one `@default(now())` stamps
+  `at:` with (`createdAt` unless said), so an injected clock moves both. A row
+  whose `at` is exactly `per` old has left the window.
+- **No `per:` is a cap on every row of the key**: `@@rate([slotId], max: 20)`.
+- **A null key is nobody's count**: a visitor with no principal writes a null
+  `@createdBy`, so a public model whose visitors need a quota keys something
+  they do carry.
+- **A soft-deleted row still counts**, because deleting the flood must not
+  reopen the window it filled; a template row does not.
+- **`asSystem()` is held to it**, as to `@@check`. A raw `asSystem().sql`
+  write goes around it.
+- **`where:` says which rows count**, read off the row alone as `@@exclude`'s
+  is: no `auth()`, no `now()`, no other model. An update that moves a row into
+  it is graded, so promoting a waitlist past the cap is refused, in bulk too.
+
+A window can be read from the parent instead of written into the schema:
+`per: days(relation.column)` reads an `Int` number of days off the row the
+written row names, at the write, so changing the number holds from the next
+write. A null number, or a row naming no parent, has no window and no cap.
+One hop only, the same reach `@zoned` has:
+
+```lite
+model Account {
+  id                   Int  @id @default(autoincrement())
+  surveyMinDaysBetween Int?
+}
+
+model Survey {
+  id        Int      @id @default(autoincrement())
+  clientId  Int
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id])
+  createdAt DateTime @default(now())
+  @@rate([clientId], max: 1, per: days(account.surveyMinDaysBetween))
+}
+```
+
+A client of an account holding `90` gets one survey in any 90 days, and the
+refusal's `per` reads `90d`.
+
+The limit is read the same way: `max: slot.cap` reads an `Int` off the row the
+written row names, at the write, and a null there is no cap. With no `per:` and
+a `where:`, that is a live-row cap per parent, a sign-up sheet whose slots hold
+`cap` confirmed places and a waitlist behind them:
+
+```lite
+model Slot {
+  id  Int  @id @default(autoincrement())
+  cap Int?
+}
+
+model Signup {
+  id     Int    @id @default(autoincrement())
+  slotId Int
+  slot   Slot   @relation(fields: [slotId], references: [id])
+  status String @default("confirmed")
+  @@rate([slotId], max: slot.cap, where: status == 'confirmed')
+}
+```
+
+The refusal's `max` is the number the slot held at the write. Lowering a cap
+below the places already taken refuses nothing until the next confirmed write.
+
 ## WAL, and what it does not fix
 
 Litestone opens main in WAL mode. WAL means **readers do not block writers and

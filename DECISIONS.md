@@ -5433,6 +5433,24 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d2299"></a>2026-11-22 · `FJS-D2299` — Should a `loadRows` reject from a records source carry a line the caller supplies, or is its `row` index into the source the whole answer — Leave it. `row` is the 0-based position in the iterable the caller built, so the caller that knows lines maps it in one lookup. No new convention.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A records source may be `{ line, record }` pairs, and a reject carries that `line`. That adds a second record shape that every reader of the source has to recognize).
+
+The paper's recommendation, taken as written: the caller already holds the line, and a key on the record itself would collide with a column named `line`.
+
+### <a id="fjs-d2302"></a>2026-11-22 · `FJS-D2302` — Does `@@unique` take an author's message, and on which forms — A trailing message on every `@@unique`, plain or `where:`, which replaces the per-field sentence and the summary's tail; the predicate goes on the error for the developer as `@check` puts its expression on `err.constraint`; `validate()` refuses two unique declarations over one column set carrying different messages, since SQLite's refusal names columns and not the index.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no new argument: derive the sentence from the predicate ("productId is already taken among rows where status == 'active'"). It puts schema expression text in the `errors[]` a form renders, which `constraint-refusals.js` rules out for `@check`), **C** (A for the `where:` form only).
+
+The paper's recommendation, taken as written: the same trailing-string shape its sibling Data-boundary constraints teach, where C adds a rule only the author's head holds and B shows a person SQL-shaped text.
+
+### <a id="fjs-d2301"></a>2026-11-21 · `FJS-D2301` — Can a `@@fts` model stay out of the shared `_search` index — An argument on the attribute, `@@fts([...], multisearch: false)`: the per-model index and its triggers stay, the model gets no `_search` triggers or backfill, and `$search({ models })` naming it is refused by name. The default is unchanged. `isSearchModel` (`ddl.js`) is the one place that reads it. Such a model needs no `@@label`, since the parse refusal exists for the shared index's title. A migration that flips it deletes the model's `_search` rows and drops its three `_search` triggers, or the stale copy stays. `shared` was refused as the spelling because litestone's tenancy docs use it for every-tenant reach (`@@tenant(none)`, `packages/litestone/docs/multi-tenancy.md`); `multisearch` is the prior art's name for the concept.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (no new word: a `@@fts` model with no `@@label` stays out instead of being refused at parse. `@@label` has other jobs, and remnant's three labels were added for the parse (`FJS-2844`)), **C** (opt-in, as both precedents: `@@fts([...], multisearch)` joins and plain `@@fts` does not. Every app calling `$search` adds the word).
+
+The paper's recommendation, taken as written: it fixes the corpus case with one argument on an existing attribute and moves no app that uses `$search` today.
+
 ### <a id="fjs-d2297"></a>2026-11-21 · `FJS-D2297` — Where does an app keep a record that is a directory of files (anvil `repos/`, about 1 GB of bare repositories), and how is it copied — D493 stands, with documentation only (one level simpler): `data-hazards` (or the deploy docs) says a file-backed record lives under `db/`, anvil moves its repos, and the full copy each run is accepted.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (D493 stands and is enforced: anvil keeps `db/repos/`. `fli check` (or `litestone check`, given the app root) warns on a top-level directory in the app that is neither a surface (Invariant 3), `shared/`, nor in the source tree, naming it as outside the volume and the backup. Separately, `backup` gains an incremental copy for `db/` files (skip unchanged by size + mtime, or hard-link from the previous run) as a defect, not a ruling), **B** (A declared subtree with its own copier: `db/repos/` marked with a snapshot command (`git bundle`, `git clone --mirror`), which `backup` runs instead of a byte copy. Consistent mid-push and smaller, but each kind of store needs a declared copier).
@@ -9471,6 +9489,12 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2304"></a>2026-11-22 · `FJS-D2304` — When glowLine paints through the `/grammars` tokenizer, whose element vocabulary and whose bare-tag rule does glow's output follow — `glow` and `glowLine` paint through `tokenizeLine` wherever `grammarFor` finds a grammar, with `ELEMENT` as the one table from role to element. A run whose type has no element (emphasis, strong) goes out as bare text, and a STRUCTURE type keeps its element and drops its class, so glow's bare-tag rule stands and glow differs from `lineHTML` only by those classes. `glowLine`'s third argument and its `open` answer become the line's state (an opaque tokenizer state, or the regex engine's boolean), renamed `state`. sql, shell, transcripts and every language without a grammar keep the regex engine. The spec pins move to `ELEMENT`'s choices, and the docs are repainted once, graded by `packages/css` `bun run test code` and mesa's fence runs.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the same, except glow takes `lineHTML` whole, classes included. That retires glow's bare-tag rule, and `code.css` takes `.t-*` hooks for markdown structure), **C** (delete `glowLine`. `CodeInput.mesa` and Anvil's `paint` (`fjs-prototypes/anvil/web/src/lib/git.js`) call `tokenizeLine` and `lineHTML` directly where a grammar exists and fall back to `glow` otherwise, and glow stays the docs highlighter, untouched. Two engines remain, the choice between them moves into every caller, and `FJS-4485` does not close).
+
+The paper's recommendation, taken as written: it closes `FJS-4485` with one table from role to element, and it keeps the css theme's no-class contract. If the owner dislikes the repaint, the fix is a change to `ELEMENT`, which repaints Lathe, glow and the docs together.
 
 ### <a id="fjs-d2283"></a>2026-11-20 · `FJS-D2283` — Under `FJS-D1032` (ask the server per record), what is the wire spelling of the per-row ask that answers `resource.can` and `resource.transitions` — A `$can` directive on `get` and `find`, answered on each row as `row._can = { update, remove, moves }` the way `$count` lands as `row._count` (`FJS-D945`): one row in `toolbelt/directives`, translated in `junction/src/core/litestone.ts` beside `withCounts`, and the envelope is untouched. It grades only rows the read already returned, so it cannot be used to probe whether a row exists, and costs nothing unless asked. It needs two tests: a tether push that replaces the row drops `_can` (the button goes permissive), and `save()` must not send `_can` back in the patch.
 
@@ -18231,6 +18255,12 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2300"></a>2026-11-21 · `FJS-D2300` — Which folders does Workbench's Disk › Build output scan for Rust `target/` folders: the pinned checkouts, the pins plus the prototypes catalog, or one configured code root — One code root, `CODE_DIR` (`api/src/core/env.ts`, absent `~/code`), walked by name: a `target/` beside a `Cargo.toml` is a build, `node_modules`, `.git` and dot-folders are skipped. The walk runs on a press of Scan, never with the Disk tab, because it takes about 20 s over the owner's tree. Clear is `clearBuild({ id })`, the id a path under the root that the module re-checks (inside the root by realpath, named `target`, not a symlink, a `Cargo.toml` beside it) and refuses while a `cargo` or `rustc` process works in that project. `node_modules` is not listed yet; a second kind is one more finder in `domain/laptop/builds.ts`.
+
+Asked in chat while clearing 63 GB of build output by hand. **C** was picked over **A** (pinned checkouts only, the `decision-rules` verdict: no new key, but only 11 checkouts are pinned and neither 48 GB folder found that day was one of them) and **B** (pins plus the prototypes catalog: no new key, catches `fjs-prototypes/capture` but not `KOBAMI/kapture` or any client repo).
+
+Against the recommendation (B): the owner wants every build on the machine visible, and the folders that fill the disk are the ones nobody has pinned.
+
 ### <a id="fjs-d1376"></a>2026-11-20 · `FJS-D1376` — What closes `FJS-053` (email-kit never opened in a real mail client): a human Outlook check, a rendering-matrix service, or a static conditional-comment lint with the gap documented — Add a static lint to `email-kit.test.js` that every `<!--[if` has its `<![endif]-->` and nothing nests, across every template, and re-word the row as a standing caveat in `PROJECT_STATE.md` only (close the register row). Cheap and catches the FJS-928-class regressions, but never claims Outlook renders correctly.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (A person opens `WelcomeEmail` once in Outlook 2016/2019/365, Gmail and Apple Mail; the result goes in `packages/email-kit/docs/HTML_EMAIL_TRAPS.md` as a dated checklist, and the row closes on that note. Cost: one manual session; goes stale at the next template change), **B** (A rendering-matrix service (Litmus / Email on Acid) driven from a `fli prove` drive. Needs a paid account, network and a secret in CI; the drive would be `skipped` without them).
@@ -23030,6 +23060,18 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2305"></a>2026-11-22 · `FJS-D2305` — Q5 — What drives a page in WebKit — Playwright's WebKit through `playwright-core`, a test-only devDependency, following `FJS-3549`'s Firefox exception to `FJS-D1214`.
+
+Asked in [`IDEAS/webkit-window.md`](IDEAS/webkit-window.md) § Open questions. **A** was picked over **B** (A WebDriver backend in `mesa/drive` (`WebKitWebDriver`, then Firefox), keeping one driver), **C** (The Bun + `webview` window), **D** (Not now).
+
+The paper's recommendation, taken as written: about 20 lines, headless and CI-ready today, the newest engine of the three, and confined to tests.
+
+### <a id="fjs-d2303"></a>2026-11-22 · `FJS-D2303` — How does a connector send a frame, such as Mattermost's typing signal, given that a broker target is subscribed to and never sent to — A REST call in the connector: add `publishTyping(mm, profileExternalId, channelExternalId, parentExternalId?)` over `mm.api` to `PUT`/`POST` `.../users/{id}/typing`. Remove `typingFrame` or keep it for a link the app dials itself, correct its comment, and close `FJS-4398` as *the broker stays receive-only*. Conduit gets no new surface.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (writing to the held socket: `send()` on a broker target writes `req.body` as one frame on the open socket, numbering it with the connection's `seq` through a framing hook, and fails `unavailable` while disconnected. This adds a write path to the one kind `FJS-D235` defines as *nobody on the other end*, and it amends `FJS-D1127`'s *nothing is sent over it*), **B** (handing the link onward: `opened(state, link)` also receives the connection's `BrokerLink`, and the connector keeps it for later writes. This adds no new verb, but a link held after a reconnect writes to a dead socket, so every caller has to handle that).
+
+The paper's recommendation, taken as written: The vendor already offers this write over the request path conduit owns, so `FJS-D235` and `FJS-D1127` stand unamended. A only earns its cost when a Provider has a socket-only action with no REST twin, which no connector has asked for yet.
 
 ### <a id="fjs-d2249"></a>2026-11-17 · `FJS-D2249` — Q5 — How is a fixed tunnel hostname chosen — `FLI_TUNNEL_DOMAIN` through `loadFliEnv` (machine `.env`, a project's `.env` over it), the label from `package.json` `name` with its scope stripped, and `--tunnel=<host>` for one run.
 

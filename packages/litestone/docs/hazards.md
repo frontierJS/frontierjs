@@ -89,7 +89,9 @@ Each names its pin. The failure behind each is `docs/internals.md`.
   compares wrong for today and is refused by name (`FJS-226`).
 - **A bare array in a `where` is membership**; `{ equals: [...] }` is equality.
 - **A key set to `undefined` is omitted and only `null` clears.** A single-row
-  write returns the row (`null` under `select: false`), a bulk write `{ count }`.
+  write returns the row (`null` under `select: false`), a bulk write `{ count }`
+  — and `createMany` with `select` `{ count, rows }`, where `rows` drops a row
+  the read policy hides and `count` does not (`FJS-D2298`).
 - **`getLevel()` is synchronous and clamped to 0–7.** A schema declaring any
   `@@gate` installs `GatePlugin` itself. `@@allow` holds only on TRUE, `@@deny`
   fires on TRUE or UNKNOWN, and an absent claim is UNKNOWN.

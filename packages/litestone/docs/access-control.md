@@ -727,6 +727,26 @@ model Review { id Int @id  pullRequestId Int  pullRequest PullRequest @relation(
 and so are `this.rel.col`, a column with no storage, an `@encrypted`, `@hashed`
 or `@secret` column on either side, and `this.col in <child array>`.
 
+**`.every(…)` and `.none(…)` are the `where`'s other two words** (`FJS-D2291`),
+and everything above holds for them too: the same chain, the same `this.col`, the
+same refusals. `none` is `NOT EXISTS`. `every` is `NOT EXISTS` over the children
+whose condition is not TRUE, so **a child whose condition is NULL fails
+`every`**: a check with no `state` is not green. **Over no children both are
+true**, on `create` included, so `every` alone does not say a check exists. Pair
+it with a `.some(…)` when one must.
+
+```lite
+model User { id Int @id  @@auth }
+
+model PullRequest {
+  id      Int     @id
+  headSha String
+  checks  Check[]
+  @@allow(update, checks.some(sha == this.headSha) && checks.every(state == 'green' || sha != this.headSha))
+}
+model Check { id Int @id  pullRequestId Int  pullRequest PullRequest @relation(fields: [pullRequestId], references: [id])  sha String  state String?  @@index([pullRequestId]) }
+```
+
 Refused, each naming the rule:
 
 | Written | Why |

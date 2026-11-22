@@ -136,6 +136,10 @@ export function diffSchemas(pristine?: any, live?: any, parseResult?: any, dbNam
     };
     droppedSearch: boolean;
     searchBackfills: any[];
+    searchPurges: {
+        table: any;
+        accessor: string;
+    }[];
     residue: {
         type: string;
         name: string;
