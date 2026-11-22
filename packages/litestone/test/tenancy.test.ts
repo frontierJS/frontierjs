@@ -1189,3 +1189,91 @@ describe('strategy database — autoMigrate over two sqlite databases in one fil
     tenants.close()
   })
 })
+
+// A row that is the shop's AND the buyer's: one checkout, three shops, and the
+// buyer is a member of none of them. The generated deny admits no principal
+// outside every tenant and a deny beats every allow, so without `admit` the
+// model had to leave tenancy with @@tenant(none) and lose the stamp and the
+// create refusal (FJS-D1296, FJS-3031).
+describe('@@tenant(admit:) — a row the tenant and one non-member both reach', () => {
+  const SCHEMA = `
+tenancy { strategy row  column shopId }
+
+model Order {
+  id      Int         @id
+  shopId  Int
+  buyerId Int
+  label   String
+  lines   OrderLine[]
+  @@tenant(admit: buyerId == auth().id)
+}
+
+model OrderLine {
+  id      Int    @id
+  orderId Int
+  order   Order  @relation(fields: [orderId], references: [id])
+  sku     String
+}
+`
+  const seed = async () => {
+    const db  = await createClient({ schema: SCHEMA, db: ':memory:' })
+    const sys = db.asSystem()
+    await sys.order.create({ data: { id: 1, shopId: 1, buyerId: 100, label: 'shop1-buyer100' } })
+    await sys.order.create({ data: { id: 2, shopId: 2, buyerId: 100, label: 'shop2-buyer100' } })
+    await sys.order.create({ data: { id: 3, shopId: 2, buyerId: 200, label: 'shop2-buyer200' } })
+    for (const orderId of [1, 2, 3]) await sys.orderLine.create({ data: { orderId, sku: `sku-${orderId}` } })
+    return db
+  }
+  const labels = (rows: any[]) => rows.map(r => r.label).sort()
+
+  it('parses into its own mode, keeping the tenancy block\'s column', () => {
+    const r = parse(SCHEMA)
+    expect(r.valid).toBe(true)
+    const tag = r.schema.models.find((m: any) => m.name === 'Order').attributes.find((a: any) => a.kind === 'tenant')
+    expect(tag.mode).toBe('admit')
+    expect(tag.column).toBeNull()
+  })
+
+  it('the shop reads its own rows, the buyer reads theirs in every shop, and nobody else reads either', async () => {
+    const db = await seed()
+    expect(labels(await db.$setAuth({ id: 1, shopId: 2 }).order.findMany())).toEqual(['shop2-buyer100', 'shop2-buyer200'])
+    expect(labels(await db.$setAuth({ id: 100 }).order.findMany())).toEqual(['shop1-buyer100', 'shop2-buyer100'])
+    expect(labels(await db.$setAuth({ id: 200 }).order.findMany())).toEqual(['shop2-buyer200'])
+    expect(await db.$setAuth({ id: 300 }).order.findMany()).toEqual([])
+    expect(await db.order.findMany()).toEqual([])
+    // A member of shop 1 is not admitted to shop 2's row by sharing an id with nobody.
+    expect(labels(await db.$setAuth({ id: 2, shopId: 1 }).order.findMany())).toEqual(['shop1-buyer100'])
+    db.$close()
+  })
+
+  it('a child scoped through the row inherits the admission', async () => {
+    const db = await seed()
+    const skus = async (auth: any) => (await db.$setAuth(auth).orderLine.findMany()).map((r: any) => r.sku).sort()
+    expect(await skus({ id: 100 })).toEqual(['sku-1', 'sku-2'])
+    expect(await skus({ id: 1, shopId: 2 })).toEqual(['sku-2', 'sku-3'])
+    expect(await skus({ id: 300 })).toEqual([])
+    db.$close()
+  })
+
+  it('the stamp and the create refusal stay', async () => {
+    const db = await seed()
+    const made = await db.$setAuth({ id: 1, shopId: 1 }).order.create({ data: { id: 9, buyerId: 100, label: 'x' } })
+    expect(made.shopId).toBe(1)
+    await expect(db.$setAuth({ id: 100 }).order.create({ data: { id: 10, shopId: 1, buyerId: 100, label: 'y' } }))
+      .rejects.toThrow('Outside your shopId')
+    db.$close()
+  })
+
+  it('refuses an admit naming no field of the model', async () => {
+    await expect(createClient({ schema: SCHEMA.replace('buyerId == auth().id', 'customerId == auth().id'), db: ':memory:' }))
+      .rejects.toThrow("'customerId' is not a field")
+  })
+
+  it('a view cannot take it — a view has no create to keep refusing', () => {
+    const r = parse(`
+      tenancy { strategy row  column shopId }
+      view V { shopId Int  buyerId Int  @@sql("SELECT 1 AS shopId, 1 AS buyerId")  @@tenant(admit: buyerId == auth().id) }
+    `)
+    expect(r.errors.join('\n')).toContain('@@tenant(admit:)')
+  })
+})

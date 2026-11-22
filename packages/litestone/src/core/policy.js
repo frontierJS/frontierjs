@@ -1352,7 +1352,7 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
 
       for (const op of attr.operations) {
         if (!bucket[op]) bucket[op] = { allows: [], denies: [] }
-        const entry = { expr: attr.expr, message: attr.message ?? null, generated: attr.generated ?? null, claim: attr.claim ?? null, tenantColumn: attr.tenantColumn ?? null }
+        const entry = { expr: attr.expr, message: attr.message ?? null, generated: attr.generated ?? null, claim: attr.claim ?? null, tenantColumn: attr.tenantColumn ?? null, admit: attr.admit ?? null }
         if (attr.kind === 'allow') bucket[op].allows.push(entry)
         else                       bucket[op].denies.push(entry)
       }
@@ -1909,7 +1909,10 @@ function buildFilterSql(modelName, op, params, ctx, visited, tenancyOnly = false
 // is a term SQLite searches on. The claim is known when the statement is
 // compiled, so the member claim or, failing it, the admission twin is the one
 // compared; a caller holding neither binds the member claim's null and passes
-// nothing. Any other deny compiles as written.
+// nothing. Any other deny compiles as written. A `@@tenant(admit:)` row also
+// passes where its expression holds — the deny's `expr` already says so, and
+// the pass is that expr's truth table, so leaving it out here hid every
+// admitted row from SQL while the JS half let it through (FJS-3031).
 function tenantColumnPass(deny, params, ctx, modelName, op, visited) {
   const member = claimValue(ctx, deny.claim, modelName)
   const twin   = tenantAdmission(deny.claim)
@@ -1918,7 +1921,8 @@ function tenantColumnPass(deny, params, ctx, modelName, op, visited) {
 
   const present = compileSql({ type: 'compare', op: '!=', left: claim, right: { type: 'literal', value: null } }, params, ctx, modelName, op, visited)
   const equal   = compileSql({ type: 'compare', op: '==', left: { type: 'field', name: deny.tenantColumn }, right: claim }, params, ctx, modelName, op, visited)
-  return `(${present} AND ${equal})`
+  if (!deny.admit) return `(${present} AND ${equal})`
+  return `((${present} AND ${equal}) OR (${compileSql(deny.admit, params, ctx, modelName, op, visited)}))`
 }
 
 function sqlOp(op) {

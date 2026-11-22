@@ -28,6 +28,7 @@ import { indexPathFor, openIndexDb, withWriteLock, rebuildIndex, utf8Length, utf
 import { modelToTableName, fieldToColumnName } from './ddl.js'
 import { quoteIdent }       from './query.js'
 import { reclaimFreePages } from './pragmas.js'
+import { foldSpec, foldCutoff, foldBatch } from './fold.js'
 
 // ─── Duration parser ──────────────────────────────────────────────────────────
 // Accepts: 30d, 90d, 1y, 24h, 60m, 3600s
@@ -140,7 +141,9 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
     const window = own?.window ?? retention
     const ms     = parseDuration(window)
     if (!ms) continue
-    const cutoff = new Date(at - ms).toISOString()
+    // A fold takes whole days, so its cutoff is the start of one (FJS-D1297).
+    const fold   = foldSpec(model, models, pluralize)
+    const cutoff = fold ? foldCutoff(at, ms) : new Date(at - ms).toISOString()
     const name   = own?.from ?? 'createdAt'
     const clock  = model.fields.find(
       (/** @type {any} */ f) => f.name === name && f.type.name === 'DateTime'
@@ -199,11 +202,26 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
           rows   = rawWriteDb.prepare(`SELECT * ${these}`).all(list)
           doomed = doomedUnder?.(model.name, rows) ?? null
         }
-        rawWriteDb.prepare(`DELETE ${these}`).run(list)
-        // sqlite3_changes(), not bun's `.changes` — the latter counts what the
-        // FTS and cascade triggers wrote too, so the line said 17 rows removed
-        // for one (FJS-320).
-        removed += rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+        // The fold and the DELETE commit together: between them a reader adding
+        // both tables would count the batch twice.
+        if (fold) {
+          rawWriteDb.run('BEGIN IMMEDIATE')
+          try {
+            foldBatch(rawWriteDb, fold, these, list, new Date(at).toISOString())
+            rawWriteDb.prepare(`DELETE ${these}`).run(list)
+            removed += rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+            rawWriteDb.run('COMMIT')
+          } catch (/** @type {any} */ e) {
+            rawWriteDb.run('ROLLBACK')
+            throw e
+          }
+        } else {
+          rawWriteDb.prepare(`DELETE ${these}`).run(list)
+          // sqlite3_changes(), not bun's `.changes` — the latter counts what the
+          // FTS and cascade triggers wrote too, so the line said 17 rows removed
+          // for one (FJS-320).
+          removed += rawWriteDb.query('SELECT changes() AS n').get()?.n ?? 0
+        }
         // The freed pages are returned with the batch that freed them, so the
         // file never holds more than one batch of dead space (FJS-2290).
         reclaimFreePages(rawWriteDb)
@@ -218,7 +236,8 @@ export async function runSqliteRetention(/** @type {any} */ rawWriteDb, /** @typ
       if (ids.length < RETENTION_BATCH) break
       await new Promise(resolve => setTimeout(resolve, 0))
     }
-    swept.push(error ? { model: model.name, table, removed, error } : { model: model.name, table, removed })
+    const line = fold ? { model: model.name, table, removed, into: fold.into } : { model: model.name, table, removed }
+    swept.push(error ? { ...line, error } : line)
 
     if (removed > 0) {
       console.log(

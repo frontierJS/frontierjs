@@ -354,3 +354,48 @@ describe('a declared `data` payload', () => {
     expect(toFrameworkError(withList).data).toEqual([1, 2])
   })
 })
+
+// ─── an error nobody owns (FJS-D2131) ────────────────────────────────────────
+//
+// A defect is a 500 and a log line, never a typed value: a status a client acts
+// on (a 404, a 409) said about a TypeError hides the bug behind an answer the
+// client believes. And the line is owed in development too, where the message
+// reaches the caller but the operator's terminal is where a defect gets read.
+
+describe('an error the boundary does not own', () => {
+  const defects: [string, unknown][] = [
+    ['TypeError',             new TypeError("Cannot read properties of undefined (reading 'id')")],
+    ['RangeError',            new RangeError('Invalid array length')],
+    ['ReferenceError',        new ReferenceError('row is not defined')],
+    ['SyntaxError',           new SyntaxError('Unexpected token < in JSON')],
+    ['a driver string code',  Object.assign(new Error('no such table: notes'), { code: 'SQLITE_ERROR' })],
+    ['a non-HTTP number',     Object.assign(new Error('moved'), { status: 302 })],
+    ['a thrown object',       { reason: 'not an Error' }],
+  ]
+
+  for (const [label, err] of defects) {
+    it(`${label} is a GeneralError 500`, () => {
+      const fe = toFrameworkError(err, mapped)
+      expect(fe).toBeInstanceOf(GeneralError)
+      expect(fe.code).toBe(500)
+    })
+  }
+
+  it('over the wire in development it is a 500 and the operator gets a log line', async () => {
+    const app = await createTestApp()
+    app.services.register(createService({
+      name: 'defect',
+      async create() { return (undefined as unknown as { id: string }).id },
+    }))
+
+    const logged: string[] = []
+    const logger = app.logger as unknown as { error: (m: string, meta?: unknown) => void }
+    const original = logger.error
+    logger.error = (m: string) => { logged.push(m) }
+    let res
+    try { res = await request(app).post('/defect').send({}) } finally { logger.error = original }
+
+    expect(res.status).toBe(500)
+    expect(logged.join('\n')).toContain('TypeError')
+  })
+})

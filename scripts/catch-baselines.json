@@ -1,0 +1,6 @@
+{
+  "//": "FJS-D2131 — catches on the request or Data path that neither name what they caught (instanceof, .name, a code, a rethrow) nor carry a comment saying why they are best-effort. One number per package; it ratchets DOWN only, the way typecheck-baselines.json does. `fli check --only catch-names-its-error` at the workspace root lists the sites; `node scripts/ci.mjs --phase structure --update` writes a new low. The paths read are CATCH_PATHS in packages/cli/core/catches.js.",
+  "packages/auth": 21,
+  "packages/junction": 171,
+  "packages/litestone": 160
+}

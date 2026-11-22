@@ -89,4 +89,4 @@ Detail: `references/build-output-and-frontierjs-css.md`
 - **A class name is not checked by anything**
 - **A code sample highlighted with `prefix: true` loses its first character.**
 - **An inline `style=` carries a custom property and the `<style>` block reads it.**
-- **An optional peer of `@frontierjs/ui` resolves from ui's own folder under a `link:`, where it is not installed.** `components/display/Terminal.mesa` imports `@xterm/xterm` and `@xterm/addon-fit` lazily; an app mounting it lists both as its own deps AND sets `resolve.dedupe: ['@xterm/xterm', '@xterm/addon-fit']` in its vite config, or the pane never opens and nothing errors at build (`FJS-D2125`).
+- **An optional peer of `@frontierjs/ui` resolves from ui's own folder under a `link:`, where it is not installed.** `components/display/Terminal.mesa` imports `@xterm/xterm`, `@xterm/addon-fit` and `@xterm/addon-web-links` lazily; an app mounting it lists all three as its own deps AND sets `resolve.dedupe: ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links']` in its vite config, or the pane never opens and nothing errors at build (`FJS-D2125`).

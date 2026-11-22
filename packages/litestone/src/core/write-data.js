@@ -893,7 +893,7 @@ export function makeWriteData(shape, ctx, {
     // here once, with their wording built at the throw site, so an authored
     // `@minItems(2, "Pick at least two tags")` reached the browser through
     // `x-messages` and was ignored by the server (FJS-194).
-    if (model && shape.hasValidation) validate(requireAll ? withListFills(transformed) : transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
+    if (model && shape.hasValidation) validate(requireAll ? withListFills(transformed) : transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap, shape.zoneOffsets)
 
     // Encrypt @encrypted / hash @hashed fields before write
     if (ctx.enc.key && hasFieldPolicy) protectEncryptedFields(transformed)

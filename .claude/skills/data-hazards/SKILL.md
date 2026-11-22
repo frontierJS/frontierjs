@@ -64,7 +64,7 @@ Detail: `references/transitions.md`
 - **`asSystem()` holds the machine, and a row starts at its `@default`** (`FJS-D502`, `FJS-D470`)
 - **A machine only some rows enter needs a state that means "none", not a nullable column** (`FJS-3047`)
 - **A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name** (`FJS-2231`)
-- **`@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone** (`FJS-2170`)
+- **A `@zoned` day is read in its row's zone by `due()` and by a window, and a stated day is one day for every row** (`FJS-2170`, `FJS-D1053`)
 - **What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after`** (`FJS-2163`)
 - **A move's `while:` guard refuses on NULL, and `asSystem()` is held to it** (`FJS-D1286`)
 
@@ -101,6 +101,7 @@ Detail: `references/columns-and-clocks.md`
 - **Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing.**
 - **A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes** (`FJS-D963`, `FJS-D1434`)
 - **A `File` column's stored object is its row's own, so the same bytes on two rows are two objects** (`FJS-D1293`, `FJS-3050`)
+- **A folding `@@retention(…, into:)` writes its rollup in raw SQL, so the rollup's trail, write events and plugins never hear the fold** (`FJS-D1297`, `FJS-3030`)
 
 ## The audit trail and the log
 Detail: `references/the-audit-trail-and-the-log.md`
@@ -113,6 +114,7 @@ Detail: `references/the-audit-trail-and-the-log.md`
 - **"Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`.**
 - **An entry names ONE row, so a read of a page files an entry per row** (`FJS-D1744`)
 - **The trail records reads only at the READER's grain; a count of use is an `@@anonymous` model the app writes** (`FJS-D1104`)
+- **A `@history(into: Slug)` append is not trailed and not announced** (`FJS-D1294`, `FJS-3036`)
 
 ## Reads and windows
 Detail: `references/reads-and-windows.md`

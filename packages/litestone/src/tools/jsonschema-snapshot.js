@@ -17,6 +17,7 @@
 // Never imported by production code.
 
 import { generateJsonSchema } from '../jsonschema.js'
+import { SYNC_OPERATIONS }    from '../core/parser.js'
 
 // Standard keywords worth showing, in a fixed order — a set would render in
 // insertion order and reshuffle the line when the generator's order changes.
@@ -265,7 +266,10 @@ export function renderJsonSchemaSnapshot(/** @type {any} */ schema, /** @type {{
     // held one means — so a model losing either is a behavior change the diff of
     // this file has to show. `x-sync` absent is the refusal (`FJS-D298`), which
     // is why silence here is meaningful rather than merely empty.
-    if (def['x-sync'])        meta.push(`sync \`${def['x-sync']}\``)
+    // `on` only where it narrows: the full list beside `append` would read as
+    // holding the patches that policy refuses.
+    if (def['x-sync'])        meta.push(`sync \`${def['x-sync'].policy}\`` +
+      (def['x-sync'].on.length < SYNC_OPERATIONS.length ? ` on \`${def['x-sync'].on.join(' ')}\`` : ''))
     if (def['x-mint'])        meta.push(`client mints \`${def['x-mint'].field}\` with \`${def['x-mint'].kind}()\``)
     if (def.additionalProperties === false) meta.push('closed (`additionalProperties: false`)')
     // Said on the definition rather than left to be inferred from a gate of 9

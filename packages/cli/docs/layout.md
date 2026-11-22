@@ -100,6 +100,10 @@ core/
                 `repo.js` for the workspace's own, each exporting its slice of
                 `CHECKS`; `lib.js` is the readers two slices share. A reader
                 one slice uses stays in that slice
+  catches.js    the loose-catch count of FJS-D2131 — the request and Data path
+                of junction, litestone and auth, read by the
+                `catch-names-its-error` rule and by ci.mjs's per-package
+                ceiling in `scripts/catch-baselines.json`
   fs.js         reading the tree, one spelling — `safeRead` (sorted), `read` and
                 `readJson` (null, never ''), `isDir`, `walk`, `SKIP`. A listing in
                 filesystem order reorders on another machine and reads as a change

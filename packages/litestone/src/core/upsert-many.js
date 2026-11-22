@@ -16,6 +16,8 @@ import {
   applyAuthDefaults, applyGeneratedDefaults, applySequences, authStamped, noteStamp, stampFromAuth,
 } from './stamps.js'
 import { enforceValueSets } from './valuesets.js'
+import { monotonicFields, historyFields } from './schema-maps.js'
+import { ValidationError } from './validate.js'
 import { rowsChanged } from './databases.js'
 
 export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
@@ -55,6 +57,23 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
     // against the entry below.
     const _upMove = _bulkTransitionField(updateFields, 'upsertMany')
     if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
+    // SQLite's DO UPDATE … WHERE would skip a row going backwards and count it
+    // as nothing, where update() and updateMany() refuse it by name.
+    const _upMono = monotonicFields(shape.model).find(m => updateFields == null
+      ? data?.some((/** @type {any} */ d) => d?.[m.field] !== undefined)
+      : [updateFields].flat().includes(m.field))
+    if (_upMono) throw new ValidationError([{ path: [_upMono.field], message:
+      `${modelName}.${_upMono.field} is @monotonic, and upsertMany cannot hold its conflict half to a direction. ` +
+      `Leave it out of update:, or write it with update() or updateMany(), which refuse a backwards write by name` }],
+      { model: modelName, operation: 'upsertMany' })
+    // Its statements never reach writeUnit, where the append runs, so a value
+    // written here would be missing from the history the router reads.
+    const _upHist = historyFields(ctx.schema?.models ?? [], shape.model)
+      .find(h => data?.some((/** @type {any} */ d) => d?.[h.field] !== undefined))
+    if (_upHist) throw new ValidationError([{ path: [_upHist.field], message:
+      `${modelName}.${_upHist.field} is @history(into: ${_upHist.target}), and upsertMany does not append to it. ` +
+      `Write it with create(), update() or upsert(), which do` }],
+      { model: modelName, operation: 'upsertMany' })
     // No `update:` list sets every key the rows carry on a conflict.
     refuseSoftDeleteWrite(updateFields == null ? data?.find((/** @type {any} */ d) => d?.deletedAt !== undefined) : [updateFields].flat(), 'upsertMany')
     if (!data?.length) return { count: 0 }

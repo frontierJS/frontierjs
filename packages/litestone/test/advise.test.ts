@@ -865,6 +865,21 @@ describe('the two rules a File on a syncable model earns', () => {
   test('a required File on a model that is not syncable is nobody\'s business', () => {
     expect(findings('model Count { id Int @id  damage File }', FILE_REQUIRED)).toEqual([])
   })
+
+  // vellum's Asset (FJS-3055): the row is created by an upload and only a
+  // favorite is toggled offline, so no create replays without its bytes and
+  // no patch waits on a key the server has not assigned.
+  test('a model whose offline writes are patches only earns neither', () => {
+    const asset = `model Asset { id Int @id  file File  isFavorite Boolean @default(false)  @@sync(server, on: update) }`
+    expect(findings(asset, FILE_REQUIRED)).toEqual([])
+    expect(findings(asset, FILE_KEYLESS)).toEqual([])
+  })
+
+  test('listing create brings both back', () => {
+    const asset = `model Asset { id Int @id  file File  @@sync(server, on: [create, update]) }`
+    expect(findings(asset, FILE_REQUIRED).length).toBe(1)
+    expect(findings(asset, FILE_KEYLESS).length).toBe(1)
+  })
 })
 
 describe('the rule set', () => {

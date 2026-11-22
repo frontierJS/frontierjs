@@ -320,12 +320,13 @@ them to a scoped model, or mark each @@tenant(none) to say it spans tenants on
 purpose.
 ```
 
-Four ways to answer it:
+Four ways to answer it, and a fifth for a model that has the column:
 
 ```
 @@tenant(none)                  // spans tenants deliberately — silences the report
 @@tenant(column: "accountId")   // scoped, under a column of its own
 @@tenant(via: order)            // scoped through one named relation, and only that one
+@@tenant(admit: buyerId == auth().id)  // scoped, plus the rows one non-member reads
 workspaceId Int                 // declare the column and it is scoped like the rest
 ```
 
@@ -360,6 +361,41 @@ The report names them:
 tenancy: 2 model(s) carry no 'workspaceId' and are scoped through a parent —
 Deploy (via app), LogLine (via deploy).
 ```
+
+### A row the tenant and one non-member both read
+
+**`@@tenant(admit: <expression>)` keeps the model scoped and exempts the rows
+the expression names from the read, update and delete deny** (`FJS-D1296`). A
+marketplace order is the shop's and the buyer's, and the buyer is a member of
+no shop. The generated deny admits nobody outside every tenant, and a deny
+beats every allow, so no `@@allow` can let the buyer in — only `admit` can:
+
+```lite
+tenancy { strategy row  column shopId }
+
+model Order {
+  id      Int         @id
+  shopId  Int
+  buyerId Int
+  lines   OrderLine[]
+  @@tenant(admit: buyerId == auth().id)
+}
+
+model OrderLine {
+  id      Int   @id
+  orderId Int
+  order   Order @relation(fields: [orderId], references: [id])
+}
+```
+
+The read deny becomes `<tenant test> && !(buyerId == auth().id)`: the shop's
+rows plus the buyer's, in every shop. The create deny and the stamp are
+untouched, so a buyer cannot create an order naming a shop — checkout writes it
+from the shop's side or at `asSystem()`. A child scoped through the model asks
+its generated denies, so `OrderLine` reaches the buyer too. Post-update grades
+the same rule, so a row a non-member re-points away from themselves is refused.
+The admission is the deny's only exemption: what the buyer may then do to the
+row is still the model's own `@@allow`. A view cannot take `admit`.
 
 ### A `@unique` is not scoped for you
 

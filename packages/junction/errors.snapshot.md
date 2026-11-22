@@ -112,10 +112,12 @@ something that will never work, or not to retry something that would.
 | `AccessDeniedError` | code `ACCESS_DENIED` | `Forbidden` | 403 | — | — |
 | `BulkTransitionError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
 | `CapabilityNotDeclaredError` | status 400 · retryable false | `BadRequest` | 400 | false | — |
+| `FoldedSpanError` | status 409 · retryable false | `Conflict` | 409 | false | `model`, `into`, `day`, `key` |
 | `ForeignKeyError` | status 422 · retryable false | `Unprocessable` | 422 | false | list(1) |
 | `LockExpiredError` | status 409 · retryable false | `Conflict` | 409 | false | — |
 | `LockNotAcquiredError` | status 409 · retryable true | `Conflict` | 409 | true | — |
 | `LockReleasedByOtherError` | status 409 · retryable false | `Conflict` | 409 | false | — |
+| `MonotonicError` | status 409 · retryable false | `Conflict` | 409 | false | `model`, `field`, `direction` |
 | `OverlapConflictError` | status 409 · retryable false | `Conflict` | 409 | false | list(1) |
 | `RateLimitError` | status 409 · retryable false | `Conflict` | 409 | false | list(1) |
 | `SealedDocumentError` | status 409 · retryable false | `Conflict` | 409 | false | `model`, `parent`, `parentId`, `state`, `relation` |

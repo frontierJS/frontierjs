@@ -4,11 +4,11 @@
 export { createClient, ValidationError,
          TransitionViolationError, TransitionConflictError,
          TransitionNotFoundError, TransitionGateError, TransitionSystemError, TransitionGuardError, BulkTransitionError,
-         VersionRequiredError, VersionConflictError,
+         VersionRequiredError, VersionConflictError, MonotonicError,
          LockNotAcquiredError, LockReleasedByOtherError,
          LockExpiredError, SoftDeletedUniqueError, SoftDeleteWriteError,
          UniqueConflictError, ForeignKeyError, OverlapConflictError, RateLimitError, SealedDocumentError,
-         CapabilityNotDeclaredError }             from './core/client.js'
+         FoldedSpanError, CapabilityNotDeclaredError }             from './core/client.js'
 export { sql, now, buildWindowCols, isNamedAgg, buildNamedAggExpr, extractNamedAggs } from './core/query.js'
 export { LitestonePlugin, PluginRunner, AccessDeniedError } from './core/plugin.js'
 export { isNestedWrite }                         from './plugins/reach.js'

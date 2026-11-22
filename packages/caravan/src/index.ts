@@ -31,14 +31,14 @@ import type {
   CaravanOptions, CaravanInstance, CaravanApp, CaravanTelemetry,
   CaravanStats, DispatchOptions, BulkDispatchOptions, HandlerOptions,
   JobDefinition, JobHandler, JobRecord, JobRef, JobSpec, JobStatus, PayloadGuard,
-  QueueConfig, RegisteredHandler,
+  QueueConfig, RegisteredHandler, RowSchedules,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
 } from './types.ts'
 
 export type {
   CaravanOptions, CaravanInstance, CaravanStats,
   Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar, JobSpec, NotJson, PayloadGuard,
-  HandlerOptions, DispatchOptions, BulkDispatchOptions,
+  HandlerOptions, DispatchOptions, BulkDispatchOptions, RowSchedules,
   JobRecord, JobStatus, QueueConfig, QueueStats,
   QueueHandle, QueuePause, QueueEvent, OperatorOptions,
   CronEntry,
@@ -160,6 +160,16 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   // The running app, or null standalone. Held so dispatch can read who is in
   // scope and the worker can open a scope to run the handler in.
   let   host: CaravanApp | null = null
+  // Per job declaring `schedules`, the rows it has bound and their rule. `chain`
+  // serializes the re-reads, since two writes in a row must not let the older
+  // read land last and rebind a rule that is gone.
+  const rowBound = new Map<string, {
+    spec:  RowSchedules
+    queue: string
+    bound: Map<string, { cron: string; timeZone: string | undefined }>
+    chain: Promise<void>
+  }>()
+  let   untapRows: (() => void) | null = null
 
   // ── The database, opened on first use ──────────────────────────────────────
   //
@@ -687,11 +697,14 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
           timeout:     def.timeout,
           cron:        def.cron,
           timeZone:    def.timeZone,
+          schedules:   def.schedules,
         }
       : handlerOpts
 
     if (typeof fn !== 'function')
       throw new Error(`[Caravan] handle('${name}') was given no handler function`)
+    if (o.cron && o.schedules)
+      throw new Error(`[Caravan] job "${name}" states both cron and schedules — one clock, or one per row, not both`)
 
     const queue       = o.queue       ?? 'default'
     const maxAttempts = o.maxAttempts ?? 3
@@ -720,8 +733,17 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       timeout:  o.timeout ?? queueConf[queue]?.timeout,
       cron:     o.cron,
       timeZone: o.timeZone,
+      schedules: o.schedules,
       declared,
     })
+
+    // A re-registration drops the rows the old one bound, since its spec may
+    // name another model; a start() that already happened binds the new one now.
+    unbindRows(name)
+    if (o.schedules) {
+      rowBound.set(name, { spec: o.schedules, queue, bound: new Map(), chain: Promise.resolve() })
+      if (started) void rebind(name)
+    }
 
     // WHEN it runs is declared beside WHAT it does. The schedule is
     // registered here rather than in schedule() because handle() is the only
@@ -757,6 +779,146 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     }
 
     ensureQueue(queue)
+  }
+
+  // ─── schedules bound from rows ─────────────────────────────────────────────
+  //
+  // `FJS-D1285`: a recurring wall-clock rule stored on a row binds one schedule
+  // per row, and the walk in CronScheduler is what makes each occurrence fire
+  // once across a daylight gap or overlap — the row id joins the minute in the
+  // fire's id so two rows on one rule are two fires. The rows are read as the
+  // app itself (`runAs(null)`), so the model's read policy must admit it.
+
+  const rowScheduleName = (job: string, id: string): string => `${job}[${id}]`
+
+  function unbindRows(job: string): void {
+    const entry = rowBound.get(job)
+    if (!entry) return
+    for (const id of entry.bound.keys()) cron.remove(rowScheduleName(job, id))
+    rowBound.delete(job)
+  }
+
+  /** Re-read a job's rows, queued behind any read still in flight for it. */
+  function rebind(job: string): Promise<void> {
+    const entry = rowBound.get(job)
+    if (!entry) return Promise.resolve()
+    entry.chain = entry.chain.then(() => bindRows(job)).catch((err: unknown) => {
+      if ((err as { name?: string })?.name !== 'ClientClosedError')
+        console.warn(`[Caravan] job "${job}": rebinding its ${entry.spec.model} rows failed:`, err)
+    })
+    return entry.chain
+  }
+
+  async function bindRows(job: string): Promise<void> {
+    const entry = rowBound.get(job)
+    if (!entry) return
+    const { spec, queue } = entry
+    const rows = await readScheduleRows(job, spec)
+    if (rowBound.get(job) !== entry) return
+
+    const next = new Map<string, { cron: string; timeZone: string | undefined; id: unknown }>()
+    for (const r of rows) if (r.cron) next.set(String(r.id), r as { cron: string; timeZone: string | undefined; id: unknown })
+
+    for (const id of entry.bound.keys())
+      if (!next.has(id)) cron.remove(rowScheduleName(job, id))
+
+    const bound = new Map<string, { cron: string; timeZone: string | undefined }>()
+    for (const [key, r] of next) {
+      const was = entry.bound.get(key)
+      // An unchanged rule keeps its schedule: add() drops the walk's mark, and
+      // a mark dropped inside an autumn repeat walks the doubled hour again.
+      if (was && was.cron === r.cron && was.timeZone === r.timeZone) { bound.set(key, was); continue }
+      try {
+        cron.add({
+          name:     rowScheduleName(job, key),
+          cron:     r.cron,
+          timeZone: r.timeZone,
+          fn: (fireMinute: number) =>
+            caravan.dispatch(job, { id: r.id }, { queue, actor: null, id: occurrenceKey('cron', job, key, fireMinute) })
+              .catch(err => console.error(`[Caravan] Cron dispatch "${job}" for ${spec.model} ${key} failed:`, err)),
+        })
+        bound.set(key, { cron: r.cron, timeZone: r.timeZone })
+      } catch (err) {
+        // A rule stored before `@cron` guarded the column, or written in raw
+        // SQL, refuses one row's schedule and leaves every other row bound.
+        if (was) cron.remove(rowScheduleName(job, key))
+        console.warn(`[Caravan] job "${job}": ${spec.model} ${key} is not bound — ${(err as Error).message}`)
+      }
+    }
+    entry.bound = bound
+  }
+
+  async function readScheduleRows(
+    job: string, spec: RowSchedules,
+  ): Promise<Array<{ id: unknown; cron: string | null; timeZone: string | undefined }>> {
+    const app = host
+    if (!app?.withDb)
+      throw new Error(`[Caravan] job "${job}" binds its schedules from ${spec.model} rows, and this host has no Data client to read them through`)
+    const read = (db: unknown) => readRowsFrom(job, spec, db)
+    return app.runAs
+      ? app.runAs(null, () => app.withDb!(read))
+      : app.withDb(read)
+  }
+
+  async function readRowsFrom(
+    job: string, spec: RowSchedules, raw: unknown,
+  ): Promise<Array<{ id: unknown; cron: string | null; timeZone: string | undefined }>> {
+    type Client = Record<string, { findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>> } | undefined> & {
+      $primaryKey?: (accessor: string) => string[]
+      $tapEvents?:  (fn: (e: { model?: string }) => void) => () => void
+      $schema?:     { models?: Array<{ name: string; fields: Array<{ name: string; type?: { name?: string } }> }> }
+    }
+    const db = raw as Client
+    // Invariant 2: `model Window` is `db.window`.
+    const accessor = spec.model.charAt(0).toLowerCase() + spec.model.slice(1)
+    // Litestone's client throws on an unknown table rather than answering undefined.
+    let table: { findMany?: (args: unknown) => Promise<Array<Record<string, unknown>>> } | undefined
+    try { table = db[accessor] } catch { table = undefined }
+    if (typeof table?.findMany !== 'function')
+      throw new Error(`[Caravan] job "${job}" binds its schedules from ${spec.model}, and the app's client has no model by that name`)
+    const keys = typeof db.$primaryKey === 'function' ? db.$primaryKey(accessor) : ['id']
+    if (keys.length !== 1)
+      throw new Error(`[Caravan] job "${job}" binds its schedules from ${spec.model}, whose key is ${keys.join(' + ')} — a row schedule is named by one key column`)
+    const key = keys[0]
+
+    const [zoneHead, zoneField, ...deeper] = (spec.timeZone ?? '').split('.')
+    if (deeper.length)
+      throw new Error(`[Caravan] job "${job}": timeZone '${spec.timeZone}' is more than one relation away — a column of ${spec.model}, or relation.field`)
+    const select: Record<string, unknown> = { [key]: true, [spec.cron]: true }
+    if (zoneHead) select[zoneHead] = zoneField ? { select: { [zoneField]: true } } : true
+
+    tapScheduleWrites(db)
+    const rows = await table.findMany({ select })
+    return rows.map(r => {
+      const zoneAt = zoneField ? (r[zoneHead] as Record<string, unknown> | null)?.[zoneField] : zoneHead ? r[zoneHead] : undefined
+      return {
+        id:       r[key],
+        cron:     (r[spec.cron] as string | null) ?? null,
+        timeZone: (zoneAt as string | null) ?? undefined,
+      }
+    })
+  }
+
+  // Litestone's tap sees every write the client makes — a seed's, an
+  // `asSystem()` one's, a commitment's fire — which a service announcement
+  // would not. A write to the model, or to the model a zone path reaches,
+  // re-reads that job's rows.
+  function tapScheduleWrites(db: {
+    $tapEvents?: (fn: (e: { model?: string }) => void) => () => void
+    $schema?:    { models?: Array<{ name: string; fields: Array<{ name: string; type?: { name?: string } }> }> }
+  }): void {
+    if (untapRows || typeof db.$tapEvents !== 'function') return
+    const reaches = (spec: RowSchedules): string[] => {
+      const rel = spec.timeZone?.includes('.') ? spec.timeZone.split('.')[0] : null
+      const through = rel
+        ? db.$schema?.models?.find(m => m.name === spec.model)?.fields.find(f => f.name === rel)?.type?.name
+        : undefined
+      return through ? [spec.model, through] : [spec.model]
+    }
+    untapRows = db.$tapEvents(e => {
+      for (const [job, entry] of rowBound)
+        if (e?.model && reaches(entry.spec).includes(e.model)) void rebind(job)
+    })
   }
 
   // The whole of one dispatch, synchronously: nothing in it awaits, which is
@@ -1134,6 +1296,10 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
         pool.add(worker)
       }
 
+      // Before the clock starts, so the first tick sees every row's schedule,
+      // and awaited, so a model the client lacks refuses the start by name.
+      for (const job of rowBound.keys()) await bindRows(job)
+
       started = true
       pool.start()
       cron.start()
@@ -1143,6 +1309,13 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
 
     async stop(): Promise<void> {
       cron.stop()
+      untapRows?.()
+      untapRows = null
+      // A start() after this binds every row afresh, from a re-read.
+      for (const [job, entry] of rowBound) {
+        for (const id of entry.bound.keys()) cron.remove(rowScheduleName(job, id))
+        entry.bound = new Map()
+      }
       if (ownerTimer) {
         clearInterval(ownerTimer)
         ownerTimer = null
@@ -1299,6 +1472,7 @@ export function defineJob<T = unknown>(
     timeout:     spec.timeout,
     cron:        spec.cron,
     timeZone:    spec.timeZone,
+    schedules:   spec.schedules,
   } as Omit<JobDefinition<T>, 'name'> as JobDefinition<T>
 
   // A getter, so a job that is neither stamped nor named fails where its name

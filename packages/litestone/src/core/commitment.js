@@ -136,5 +136,7 @@ export function readBy(/** @type {any} */ kind, /** @type {any} */ by, /** @type
   const at = by instanceof Date ? by : new Date(by)
   if (Number.isNaN(at.getTime())) return null
   if (kind === 'instant') return at.toISOString()
+  // A number is a row's `Int @unit(min)` offset (`FJS-D1290`).
+  if (typeof timeZone === 'number') return new Date(at.getTime() + timeZone * 60_000).toISOString().slice(0, 10)
   return plainDateIn(at, timeZone ?? 'UTC')
 }

@@ -15,9 +15,41 @@ import { wideDb, mappedDb, plainDb } from './databases.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { emitQuery, queryTapped } from './hooks.js'
 import { gatedFromFields } from './from-gate.js'
+import { zonedDayCompare } from './zoned.js'
 
 /** @import { DbHandle } from './databases.js' */
 /** @import { Ctx } from './field-policy.js' */
+
+// An include's target window, read at the client's clock: the include and its
+// `_count` build their own SQL, and both must drop what `findMany` on the target
+// drops — a zoned day in its row's zone included. Null where nothing filters.
+function targetWindowSql(/** @type {any} */ shape, /** @type {string} */ mode, /** @type {any} */ ctx,
+  /** @type {DbHandle} */ readDb, /** @type {(f: string) => string} */ col) {
+  const win = shape.effective
+  if (!win?.imposed || mode === 'withExpired') return null
+  const now = nowISO(ctx.now)
+  const at  = win.kind === 'day' ? now.slice(0, 10) : now
+  /** @type {string[]} */ const parts = []
+  /** @type {unknown[]} */ const binds = []
+  const edge = (/** @type {string} */ field, /** @type {string} */ op) => {
+    const src = shape.zonedWindow?.[field]
+    if (src) {
+      const z = zonedDayCompare(src, op, now, sql => readDb.query(sql).all())
+      binds.push(...z.params)
+      return z.sql
+    }
+    binds.push(at)
+    return `${quoteIdent(col(field))} ${op} ?`
+  }
+  if (mode === 'onlyExpired') {
+    if (win.from) parts.push(edge(win.from, '>'))
+    if (win.to)   parts.push(edge(win.to, '<='))
+    return { sql: `(${parts.join(' OR ')})`, params: binds }
+  }
+  if (win.from) parts.push(`(${quoteIdent(col(win.from))} IS NULL OR ${edge(win.from, '<=')})`)
+  if (win.to)   parts.push(`(${quoteIdent(col(win.to))} IS NULL OR ${edge(win.to, '>')})`)
+  return { sql: parts.join(' AND '), params: binds }
+}
 
 /** @typedef {Record<string, any>} Row  a row as SQLite handed it back, keyed by column */
 /**
@@ -448,14 +480,10 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
       // The window, same terms: no flag is surfaced here, so it is always
       // read at `now`. Bound rather than inlined — the two above are literals
       // because a column name and a constant are all they need.
-      const cntWin   = shapes[rel.targetModel].effective
-      const cntBinds = []
-      let   effExtra = ''
-      if (cntWin?.imposed) {
-        const at = cntWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
-        if (cntWin.from) { effExtra += ` AND ("${cntWin.from}" IS NULL OR "${cntWin.from}" <= ?)`; cntBinds.push(at) }
-        if (cntWin.to)   { effExtra += ` AND ("${cntWin.to}" IS NULL OR "${cntWin.to}" > ?)`;      cntBinds.push(at) }
-      }
+      const cntMap   = shapes[rel.targetModel].columnMap
+      const cntWin   = targetWindowSql(shapes[rel.targetModel], 'inForce', ctx, readDb, f => cntMap[f] ?? f)
+      const cntBinds = cntWin?.params ?? []
+      const effExtra = cntWin ? ` AND ${cntWin.sql}` : ''
 
       // The caller's where is about the TARGET's columns, on either kind.
       let whereExtra = ''
@@ -707,21 +735,7 @@ export function resolveIncludes(readDb, rows, include, modelName, ctx) {
     // Only an IMPOSED window reaches here. An `@@effective` target is history
     // that this row points at — `subscription.planVersion` is the price still
     // being charged — and filtering it would answer the pointer with null.
-    const targetWin = shapes[rel.targetModel].effective
-    const effWhere  = (() => {
-      if (!targetWin?.imposed || nestedEffMode === 'withExpired') return null
-      const at = targetWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
-      const parts = []
-      const binds = []
-      if (nestedEffMode === 'onlyExpired') {
-        if (targetWin.from) { parts.push(`"${tcol(targetWin.from)}" > ?`);  binds.push(at) }
-        if (targetWin.to)   { parts.push(`"${tcol(targetWin.to)}" <= ?`);   binds.push(at) }
-        return { sql: `(${parts.join(' OR ')})`, params: binds }
-      }
-      if (targetWin.from) { parts.push(`("${tcol(targetWin.from)}" IS NULL OR "${tcol(targetWin.from)}" <= ?)`); binds.push(at) }
-      if (targetWin.to)   { parts.push(`("${tcol(targetWin.to)}" IS NULL OR "${tcol(targetWin.to)}" > ?)`);      binds.push(at) }
-      return { sql: parts.join(' AND '), params: binds }
-    })()
+    const effWhere  = targetWindowSql(shapes[rel.targetModel], nestedEffMode, ctx, readDb, tcol)
 
     if (rel.kind === 'belongsTo') {
       const fkValues = tuplesOf(rows, rel.foreignKeys)

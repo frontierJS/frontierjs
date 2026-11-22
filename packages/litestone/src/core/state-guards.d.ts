@@ -2,7 +2,7 @@
 export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
     _tableTransitions: any;
     _sealSelf: any;
-    _sealInsertSql: any;
+    _sealInsertSql: string;
     _selfFreezes: {
         keys: Set<any>;
         column: any;
@@ -46,11 +46,11 @@ export function makeStateGuards(shape?: any, ctx?: any, deps?: any): {
     declaredTransitions: (field: any, scopeValue: any) => any;
     sealWhereClause: (whereSql: any, whereParams: any) => import("./query.js").SqlFragment;
     sealInsertGuard: (row: any) => {
-        sql: any;
+        sql: string;
         params: any[];
         parents: any[];
     };
-    sealRefusal: (parents: any, operation: any) => SealedDocumentError;
+    sealRefusal: (parents: any, operation: any) => SealedDocumentError | FoldedSpanError;
     throwIfSealed: (whereSql: any, whereParams: any, operation: any) => void;
     sealSelfClause: (data: any, whereSql: any, whereParams: any) => import("./query.js").SqlFragment | {
         frozen: string[];
@@ -73,3 +73,4 @@ export const NOT_VISIBLE: unique symbol;
 import { TransitionGuardError } from './errors.js';
 import { TransitionGateError } from './errors.js';
 import { SealedDocumentError } from './errors.js';
+import { FoldedSpanError } from './errors.js';

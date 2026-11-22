@@ -109,6 +109,26 @@ export function buildSelfRelationMap(schema?: any): {};
 export function buildFieldRefDefaultMap(schema?: any): {};
 export function buildPathDefaultMap(schema?: any): {};
 export function buildUpdatedByMap(schema?: any): {};
+export function monotonicFields(model?: any): {
+    field: any;
+    direction: any;
+}[];
+/** @returns {{ target: string, value: string, fk: string, key: string } | { error: string }} */
+export function resolveHistory(models?: any, model?: any, field?: any, attr?: any): {
+    target: string;
+    value: string;
+    fk: string;
+    key: string;
+} | {
+    error: string;
+};
+export function historyFields(models?: any, model?: any): {
+    target: string;
+    value: string;
+    fk: string;
+    key: string;
+    field: any;
+}[];
 export function buildVersionMap(schema?: any): {};
 /**
  * What each model declares about a collision — `@@sync`'s argument, by model.
@@ -130,7 +150,7 @@ export function fieldPolicyOf(model?: any): any;
  * is not — a reader the gate admits sees it.
  */
 export function isProtected(p?: any): boolean;
-/** Whether one model's field policy holds an entry that is more than @personal. */
+/** Whether one model's field policy holds an entry that is more than a trail mark. */
 export function shapesRead(fieldPolicy?: any): boolean;
 export function buildSecretMap(schema?: any): {};
 export function buildJsonMap(schema?: any): {};

@@ -42,7 +42,7 @@ export default defineConfig({
   resolve: {
     ...sierra.resolve,
     // The aliased ui imports xterm from its own folder, where it is not installed.
-    dedupe: [...(sierra.resolve?.dedupe ?? []), '@xterm/xterm', '@xterm/addon-fit'],
+    dedupe: [...(sierra.resolve?.dedupe ?? []), '@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-web-links'],
     alias: existsSync(UI)
       ? { ...sierra.resolve?.alias, '@frontierjs/ui': UI }
       : sierra.resolve?.alias,

@@ -135,6 +135,29 @@ try {
   bad('defineDock({}) accepted — should reject (no app)')
 } catch (_e) { ok('defineDock({}) rejected w/ clear error') }
 
+// A bare .mesa dock mounts from a GENERATED entry, not defineDock; it must get
+// the same `tab`, or a dock reads null and acts on no page at all.
+{
+  const { mkdtempSync, rmSync, readFileSync: read } = await import('node:fs')
+  const { tmpdir } = await import('node:os')
+  const { autoGenForPage } = await import('../src/build/auto-gen.js')
+  const dir = mkdtempSync(join(tmpdir(), 'jetty-p0-'))
+  try {
+    const { mainPath } = autoGenForPage({ page: { type: 'dock', app: '/x/App.mesa' }, cacheDir: dir, packageRoot: resolve(HERE, '..') })
+    if (read(mainPath, 'utf8').includes('mountInto(root, App, { harbor, tab: await getActiveTab() })')) ok('generated dock entry mounts with tab')
+    else bad('generated dock entry mounts without tab')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+
+  const { getActiveTab } = await import('../src/runtime/index.js')
+  const saved = globalThis.chrome
+  globalThis.chrome = { tabs: { query: (q, cb) => cb(q.active && q.currentWindow ? [{ id: 7, url: 'https://a.example/' }] : []) } }
+  try {
+    const tab = await getActiveTab()
+    if (tab?.id === 7) ok('getActiveTab answers the active tab of the current window')
+    else bad('getActiveTab wrong', JSON.stringify(tab))
+  } finally { globalThis.chrome = saved }
+}
+
 // Island validation
 const { defineIsland } = await import('../src/index.js')
 try {

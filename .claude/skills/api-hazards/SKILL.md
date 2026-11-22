@@ -115,6 +115,7 @@ Detail: `references/jobs-and-the-clock.md`
 - **Caravan's `unique` is a lock on work IN FLIGHT, not an idempotency key.**
 - **A restored database's outbox sends nothing it already held until an operator says so** (`FJS-D665`).
 - **A job in `jobs/` is named by its file and declares its own schedule.**
+- **A schedule bound from rows fires each occurrence once, and a wall clock the spring skips fires at the next minute that exists** (`FJS-D1285`)
 - **A cache value is JSON, and what JSON would LOSE is refused at `set()`.**
 - **The docs page is hand-written HTML with two caller-supplied values in it.**
 - **A battery names a vendor in a comment and never in a call** (`FJS-D215`)

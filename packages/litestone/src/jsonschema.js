@@ -148,6 +148,7 @@ import { TIME_PATTERNS, transformNames, typeMemberDefault } from './core/validat
 import { dependsOnClock, determinedColumns, pickWhere, writeClaims } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
 import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
+import { SYNC_OPERATIONS } from './core/parser.js'
 
 /**
  * May the CALLER state this model's key, and how is one made?
@@ -157,14 +158,15 @@ import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js
  * Asked of `@@sync` because that is the declaration that makes a client-stated
  * key necessary — a row written with no server reachable is named by its
  * children before any INSERT has happened. `@@sync(read)` writes nothing on a
- * device, so it answers null and its create form offers no key (`FJS-D488`).
+ * device, so it answers null and its create form offers no key (`FJS-D488`);
+ * nor does an `on:` that omits `create` (`FJS-D1289`).
  *
  * A composite key answers null: minting one member of a key is not minting the
  * key, and the other members are offered for the caller to supply already.
  */
 function mintableId(model) {
   const sync = model.attributes?.find(a => a.kind === 'sync')
-  if (!sync || sync.policy === 'read') return null
+  if (!sync || sync.policy === 'read' || (sync.on && !sync.on.includes('create'))) return null
   const ids = (model.fields ?? []).filter(f => f.attributes.some(a => a.kind === 'id'))
   if (ids.length !== 1) return null
   const gen = ids[0].attributes.find(a => a.kind === 'default')?.value
@@ -975,8 +977,9 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // collision policy (`FJS-D298`)? A model that declares nothing emits nothing,
   // and a client with no answer refuses to queue — so the absence is the
   // refusal, not a default.
+  // `on` is always the list, so a client never has to know the default.
   const syncAttr = model.attributes?.find(a => a.kind === 'sync')
-  if (syncAttr) result['x-sync'] = syncAttr.policy
+  if (syncAttr) result['x-sync'] = { policy: syncAttr.policy, on: syncAttr.on ?? [...SYNC_OPERATIONS] }
 
   // ── x-mint ─────────────────────────────────────────────────────────────────
   // May the CALLER state this row's key, and how is one made? An `@id` with a
@@ -1223,6 +1226,9 @@ function opaqueRules(model, properties) {
       // The host's ICU zone table is the list, and it differs between hosts.
       if (a.kind === 'zone')
         out.push({ field: field.name, rule: '@zone', message: a.message ?? null })
+      // Out-of-range fields and impossible dates are no pattern a client can hold.
+      if (a.kind === 'cron')
+        out.push({ field: field.name, rule: '@cron', message: a.message ?? null })
       // The rule is code in computed.js; its message lives there too.
       if (a.kind === 'validate')
         out.push({ field: field.name, rule: '@validate', message: null })

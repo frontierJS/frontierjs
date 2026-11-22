@@ -6822,3 +6822,53 @@ describe('desktop-tray-depends', () => {
     expect(only(root, 'desktop-tray-depends').skipped[0].why).toMatch(/no tray/)
   })
 })
+
+// ─── catch-names-its-error (FJS-D2131) ─────────────────────────────────────────
+
+describe('catch-names-its-error', () => {
+  test('a catch that names nothing and says nothing is found, clause and promise alike', async () => {
+    const { looseCatches } = await import('../core/catches.js')
+    const src = [
+      'try { a() } catch { return null }',
+      'try { b() } catch (err) {',
+      '  return { ok: false }',
+      '}',
+      'p.catch(() => {})',
+      'q.catch(err => log(err))',
+    ].join('\n')
+    expect(looseCatches(src).map(c => c.line)).toEqual([1, 2, 5, 6])
+  })
+
+  test('one that tests what it caught, rethrows it, or says why is not', async () => {
+    const { looseCatches } = await import('../core/catches.js')
+    const src = [
+      'try { a() } catch (e) { if (e instanceof NotFound) return null; throw e }',
+      'try { b() } catch (e) { if (e.code === "ENOENT") return null; throw e }',
+      'try { c() } catch (e) { if (e?.name !== "AbortError") throw e }',
+      'try { d() } catch { /* a closed socket has nothing left to tell */ }',
+      'try { e() } catch {',
+      '  // best-effort: the row is rebuilt on the next read',
+      '}',
+      'p.catch(() => {})   // the cancel of a body already read',
+      '// try { x() } catch { }',
+    ].join('\n')
+    expect(looseCatches(src)).toEqual([])
+  })
+
+  test('only the request and Data path of the three packages is read', async () => {
+    const { catchFindings } = await import('../core/catches.js')
+    const root = mkdtempSync(join(tmpdir(), 'fli-catch-'))
+    try {
+      const put = (p, text) => { mkdirSync(join(root, p, '..'), { recursive: true }); writeFileSync(join(root, p), text) }
+      put('packages/junction/src/core/a.ts',       'try { a() } catch { return null }\n')
+      put('packages/junction/src/client/b.ts',     'try { a() } catch { return null }\n')
+      put('packages/litestone/src/tools/cli.js',   'try { a() } catch { return null }\n')
+      put('packages/litestone/src/core/q.js',      'try { a() } catch { return null }\n')
+      put('packages/auth/token.ts',                'try { a() } catch { return null }\n')
+      put('packages/auth/test/t.test.ts',          'try { a() } catch { return null }\n')
+      put('packages/mesa/src/x.js',                'try { a() } catch { return null }\n')
+      expect(catchFindings(root).map(f => relative(root, f.file)).sort())
+        .toEqual(['packages/auth/token.ts', 'packages/junction/src/core/a.ts', 'packages/litestone/src/core/q.js'])
+    } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})

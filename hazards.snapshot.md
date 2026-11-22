@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 210**.
+Graded: **13 of 213**.
 
-## data — 3 of 76
+## data — 3 of 78
 
 ### Schema and parse
 
@@ -73,7 +73,7 @@ Graded: **13 of 210**.
 | `asSystem()` holds the machine, and a row starts at its `@default` | **none** |
 | A machine only some rows enter needs a state that means "none", not a nullable column | **none** |
 | A `@@commitment`'s fire is graded as `createApp({ system })`, so the model's read policy must admit that principal by name | **none** |
-| `@zoned` is read by `due()` alone — a window over the same day is still read in the call's zone | **none** |
+| A `@zoned` day is read in its row's zone by `due()` and by a window, and a stated day is one day for every row | **none** |
 | What a `@seals` commitment's move owes is written in `before`; a write its from-state contends with, in `after` | **none** |
 | A move's `while:` guard refuses on NULL, and `asSystem()` is held to it | **none** |
 
@@ -114,6 +114,7 @@ Graded: **13 of 210**.
 | Every timestamp litestone writes comes from the CLIENT's clock, and a raw `UPDATE` therefore stamps nothing. | **none** |
 | A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes | **none** |
 | A `File` column's stored object is its row's own, so the same bytes on two rows are two objects | **none** |
+| A folding `@@retention(…, into:)` writes its rollup in raw SQL, so the rollup's trail, write events and plugins never hear the fold | **none** |
 
 ### The audit trail and the log
 
@@ -127,6 +128,7 @@ Graded: **13 of 210**.
 | "Does this app have a trail" is `$databases[name].trailModel`, never `driver === 'trail'`. | **none** |
 | An entry names ONE row, so a read of a page files an entry per row | **none** |
 | The trail records reads only at the READER's grain; a count of use is an `@@anonymous` model the app writes | **none** |
+| A `@history(into: Slug)` append is not trailed and not announced | **none** |
 
 ### Reads and windows
 
@@ -140,7 +142,7 @@ Graded: **13 of 210**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 76
+## api — 6 of 77
 
 ### `ctx` and the call
 
@@ -256,6 +258,7 @@ Graded: **13 of 210**.
 | Caravan's `unique` is a lock on work IN FLIGHT, not an idempotency key. | **none** |
 | A restored database's outbox sends nothing it already held until an operator says so | **none** |
 | A job in `jobs/` is named by its file and declares its own schedule. | **none** |
+| A schedule bound from rows fires each occurrence once, and a wall clock the spring skips fires at the next minute that exists | **none** |
 | A cache value is JSON, and what JSON would LOSE is refused at `set()`. | **none** |
 | The docs page is hand-written HTML with two caller-supplied values in it. | **none** |
 | A battery names a vendor in a comment and never in a call | **none** |

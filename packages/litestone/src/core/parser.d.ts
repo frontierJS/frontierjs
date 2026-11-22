@@ -105,6 +105,7 @@ export function parse(src?: any): {
     warnings: any[];
 };
 export const SYNC_POLICIES: Set<string>;
+export const SYNC_OPERATIONS: string[];
 export const VIEW_COLUMN_ATTRS: Set<string>;
 export const SYNC_NEEDS_VERSION: Set<string>;
 export const ALLOWED_TOKENIZERS: Set<string>;

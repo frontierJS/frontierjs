@@ -23,10 +23,10 @@ import {
   aggregatableKeysFor, LIKE_SQL, likePattern, ftsWords, identifyingKeysFor, inList, keyIn, tupleOf, tuplesOf, pairsOn, 
   sqlFragment, ident, quoteIdent, and, join as sqlJoin, pageSql } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
-import { hasTransforms, buildValidationMap, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
+import { hasTransforms, buildValidationMap, zoneOffsetFields, validateJsonPatch, typeMemberDefault, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { createExclusionLedger } from './exclusion.js'
-import { buildZonedMap, makeZoned } from './zoned.js'
+import { buildZonedMap, makeZoned, zonedDayCompare } from './zoned.js'
 import { makeLedgerNotes } from './ledger-notes.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses, isGatePlugin } from '../plugins/gate.js'
@@ -42,11 +42,12 @@ import {
 import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
 import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.js'
+import { foldSpec } from './fold.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {TransitionConflictError, VersionRequiredError,
-  VersionConflictError, SyncConflictError,
+  VersionConflictError, SyncConflictError, MonotonicError,
   TransitionNotFoundError, BulkTransitionError, SoftDeletedUniqueError,isUniqueConflict, CapabilityNotDeclaredError,
-  SealedDocumentError, TransitionGateError, TransitionSystemError } from './errors.js'
+  SealedDocumentError, TransitionGateError, TransitionSystemError, UniqueConflictError } from './errors.js'
 import { threeWay } from './three-way.js'
 import { buildCommitmentMap, dueSql, readBy, LATEST_DAY } from './commitment.js'
 import { dueAt, } from '@frontierjs/toolbelt/datetime'
@@ -59,7 +60,7 @@ import {
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
-  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf, derivedOnce } from './schema-maps.js'
+  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO, aggModelsOf, derivedOnce, monotonicFields, historyFields } from './schema-maps.js'
 import {
   wideDb, mappedDb, narrowedDb, clockedDb, rawHandle, resolveAccessConfig, buildDbRegistry, buildModelDbMap,
   jsonlFilePath, rowsChanged, resolveDbPath } from './databases.js'
@@ -232,13 +233,20 @@ function injectHasTemplatesFilter(where, mode, field = 'isTemplate') {
 // has been*. Both are expressed as an OR against NULL rather than a COALESCE,
 // because an index on the column is usable by the first and not by the second.
 
-function injectEffectiveFilter(where, mode, cols, asOf) {
+// `edge(field, op)` answers a zoned day's comparison as SQL (`zonedDayCompare`),
+// or null where the edge is the one `asOf` for every row.
+function injectEffectiveFilter(where, mode, cols, asOf, edge = null) {
   // mode: 'inForce' (default) | 'withExpired' | 'onlyExpired'
   if (mode === 'withExpired') return where
 
+  const OPS = { lte: '<=', gt: '>' }
+  const cmp = (field, op) => {
+    const z = edge?.(field, OPS[op] ?? op)
+    return z ? { $raw: rawClause(z.sql, z.params) } : { [field]: { [op]: asOf } }
+  }
   const { from, to } = cols
-  const started = from ? { OR: [{ [from]: null }, { [from]: { lte: asOf } }] } : null
-  const ended   = to   ? { OR: [{ [to]:   null }, { [to]:   { gt:  asOf } }] } : null
+  const started = from ? { OR: [{ [from]: null }, cmp(from, 'lte')] } : null
+  const ended   = to   ? { OR: [{ [to]:   null }, cmp(to, 'gt')] } : null
 
   let filter
   if (mode === 'onlyExpired') {
@@ -247,8 +255,8 @@ function injectEffectiveFilter(where, mode, cols, asOf) {
     // `to <= asOf` alone would silently drop every row whose window has not
     // opened, which on a two-sided declaration is most of what a caller asking
     // for the excluded rows is looking for.
-    const notStarted = from ? { [from]: { gt:  asOf } } : null
-    const over       = to   ? { [to]:   { lte: asOf } } : null
+    const notStarted = from ? cmp(from, 'gt')  : null
+    const over       = to   ? cmp(to,   'lte') : null
     const parts = [notStarted, over].filter(Boolean)
     filter = parts.length === 1 ? parts[0] : { OR: parts }
   } else {
@@ -334,11 +342,13 @@ export const SEARCH_RESOLVE = Symbol.for('litestone.searchResolve')
  * @property {Record<string, { allows: any[], denies: any[] }>} policy   by operation
  * @property {Record<string, any>} scopes       `@@scope` predicates by name
  * @property {boolean} hasValidation
+ * @property {Set<string> | null} zoneOffsets   its `Int @unit(min)` columns a `@zoned` reads as an offset
  * @property {{ byParent: any[], byChild: any[], requiresChildren: any[] | null }} cardinality
  * @property {any[]} exclusions                 this model's `@@exclude` memberships, each with its `scope` name
  * @property {any[]} exclusionParents           members whose range `@from`s this model's columns
  * @property {any[]} zoned                      its `DateTime @zoned(date, time, zone)` instants and their sources
  * @property {any[]} zonedParents               children whose `@zoned` instant reads its zone off this model
+ * @property {Record<string, any> | null} zonedWindow  each `@zoned` day of the window, for `zonedDayCompare`
  * @property {any[]} valueSets                  the `@values` bindings its columns carry
  * @property {Map<string, any[]>} fieldLogs    `@trail` targets by field
  * @property {any[] | null} modelLogs           `@@trail` targets
@@ -594,6 +604,84 @@ function makeTable(readDb, writeDb, shape, ctx) {
     throw new ValidationError([{ path: [op, '_sum', field], message:
       `${op} _sum of '${field}' on ${modelName} is past 2^53 (${Number.MAX_SAFE_INTEGER}), which a JS number cannot ` +
       `hold exactly. Narrow it with a where, or group by something so each sum is smaller` }])
+  }
+
+  // ─── a member of a Json column (FJS-D1062) ──────────────────────────────
+  // `_sum: { properties: { path: ['gb'] } }`, and a named aggregate's
+  // `sum: { column, path }`. Metering names the member in data, per tenant,
+  // so no schema declares it. The path is BOUND: it is caller data (Invariant 8).
+  // A non-numeric member would sum as 0 and order as text, so the SELECT also
+  // counts the strays and the read refuses on any.
+  const isMemberSpec = (v) => v !== null && typeof v === 'object' && !Array.isArray(v) && 'path' in v
+
+  function memberPath(op, field, spec, keys) {
+    const bad = (why) => new ValidationError([{ path: [op, field, 'path'], message:
+      `${op} over a member of '${field}' on ${modelName} takes { ${keys.join(', ')} } — ${why}` }])
+    const extra = Object.keys(spec).filter(k => !keys.includes(k))
+    if (extra.length) throw bad(`'${extra[0]}' is not a key of it`)
+    const { path } = spec
+    if (!Array.isArray(path) || !path.length) throw bad('a non-empty array of member names and array indexes')
+    let jp = '$'
+    for (const seg of path) {
+      if (Number.isSafeInteger(seg) && seg >= 0) { jp += `[${seg}]`; continue }
+      // SQLite's JSON path quotes a member in double quotes and has no escape for one.
+      if (typeof seg !== 'string' || !seg || seg.includes('"'))
+        throw bad(`${JSON.stringify(seg)} is not a member name (a non-empty string without a double quote) or an index`)
+      jp += '."' + seg + '"'
+    }
+    if (!jsonFields.has(field)) throw new ValidationError([{ path: [op, field, 'path'], message:
+      `Cannot ${op} a path of '${field}' on ${modelName} — it is not a Json column. Aggregate the column itself` }])
+    return { jp, key: [field, ...path].join('.') }
+  }
+
+  // Three SELECT columns: the aggregate, the count of non-numeric members and
+  // one stray's JSON type. `filter` is a named aggregate's FILTER, which each
+  // column carries so the strays are counted over the rows the sum reads.
+  function memberAggCols(op, fn, field, spec, alias, params, { distinct = false, filter = null, named = false } = {}) {
+    const { jp, key } = memberPath(op, field, spec, named ? ['column', 'path'] : ['path'])
+    const c      = _aggCol(field)
+    const tail   = filter ? ` FILTER (WHERE ${filter.sql})` : ''
+    const fp     = filter ? filter.params : []
+    const stray  = `json_type(${c}, ?) NOT IN ('integer', 'real', 'null')`
+    params.push(jp, jp, ...fp, jp, ...fp, jp, jp, ...fp)
+    return { key, sql: [
+      `${fn}(${distinct ? 'DISTINCT ' : ''}CASE WHEN json_type(${c}, ?) IN ('integer', 'real') THEN json_extract(${c}, ?) END)${tail} AS ${quoteIdent(alias)}`,
+      `COUNT(CASE WHEN ${stray} THEN 1 END)${tail} AS ${quoteIdent(`${alias}__strays`)}`,
+      `MIN(CASE WHEN ${stray} THEN json_type(${c}, ?) END)${tail} AS ${quoteIdent(`${alias}__stray`)}`,
+    ].join(', ') }
+  }
+
+  // The answer for one member aggregate out of a result row, after refusing
+  // strays and a sum no JS number holds exactly.
+  function memberAggValue(op, fn, key, alias, raw) {
+    const strays = raw[`${alias}__strays`] ?? 0
+    if (strays) throw new ValidationError([{ path: [op, key], message:
+      `Cannot ${op} ${fn} of ${key} on ${modelName} — ${strays} ${strays === 1 ? 'row holds' : 'rows hold'} ` +
+      `${key} as JSON ${raw[`${alias}__stray`]} rather than a number, which ${fn} would count as 0 or order as text. ` +
+      `Narrow the where to the rows whose member is numeric` }])
+    const value = raw[alias] ?? null
+    if (fn === 'SUM' && typeof value === 'number' && Math.abs(value) > Number.MAX_SAFE_INTEGER)
+      throw new ValidationError([{ path: [op, key], message:
+        `${op} sum of ${key} on ${modelName} is past 2^53 (${Number.MAX_SAFE_INTEGER}), which a JS number cannot ` +
+        `hold exactly. Narrow it with a where, or group by something so each sum is smaller` }])
+    return value
+  }
+
+  // The value aggregates' names, split by tier: `true` reads the column's
+  // value, `{ path }` names the column and reads a member of it.
+  function refuseValueAggKeys(op, specs, namedSpecs, extra = []) {
+    const values = [...extra], members = []
+    for (const spec of specs) {
+      if (!spec || typeof spec !== 'object') continue
+      for (const [name, wanted] of Object.entries(spec)) (isMemberSpec(wanted) ? members : values).push(name)
+    }
+    for (const spec of namedSpecs) {
+      if (!spec || typeof spec !== 'object') continue
+      for (const fn of ['sum', 'avg', 'min', 'max'])
+        if (isMemberSpec(spec[fn])) members.push(spec[fn].column)
+    }
+    refuseAggregateKeys(op, [...values, ...namedAggFields(namedSpecs)])
+    refuseAggregateKeys(op, members, false)
   }
 
   // @@hasTemplates marker column name, or null if this model doesn't opt in.
@@ -2378,11 +2466,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // what makes expiry testable at all: `createTestEnv`'s `clock.advance()`
   // moves this, where a `new Date()` written into a service moves nothing.
   //
-  // A day window reads a DAY, and the reading is UTC. That is the honest
-  // default rather than the right one — *today* is a day derived from an
-  // instant and therefore owes a zone (`FJS-D143`), which this declaration does
-  // not yet carry. Only an `@@expires` over days reaches the default at all: an
-  // `@@effective` window with nothing stated is not filtered.
+  // A day window reads a DAY. *Today* is a day derived from an instant and so
+  // owes a zone (`FJS-D143`): a `@zoned` day is read in its row's zone
+  // (`applyEffFilter`, `FJS-D1053`), any other in UTC. Only an `@@expires` over
+  // days reaches the default at all: an `@@effective` window with nothing
+  // stated is not filtered.
   const DAY = /^\d{4}-\d{2}-\d{2}$/
   function effAsOf(args) {
     const stated = args?.asOf
@@ -2412,7 +2500,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   function applyEffFilter(where, args) {
     const mode = effMode(args)
     if (!effective) return where
-    return injectEffectiveFilter(where, mode, effective, effAsOf(args))
+    // A stated `asOf` is one day for every row; unstated, a zoned day is the row's own.
+    const zoned = args?.asOf == null ? shape.zonedWindow : null
+    const at    = nowISO(ctx.now)
+    const edge  = zoned && ((field, op) => zoned[field]
+      ? zonedDayCompare(zoned[field], op, at, sql => readDb.query(sql).all())
+      : null)
+    return injectEffectiveFilter(where, mode, effective, effAsOf(args), edge)
   }
 
   // Compose: apply hasTemplates filter on top of soft-delete-filtered where.
@@ -2768,6 +2862,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const readState = (field) => readDb.query(
       sqlJoin([sqlFragment('SELECT '), ident(col(field)), sqlFragment(' AS v FROM '), T, KW.where, r.where], '').sql,
     ).get(...r.where.params)
+    const backwards = () => { if (r.monotonic) throwIfBackwards(r.where, r.monotonic) }
     const versionMoved = () => {
       if (!r.version) return
       const cur = readState(r.version.field)
@@ -2804,14 +2899,79 @@ function makeTable(readDb, writeDb, shape, ctx) {
       if (cur && cur.v === t.from) {
         if (t.allow && !guardHolds(t.allow, r.where.sql, r.where.params)) throw t.allow.refuse()
         if (t.guard && !guardHolds(t.guard, r.where.sql, r.where.params)) throw t.guard.refuse()
-        versionMoved(); sealed()
+        backwards(); versionMoved(); sealed()
       }
       throw new TransitionConflictError(tableName, t.field, t.from, t.to,
         { actual: cur ? cur.v : undefined, move: t.transitionName })
     }
+    backwards()
     versionMoved()
     sealed()
   }
+
+  // ── @history — every value a column held is a row of another model (FJS-D1294) ──
+  const _history = historyFields(ctx.schema?.models ?? [], shape.model)
+  const historyTouched = (data) => !!data && _history.some(h => data[h.field] !== undefined)
+
+  // Runs inside the write's unit, so a refusal rolls the write back with it.
+  // Read through writeDb: the reader connection does not see this unit's rows,
+  // and a batch naming one value twice would append it twice. A value another
+  // owner held stays theirs, refused on THIS column so a form marks the box.
+  function appendHistory(rows) {
+    for (const h of _history) {
+      const t      = ctx.shapes[h.target]
+      const tcol   = columnMapFor(t.model)
+      const lookup = writeDb.query(`SELECT ${quoteIdent(tcol[h.fk] ?? h.fk)} AS k FROM ${quoteIdent(t.tableName)} WHERE ${quoteIdent(tcol[h.value] ?? h.value)} = ?`)
+      for (const r of rows) {
+        const v = r[h.field]
+        if (v == null) continue
+        const held = lookup.get(v)
+        if (held && held.k === r[h.key]) continue
+        if (held) throw new UniqueConflictError(modelName, [h.field], [v], {
+          message: `${h.field} ${JSON.stringify(v)} was another ${modelName}'s and stays reserved by @history(into: ${h.target})` })
+        ctx.tables[modelToAccessor(h.target)].appendSync([{ [h.value]: v, [h.fk]: r[h.key] }])
+      }
+    }
+  }
+
+  // ── @monotonic — a column that may move one way (FJS-D1291) ─────────────
+  const _monotonic = monotonicFields(shape.model)
+
+  // One compare per @monotonic column the write names, against what the SET
+  // writes: the bound value, or an operator's expression over the stored
+  // column, so `{ decrement }` is held to the direction too. A NULL stored
+  // takes any first value; a NULL written compares UNKNOWN and matches no row.
+  function monotonicClause(row, ops) {
+    if (!_monotonic.length) return null
+    const parts = []
+    for (const m of _monotonic) {
+      const op = ops.find(o => o.col === m.field)
+      if (!op && !(m.field in row)) continue
+      const c   = ident(col(m.field)).sql
+      const cmp = m.direction === 'down' ? '>=' : '<='
+      parts.push({ ...m,
+        sql: `(${c} IS NULL OR ${c} ${cmp} ${op ? `(${op.expr})` : '?'})`,
+        params: op ? op.params : [row[m.field] ?? null] })
+    }
+    return parts.length ? parts : null
+  }
+
+  // A row the where reaches that a compare refuses. COALESCE because the
+  // compare is UNKNOWN for a NULL written over a value, and NOT UNKNOWN would
+  // match nothing and let the refusal pass as a miss.
+  function throwIfBackwards(where, parts) {
+    for (const m of parts) {
+      const q = sqlJoin([
+        sqlFragment('SELECT '), ident(col(m.field)), sqlFragment(' AS v FROM '), T, KW.where,
+        where ? sqlJoin([sqlFragment('('), where, sqlFragment(') AND ')], '') : null,
+        sqlFragment(`NOT COALESCE(${m.sql}, 0) LIMIT 1`, m.params),
+      ], '')
+      const cur = readDb.query(q.sql).get(...q.params)
+      if (cur) throw new MonotonicError(modelName, m.field, m.direction, cur.v)
+    }
+  }
+  const sqlOfParts = (parts) => parts.map(m => m.sql).join(' AND ')
+  const paramsOfParts = (parts) => parts.flatMap(m => m.params)
 
   // The statement and everything that must sit in the same unit with it,
   // synchronous: this is the body `wrapExclusive` runs. The prefetch is read
@@ -2840,6 +3000,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return { rows: [], count: plan.result ? (row ? 1 : 0) : got?.n ?? 0, row, image: trailImage(got, row), doomed: null, affected: [], duration: 0 }
     }
     if (plan.op === 'delete') refuseLockedCascade(where)
+    if (plan.monotonic) throwIfBackwards(where, plan.monotonic)
     const notes  = WRITE_NOTES[plan.op]
     const wSql   = where?.sql ?? null
     const wBinds = where?.params ?? []
@@ -2918,6 +3079,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
       count += n
       if (notes.after === 'row') { noteCardinality(st.data); noteExclusion(st.data) }
     }
+    if (_history.length && rows?.length && (plan.op === 'create' || plan.op === 'upsert'
+      || (plan.op === 'update' && statements.some(st => historyTouched(st.data))))) appendHistory(rows)
     // An upsert's RETURNING is the parent row whatever path it took.
     const rezoned = zoneMoved && count ? recomputeZonedChildren(zonedKeys ?? rows ?? [],
       (model, row) => tx.exclusions?.note(model, row)) : null
@@ -3070,7 +3233,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // A hasMany create needs the parent's id, which only RETURNING answers —
     // so skipping it here is not a saving, it is the children going missing.
     // A logged model takes it on every verb: the trail names the row by id.
-    const returning = tableHasLogWork || !(select === false && !hasNested && !edgeWrites.length)
+    const returning = tableHasLogWork || _history.length > 0 || !(select === false && !hasNested && !edgeWrites.length)
     const seal   = cols.length ? sealInsertGuard(row) : null
     const params = new Array(cols.length)
     for (let c = 0; c < cols.length; c++) params[c] = row[cols[c]] ?? null
@@ -3156,7 +3319,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // The WHERE grades each row as it was; the post-update rule reads the row
     // as it is now, which only RETURNING carries (FJS-1713).
     const _umPost = ctx.hasPolicies && !!shape.policy['postUpdate']
-    const _umNeedRows = tableHasLogWork || _umWantRows || _umPost || !!plugins?.hearsWrites
+    const _umNeedRows = tableHasLogWork || _umWantRows || _umPost || !!plugins?.hearsWrites || historyTouched(row)
     const _umStmt = frag(sqlJoin([KW.update, T, KW.set, _umSetAll, _umWhereClause, _umNeedRows && KW.returning], ''))
     return {
       verb: 'updateMany', op: 'update', statements: [{ ..._umStmt, data: row }], count: null,
@@ -3164,6 +3327,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
       moves: _umHidden ?? null, exclusion: exclTouched(data) ? data : null, post: _umPost,
       softCascade: null, batch: false, logs: tableHasLogWork, system, announce: announceAs,
       result: null, bare: false, refuse: null, before: null, transition: null,
+      // Asked inside the unit, under its lock: narrowing a bulk WHERE would
+      // drop the backwards rows from the count instead of refusing them.
+      monotonic: monotonicClause(row, _umOps),
     }
   }
 
@@ -3311,7 +3477,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
     // A logged model already takes RETURNING, so opting in costs it nothing.
     // A plugin's onAfterWrite is told each row (FJS-1725).
-    return { data, system, hidden, deferred, mode, select, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites || select != null }
+    return { data, system, hidden, deferred, mode, select, needRows: tableHasLogWork || wantRows || !!plugins?.hearsWrites || select != null || _history.length > 0 }
   }
 
   // The rows as they will be written, and one statement per row. Runs INSIDE
@@ -3603,7 +3769,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // SQLite's own refusal is — so it needs a rollback to throw into.
     const ownUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy && !_upHidden
       && !_tableTransitions && tx.state.depth === 0 && !_cardNotes && !exclTouched(data)
-      && !rankScopeTouched(data) && !zoneTouched(data)
+      && !rankScopeTouched(data) && !zoneTouched(data) && !historyTouched(data)
 
     // The plan: the WHERE and the SET, the before snapshot, the move's grade
     // and compare-and-swap, the version's, the seals — every conjunct that
@@ -3714,8 +3880,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // value the caller read, so a row that moved simply does not match. The
       // bump rides the SET clause, which also means a versioned update always
       // has a column to write even when `data` was otherwise empty.
-      const _vWhereSql0    = _expectVersion == null ? _txWhereSql : `(${_txWhereSql}) AND ${ident(col(_versionField)).sql} = ?`
-      const _vWhereParams0 = _expectVersion == null ? _txWhereParams : [..._txWhereParams, _expectVersion]
+      // @monotonic narrows the same way, ahead of the version.
+      const _mono          = monotonicClause(row, _upOps)
+      const _mWhereSql     = _mono ? `(${_txWhereSql}) AND ${sqlOfParts(_mono)}` : _txWhereSql
+      const _mWhereParams  = _mono ? [..._txWhereParams, ...paramsOfParts(_mono)] : _txWhereParams
+      const _vWhereSql0    = _expectVersion == null ? _mWhereSql : `(${_mWhereSql}) AND ${ident(col(_versionField)).sql} = ?`
+      const _vWhereParams0 = _expectVersion == null ? _mWhereParams : [..._mWhereParams, _expectVersion]
       // The third link in the same chain: the caller's where, then the policy,
       // then the move's from-state, then the version, then the seal. Each one
       // narrows and none of them reports — the row simply does not match, which
@@ -3784,7 +3954,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // select: false with no reader of the row skips RETURNING. A logged
       // model keeps it — the trail needs the after snapshot — as do the
       // post-update rule and a nested write, which need the row itself.
-      const returning = !(select === false && !tableHasLogWork && !_postUpdatePolicy && !hasNested && !edgeWrites.length)
+      const returning = !(select === false && !tableHasLogWork && !_postUpdatePolicy && !hasNested && !edgeWrites.length && !historyTouched(data))
       const stmt = frag(sqlJoin([
         KW.update, T, KW.set, sqlFragment(_setColsV, setParams), KW.where, _vSelf, returning && KW.returning,
       ], ''))
@@ -3796,7 +3966,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         refuse: {
           where: callerWhere,
           transition: _transResult ? { ..._transResult, policy: !!updatePolicy } : null,
-          version, sealSelf: _vSelf.frozen,
+          monotonic: _mono, version, sealSelf: _vSelf.frozen,
           seal: { sql: _vWhereSql0, params: _vWhereParams0, op: 'update' },
         },
         before: beforeRow, heard: heardRow, transition: _transResult,
@@ -3842,7 +4012,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       moves: null, exclusion: null, post: false, softCascade: null, batch: false, logs: false, system: null,
       announce: null, result: { select: undefined, include: undefined },
       // A zone write recomputes the children in this statement's unit.
-      bare: tx.state.depth === 0 && !zoneTouched(insRow) && !zoneTouched(updRow),
+      bare: tx.state.depth === 0 && !zoneTouched(insRow) && !zoneTouched(updRow) && !_history.length,
       refuse: null, before: null, transition: null, restamp,
     }
   }
@@ -3935,7 +4105,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       !shape.sequences.length &&
       !_ranks.length &&
       !shape.updatedBy.length &&
-      !shape.version &&
+      !shape.version && !_monotonic.length &&
       include === undefined && select === undefined &&
       where && createData && updateData && Object.keys(updateData).length
     ) {
@@ -4193,7 +4363,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
   const { aggregate } = makeAggregate(shape, ctx, {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, visibleWhere, _aggCol, needsTiming, fireQuery, hydrateCols, exactSum,
-    buildWhereWithEncryption,
+    buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue, refuseValueAggKeys,
   })
   const { search } = makeSearch(shape, ctx, {
     readDb, plugins, col, visibleWhere, buildWhereWithEncryption, needsTiming, fireQuery,
@@ -4207,7 +4377,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
   const { groupBy } = makeGroupBy(shape, ctx, {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, T, needsTiming, fireQuery,
-    hydrateCols, exactSum, buildWhereWithEncryption,
+    hydrateCols, exactSum, buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue,
+    refuseValueAggKeys,
   })
   const { upsertMany } = makeUpsertMany(shape, ctx, {
     _bulkTransitionField, refuseSoftDeleteWrite, refuseOffEntry, refuseBulkNested,
@@ -4729,7 +4900,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // realm over: the fast paths are the ones a rule misses). Asked of the
       // MODEL, so a schema declaring no bound keeps the path (`FJS-1106`).
       // A deferred parent is asked after the INSERT, which needs a unit to roll back.
-      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes && !deferred) {
+      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes && !_exclNotes && !deferred && !_history.length) {
         data   = _crEdges.data
         _crOut = insertRow(false, _crEdges.edgeWrites, true)
       } else {
@@ -6043,6 +6214,7 @@ export async function createClient({
   const capabilityMap  = once('capabilityDeclarations', [], () => capabilityDeclarations(schema))
   const ftsMap        = once('buildFtsMap', [], () => buildFtsMap(schema))
   const validationMap  = once('buildValidationMap', [], () => buildValidationMap(schema))
+  const zoneOffsetMap  = once('zoneOffsetFields', [], () => zoneOffsetFields(schema))
   const cardinalityMap = once('buildCardinalityMap', [pluralizeTableNames], () => buildCardinalityMap(schema, pluralizeTableNames))
   const exclusionMap   = once('buildExclusionMap', [pluralizeTableNames], () => buildExclusionMap(schema, pluralizeTableNames))
   const zonedMap       = once('buildZonedMap', [pluralizeTableNames], () => buildZonedMap(schema, pluralizeTableNames))
@@ -6200,11 +6372,13 @@ export async function createClient({
       ranks:             declared(rankMap, name, []),
       transitions:       declared(transitionMap, name, null),
       seal:              declared(sealMap, name, { self: null, parents: [] }),
+      fold:              isView ? null : foldSpec(model, schema.models, pluralizeTableNames),
       capabilities:      declared(capabilityMap, name, null),
       commitments:       every(commitmentMap, name, 'commitmentMap'),
       policy:            declared(policyMap, name, {}),
       scopes:            declared(scopeMap, name, {}),
       hasValidation:     every(validationMap, name, 'validationMap'),
+      zoneOffsets:       declared(zoneOffsetMap, name, null),
       cardinality:       { byParent:         declared(cardinalityMap.byParent, name, []),
                            byChild:          declared(cardinalityMap.byChild, name, []),
                            byRate:           declared(cardinalityMap.byRate, name, []),
@@ -6214,6 +6388,7 @@ export async function createClient({
       exclusionParents:  declared(exclusionMap.byParent, name, []),
       zoned:             declared(zonedMap.byModel, name, []),
       zonedParents:      declared(zonedMap.byParent, name, []),
+      zonedWindow:       declared(zonedMap.windows, name, null),
       valueSets:         declared(valueSetMap, name, []),
       fieldLogs,
       modelLogs:         declared(logMap.models, name, null),

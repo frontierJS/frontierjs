@@ -36,7 +36,8 @@ export function makeGroupBy(shape, ctx, deps) {
   const {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, needsTiming, fireQuery,
-    hydrateCols, exactSum, buildWhereWithEncryption,
+    hydrateCols, exactSum, buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue,
+    refuseValueAggKeys,
   } = deps
 
   // ── groupBy ──────────────────────────────────────────────────────────────
@@ -86,11 +87,8 @@ export function makeGroupBy(shape, ctx, deps) {
     // a refusal, but one naming a table rather than the model and never the
     // reason.
     refuseAggregateKeys('groupBy', by, false)
-    refuseAggregateKeys('groupBy', [
-      ...[_sum, _avg, _min, _max].filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)),
-      ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
-      ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
-    ])
+    refuseValueAggKeys('groupBy', [_sum, _avg, _min, _max], extractNamedAggs(args).map(([, spec]) => spec),
+      _stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : [])
     refuseCountShape('groupBy', _count)
     refuseMixedCurrency('groupBy', args, by, [having, ...orderTerms.map(([k, v]) => ({ [k]: v }))])
 
@@ -232,6 +230,8 @@ export function makeGroupBy(shape, ctx, deps) {
     // separator compared against the where's column and the where's value
     // joined the strings, so _stringAgg beside any where answered [].
     const selectParams = []
+    // A member of a Json column, alias → [fn, result key]; its path is a SELECT-list value.
+    const members = new Map()
 
     // WHERE clause — the flags ride in `args`, as aggregate (FJS-263).
     const { where: exclWhere, policy: policyResult } = visibleWhere('groupBy', where, args)
@@ -305,7 +305,11 @@ export function makeGroupBy(shape, ctx, deps) {
       const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[agg]
       for (const [field, wanted] of Object.entries(spec)) {
         if (!wanted) continue
-        selectCols.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
+        if (isMemberSpec(wanted)) {
+          const m = memberAggCols('groupBy', fn, field, wanted, `${agg}__${field}`, selectParams)
+          members.set(`${agg}__${field}`, [fn, m.key])
+          selectCols.push(m.sql)
+        } else selectCols.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
       }
     }
     if (_stringAgg) {
@@ -322,7 +326,12 @@ export function makeGroupBy(shape, ctx, deps) {
       !['_count','_sum','_avg','_min','_max','_stringAgg'].includes(k)
     )
     for (const [key, spec] of namedAggs) {
-      selectCols.push(buildNamedAggExpr(key, spec, selectParams))
+      selectCols.push(buildNamedAggExpr(key, spec, selectParams, (fn, target, filter) => {
+        const m = memberAggCols('groupBy', fn, target.column, target, `__nagg__${key}`, selectParams,
+          { distinct: !!spec.distinct, filter, named: true })
+        members.set(`__nagg__${key}`, [fn, m.key])
+        return m.sql
+      }))
     }
 
     // ── Gap filling — infer range from where clause if fillGaps: true ───
@@ -443,7 +452,11 @@ export function makeGroupBy(shape, ctx, deps) {
           if (!spec || spec === true) return []
           return Object.entries(spec)
             .filter(([, v]) => v)
-            .map(([field]) => `${agg === '_sum' ? '0' : 'NULL'} AS "${agg}__${field}"`)
+            .flatMap(([field]) => {
+              const alias = `${agg}__${field}`
+              const value = `${agg === '_sum' ? '0' : 'NULL'} AS ${quoteIdent(alias)}`
+              return members.has(alias) ? [value, `0 AS ${quoteIdent(`${alias}__strays`)}`, `NULL AS ${quoteIdent(`${alias}__stray`)}`] : [value]
+            })
         }),
       ]
 
@@ -577,6 +590,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         out[agg] = {}
         for (const [field, wanted] of Object.entries(spec)) {
           if (!wanted) continue
+          const member = members.get(`${agg}__${field}`)
+          if (member) { out[agg][member[1]] = memberAggValue('groupBy', member[0], member[1], `${agg}__${field}`, r); continue }
           out[agg][field] = r[`${agg}__${field}`] ?? null
           if (agg === '_sum') exactSum('groupBy', field, out[agg][field])
         }
@@ -587,7 +602,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       }
       // Named aggregates
       for (const [key] of namedAggs) {
-        out[key] = r[`__nagg__${key}`] ?? null
+        const member = members.get(`__nagg__${key}`)
+        out[key] = member ? memberAggValue('groupBy', member[0], member[1], `__nagg__${key}`, r) : r[`__nagg__${key}`] ?? null
       }
       return out
     })

@@ -6,6 +6,7 @@
 
 import { connectHarbor } from '../runtime/connect-harbor.js'
 import { mountInto }     from '../runtime/mount.js'
+import { getActiveTab }  from '../runtime/active-tab.js'
 
 export function defineDock(arg) {
   const config = normalize(arg)
@@ -55,14 +56,4 @@ export function makeBootstrapper(config, type) {
       window.addEventListener('unload', () => config.onUnmount(ctx))
     }
   }
-}
-
-async function getActiveTab() {
-  // Best effort. Real shim lands Phase 1.
-  if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-    return new Promise((resolve) => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => resolve(tabs?.[0] ?? null))
-    })
-  }
-  return null
 }

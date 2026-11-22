@@ -55,6 +55,7 @@ import { stripVTControlCharacters }        from 'node:util'
 // two copies where only one of them is ever re-derived.
 import { runChecks, blindSkips, findApps, formatFindings, readBaseline, gradeBaseline } from '../packages/cli/core/checks.js'
 import { checkSnapshots }                      from '../packages/cli/core/snapshots.js'
+import { catchFindings, catchCounts, CATCH_RULE } from '../packages/cli/core/catches.js'
 import { runRegisterCheck, RULES as REGISTER_RULES } from '../packages/cli/core/register-check.js'
 import { FJS_PACKAGES, APP_DEV_DEPS, FJS_TRANSITIVE } from '../packages/cli/core/app-config.js'
 import { openRunLog, parseCounts, failureExcerpt } from '../packages/cli/core/ci-log.js'
@@ -763,12 +764,41 @@ function structure() {
     report(label, runChecks({ root: app, allow: { ...baseline.allow, ...allow[label] } }), app, baseline)
   }
 
-  report('packages', runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} }), ROOT)
+  // The catch rule is graded per package by catchCeilings, not as a warning
+  // printed every run beside the findings that are new.
+  const repo = runChecks({ root: ROOT, scope: 'repo', allow: allow['.'] ?? {} })
+  report('packages', { ...repo, findings: repo.findings.filter(f => f.rule !== CATCH_RULE) }, ROOT)
 
+  catchCeilings()
   sizeLimits()
 
   if (clean(from)) ok(`${apps.length} app(s), ${checked} rule run(s), no architecture errors` +
     (blind ? ` — ${blind} error rule(s) could not run, see notes` : ''))
+}
+
+// FJS-D2131: a package with more loose catches on its request or Data path than
+// scripts/catch-baselines.json allows fails; one with fewer is a note until
+// `--update` writes the new low, and `--update` never raises.
+function catchCeilings() {
+  const file     = join(ROOT, 'scripts', 'catch-baselines.json')
+  const ceilings = readJson(file)
+  const findings = catchFindings(ROOT)
+  const counts   = catchCounts(findings)
+  let lowered = false
+
+  for (const [pkg, count] of Object.entries(counts)) {
+    const ceiling = ceilings[pkg] ?? 0
+    if (count > ceiling) {
+      const sites = findings.filter(f => f.pkg === pkg).map(f => `    ${relative(ROOT, f.file)}:${f.line}  ${f.text.slice(0, 100)}`)
+      fail(`${pkg} — ${count} catch(es) that name nothing and say nothing, above its ceiling of ${ceiling} in scripts/catch-baselines.json\n` +
+        `      Test what was caught (instanceof, .name, a code) and rethrow the rest, or say in a comment why it is best-effort (FJS-D2131).\n` +
+        '      `fli check --only catch-names-its-error` at the root lists every site.', sites.join('\n'))
+    } else if (count < ceiling) {
+      if (update) { ceilings[pkg] = count; lowered = true }
+      else note(`${pkg} has ${count} loose catch(es), below its ceiling of ${ceiling} — \`node scripts/ci.mjs --phase structure --update\` writes the new low.`)
+    }
+  }
+  if (lowered) writeFileSync(file, `${JSON.stringify(ceilings, null, 2)}\n`)
 }
 
 // A package nearing its limit in scripts/size-limits.json is a note, never a

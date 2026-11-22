@@ -102,6 +102,10 @@ const frozenAtCreate = (f, model, sealing) =>
 // there and writes nothing, so the rules about a held write have nothing to say.
 const syncsWrites = m => { const s = modelAttr(m, 'sync'); return !!s && s.policy !== 'read' }
 
+// A model whose rows may be CREATED on a device. `on:` without `create` says
+// the rows arrive another way (an upload), so a held create cannot exist.
+const createsOffline = m => syncsWrites(m) && (modelAttr(m, 'sync').on?.includes('create') ?? true)
+
 // ─── reading a JSON path out of a @generated expression ───────────────────────
 //
 // Three spellings reach the same place: `json_extract(col, 'path')`, and
@@ -478,7 +482,7 @@ export const RULES = [
       // rule above.
       const NUMBER = { kinds: ['lt', 'lte', 'gt', 'gte'],  holds: ['Int', 'Float'],      says: 'a number' }
       const TEXT   = { kinds: ['length', 'startsWith', 'endsWith', 'contains', 'regex', 'email', 'url',
-                               'phone', 'date', 'datetime', 'time', 'zone'],
+                               'phone', 'date', 'datetime', 'time', 'zone', 'cron'],
                        holds: ['String', 'DateTime', 'File'],                         says: 'text' }
       for (const model of schema.models ?? []) {
         for (const f of model.fields ?? []) {
@@ -799,9 +803,9 @@ export const RULES = [
           if (!rel || f.type?.kind !== 'relation') continue
 
           const parent = byName.get(f.type.name)
-          // A parent that is not syncable cannot be made offline at all, so it
-          // already exists and already has an id. Nothing is owed here.
-          if (!parent || !syncsWrites(parent)) continue
+          // A parent that is not created offline already exists and already
+          // has an id. Nothing is owed here.
+          if (!parent || !createsOffline(parent)) continue
           if (mintableIdField(parent)) continue
 
           const idField = (parent.fields ?? []).find(x => has(x, 'id'))
@@ -831,7 +835,7 @@ export const RULES = [
     run(schema) {
       const out = []
       for (const model of schema.models ?? []) {
-        if (!syncsWrites(model)) continue
+        if (!createsOffline(model)) continue
         if (mintableIdField(model)) continue
         for (const f of model.fields ?? []) {
           if (f.type?.name !== 'File') continue
@@ -860,7 +864,7 @@ export const RULES = [
     run(schema) {
       const out = []
       for (const model of schema.models ?? []) {
-        if (!syncsWrites(model)) continue
+        if (!createsOffline(model)) continue
         for (const f of model.fields ?? []) {
           if (f.type?.name !== 'File' || isOptional(f) || hasDefault(f)) continue
           out.push({

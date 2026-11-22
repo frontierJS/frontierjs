@@ -331,6 +331,8 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @zone                            an IANA zone name (America/Denver, UTC)
 @zoned(timeZone)                 this @date/@time is read in that @zone column's zone
 @zoned(customer.timeZone)        …or one to-one relation away, never further
+@zoned(takenOffsetMin)           …or at the fixed offset an Int @unit(min) holds
+@cron                            a five-field cron expression, ranges checked (30 1 * * 0)
 @regex("pattern")                regex validation
 @length(min, max)                string length (either bound optional)
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
@@ -350,6 +352,29 @@ column at the path must be `@zone`, so a value no zone resolves is refused at
 its own write rather than inside every read that resolves it. Litestone
 describes the pairing (`x-zoned`, the path as written) and reads it in one place,
 a `@@commitment` on a zoned day.
+
+A wall clock recorded with a fixed offset (EXIF, ISO `+02:00`) names an
+`Int @unit(min)` column instead (`FJS-D1290`), and is read at that offset: an
+offset names a zone only where a zone the app knows has it at that instant, so
+a Paris photo with a New York owner has no `@zone` to name. A write outside
+-720..840 minutes is refused. `@zone` keeps refusing an offset, because a
+moment still to come needs the zone's daylight rules and an offset only
+records one already observed.
+
+```lite
+model Photo {
+  id             Int      @id
+  takenOn        String   @date @zoned(takenOffsetMin)
+  takenOffsetMin Int?     @unit(min)
+}
+```
+
+`@cron` is how a RECURRING wall-clock rule is stored: one row per rule, the
+expression beside a `@zone` column (`FJS-D1285`). It is graded by the grammar
+Caravan's clock runs (`@frontierjs/toolbelt/cron`), so `61 * * * *` is refused
+at write with `minute value is 61` rather than at bind. Litestone knows nothing
+of the clock: a job file binds one schedule per row from the column, and each
+occurrence firing once across a daylight gap or overlap is Caravan's rule.
 
 On a `DateTime` the same word takes a day and a time first, and the column is
 the instant they resolve to, which litestone alone writes (`FJS-D963`,

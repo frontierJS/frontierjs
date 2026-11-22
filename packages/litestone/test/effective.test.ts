@@ -436,3 +436,100 @@ describe('x-effective — the window reaches the client', () => {
     expect(defs.Cart['x-effective']).toBeUndefined()
   })
 })
+
+// FJS-2782 · FJS-D1053: a quote expiring on its account's calendar. The window
+// over a `String @date @zoned(path)` day is read in each row's own zone, lowered
+// into the SQL so a count, a page and an include agree with the rows. At
+// 2026-10-03T15:00Z Tokyo is on 2026-10-04 and Los Angeles still on 2026-10-03.
+const QUOTED = `
+model Account {
+  id       Int     @id
+  name     String
+  timeZone String? @zone
+  quotes   Quote[]
+}
+
+model Quote {
+  id        Int     @id
+  label     String
+  accountId Int?
+  account   Account? @relation(fields: [accountId], references: [id])
+  expiresOn String  @date @zoned(account.timeZone)
+  @@expires(expiresOn)
+}
+
+model Shift {
+  id        Int    @id
+  label     String
+  timeZone  String @zone
+  startsOn  String @date @zoned(timeZone)
+  endsOn    String? @date @zoned(timeZone)
+  @@effective(from: startsOn, to: endsOn)
+}
+
+model Desk {
+  id       Int     @id
+  label    String
+  offset   Int     @unit(min)
+  closesOn String  @date @zoned(offset)
+  @@expires(closesOn)
+}
+`
+
+describe('a day window read in its row’s own zone (FJS-2782)', () => {
+  async function staged(now = '2026-10-03T15:00:00.000Z') {
+    const env = await createTestEnv({ schema: QUOTED, now })
+    const db  = env.db.asSystem()
+    const quote = async (label, timeZone) => {
+      const a = timeZone === undefined ? null : await db.account.create({ data: { name: label, timeZone } })
+      return db.quote.create({ data: { label, accountId: a?.id ?? null, expiresOn: '2026-10-04' } })
+    }
+    for (const [label, zone] of [['tokyo', 'Asia/Tokyo'], ['la', 'America/Los_Angeles'], ['nozone', null], ['orphan', undefined]])
+      await quote(label, zone)
+    return { env, db }
+  }
+
+  test('@@expires over a zoned day closes each row at its own midnight', async () => {
+    const { env, db } = await staged()
+    expect(labels(await db.quote.findMany())).toEqual(['la', 'nozone', 'orphan'])
+    expect(labels(await db.quote.findMany({ onlyExpired: true }))).toEqual(['tokyo'])
+    expect(await db.quote.count()).toBe(3)
+    expect(labels(await db.quote.findMany({ limit: 2, orderBy: { id: 'asc' } }))).toEqual(['la', 'nozone'])
+    env.clock.set('2026-10-04T07:00:00.000Z')
+    // Los Angeles reaches 2026-10-04 at 07:00Z; a row with no zone already did at 00:00Z.
+    expect(labels(await db.quote.findMany())).toEqual([])
+    env.clock.set('2026-10-04T06:59:00.000Z')
+    expect(labels(await db.quote.findMany())).toEqual(['la'])
+    env.close?.()
+  })
+
+  test('a stated asOf is a day, the same for every row', async () => {
+    const { env, db } = await staged()
+    expect(labels(await db.quote.findMany({ asOf: '2026-10-03' }))).toEqual(['la', 'nozone', 'orphan', 'tokyo'])
+    expect(labels(await db.quote.findMany({ asOf: '2026-10-04' }))).toEqual([])
+    env.close?.()
+  })
+
+  test('an include and a _count read the same window', async () => {
+    const { env, db } = await staged()
+    const tokyo = await db.account.findFirst({ where: { name: 'tokyo' }, include: { quotes: true, _count: { select: { quotes: true } } } })
+    const la    = await db.account.findFirst({ where: { name: 'la' },    include: { quotes: true, _count: { select: { quotes: true } } } })
+    expect([tokyo.quotes.length, tokyo._count.quotes]).toEqual([0, 0])
+    expect([la.quotes.length,    la._count.quotes]).toEqual([1, 1])
+    env.close?.()
+  })
+
+  test('@@effective over a same-row zone, asked with no asOf, and a fixed offset', async () => {
+    const env = await createTestEnv({ schema: QUOTED, now: '2026-10-03T15:00:00.000Z' })
+    const db  = env.db.asSystem()
+    await db.shift.create({ data: { label: 'tokyo', timeZone: 'Asia/Tokyo',          startsOn: '2026-10-04' } })
+    await db.shift.create({ data: { label: 'la',    timeZone: 'America/Los_Angeles', startsOn: '2026-10-04' } })
+    // Asked, so unfiltered with nothing stated; a stated day is one day.
+    expect(labels(await db.shift.findMany())).toEqual(['la', 'tokyo'])
+    expect(labels(await db.shift.findMany({ asOf: '2026-10-04' }))).toEqual(['la', 'tokyo'])
+    await db.desk.create({ data: { label: 'east', offset: 540,  closesOn: '2026-10-04' } })
+    await db.desk.create({ data: { label: 'west', offset: -420, closesOn: '2026-10-04' } })
+    expect(labels(await db.desk.findMany())).toEqual(['west'])
+    env.close?.()
+  })
+})

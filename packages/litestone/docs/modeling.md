@@ -227,6 +227,70 @@ by**, and the relation list under it) and in the release surface, where gaining
 either is a **contract**: an N-1 release that writes a line onto an issued
 invoice stops working the moment the deploy lands.
 
+**Does it only ever move one way?** Then it is `@monotonic` — `@immutable`'s
+*may move one way* form (`FJS-D1291`). A resume offset is the case: a replayed or
+stale chunk must never move it backwards.
+
+```lite
+model Upload {
+  id       Int @id @default(autoincrement())
+  received Int @default(0) @monotonic
+  budget   Int @default(100) @monotonic(down)
+}
+```
+
+- **The compare rides the UPDATE's own WHERE**, as the `@version` check does, so
+  two chunks racing cannot both pass. A write the wrong way changes nothing and
+  raises `MonotonicError` — a 409, `retryable: false`, naming the model, the
+  column and the direction — because the same write would be refused again.
+- **Equal is legal**, so the same chunk sent twice is idempotent. An operator is
+  held to the direction too: `{ increment: 5 }` lands, `{ decrement: 1 }` does not.
+- **A NULL column takes any first value**, and a value is never written back to NULL.
+- **`updateMany` refuses the whole batch** when one row it reaches would go
+  backwards. `upsertMany` naming the column in its conflict half is refused by
+  name, since SQLite's `DO UPDATE … WHERE` would skip that row silently.
+- **`asSystem()` does not drop it**, as it does not drop `@immutable`.
+
+`Int` (with or without `@big`) and `DateTime`; refused at parse beside
+`@immutable`, `@version` and `@updatedAt`, which already own the column's direction.
+
+**Must every value it ever held stay a row someone reads?** Then it is
+`@history(into: Model)` (`FJS-D1294`). Every slug a post ever had is the case:
+the router reads them to send an old address to the current one.
+
+```lite
+model Post {
+  id   Int    @id @default(autoincrement())
+  slug String @unique @history(into: Slug)
+}
+model Slug {
+  value     String   @id
+  postId    Int
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+```
+
+- **The create, and every update that sets the column, appends the new value**
+  to the target in the write's own transaction, at the system grade. A seed, an
+  `asSystem()` script and a caller whose gate refuses the target all record,
+  and a write that rolls back takes the row with it.
+- **The target is an ordinary model** with its own gate and `@@allow`, so a
+  router reads it at the level the schema gives it. It holds exactly one
+  `@relation` back to the owner and one `@id` or `@unique` field of the column's
+  type for the value. Each row points at the owner, not at the next value, so a
+  chain of renames resolves to the current one in one hop.
+- **A former value stays reserved.** Another row setting it is refused with
+  `UniqueConflictError` (409) on this column. The same row may set it again,
+  and nothing is appended twice.
+- **`upsertMany` naming the column is refused by name**, because its statements
+  do not reach the append.
+
+`String` or `Int`; refused at parse beside `@encrypted`, `@hashed`, `@secret`
+and `@guarded`, whose past values would be copied out as readable rows.
+`@@trail` is not this: its rows are another file, and a reader below system
+cannot read them.
+
 **Is it derived from other values?** Then the deciding question is **where
 SQLite has to be able to see it**, and the answers are genuinely different
 tools rather than tastes:

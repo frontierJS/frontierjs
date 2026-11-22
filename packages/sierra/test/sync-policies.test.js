@@ -73,6 +73,7 @@ model Plain  { id String @id @default(uuid())  name String  v Int @version  @@ga
 model Photo  { id String @id @default(uuid())  name String  damage File?    @@gate(0.0.0.0)  @@sync(append) }
 model Merge  { id String @id @default(uuid())  name String  v Int @version  @@gate(0.0.0.0)  @@sync(field) }
 model Roster { id String @id @default(uuid())  name String                  @@gate(0.0.0.0)  @@sync(read) }
+model Asset  { id String @id @default(uuid())  name String  file File?      @@gate(0.0.0.0)  @@sync(server, on: update) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */
@@ -121,12 +122,48 @@ const held = () => pendingQueue().pending()
 describe('the policy reaches the browser as itself', () => {
   test('each model carries its own word, and a model that said nothing carries none', async () => {
     const { schemaFor } = await import('../src/resource/schema-registry.js')
-    expect(schemaFor('Served')['x-sync']).toBe('server')
-    expect(schemaFor('Guard')['x-sync']).toBe('refuse')
-    expect(schemaFor('Ledger')['x-sync']).toBe('append')
+    expect(schemaFor('Served')['x-sync'].policy).toBe('server')
+    expect(schemaFor('Guard')['x-sync'].policy).toBe('refuse')
+    expect(schemaFor('Ledger')['x-sync'].policy).toBe('append')
     expect(schemaFor('Plain')['x-sync']).toBeUndefined()
-    expect(schemaFor('Merge')['x-sync']).toBe('field')
-    expect(schemaFor('Roster')['x-sync']).toBe('read')
+    expect(schemaFor('Merge')['x-sync'].policy).toBe('field')
+    expect(schemaFor('Roster')['x-sync'].policy).toBe('read')
+    expect(schemaFor('Asset')['x-sync']).toEqual({ policy: 'server', on: ['update'] })
+  })
+})
+
+// ─── on: ──────────────────────────────────────────────────────────────────
+
+// FJS-3055 / FJS-D1289: vellum's Asset is created by an upload and favorited
+// on the phone. The patch is held; a create or remove is not, and goes live
+// and fails the way a model with no @@sync fails.
+describe('on: update — patches held, creates live', () => {
+  test('a patch is held', async () => {
+    const assets = await withRow('assets', 'Asset')
+    _proxy.patch = offline
+    await assets.service.patch('ROW-1', { name: 'favorite' }).catch(() => {})
+    expect(held().length).toBe(1)
+    expect(held()[0].method).toBe('patch')
+  })
+
+  test('a create that cannot reach the server fails and holds nothing', async () => {
+    _proxy.create = offline
+    const assets = createResource('assets', { model: 'Asset' })
+    await expect(assets.service.create({ name: 'IMG_1' })).rejects.toThrow(/Failed to fetch/)
+    expect(held().length).toBe(0)
+  })
+
+  test('a remove that cannot reach the server holds nothing either', async () => {
+    _proxy.remove = offline
+    const assets = createResource('assets', { model: 'Asset' })
+    await expect(assets.service.remove('ROW-1')).rejects.toThrow(/Failed to fetch/)
+    expect(held().length).toBe(0)
+  })
+
+  test('a create on the network is sent as ever', async () => {
+    const assets = createResource('assets', { model: 'Asset' })
+    await assets.service.create({ name: 'IMG_1' })
+    expect(_calls.some(([m]) => m === 'create')).toBe(true)
   })
 })
 

@@ -19,7 +19,7 @@
 // a zone correction must never be refused because some child's stored clock
 // does not exist under the new zone.
 
-import { fromWall }                                  from '@frontierjs/toolbelt/datetime'
+import { fromWall, plainDateIn }                     from '@frontierjs/toolbelt/datetime'
 import { columnMapFor, modelToTableName }            from './ddl.js'
 import { quoteIdent }                                from './query.js'
 import { inferToOneFrom }                            from './schema-maps.js'
@@ -35,9 +35,12 @@ import { ValidationError }                           from './validate.js'
 export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
   /** @type {Record<string, any[]>} */ const byModel  = {}
   /** @type {Record<string, any[]>} */ const byParent = {}
+  /** @type {Record<string, Record<string, any>>} */ const windows = {}
   for (const model of schema.models) {
     const cols = columnMapFor(model)
     const col  = (/** @type {string} */ f) => cols[f] ?? f
+    const win  = windowDays(model, schema, pluralize, col)
+    if (win) windows[model.name] = win
     for (const field of model.fields) {
       const zoned = field.attributes.find((/** @type {any} */ a) => a.kind === 'zoned')
       if (!zoned || field.type.name !== 'DateTime' || zoned.sources?.length !== 2) continue
@@ -87,7 +90,81 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
       ;(byModel[model.name] ??= []).push(entry)
     }
   }
-  return { byModel, byParent }
+  return { byModel, byParent, windows }
+}
+
+// ─── A window over a zoned day ──────────────────────────────────────────────
+//
+// `expiresOn String @date @zoned(account.timeZone)` under `@@expires` ends at
+// midnight in each row's own zone (`FJS-D1053`). SQLite has no zone table, so
+// the zones present are read first and each is put on the day it is on now;
+// every zone sits within a day of UTC, so the row's today is one CASE over two
+// bound lists, with UTC the ELSE that also takes a null zone. An `Int @unit(min)`
+// offset needs no list: SQLite adds the minutes itself. It is a predicate, not a
+// post-filter, so `count`, `take` and an include agree with the rows.
+
+/** The `@zoned` source of each window column of `model`, by field; null when none is zoned. */
+function windowDays(/** @type {any} */ model, /** @type {any} */ schema, /** @type {boolean} */ pluralize, /** @type {(f: string) => string} */ col) {
+  const exp = model.attributes.find((/** @type {any} */ a) => a.kind === 'expires')
+  const eff = model.attributes.find((/** @type {any} */ a) => a.kind === 'effective')
+  const names = [exp?.column, eff?.from, eff?.to].filter(Boolean)
+  const table = modelToTableName(model, pluralize)
+  /** @type {Record<string, any>} */ const out = {}
+  for (const name of names) {
+    const field = model.fields.find((/** @type {any} */ f) => f.name === name)
+    if (!field?.attributes.some((/** @type {any} */ a) => a.kind === 'date')) continue
+    const path = field.attributes.find((/** @type {any} */ a) => a.kind === 'zoned')?.path
+    if (!path?.length) continue
+    const self = `${quoteIdent(table)}.`
+    if (path.length === 1) {
+      const zf = model.fields.find((/** @type {any} */ f) => f.name === path[0])
+      const zc = quoteIdent(col(path[0]))
+      out[name] = { column: col(name), offset: zf?.type.name === 'Int', zone: `${self}${zc}`,
+        distinct: `SELECT DISTINCT ${zc} FROM ${quoteIdent(table)} WHERE ${zc} IS NOT NULL` }
+      continue
+    }
+    const hop = inferToOneFrom(model, schema, { rel: path[0] })
+    if (hop.error) continue                                       // validate() already named it
+    const pcols = /** @type {Record<string, string>} */ (columnMapFor(hop.targetModel))
+    const pcol  = (/** @type {string} */ f) => pcols[f] ?? f
+    const ptab  = quoteIdent(modelToTableName(hop.targetModel, pluralize))
+    const zc    = quoteIdent(pcol(path[1]))
+    const on    = hop.fkFields.map((/** @type {string} */ f, /** @type {number} */ i) =>
+      `"zone_parent".${quoteIdent(pcol(hop.refFields[i]))} = ${self}${quoteIdent(col(f))}`).join(' AND ')
+    out[name] = { column: col(name), offset: hop.targetModel.fields.find((/** @type {any} */ f) => f.name === path[1])?.type.name === 'Int',
+      zone:     `(SELECT "zone_parent".${zc} FROM ${ptab} AS "zone_parent" WHERE ${on})`,
+      distinct: `SELECT DISTINCT ${zc} FROM ${ptab} WHERE ${zc} IS NOT NULL` }
+  }
+  return Object.keys(out).length ? out : null
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * `"<column>" <op> <the row's today>` at the instant `at`, as SQL and its binds.
+ * `all(sql)` runs `src.distinct` and answers its rows.
+ */
+export function zonedDayCompare(/** @type {any} */ src, /** @type {string} */ op, /** @type {string} */ at,
+  /** @type {(sql: string) => any[]} */ all) {
+  const lhs = quoteIdent(src.column)
+  if (src.offset) return { sql: `${lhs} ${op} date(?, COALESCE(${src.zone}, 0) || ' minutes')`, params: [at] }
+  const utc    = at.slice(0, 10)
+  const before = new Date(Date.parse(utc) - DAY_MS).toISOString().slice(0, 10)
+  const after  = new Date(Date.parse(utc) + DAY_MS).toISOString().slice(0, 10)
+  /** @type {string[]} */ const behind = []
+  /** @type {string[]} */ const ahead  = []
+  for (const row of all(src.distinct)) {
+    const zone = Object.values(row)[0]
+    let day
+    try { day = plainDateIn(at, zone) } catch { continue }           // not a zone: read in UTC, as a null one is
+    if (day === before) behind.push(zone)
+    else if (day === after) ahead.push(zone)
+  }
+  const inList = `IN (SELECT value FROM json_each(?))`
+  return {
+    sql: `${lhs} ${op} (CASE WHEN ${src.zone} ${inList} THEN ? WHEN ${src.zone} ${inList} THEN ? ELSE ? END)`,
+    params: [JSON.stringify(behind), before, JSON.stringify(ahead), after, utc],
+  }
 }
 
 // ─── The instant ────────────────────────────────────────────────────────────
@@ -101,8 +178,11 @@ export function wallInstant(/** @type {any} */ date, /** @type {any} */ time, /*
   if (date == null || time == null || zone == null) return null
   const [year, month, day] = String(date).split('-').map(Number)
   const [hour, minute, second = 0] = String(time).split(':').map(Number)
-  const on = (/** @type {Date} */ d) => new Date(fromWall({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
-    hour, minute, second }, zone, { disambiguation: 'compatible' })).toISOString()
+  // A number is an `Int @unit(min)` offset east of UTC (`FJS-D1290`): no gap, no repeated hour.
+  const on = (/** @type {Date} */ d) => new Date(typeof zone === 'number'
+    ? Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, minute, second) - zone * 60_000
+    : fromWall({ year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate(),
+      hour, minute, second }, zone, { disambiguation: 'compatible' })).toISOString()
   const at = on(new Date(Date.UTC(year, month - 1, day)))
   return after != null && at <= after ? on(new Date(Date.UTC(year, month - 1, day + 1))) : at
 }

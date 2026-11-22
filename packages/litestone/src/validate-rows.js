@@ -20,7 +20,7 @@
 // Never imported by production code — this is an ops surface, like release.js
 // and access.js beside it.
 
-import { validate } from './core/validate.js'
+import { validate, zoneOffsetFields } from './core/validate.js'
 import { modelToAccessor, fieldToColumnName } from './core/ddl.js'
 import { rawClause } from './core/query.js'
 
@@ -75,6 +75,7 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
   // is an ops surface and must not depend on the shape of a ctx.
   const typeMap = new Map((schema.types ?? []).map((/** @type {any} */ t) => [t.name, t]))
   const enumMap = new Map((schema.enums ?? []).map((/** @type {any} */ e) => [e.name, e.values.map((/** @type {any} */ v) => v.name)]))
+  const offsets = zoneOffsetFields(schema)
 
   // As SYSTEM, deliberately. A caller-scoped read of a gated model answers [],
   // which is the same shape as a model with nothing wrong — so the walk would
@@ -160,7 +161,7 @@ export async function validateRows(db, { models = null, limit = 100, keyless = f
       /** @type {{path: string[], message: string}[]} */
       let errors = []
       try {
-        validate(row, model, null, typeMap, /** @type {any} */ (enumMap))
+        validate(row, model, null, typeMap, /** @type {any} */ (enumMap), offsets[model.name])
       } catch (/** @type {any} */ e) {
         // A ValidationError carries the per-field list; anything else is this
         // walk failing rather than the row, and is reported as one finding

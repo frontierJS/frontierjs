@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**134 words** — 13 declarations · 76 field attributes · 40 model attributes · 5 transition words.
+**138 words** — 13 declarations · 80 field attributes · 40 model attributes · 5 transition words.
 
 ## Declarations
 
@@ -55,6 +55,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@system` | Hide or lock a value |  |  |  |  |
 | `@local` | Hide or lock a value |  |  |  |  |
 | `@immutable` | Hide or lock a value | [(after: <move>)] |  |  |  |
+| `@monotonic` | Hide or lock a value | [(down)] | on a model's field · on a trait's field |  |  |
 | `@sealed` | Hide or lock a value |  |  |  |  |
 | `@override` | Wire it to the app |  | on a model's field |  |  |
 | `@capability` | Hide or lock a value |  |  |  |  |
@@ -62,6 +63,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@hashed` | Hide or lock a value |  |  |  |  |
 | `@opaque` | Hide or lock a value |  |  |  |  |
 | `@personal` | Hide or lock a value | [(<category>)] |  | category: contact · device · location · government · financial · employment · communication · demographic · health · genetic · biometric · characteristic · criminal |  |
+| `@redacted` | Hide or lock a value |  |  |  |  |
 | `@secret` | Hide or lock a value | [(rotate: …)] | on a model's field · on a trait's field |  |  |
 | `@check` | Hide or lock a value | ("sql expression"[, "message"]) |  |  |  |
 | `@validate` | Refuse a bad value |  | on a model's field · on a trait's field |  |  |
@@ -78,6 +80,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
+| `@history` | Record who and when | (into: <Model>) | on a model's field · on a trait's field |  |  |
 | `@trail` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@trim` | Clean a value on write |  |  |  |  |
 | `@lower` | Clean a value on write |  |  |  |  |
@@ -96,6 +99,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@datetime` | Refuse a bad value | [(message)] |  |  |  |
 | `@time` | Refuse a bad value | [(seconds: true[, message: "..."])] |  |  |  |
 | `@zone` | Refuse a bad value | [(message)] |  |  |  |
+| `@cron` | Refuse a bad value | [(message)] |  |  |  |
 | `@zoned` | Shape the table | ([<date>, <time>,] <field> \| <relation>.<field>[, after: <field>]) |  |  |  |
 | `@regex` | Refuse a bad value | ("pattern"[, message]) |  |  |  |
 | `@length` | Refuse a bad value | (min[, max][, message]) |  |  |  |
@@ -129,14 +133,14 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram][, multisearch: false]) | in a model | tokenize: unicode61 · ascii · porter · trigram<br>multisearch: true · false |  |
-| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field · read |  |
+| `@@sync` | Wire it to the app | (policy, on?) |  | policy: server · append · refuse · field · read |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, scope: field][, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
 | `@@expires` | Shape the table | (<field>) |  |  |  |
 | `@@effective` | Shape the table | (from: <field>, to: <field>) |  |  |  |
-| `@@retention` | Shape the table | (<duration>[, from: <field>]) |  |  |  |
+| `@@retention` | Shape the table | (<duration>[, from: <field>][, into: <Model>, by: [<key>, …, day(<clock>)], sum\|count\|min\|max: [<field>, …]]) |  |  |  |
 | `@@commitment` | Shape the table | ([<relation>.]<transition>, on: <field> [+\|- <n><unit> \| <field>] [, while: <expr>]) |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
@@ -144,7 +148,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@deny` | Decide who may | ('read'\|…, <expression>[, message]) |  |  |  |
 | `@@require` | Decide who may | (create\|postUpdate\|update\|delete, <expression>[, message]) |  |  |  |
 | `@@scope` | Decide who may | (<name>, <expression>) |  |  |  |
-| `@@tenant` | Decide who may | (<column> \| none \| via: parent) |  | mode: none |  |
+| `@@tenant` | Decide who may | (<column> \| none \| via: parent \| admit: expression) |  | mode: none |  |
 | `@@transitions` | Decide who may | (<field>, [lastMover: <column>,] [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@allow(<predicate>)] [@system] [@seals] [@stamps(col, …, by: col)], …) \| (<field>, declaredBy: Model, scope: <column>) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@person` | Wire it to the app | [(child)] |  | kind: child |  |
@@ -173,7 +177,7 @@ A blank `legal` column above means the ordinary answer for that level.
 
 | position | refuses |
 | --- | --- |
-| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `allow`, `values`, `scale`, `money`, `big`, `override`, `validate` |
+| on a type's field | `id`, `unique`, `map`, `relation`, `generated`, `from`, `encrypted`, `guarded`, `secret`, `updatedAt`, `version`, `monotonic`, `history`, `allow`, `values`, `scale`, `money`, `big`, `override`, `validate` |
 | on a trait's field | `id`, `override` |
 | in a trait | `id`, `map`, `db`, `fts` |
 | on an enum member | everything except `@label` |

@@ -7518,6 +7518,7 @@ describe('audit trail redaction', () => {
       hashedF  String? @hashed
       emailF   String? @personal(contact)
       sealedF  String? @opaque
+      probeUrl String? @redacted
       plain    String?
 
       @@db(main)
@@ -7550,7 +7551,7 @@ describe('audit trail redaction', () => {
 
   function flush() { return new Promise<void>(res => setTimeout(res, 20)) }
 
-  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED', 'PLAINTEXT-HASHED', 'person@example.com', 'SEALED-2.bytes']
+  const SECRETS = ['PLAINTEXT-SECRET', 'PLAINTEXT-ENC', 'PLAINTEXT-GUARDED', 'PLAINTEXT-HASHED', 'person@example.com', 'SEALED-2.bytes', 'https://probe.test/?key=PLAINTEXT-URL']
 
   async function captureCreate() {
     const calls: any[] = []
@@ -7558,7 +7559,7 @@ describe('audit trail redaction', () => {
     const row = await db.asSystem().vault.create({
       data: {
         name: 'k', secretF: SECRETS[0], encF: SECRETS[1],
-        guardedF: SECRETS[2], hashedF: SECRETS[3], emailF: SECRETS[4], sealedF: SECRETS[5], plain: 'not-a-secret',
+        guardedF: SECRETS[2], hashedF: SECRETS[3], emailF: SECRETS[4], sealedF: SECRETS[5], probeUrl: SECRETS[6], plain: 'not-a-secret',
       },
     })
     await flush()
@@ -7616,6 +7617,23 @@ describe('audit trail redaction', () => {
     const afters = calls.filter(e => e.model === 'Vault' && e.field == null).map(e => JSON.parse(e.after).sealedF)
     expect(afters[1]).not.toBe(afters[0])
     expect(afters[2]).toBe(afters[0])
+    db.$close()
+  })
+
+  // A URL with a key in its query string is not a person and must stay
+  // readable, so @personal and every protection are the wrong word (FJS-D1288).
+  test('@redacted logs [redacted] in before and after and leaves the column readable', async () => {
+    const { calls, row, db } = await captureCreate()
+    expect(row.probeUrl).toBe(SECRETS[6])
+    expect(db.$protectedFields('vault')).not.toHaveProperty('probeUrl')
+    await db.asSystem().vault.update({ where: { id: row.id }, data: { probeUrl: 'https://probe.test/?key=NEXT-URL' } })
+    await flush()
+    const entries = calls.filter(e => e.model === 'Vault' && e.field == null)
+    expect(JSON.parse(entries[0].after).probeUrl).toBe('[redacted]')
+    expect(JSON.parse(entries[1].before).probeUrl).toBe('[redacted]')
+    expect(JSON.parse(entries[1].after).probeUrl).toBe('[redacted]')
+    expect(JSON.stringify(calls)).not.toContain('NEXT-URL')
+    expect((await db.asSystem().vault.findFirst({ where: { id: row.id } })).probeUrl).toBe('https://probe.test/?key=NEXT-URL')
     db.$close()
   })
 
@@ -27706,6 +27724,112 @@ describe('an aggregate names a column, and every name is checked', () => {
     expect((await db.row.aggregate({ _n: { max: 'amount' } } as any))._n).toBe(2)
     expect((await db.row.aggregate({ _count: { distinct: 'label' } }))._count).toBe(2)
     await expect(db.row.aggregate({ _max: { amoutn: true } })).rejects.toThrow(/Did you mean: amount\?/)
+  })
+})
+
+// ─── an aggregate over a member of a Json column (FJS-2154, FJS-D1062) ───────
+// Metering names the member in data, per tenant, so no schema can declare it:
+// the path is named at call time, bound, and read under the caller's policy.
+describe('an aggregate reads a member of a Json column by path', () => {
+  const S = `model Event {
+    id         Int    @id @default(autoincrement())
+    ownerId    Int    @default(1)
+    code       String @default("gb")
+    properties Json
+    secret     Json?  @guarded
+    amount     Float  @default(0)
+    @@allow(read, ownerId == auth().id)
+  }`
+  const mk = async (label: string, extra: any[] = []) => {
+    const db  = await makeDb(S, label)
+    const sys = db.asSystem()
+    for (const [ownerId, code, properties] of [
+      [1, 'gb',  { gb: 1.5, 'a.b': 4, rows: [10, 20] }],
+      [1, 'gb',  { gb: 2.25, rows: [1] }],
+      [1, 'cpu', { gb: 4 }],
+      [1, 'gb',  { other: 1 }],                    // missing member: skipped, as SQL skips NULL
+      [1, 'gb',  { gb: null }],
+      [2, 'gb',  { gb: 1000 }],                    // another caller's row
+      ...extra,
+    ] as const) await sys.event.create({ data: { ownerId, code, properties, secret: { gb: 7 } } })
+    return db
+  }
+
+  test('_sum _avg _min _max over a path answer the member, keyed column.member, under the policy', async () => {
+    const db = (await mk('jpath-agg')).$setAuth({ id: 1 })
+    const r  = await db.event.aggregate({
+      _sum: { properties: { path: ['gb'] } },
+      _avg: { properties: { path: ['gb'] } },
+      _min: { properties: { path: ['gb'] } },
+      _max: { properties: { path: ['gb'] } },
+      _count: true,
+    } as any)
+    expect(r._sum).toEqual({ 'properties.gb': 7.75 })
+    expect(r._avg['properties.gb']).toBeCloseTo(7.75 / 3)
+    expect(r._min).toEqual({ 'properties.gb': 1.5 })
+    expect(r._max).toEqual({ 'properties.gb': 4 })
+    expect(r._count).toBe(5)
+    // a member name with a dot, and an array index, are segments of the path
+    expect((await db.event.aggregate({ _sum: { properties: { path: ['a.b'] } } } as any))._sum)
+      .toEqual({ 'properties.a.b': 4 })
+    expect((await db.event.aggregate({ _sum: { properties: { path: ['rows', 0] } } } as any))._sum)
+      .toEqual({ 'properties.rows.0': 11 })
+    // a where narrows it like any aggregate
+    expect((await db.event.aggregate({ where: { code: 'gb' }, _sum: { properties: { path: ['gb'] } } } as any))._sum)
+      .toEqual({ 'properties.gb': 3.75 })
+  })
+
+  test('a named aggregate and a groupBy take the same path', async () => {
+    const db = (await mk('jpath-named')).$setAuth({ id: 1 })
+    expect((await db.event.aggregate({ _usage: { sum: { column: 'properties', path: ['gb'] } } } as any))._usage).toBe(7.75)
+    expect((await db.event.aggregate({
+      _gb: { sum: { column: 'properties', path: ['gb'] }, filter: sql`"code" = ${'gb'}` },
+    } as any))._gb).toBe(3.75)
+    const groups = await db.event.groupBy({ by: ['code'], _sum: { properties: { path: ['gb'] } }, orderBy: { code: 'asc' } } as any)
+    expect(groups.map((g: any) => [g.code, g._sum])).toEqual([
+      ['cpu', { 'properties.gb': 4 }],
+      ['gb',  { 'properties.gb': 3.75 }],
+    ])
+  })
+
+  test('a member that is not a number refuses rather than answering a plausible number', async () => {
+    const db = (await mk('jpath-stray', [[1, 'gb', { gb: '12' }], [1, 'gb', { gb: true }]])).$setAuth({ id: 1 })
+    await expect(db.event.aggregate({ _sum: { properties: { path: ['gb'] } } } as any))
+      .rejects.toThrow(/2 rows hold properties\.gb as JSON (text|true) rather than a number/)
+    await expect(db.event.aggregate({ _max: { properties: { path: ['gb'] } } } as any))
+      .rejects.toThrow(/rather than a number/)
+    await expect(db.event.aggregate({ _n: { sum: { column: 'properties', path: ['gb'] } } } as any))
+      .rejects.toThrow(/rather than a number/)
+    await expect(db.event.groupBy({ by: ['code'], _sum: { properties: { path: ['gb'] } } } as any))
+      .rejects.toThrow(/rather than a number/)
+    // a where that leaves the strays out answers
+    expect((await db.event.aggregate({ where: { code: 'cpu' }, _sum: { properties: { path: ['gb'] } } } as any))._sum)
+      .toEqual({ 'properties.gb': 4 })
+  })
+
+  test('a sum past 2^53 refuses', async () => {
+    const db = (await mk('jpath-big', [[1, 'big', { n: 2 ** 53 - 1 }], [1, 'big', { n: 2 ** 53 - 1 }]])).$setAuth({ id: 1 })
+    await expect(db.event.aggregate({ where: { code: 'big' }, _sum: { properties: { path: ['n'] } } } as any))
+      .rejects.toThrow(/past 2\^53/)
+  })
+
+  test('the column is graded as any aggregate name, and the path is checked', async () => {
+    const db = (await mk('jpath-refuse')).$setAuth({ id: 1 })
+    const refused = async (args: any, re: RegExp) => expect(db.event.aggregate(args)).rejects.toThrow(re)
+    await refused({ _sum: { secret: { path: ['gb'] } } }, /@guarded/)
+    await refused({ _sum: { propertis: { path: ['gb'] } } }, /Did you mean: properties/)
+    await refused({ _sum: { amount: { path: ['gb'] } } }, /not a Json column/)
+    await refused({ _sum: { properties: { path: [] } } }, /path/)
+    await refused({ _sum: { properties: { path: [{ x: 1 }] } } }, /path/)
+    await refused({ _sum: { properties: { path: ['gb'], as: 'x' } } }, /path/)
+    await refused({ _sum: { properties: { path: ['a"b'] } } }, /path/)
+    // the path is bound, so a quote in a member is a member, not SQL
+    expect((await db.event.aggregate({ _sum: { properties: { path: ["x') = 1 --"] } } } as any))._sum)
+      .toEqual({ 'properties.x\') = 1 --': null })
+    await refused({ _n: { sum: { column: 'secret', path: ['gb'] } } }, /@guarded/)
+    // the system reads a @guarded member as it reads the column
+    expect((await (await mk('jpath-sys')).asSystem().event.aggregate({ _sum: { secret: { path: ['gb'] } } } as any))._sum)
+      .toEqual({ 'secret.gb': 42 })
   })
 })
 

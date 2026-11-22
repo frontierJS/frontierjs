@@ -1794,11 +1794,18 @@ export function isNamedAgg(key, val) {
  * Returns { expr: string, params: any[] }
  *
  * spec: { count?, sum?, avg?, min?, max?, filter?: RawClause | string, distinct?: boolean }
+ *
+ * `member` builds `sum: { column, path }` — a member of a Json column, which
+ * only the table knows how to read (FJS-D1062); it gets the SQL function and
+ * the checked filter.
  */
-/** @param {string} alias @param {any} spec @param {any[]} extraParams */
-export function buildNamedAggExpr(alias, spec, extraParams) {
+/** @param {string} alias @param {any} spec @param {any[]} extraParams @param {any} [member] */
+export function buildNamedAggExpr(alias, spec, extraParams, member) {
   const fn = _NAMED_AGG_FNS.find(f => f in spec)
   if (!fn) throw new Error(`Named aggregate "${alias}" must specify count, sum, avg, min, or max`)
+  const target = spec[fn]
+  if (member && fn !== 'count' && target !== null && typeof target === 'object' && !Array.isArray(target))
+    return member(fn.toUpperCase(), target, namedAggFilter(alias, spec))
 
   let aggExpr
   if (fn === 'count') {
@@ -1814,24 +1821,26 @@ export function buildNamedAggExpr(alias, spec, extraParams) {
       : `${sqlFn}(${quoteIdent(spec[fn])})`
   }
 
-  // FILTER (WHERE ...) clause. The fragment must arrive as a sql`` tag and a
-  // plain string is refused — the same rule `orderBy: { $raw }` already applies,
-  // for the same reason: a string is how an injected one arrives. `query()`
-  // dispatches a caller's own object here (`db.order.query(req.query)` is the
-  // documented shape), so a spec key reaching this line came off the wire.
-  let filterClause = ''
-  if (spec.filter) {
-    if (!isRawClause(spec.filter))
-      throw new ValidationError([{
-        path:    [alias, 'filter'],
-        message: `Named aggregate "${alias}" filter must be a sql\`\` tag result — ` +
-                 `a plain string cannot be bound and is how an injected fragment arrives`,
-      }])
-    filterClause = ` FILTER (WHERE ${spec.filter.sql})`
-    extraParams.push(...spec.filter.params)
-  }
+  const filter = namedAggFilter(alias, spec)
+  if (filter) extraParams.push(...filter.params)
+  return `${aggExpr}${filter ? ` FILTER (WHERE ${filter.sql})` : ''} AS "__nagg__${alias}"`
+}
 
-  return `${aggExpr}${filterClause} AS "__nagg__${alias}"`
+// A named aggregate's FILTER (WHERE ...). The fragment must arrive as a sql``
+// tag and a plain string is refused — the same rule `orderBy: { $raw }`
+// applies, for the same reason: a string is how an injected one arrives.
+// `query()` dispatches a caller's own object here (`db.order.query(req.query)`
+// is the documented shape), so a spec key reaching this line came off the wire.
+/** @param {string} alias @param {any} spec */
+function namedAggFilter(alias, spec) {
+  if (!spec.filter) return null
+  if (!isRawClause(spec.filter))
+    throw new ValidationError([{
+      path:    [alias, 'filter'],
+      message: `Named aggregate "${alias}" filter must be a sql\`\` tag result — ` +
+               `a plain string cannot be bound and is how an injected fragment arrives`,
+    }])
+  return spec.filter
 }
 
 /** Extract all named aggregate entries from an args object */

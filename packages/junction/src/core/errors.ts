@@ -352,18 +352,22 @@ export function sanitizeError(fe: FrameworkError, opts: SanitizeOptions = {}): F
   }
 
   const status = fe.code ?? 500
-  if (status < 500 || inDebug(opts.debug)) return fe
+  if (status < 500) return fe
 
-  // The original still has to reach somebody, and the somebody is the operator.
+  // The original has to reach the operator, in development too, where the
+  // caller sees the message but a defect is read in the terminal (`FJS-D2131`).
   // Logged with the id the caller is being given, because a generic sentence
   // with no join back to the line that produced it is a support ticket nobody
-  // can act on.
+  // can act on. The original's class is named: a TypeError logged as
+  // GeneralError reads as a deliberate 500.
+  const cause = fe.cause instanceof Error && fe.cause.name !== fe.name ? ` (${fe.cause.name})` : ''
   try {
-    opts.logger?.error?.(`[Junction] ${fe.name}: ${fe.message}`, {
+    opts.logger?.error?.(`[Junction] ${fe.name}${cause}: ${fe.message}`, {
       correlationId: opts.correlationId,
       stack:         fe.stack,
     })
   } catch { /* a broken logger must not become the response */ }
+  if (inDebug(opts.debug)) return fe
 
   fe.message = opts.correlationId
     ? `Internal Server Error (correlation id: ${opts.correlationId})`

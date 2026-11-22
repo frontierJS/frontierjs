@@ -18,6 +18,7 @@
 
 import { transform, isTransform } from '@frontierjs/toolbelt/transforms'
 import { isRankKey } from '@frontierjs/toolbelt/rank'
+import { parseCron } from '@frontierjs/toolbelt/cron'
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 
@@ -80,6 +81,15 @@ const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 // takes an offset (`+05:00`) and folds case (`utc`), and neither is a zone a
 // day can be read in the same way on every runtime. An alias the canonical
 // list omits (`Asia/Calcutta`) passes when the host resolves it to itself.
+// What Caravan's clock refuses at bind is what `@cron` refuses at write, so
+// the grammar is asked rather than restated (`FJS-D1285`). The sentence is
+// the grammar's with its own prefix cut, since the field path already says
+// which value it is.
+function cronRefusal(v) {
+  try { parseCron(String(v)); return null }
+  catch (err) { return String(err?.message ?? err).replace(/^Invalid cron expression: "[^"]*" — /, '') }
+}
+
 let ZONES = null
 function isZone(v) {
   if (typeof v !== 'string' || !/^[A-Za-z]/.test(v)) return false
@@ -150,6 +160,7 @@ const VALIDATORS = {
                                  : TIME_RE_HM.test(String(v)),
   phone:       (v)          => PHONE_RE.test(String(v)),
   zone:        (v)          => isZone(v),
+  cron:        (v)          => cronRefusal(v) === null,
   // A key ending in '0' has no room below it that a shorter key could take,
   // and a non-base-62 byte sorts differently in a browser than in SQLite.
   rank:        (v)          => isRankKey(v),
@@ -240,6 +251,7 @@ export const DEFAULT_MESSAGES = {
   date:       () => 'must be a valid date in YYYY-MM-DD format (e.g. 2026-04-06)',
   datetime:   () => 'must be a valid ISO 8601 datetime',
   zone:       () => 'must be an IANA time zone name (e.g. America/Denver or UTC)',
+  cron:       (why) => `must be a five-field cron expression (e.g. 30 1 * * 0)${why ? ` — ${why}` : ''}`,
   time:     (seconds) => seconds
                             ? 'must be a 24-hour time in HH:MM or HH:MM:SS format (e.g. 09:30 or 09:30:45)'
                             : 'must be a 24-hour time in HH:MM format (e.g. 09:30)',
@@ -283,6 +295,7 @@ export const DEFAULT_MESSAGES = {
       ? cap
       : `${cap}; at ${places} decimal place(s) that is ${Math.floor(EXACT_INT_MAX / 10 ** places).toLocaleString('en-GB')}`
   },
+  offset:      ()  => 'must be a UTC offset in whole minutes, -720 to 840 (-12:00 to +14:00) — the @zoned wall clock it reads is resolved at it',
   finite:      ()  => 'must be a finite number — NaN is stored as NULL and Infinity does not survive JSON',
   intRange:    ()  => `must be at most ${EXACT_INT_MAX.toLocaleString('en-GB')} in magnitude — past that a JS number cannot carry the value; declare the column @big to hold more`,
   // The two array rules that come from the TYPE rather than an attribute. They
@@ -710,6 +723,15 @@ export function validateField(fieldName, value, attributes) {
         defaultMsg = DEFAULT_MESSAGES.time(attr.seconds === true)
         break
 
+      // The grammar's sentence is the useful half — `minute value is 61` names
+      // the field to fix, where a bare *not a cron expression* does not.
+      case 'cron': {
+        const why  = cronRefusal(value)
+        pass       = why === null
+        defaultMsg = DEFAULT_MESSAGES.cron(why)
+        break
+      }
+
       case 'rank':
         pass       = VALIDATORS.rank(value)
         defaultMsg = DEFAULT_MESSAGES.rank()
@@ -776,8 +798,13 @@ export function validateField(fieldName, value, attributes) {
 // `Json @type(T)` — the JSON value is recursively validated against the type's
 // shape. Throws ValidationError if anything fails.
 
-export function validate(data, model, computedFns, typeMap, enums = null) {
+export function validate(data, model, computedFns, typeMap, enums = null, offsets = null) {
   const errors = []
+  for (const name of offsets ?? []) {
+    const v = data[name]
+    if (typeof v === 'number' && !(Number.isInteger(v) && v >= OFFSET_MIN && v <= OFFSET_MAX))
+      errors.push({ path: [name], message: DEFAULT_MESSAGES.offset() })
+  }
 
   // Field-level validators
   for (const field of model.fields) {
@@ -878,7 +905,7 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
 // decide whether a model needs the pass at all, and by `advise` to ask
 // whether a rule declared on a column can ever be reached.
 export const VALIDATOR_KINDS = new Set([
-  'email','url','phone','date','datetime','time','zone','regex','length','startsWith','endsWith',
+  'email','url','phone','date','datetime','time','zone','cron','regex','length','startsWith','endsWith',
   'contains','lt','lte','gt','gte','trim','lower','upper',
   'minItems','maxItems','uniqueItems',
   // A scaled column's rule is *a whole number of minor units*, and without it
@@ -902,6 +929,26 @@ export const VALIDATOR_KINDS = new Set([
   'validate',
 ])
 
+// The `Int @unit(min)` columns a `@zoned` reads as a fixed offset (`FJS-D1290`),
+// by model. -12:00..+14:00 is every offset a clock has kept, and `due()` filters
+// by the day at +14:00 (`LATEST_DAY`), so a larger offset would never be due.
+export const OFFSET_MIN = -720
+export const OFFSET_MAX = 840
+export function zoneOffsetFields(schema) {
+  /** @type {Record<string, Set<string>>} */ const out = {}
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const path = field.attributes.find(a => a.kind === 'zoned')?.path
+      if (!path?.length || path.length > 2) continue
+      const owner = path.length === 1 ? model
+        : schema.models.find(m => m.name === model.fields.find(f => f.name === path[0])?.type.name)
+      const target = owner?.fields.find(f => f.name === path.at(-1))
+      if (target?.type.name === 'Int') (out[owner.name] ??= new Set()).add(target.name)
+    }
+  }
+  return out
+}
+
 // An Int column whose value is a JS number on the way in and out: not an array,
 // and not one of the attributes that grade the same range under their own name.
 const OWN_RANGE = new Set(['big', 'scale', 'money'])
@@ -915,6 +962,7 @@ function isPlainFloat(field) {
 
 export function buildValidationMap(schema) {
   const map = {}
+  const offsets = zoneOffsetFields(schema)
   for (const model of schema.models) {
     // Flag if any explicit validator attribute OR any DateTime field
     // (DateTime fields get ISO-8601 auto-validation in validate())
@@ -936,6 +984,7 @@ export function buildValidationMap(schema) {
     const hasPlainFloat = model.fields.some(isPlainFloat)
     const hasRowRule = (model.attributes ?? []).some(a => a.kind === 'validate')
     map[model.name] = hasExplicitValidator || hasDateTimeField || hasTypedJson || hasArrayField || hasPlainInt || hasPlainFloat || hasRowRule
+      || Boolean(offsets[model.name])
   }
   return map
 }

@@ -209,6 +209,25 @@ export interface HandlerOptions {
   cron?:        string
   /** IANA timezone the `cron` expression is read in. Default: server TZ. */
   timeZone?:    string
+  /**
+   * One schedule per ROW of a model, read off its columns (`FJS-D1285`) — a
+   * maintenance window whose rule is data. Each row with a non-null rule fires
+   * `{ id }` once per occurrence, named `cron:<job>:<rowId>:<minute>`, so a
+   * Sunday 01:30 that a spring-forward skips fires at the next wall minute that
+   * exists and an autumn one that happens twice fires once. A write to the
+   * model rebinds. Exclusive with `cron`.
+   */
+  schedules?:   RowSchedules
+}
+
+/** Where a job's per-row schedules are read from. Names are as the schema spells them. */
+export interface RowSchedules {
+  /** The model, PascalCase singular — `Window`. Its read policy must admit the app's own principal. */
+  model:     string
+  /** The `@cron` column. A row whose value is null binds nothing. */
+  cron:      string
+  /** The `@zone` column, or `relation.field` one hop away. Absent or null is the server TZ, as for `cron`. */
+  timeZone?: string
 }
 
 export interface RegisteredHandler {
@@ -221,6 +240,7 @@ export interface RegisteredHandler {
   timeout?:    number
   cron?:       string
   timeZone?:   string
+  schedules?:  RowSchedules
   /**
    * False when the registration came through `schedule()`, which is the door a
    * database ROW comes in by — a flow's schedule trigger, a Job row with a cron
@@ -249,6 +269,7 @@ export interface JobDefinition<T = unknown> {
   timeout?:     number
   cron?:        string
   timeZone?:    string
+  schedules?:   RowSchedules
 }
 
 /**

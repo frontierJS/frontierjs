@@ -425,3 +425,29 @@ duration, with `d` a flat 24 hours and `y` a flat 365 days — so *ninety days* 
 from the moment the pass runs, in no particular zone. That half is stated rather than
 fixed: a calendar-aligned window needs a zone the schema has no way to say yet
 (`FJS-D143`).
+
+## A readable value the trail does not keep — @redacted
+
+A value staff must read that is not a person, such as a probe URL carrying a key in its query string, is `@redacted` (`FJS-D1288`). It logs as `'[redacted]'` in field entries and in before- and after-images, as a protected column does, and a reader the gate admits still sees it. `@personal` + `@redacted` logs `'[redacted]'`.
+
+```lite
+database audit { path "./audit/"  driver trail }
+
+model Monitor {
+  id  Int    @id
+  url String @redacted
+  @@trail(audit)
+
+  @@gate(0)
+}
+```
+
+```js
+const sys = db.asSystem()
+await sys.monitor.create({ data: { id: 1, url: 'https://probe.test/?key=k1' } })
+await new Promise(r => setTimeout(r, 0))
+
+const [entry] = await sys.auditTrail.findMany({ where: { model: 'Monitor' } })
+const read = await db.monitor.findFirst({ where: { id: 1 } })
+if (/k1/.test(JSON.stringify(entry.after)) || read.url !== 'https://probe.test/?key=k1') throw new Error('the trail drops the URL, the reader sees it')
+```

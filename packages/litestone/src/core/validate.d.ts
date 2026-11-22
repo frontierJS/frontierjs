@@ -38,7 +38,8 @@ export function validateField(fieldName?: any, value?: any, attributes?: any): {
     path: any[];
     message: any;
 }[];
-export function validate(data?: any, model?: any, computedFns?: any, typeMap?: any, enums?: any): void;
+export function validate(data?: any, model?: any, computedFns?: any, typeMap?: any, enums?: any, offsets?: any): void;
+export function zoneOffsetFields(schema?: any): Record<string, Set<string>>;
 export function buildValidationMap(schema?: any): {};
 export class ValidationError extends Error {
     /**
@@ -85,6 +86,7 @@ export namespace DEFAULT_MESSAGES {
     function date(): string;
     function datetime(): string;
     function zone(): string;
+    function cron(why?: any): string;
     function time(seconds?: any): "must be a 24-hour time in HH:MM or HH:MM:SS format (e.g. 09:30 or 09:30:45)" | "must be a 24-hour time in HH:MM format (e.g. 09:30)";
     function regex(p?: any): string;
     function rank(): string;
@@ -104,6 +106,7 @@ export namespace DEFAULT_MESSAGES {
     function big(): string;
     function bigRange(): string;
     function exactRange(places?: any): string;
+    function offset(): string;
     function finite(): string;
     function intRange(): string;
     function array(): string;
@@ -121,3 +124,5 @@ export namespace DEFAULT_MESSAGES {
  */
 export const ITEM_COUNT_RULES: Set<string>;
 export const VALIDATOR_KINDS: Set<string>;
+export const OFFSET_MIN: -720;
+export const OFFSET_MAX: 840;

@@ -273,6 +273,8 @@ export const RULES = [
     title: 'a package whose docs fence a runnable example has a suite that runs it' },
   { id: 'connector-contract',   scope: 'repo', severity: 'error', invariant: null,
     title: 'every @frontierjs/conduit-* package holds a sink, a drive and a conduit peer' },
+  { id: 'catch-names-its-error', scope: 'repo', severity: 'warn', invariant: 4,
+    title: 'a catch on the request or Data path names what it caught or says why not (FJS-D2131)' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))

@@ -21,7 +21,7 @@ import { trailModelName, buildLogEntry, trailRowValues, fireLog } from './audit-
 export function trailMarksOf(/** @type {any} */ fieldPolicy) {
   const marks = new Map()
   for (const [f, p] of Object.entries(fieldPolicy)) {
-    if (isProtected(p))   marks.set(f, REDACTED)
+    if (isProtected(p) || p.redacted) marks.set(f, REDACTED)
     else if (p.personal)  marks.set(f, '[personal]')
     else if (p.opaque)    marks.set(f, opaqueMark)
   }

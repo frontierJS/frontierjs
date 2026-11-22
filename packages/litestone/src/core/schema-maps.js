@@ -372,6 +372,54 @@ export function buildUpdatedByMap(schema) {
 // ─── @version map ─────────────────────────────────────────────────────────────
 // { modelName: fieldName } — at most one per model, enforced in the parser.
 
+// ─── @monotonic columns ───────────────────────────────────────────────────────
+// [{ field, direction: 'up' | 'down' }] for one model (`FJS-D1291`).
+
+export function monotonicFields(model) {
+  const out = []
+  for (const f of model?.fields ?? []) {
+    const a = f.attributes.find(x => x.kind === 'monotonic')
+    if (a) out.push({ field: f.name, direction: a.direction ?? 'up' })
+  }
+  return out
+}
+
+// ─── @history columns ─────────────────────────────────────────────────────────
+// `@history(into: Slug)` (`FJS-D1294`): the target is an ordinary model with
+// ONE belongsTo back to the owner and one @id/@unique field of the column's
+// type to hold the value. Read here once for the parser's refusal and the
+// client's append, so the two cannot name a different column.
+
+/** @returns {{ target: string, value: string, fk: string, key: string } | { error: string }} */
+export function resolveHistory(models, model, field, attr) {
+  const target = models.find(m => m.name === attr.into)
+  if (!target) return { error: `names no model — '${attr.into}' is not declared` }
+  const back = target.fields.filter(f => f.type.name === model.name && !f.type.array
+    && f.attributes.some(a => a.kind === 'relation' && a.fields))
+  if (back.length !== 1)
+    return { error: `needs '${target.name}' to hold exactly one @relation(fields: …) back to '${model.name}', and it holds ${back.length}` }
+  const rel = back[0].attributes.find(a => a.kind === 'relation' && a.fields)
+  if (rel.fields.length !== 1)
+    return { error: `needs '${target.name}'s relation back to '${model.name}' to be one column, not ${rel.fields.length}` }
+  const keyed = target.fields.filter(f => f.type.name === field.type.name && !f.type.array
+    && !rel.fields.includes(f.name) && f.attributes.some(a => a.kind === 'id' || a.kind === 'unique'))
+  if (keyed.length !== 1)
+    return { error: `needs '${target.name}' to hold one ${field.type.name} field marked @id or @unique for the value, and it holds ${keyed.length}` }
+  return { target: target.name, value: keyed[0].name, fk: rel.fields[0], key: rel.references?.[0] ?? 'id' }
+}
+
+// [{ field, target, value, fk, key }] for one model; the parser has refused a broken one.
+export function historyFields(models, model) {
+  const out = []
+  for (const f of model?.fields ?? []) {
+    const a = f.attributes.find(x => x.kind === 'history')
+    if (!a) continue
+    const got = resolveHistory(models, model, f, a)
+    if (!('error' in got)) out.push({ field: f.name, ...got })
+  }
+  return out
+}
+
 export function buildVersionMap(schema) {
   const map = {}
   for (const model of schema.models) {
@@ -511,8 +559,9 @@ export function schemaDeclaresAccessRules(schema) {
 //   hashed:    bool
 //   personal:  { category: string | null } | null   — @personal (FJS-D657)
 //   opaque:    bool                                 — @opaque (FJS-D1157)
+//   redacted:  bool                                 — @redacted (FJS-D1288)
 //
-// An entry that carries only `personal` or `opaque` shapes no read: they decide
+// An entry that carries only `personal`, `opaque` or `redacted` shapes no read: they decide
 // what the audit trail keeps and what a filter or sort may do, never who sees
 // the column.
 // `shapesRead` is the question a read path asks before taking the slow path.
@@ -537,9 +586,10 @@ export function buildFieldPolicyMap(schema) {
       const vectorAttr    = field.attributes.find(a => a.kind === 'vector')
       const personalAttr  = field.attributes.find(a => a.kind === 'personal')
       const opaqueAttr    = field.attributes.find(a => a.kind === 'opaque')
+      const redactedAttr  = field.attributes.find(a => a.kind === 'redacted')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !personalAttr && !opaqueAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !personalAttr && !opaqueAttr && !redactedAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -568,6 +618,7 @@ export function buildFieldPolicyMap(schema) {
         hashed:    !!hashedAttr,
         personal:  personalAttr ? { category: personalAttr.category ?? null } : null,
         opaque:    !!opaqueAttr,
+        redacted:  !!redactedAttr,
         // @system — readable by anyone, writable only by the system. The
         // orthogonal sibling of @guarded, which locks both directions.
         system:    !!systemAttr,
@@ -618,10 +669,10 @@ export function isProtected(p) {
   return !!(p && (p.encrypted || p.guarded || p.hashed))
 }
 
-/** Whether one model's field policy holds an entry that is more than @personal. */
+/** Whether one model's field policy holds an entry that is more than a trail mark. */
 export function shapesRead(fieldPolicy) {
   for (const name in fieldPolicy) {
-    const { personal, opaque, json, ...rest } = fieldPolicy[name]
+    const { personal, opaque, redacted, json, ...rest } = fieldPolicy[name]
     if (Object.values(rest).some(v => v)) return true
   }
   return false

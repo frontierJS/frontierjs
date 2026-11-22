@@ -232,6 +232,10 @@ export type Shape = {
      */
     scopes: Record<string, any>;
     hasValidation: boolean;
+    /**
+     * its `Int @unit(min)` columns a `@zoned` reads as an offset
+     */
+    zoneOffsets: Set<string> | null;
     cardinality: {
         byParent: any[];
         byChild: any[];
@@ -253,6 +257,10 @@ export type Shape = {
      * children whose `@zoned` instant reads its zone off this model
      */
     zonedParents: any[];
+    /**
+     * each `@zoned` day of the window, for `zonedDayCompare`
+     */
+    zonedWindow: Record<string, any> | null;
     /**
      * the `@values` bindings its columns carry
      */

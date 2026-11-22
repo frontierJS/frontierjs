@@ -16,8 +16,9 @@ import { EXACT_INT_MAX, validateTypedBinding } from './validate.js'
 import { nearest } from '@frontierjs/toolbelt/typo'
 import { compileStatic, policyExprToString, compileGenerated, generatedProblems, compileFromWhere } from './policy.js'
 import { tenantAdmission } from './tenancy.js'
+import { FOLD_AGGREGATES, foldProblems } from './fold.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS, modelToTableName } from './ddl.js'
-import { inferFromFk, inferFromHop, inferToOneFrom } from './schema-maps.js'
+import { inferFromFk, inferFromHop, inferToOneFrom, resolveHistory } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
 import { PERSONAL_CATEGORIES, isPersonModel, personalNameCategory } from './personal.js'
 
@@ -58,6 +59,9 @@ const _KEYWORDS = new Set([
 //           revision is carried and no key is minted — a roster, a reference
 //           table, a published schedule
 export const SYNC_POLICIES = new Set(['server', 'append', 'refuse', 'field', 'read'])
+
+// What `@@sync(policy, on: …)` may list, and what an absent `on:` means.
+export const SYNC_OPERATIONS = ['create', 'update', 'delete']
 
 // A view column is computed by `@@sql`, so an attribute about storage (`@id`,
 // `@unique`, `@default`, `@map`) describes nothing. These say what the NUMBER
@@ -1234,6 +1238,11 @@ class Parser {
       // or indexes it, and the validator refuses the declarations that would.
       case 'opaque': return { kind: 'opaque' }
 
+      // ── @redacted — readable, and the trail writes [redacted] (FJS-D1288) ──
+      // A value that is not a person and must not outlive the row in the trail:
+      // a probe URL holding a key. Who reads it stays @omit and the gate.
+      case 'redacted': return { kind: 'redacted' }
+
       // ── @personal — a column about a person (FJS-D657) ──────────────────────
       // @personal            → about a person, no category (free text, behavior)
       // @personal(contact)   → one of personal.js's closed list
@@ -1361,6 +1370,38 @@ class Parser {
       }
       case 'updatedAt': return { kind: 'updatedAt' }   // auto-set on every update
       case 'version':   return { kind: 'version' }     // optimistic concurrency — see client.js
+
+      // @monotonic → the column may only grow; `@monotonic(down)` only fall
+      // (`FJS-D1291`). Enforced in the UPDATE's own WHERE, see client.js.
+      case 'monotonic': {
+        if (!this.check(TK.LPAREN)) return { kind: 'monotonic', direction: 'up' }
+        this.eat(TK.LPAREN)
+        const dir = this.eat(TK.IDENT)
+        if (dir.value !== 'down')
+          throw new ParseError(
+            `@monotonic(${dir.value}) is not an argument. The one it takes is down — the column may only fall. ` +
+            'Bare @monotonic may only grow.', dir)
+        this.eat(TK.RPAREN)
+        return { kind: 'monotonic', direction: 'down' }
+      }
+
+      // @history(into: Slug) → every value the column holds is a row of Slug
+      // (`FJS-D1294`), appended in the write's own unit; see client.js.
+      case 'history': {
+        const tok = this.peek()
+        if (!this.check(TK.LPAREN))
+          throw new ParseError('@history takes into: <Model> — the model each value the column holds becomes a row of.', tok)
+        this.eat(TK.LPAREN)
+        const key = this.eat(TK.IDENT)
+        if (key.value !== 'into')
+          throw new ParseError(
+            `@history(${key.value}: …) is not an argument. The one it takes is into: <Model> — ` +
+            'the model each value the column holds becomes a row of.', key)
+        this.eat(TK.COLON)
+        const into = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'history', into }
+      }
 
       // ── Exact numbers ──────────────────────────────────────────────────────
       // `@scale(n)` — the column is an integer and the point sits n places in.
@@ -1514,6 +1555,9 @@ class Parser {
       // of this row, or one relation away (`customer.timeZone`), `FJS-D512`.
       case 'zone':       return { kind: 'zone',       ...this.parseOptMessage() }
       case 'zoned':      return this.parseZoned()
+      // `@cron` — the column holds a five-field cron expression; a job file
+      // binds one schedule per row from it (`FJS-D1285`).
+      case 'cron':       return { kind: 'cron',       ...this.parseOptMessage() }
       case 'time': {
         // @time                       — HH:MM, 24-hour, leading zeros required
         // @time(seconds: true)        — also accepts HH:MM:SS
@@ -2621,17 +2665,58 @@ class Parser {
         const window = this.parseDurationOrSize()
         if (!/^\d+(?:\.\d+)?(ms|s|m|h|d|w|y)$/.test(window))
           throw new ParseError(`@@retention(${window}) — the window is a duration: 30d, 24h, 1y, 60m`, at)
-        let from = 'createdAt'
+        // `into:` FOLDS the doomed rows into a rollup model before they go
+        // (FJS-D1297): `by:` is its key, the bucketed clock among it, and each
+        // aggregate names the columns it writes.
+        let from = null
+        /** @type {any} */
+        const fold = { into: null, by: null, aggs: [] }
         while (this.maybeEat(TK.COMMA)) {
           if (this.check(TK.RPAREN)) break
           const argAt = this.peek()
           const key   = this.eat(TK.IDENT).value
-          if (key !== 'from') throw new ParseError(`@@retention takes a window and 'from:' — got '${key}'`, argAt)
           this.eat(TK.COLON)
-          from = this.eat(TK.IDENT).value
+          if (key === 'from') from = this.eat(TK.IDENT).value
+          else if (key === 'into') fold.into = this.eat(TK.IDENT).value
+          else if (key === 'by') {
+            const one = () => {
+              const name = this.eat(TK.IDENT).value
+              if (!this.maybeEat(TK.LPAREN)) return { field: name }
+              const field = this.eat(TK.IDENT).value
+              this.eat(TK.RPAREN)
+              return { bucket: name, field }
+            }
+            fold.by = []
+            if (this.maybeEat(TK.LBRACKET)) {
+              do { if (this.check(TK.RBRACKET)) break; fold.by.push(one()) } while (this.maybeEat(TK.COMMA))
+              this.eat(TK.RBRACKET)
+            } else fold.by.push(one())
+          }
+          else if (FOLD_AGGREGATES.includes(key)) {
+            const fields = this.check(TK.LBRACKET) ? this.parseFieldList() : [this.eat(TK.IDENT).value]
+            for (const field of fields) fold.aggs.push({ fn: key, field })
+          }
+          else throw new ParseError(`@@retention takes a window, 'from:', and to fold 'into:', 'by:' and ${FOLD_AGGREGATES.map(a => `'${a}:'`).join(', ')} — got '${key}'`, argAt)
         }
         this.eat(TK.RPAREN)
-        return { kind: 'retention', window, from }
+        if (!fold.into) {
+          if (fold.by || fold.aggs.length)
+            throw new ParseError(`@@retention(${window}) — 'by:' and an aggregate fold rows, and say where with 'into: <Model>'`, at)
+          return { kind: 'retention', window, from: from ?? 'createdAt' }
+        }
+        if (!fold.by) throw new ParseError(`@@retention(${window}, into: ${fold.into}) — a fold needs 'by:', its rollup's key with one bucketed clock: by: [key, day(<clock>)]`, at)
+        const buckets = fold.by.filter((/** @type {any} */ b) => b.bucket)
+        if (buckets.length !== 1)
+          throw new ParseError(`@@retention(${window}, into: ${fold.into}) — 'by:' holds exactly one bucketed clock, day(<clock>); it holds ${buckets.length}`, at)
+        if (buckets[0].bucket !== 'day')
+          throw new ParseError(`@@retention — '${buckets[0].bucket}(${buckets[0].field})' is not a bucket; a fold buckets by day(<clock>)`, at)
+        if (!fold.aggs.length)
+          throw new ParseError(`@@retention(${window}, into: ${fold.into}) — a fold writes at least one aggregate: ${FOLD_AGGREGATES.map(a => `${a}: [...]`).join(', ')}`, at)
+        // The bucketed column IS the clock; a second name for it would sweep by
+        // one column and bucket by another.
+        if (from && from !== buckets[0].field)
+          throw new ParseError(`@@retention — 'from: ${from}' and 'by: day(${buckets[0].field})' name two clocks; a fold's clock is the one it buckets`, at)
+        return { kind: 'retention', window, from: buckets[0].field, into: fold.into, by: fold.by, aggs: fold.aggs }
       }
       case 'commitment': {
         // @@commitment(abandon, on: createdAt + 14d)
@@ -2778,6 +2863,7 @@ class Parser {
       // ── Tenancy, per model ───────────────────────────────────────────────────
       // @@tenant(none)                 — this model is not tenant data
       // @@tenant(column: "accountId")  — it is, under a column of its own
+      // @@tenant(admit: buyerId == auth().id) — it is, and one non-member reads it too
       //
       // Only meaningful under `tenancy { strategy row }`, which applies the
       // declared column to every model that HAS it. This is the answer to the
@@ -2786,7 +2872,7 @@ class Parser {
       // column is spelled differently.
       case 'tenant': {
         if (!this.check(TK.LPAREN))
-          throw new ParseError(`@@tenant takes an argument: (none), (column: "name") or (via: relation)`, this.peek())
+          throw new ParseError(`@@tenant takes an argument: (none), (column: "name"), (via: relation) or (admit: expression)`, this.peek())
         this.eat(TK.LPAREN)
         if (this.peek().type === TK.IDENT && this.peek().value === 'none') {
           this.eat(TK.IDENT)
@@ -2804,6 +2890,17 @@ class Parser {
           if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(via))
             throw new ParseError(`@@tenant via must name a relation field, got '${via}'`, this.peek())
           return { kind: 'tenant', mode: 'via', column: null, via }
+        }
+        // `admit` is the row that is the tenant's AND one non-member's — the
+        // order the shop and its buyer both read (FJS-D1296). The tenancy
+        // block's column still scopes it; the expression exempts rows from the
+        // read/update/delete deny, never from the create refusal or the stamp.
+        if (this.peek().type === TK.IDENT && this.peek().value === 'admit') {
+          this.eat(TK.IDENT)
+          this.eat(TK.COLON)
+          const admit = this.parsePolicyExpr()
+          this.eat(TK.RPAREN)
+          return { kind: 'tenant', mode: 'admit', column: null, admit }
         }
         if (this.peek().type === TK.IDENT && this.peek().value === 'column') {
           this.eat(TK.IDENT)
@@ -2910,14 +3007,40 @@ class Parser {
         // offline client refuses to queue a write against it. The refusal is
         // the point — a model nobody thought about loses a row otherwise, with
         // nothing said.
+        //
+        // `on:` names the operations a device may hold, every one when absent
+        // (`FJS-D1289`): a model created by another protocol (an upload) still
+        // holds its patches.
         this.eat(TK.LPAREN)
         const policyToken = this.eat(TK.IDENT)
-        this.eat(TK.RPAREN)
         if (!SYNC_POLICIES.has(policyToken.value))
           throw new ParseError(
             `@@sync: unknown policy "${policyToken.value}". Valid: ${[...SYNC_POLICIES].join(', ')}`,
             policyToken)
-        return { kind: 'sync', policy: policyToken.value }
+        let on = null
+        if (this.maybeEat(TK.COMMA)) {
+          const argToken = this.eat(TK.IDENT)
+          if (argToken.value !== 'on')
+            throw new ParseError(`@@sync: unknown argument '${argToken.value}' — expected 'on'`, argToken)
+          // `read` holds no write and `append` holds creates alone, so an `on:`
+          // beside either is a second answer the policy already gave.
+          if (policyToken.value === 'read' || policyToken.value === 'append')
+            throw new ParseError(
+              `@@sync(${policyToken.value}) takes no 'on:' — ` + (policyToken.value === 'read'
+                ? 'read holds no write on a device, so there is no operation to name'
+                : 'append holds creates and nothing else, which is the whole of its meaning'),
+              argToken)
+          this.eat(TK.COLON)
+          on = this.check(TK.LBRACKET) ? this.parseFieldList() : [this.eat(TK.IDENT).value]
+          for (const [i, op] of on.entries()) {
+            if (!SYNC_OPERATIONS.includes(op))
+              throw new ParseError(`@@sync(on: ${op}): unknown operation. Valid: ${SYNC_OPERATIONS.join(', ')}`, argToken)
+            if (on.indexOf(op) !== i)
+              throw new ParseError(`@@sync(on: …): '${op}' is named twice`, argToken)
+          }
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'sync', policy: policyToken.value, on }
       }
       // @@anonymous — no row of this model may be attributed (`FJS-D349`). A
       // fact validate() and the client reason from, because what re-attributes
@@ -4262,7 +4385,7 @@ function resolveTraits(schema) {
 
 export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   'id', 'unique', 'map', 'relation', 'generated', 'from',
-  'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow', 'deny',
+  'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'monotonic', 'history', 'allow', 'deny',
   // A type takes no trait, so there is nothing to replace.
   'override',
   // Storage facts about a COLUMN. A `type` describes a shape inside a Json
@@ -4739,9 +4862,16 @@ function expandTenancy(schema) {
     // the expression tree. buildPolicyMap carries it through, and a system
     // context needs it to answer *is a tenant in scope at all* (FJS-519).
     // `column` is what a tenant read of a view shadows this table by (FJS-D1149).
+    // `admit` is AND-NOT'd onto this one deny and the create deny is left
+    // alone, so a non-member reads, updates and deletes the rows it names
+    // (whatever the model's allows then say) and creates nothing. A child
+    // scoped through this model asks these generated denies, so it inherits
+    // the admission. An UNKNOWN admit — an anonymous `auth().id` — leaves the
+    // deny UNKNOWN, which fires.
     model.attributes.push({
       kind: 'deny', operations: ['read', 'update', 'delete', 'postUpdate'], generated: 'tenancy', claim, column, tenantColumn: column, message,
-      expr: denies.read,
+      expr: tag?.mode === 'admit' ? { type: 'and', left: denies.read, right: { type: 'not', expr: tag.admit } } : denies.read,
+      ...(tag?.mode === 'admit' && { admit: tag.admit }),
     })
     model.attributes.push({
       kind: 'deny', operations: ['create'], generated: 'tenancy', claim, message,
@@ -6922,6 +7052,8 @@ function validate(schema) {
       const relation = field.type?.kind === 'relation' || field.type?.kind === 'implicitM2M'
       if (personal && relation)
         errors.push(`Model '${model.name}', field '${field.name}': @personal on a relation — the relation holds no value. Declare it on the foreign-key column the relation is built from`)
+      if (relation && field.attributes.some(a => a.kind === 'redacted'))
+        errors.push(`Model '${model.name}', field '${field.name}': @redacted on a relation — the relation holds no value. Declare it on the foreign-key column the relation is built from`)
       if (personal || relation || !person) continue
       const category = personalNameCategory(field.name)
       if (!category) continue
@@ -6991,6 +7123,45 @@ function validate(schema) {
     }
   }
 
+  // ── @monotonic validation ───────────────────────────────────────────────────
+  //
+  // The compare is SQLite's `<=` on the stored value, so the type must store in
+  // its own order: a number, or a DateTime's ISO-8601 TEXT. A String compares
+  // by collation, which is no direction anybody means.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (!field.attributes.some(a => a.kind === 'monotonic')) continue
+      const at = `Model '${model.name}', field '${field.name}': @monotonic`
+      if (!['Int', 'DateTime'].includes(field.type.name) || field.type.array)
+        errors.push(`${at} takes Int (with or without @big) or DateTime — a ${field.type.name}${field.type.array ? '[]' : ''} has no order a write can be held to`)
+      for (const kind of ['immutable', 'version', 'updatedAt'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at} contradicts @${kind}, which already owns the column's direction`)
+      for (const kind of ['computed', 'generated', 'from', 'funcCall', 'derived', 'transient'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at} has nothing to hold on a @${kind === 'funcCall' ? 'generated' : kind} field — it is not a column a caller writes`)
+    }
+  }
+
+  // ── @history validation ─────────────────────────────────────────────────────
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const attr = field.attributes.find(a => a.kind === 'history')
+      if (!attr) continue
+      const at = `Model '${model.name}', field '${field.name}': @history(into: ${attr.into})`
+      const got = resolveHistory(schema.models, model, field, attr)
+      if (got.error) errors.push(`${at} ${got.error}`)
+      if (!['String', 'Int'].includes(field.type.name) || field.type.array)
+        errors.push(`${at} takes String or Int — a ${field.type.name}${field.type.array ? '[]' : ''} is not stored as the value a reader looks up`)
+      for (const kind of ['encrypted', 'hashed', 'secret', 'guarded'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at} contradicts @${kind} — the past values would be copied out as rows a reader sees`)
+      for (const kind of ['computed', 'generated', 'from', 'funcCall', 'derived', 'transient'])
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at} has nothing to keep on a @${kind === 'funcCall' ? 'generated' : kind} field — it is not a column a caller writes`)
+    }
+  }
+
   // ── @transient validation ───────────────────────────────────────────────────
   //
   // A transient field has no column, so every attribute that describes storage,
@@ -7021,6 +7192,7 @@ function validate(schema) {
     sequence:    'a sequence numbers rows, and this value has none',
     rank:        'a rank orders stored rows, and this value is not stored',
     updatedAt:   'there is no stored value for a write to stamp',
+    history:     'there is no stored value whose past to keep',
     updatedBy:   'there is no stored value for a write to stamp',
     createdBy:   'there is no stored value for a write to stamp',
     version:     'optimistic concurrency compares a stored counter',
@@ -8439,12 +8611,18 @@ function validate(schema) {
   // join every read of the column would pay. The zone column must be `@zone`,
   // because a row holding `banana` throws inside every read that resolves it —
   // a sweep over `due()` included, for every row and not only that one.
+  const isZoneColumn   = f => f.type.name === 'String' && !f.type.array && f.attributes.some(a => a.kind === 'zone')
+  const isOffsetColumn = f => f.type.name === 'Int' && !f.type.array && f.attributes.some(a => a.kind === 'unit' && a.symbol === 'min')
   for (const model of schema.models) {
     for (const field of model.fields) {
       const at = `Model '${model.name}', field '${field.name}'`
       if (field.attributes.some(a => a.kind === 'zone')) {
         if (field.type.name !== 'String' || field.type.array)
           errors.push(`${at}: @zone requires a String field, got ${field.type.name}${field.type.array ? '[]' : ''} — a zone is one IANA name`)
+      }
+      if (field.attributes.some(a => a.kind === 'cron')) {
+        if (field.type.name !== 'String' || field.type.array)
+          errors.push(`${at}: @cron requires a String field, got ${field.type.name}${field.type.array ? '[]' : ''} — a schedule is one cron expression`)
       }
       const zoned = field.attributes.find(a => a.kind === 'zoned')
       if (!zoned) continue
@@ -8522,8 +8700,11 @@ function validate(schema) {
           continue
         }
       }
-      if (zoneField.type.name !== 'String' || !zoneField.attributes.some(a => a.kind === 'zone'))
-        errors.push(`${at}: ${label} — '${owner.name}.${zoneField.name}' must be a String @zone, so a value it cannot resolve is refused at its write`)
+      // An offset is the record of a moment already observed (EXIF, ISO
+      // `+05:00`), read as that fixed offset; a future moment needs the zone's
+      // rules, which `@zone` alone carries (`FJS-D1290`).
+      if (!isZoneColumn(zoneField) && !isOffsetColumn(zoneField))
+        errors.push(`${at}: ${label} — '${owner.name}.${zoneField.name}' must be a String @zone or an Int @unit(min) offset, so a value it cannot resolve is refused at its write`)
     }
   }
 
@@ -9020,6 +9201,9 @@ function validate(schema) {
     for (const attr of viewAttrs) {
       if (attr.kind === 'tenant' && attr.mode === 'via')
         errors.push(`View '${view.name}': @@tenant(via:) needs a relation and a view declares none — name the column instead`)
+      if (attr.kind === 'tenant' && attr.mode === 'admit')
+        errors.push(`View '${view.name}': @@tenant(admit:) is for a model — a view's rows are read only, so write the ` +
+          `admitted reader into @@sql or a hand-written @@allow, and name the column with @@tenant(column: "…")`)
     }
 
     // Must have @@sql
@@ -9427,6 +9611,7 @@ function validate(schema) {
     const driver = (schema.databases ?? []).find(d => d.name === dbName)?.driver ?? 'sqlite'
     if (driver !== 'sqlite')
       errors.push(`Model '${model.name}': @@retention is per model on SQLite only — '${dbName}' is 'driver ${driver}', which compacts as one file; give the database block its retention`)
+    errors.push(...foldProblems(model, schema))
   }
 
   // ── @@rate's key and clock ────────────────────────────────────────────────

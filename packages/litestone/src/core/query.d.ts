@@ -261,9 +261,13 @@ export function isNamedAgg(key: string, val: unknown): boolean;
  * Returns { expr: string, params: any[] }
  *
  * spec: { count?, sum?, avg?, min?, max?, filter?: RawClause | string, distinct?: boolean }
+ *
+ * `member` builds `sum: { column, path }` — a member of a Json column, which
+ * only the table knows how to read (FJS-D1062); it gets the SQL function and
+ * the checked filter.
  */
-/** @param {string} alias @param {any} spec @param {any[]} extraParams */
-export function buildNamedAggExpr(alias: string, spec: any, extraParams: any[]): string;
+/** @param {string} alias @param {any} spec @param {any[]} extraParams @param {any} [member] */
+export function buildNamedAggExpr(alias: string, spec: any, extraParams: any[], member?: any): any;
 /** Extract all named aggregate entries from an args object */
 /** @param {any} args */
 export function extractNamedAggs(args: any): [string, any][];

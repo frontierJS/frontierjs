@@ -305,7 +305,8 @@ A `by:` over an array or `Json` column is kept, because grouping stored text is
 self-consistent — every distinct value is its own group, and the group key is
 hydrated back into the shape a row read gives it. `MAX` over the same column is
 refused: it orders that text, so `['10']` ranks below `['9']`, and `SUM` answers
-`0`. Same bucket the [sorting](sorting.md) rules use, said for an aggregate.
+`0`. Same bucket the [sorting](sorting.md) rules use, said for an aggregate. A
+number inside a `Json` document is read by [path](#a-member-of-a-json-column).
 
 ### A protected column is protected here too
 
@@ -332,3 +333,54 @@ is no honest answer over some rows and not others.
 
 `@hashed` is refused for everyone, `asSystem()` included — there is no value to
 aggregate, only digests.
+
+## A member of a Json column
+
+Where each row's document is shaped by data rather than by the schema (a
+metering event's `properties`, whose member a tenant's metric names), the
+member is named at call time by `path` (`FJS-D1062`). Where the shape is the
+schema's, declare it as columns instead (`FJS-D227`).
+
+```lite
+model Event {
+  id         Int    @id
+  code       String
+  properties Json
+
+  @@gate(0)
+}
+```
+
+```js
+await db.event.createMany({ data: [
+  { id: 1, code: 'gb', properties: { gb: 1.5 } },
+  { id: 2, code: 'gb', properties: { gb: 2.25, rows: [10] } },
+  { id: 3, code: 'gb', properties: { other: 1 } },
+] })
+await db.event.aggregate({ _sum: { properties: { path: ['gb'] } } })
+// { _sum: { 'properties.gb': 3.75 } }
+await db.event.aggregate({ _usage: { sum: { column: 'properties', path: ['gb'] } } })
+// { _usage: 3.75 }
+await db.event.groupBy({ by: ['code'], _max: { properties: { path: ['rows', 0] } } })
+// [{ code: 'gb', _max: { 'properties.rows.0': 10 } }]
+```
+
+`_sum` `_avg` `_min` `_max` take it, in `aggregate` and `groupBy`, and so does a
+named aggregate's `sum`/`avg`/`min`/`max` as `{ column, path }`. A segment is a
+member name or an array index; the path is bound, never written into the SQL.
+The column is graded as any other aggregate name, so a `@guarded` or
+`@encrypted` Json is refused to a caller, and the row policy scopes the rows.
+
+A row whose member is missing or `null` is skipped, as SQL skips a NULL. A
+member that is there and is not a number is **refused**, since `SUM` would read
+`"12"` as 0 and `MAX` would order it as text:
+
+```js throws
+await db.event.create({ data: { id: 4, code: 'gb', properties: { gb: '12' } } })
+await db.event.aggregate({ _sum: { properties: { path: ['gb'] } } })
+// ValidationError — Cannot aggregate SUM of properties.gb on Event — 1 row holds
+// properties.gb as JSON text rather than a number, which SUM would count as 0 or …
+```
+
+A sum past 2^53 is refused, as it is over an integer column. A path is not yet
+a `having` or a `groupBy` `orderBy` key.

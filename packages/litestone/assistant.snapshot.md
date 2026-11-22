@@ -903,6 +903,16 @@ Written once, at create, and never again by anybody — an update payload naming
 issuedAt DateTime @immutable
 ```
 
+#### `@monotonic` [(down)]
+
+tier: **situational** · legal in: on a model's field, on a trait's field · see also: `immutable`, `version`
+
+The column may only grow — a resume offset a replayed chunk never moves backwards; (down) may only fall. Equal is legal, so the same write twice is idempotent, and NULL takes any first value but is never written back. Enforced in the UPDATE's own WHERE, so two racing writers cannot both pass, and a write the wrong way is refused by name (MonotonicError, 409, not retryable) with the row unchanged; an increment is held to the same direction, and one row going backwards refuses a whole updateMany. The constraint tier, as @immutable is: asSystem() does not drop it. Int (with or without @big) and DateTime; upsertMany naming the column in its conflict half is refused by name.
+
+```lite
+received Int @default(0) @monotonic
+```
+
 #### `@sealed`
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `transitions`, `immutable`, `keep`
@@ -961,6 +971,16 @@ A column about a person. The audit trail logs it as [personal] in place of the v
 
 ```lite
 email String @personal(contact)
+```
+
+#### `@redacted`
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: keep out of audit, not logged, scrub · see also: `personal`, `trail`, `omit`
+
+A readable column the audit trail does not keep: it logs as [redacted] in field entries and in before/after, as a protected one does, and changes nothing about who reads it — that is @omit and the gate. For a value that is not a person, such as a URL carrying a key in its query string; a column about a person is @personal.
+
+```lite
+url String @redacted
 ```
 
 #### `@secret` [(rotate: …)]
@@ -1035,9 +1055,19 @@ On a File field: keep old objects on update instead of cleaning them up.
 document File @keepVersions
 ```
 
+#### `@history` (into: <Model>)
+
+tier: **situational** · legal in: on a model's field, on a trait's field · see also: `trail`, `immutable`, `keepVersions`
+
+Every value the column ever held is a row of the named model — every slug a post ever had, which a router reads to send an old address to the current one. The create, and every update that sets the column, appends {value, owner key} to that model in the write's own transaction at the system grade, so a seed, an asSystem() tinker and a caller the target's gate refuses all record, and a rollback takes the row with it. The target is an ordinary model with its own gate and @@allow: one @relation back to this model and one @id or @unique field of the column's type for the value. That key keeps a former value reserved — another row setting it is refused 409 (UniqueConflictError on this column), the same row may set it again and nothing is appended twice. String or Int; refused beside @encrypted, @hashed, @secret and @guarded.
+
+```lite
+slug String @unique @history(into: ExampleSlug)
+```
+
 #### `@trail` (<database>[, reads: false][, writes: false])
 
-tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: audit, history · see also: `trail`, `database`
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · also called: audit · see also: `trail`, `database`
 
 Log reads and writes of this one field into a trail database. Both by default.
 
@@ -1228,6 +1258,16 @@ Must be an IANA time zone name as the host's ICU table spells it — America/Den
 
 ```lite
 timeZone String @zone
+```
+
+#### `@cron` [(message)]
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `zone`
+
+Must be a five-field cron expression (minute hour day-of-month month day-of-week) as @frontierjs/toolbelt/cron reads it — the grammar Caravan's clock runs — so an expression the clock would refuse at bind is refused at write, naming the field it gets wrong (minute value is 61). A rule stored on a row is how a recurring wall-clock occurrence is declared: a job file binds one schedule per row from the column and a @zone beside it (defineJob schedules), and the once-ness of each occurrence across a daylight gap or overlap is Caravan's, not the schema's.
+
+```lite
+rule String @cron
 ```
 
 #### `@regex` ("pattern"[, message])
@@ -1436,7 +1476,7 @@ embedding Bytes? @vector(1536)
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `zone`, `date`, `time`, `commitment`
 
-The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.
+The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. It may instead name an Int @unit(min) column, the fixed UTC offset a wall clock was recorded with (EXIF and ISO write +02:00): every read then resolves at that offset, with no gap or repeated hour, and a write outside -720..840 minutes is refused. A @zone carries the zone's rules and an offset only the moment already observed, so a clock that will fire in the future names a @zone. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.
 
 ```lite
 endsOn String @date @zoned(timeZone)
@@ -1492,11 +1532,11 @@ An index over one or more columns. A direction is part of what the index IS, so 
 @@index([customerId, createdAt(sort: Desc)])
 ```
 
-#### `@@unique` ([field, …][, nullsDistinct: true | where: <expr>])
+#### `@@unique` ([field, …][, nullsDistinct: true | where: <expr>][, "<message>"])
 
 tier: **essential** · legal in: in a model, in a trait · see also: `index`
 
-A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author.
+A composite unique constraint. Parses to `uniqueIndex`, which is why the written word and the node kind differ. `nullsDistinct: true` says the rows leaving a member unset are deliberately unconstrained — SQL's own word for what SQLite already does, since two NULLs never compare equal. `where:` is the other answer to the same question and is a different thing: it constrains only the rows the predicate admits, which is how *at most one OPEN row per parent* is declared on an effective-dated model. The two cannot both be given. A predicate cannot ride a table constraint in any dialect, so that form parses to `partialUnique` and is emitted as a standalone `CREATE UNIQUE INDEX … WHERE` — one word, two mechanisms, which is also why it migrates by one DROP and one CREATE where the plain form rebuilds the table. The predicate is the `@@allow` expression language and may compare against a value, unlike `@@index(where:)`: enforcement happens on INSERT and never goes through the query planner. `now()` and `auth()` are refused by name — SQLite ACCEPTS a clock in an index predicate, and a constraint whose coverage moves under a row that never moved is a duplicate. The soft-delete clause is NOT ANDed in: uniqueness among live rows is written `where: deletedAt == null`, by the author. A trailing string is the refusal's sentence: it replaces the per-field message and the summary's tail of the 409 `UniqueConflictError`, which otherwise says only which columns are taken, and a `where:` form's predicate goes on `err.constraint` for the developer. Two declarations over one column set carrying different messages are refused, because the refusal names columns and not the index (`FJS-D2302`).
 
 ```lite
 @@unique([accountId, number])
@@ -1662,11 +1702,11 @@ This row is in force inside a window and HISTORY outside it — the price a subs
 @@effective(from: effectiveFrom, to: effectiveTo)
 ```
 
-#### `@@retention` (<duration>[, from: <field>])
+#### `@@retention` (<duration>[, from: <field>][, into: <Model>, by: [<key>, …, day(<clock>)], sum|count|min|max: [<field>, …]])
 
 tier: **situational** · legal in: in a model, in a trait · also called: prune, purge after · see also: `expires`, `softDelete`
 
-This model's rows are deleted once they are older than the window, by the same sweep as a database's `retention` — at startup and on `$retain()` — and its own window is read before the database's. The model keeps its file, its relations and their cascade, so ninety days beneath tables kept for ever needs no database of its own. `from:` names the clock, a `DateTime` column of this model, and defaults to `createdAt`; a model whose clock is missing or not a `DateTime` is refused at parse. The clock column earns the index the sweep reads. SQLite only: a jsonl database compacts as one file and takes its window on the database block.
+This model's rows are deleted once they are older than the window, by the same sweep as a database's `retention` — at startup and on `$retain()` — and its own window is read before the database's. The model keeps its file, its relations and their cascade, so ninety days beneath tables kept for ever needs no database of its own. `from:` names the clock, a `DateTime` column of this model, and defaults to `createdAt`; a model whose clock is missing or not a `DateTime` is refused at parse. The clock column earns the index the sweep reads. SQLite only: a jsonl database compacts as one file and takes its window on the database block. `into:` FOLDS instead of only deleting: each batch of doomed rows is summed into the rollup model in the same transaction as its DELETE, so a reader adding both tables sees the same number before and after. `by:` is the rollup's key — fields both models hold — plus one `day(<clock>)`, which lands in the rollup's `day` (`String @date`, UTC) and makes the cutoff the start of a day so a day folds whole. `sum`/`min`/`max` read a field of this model into the rollup field of the same name, `count` names the rollup field that takes the row count, and the rollup needs a `@@unique` over the key. A day then lives in one table or the other: a create for a key and day the rollup already holds is refused with `FoldedSpanError` (409, `asSystem()` included), and a sweep reaching a sealed rollup row (`@immutable(after:)`) reports an error and keeps the rows.
 
 ```lite
 @@retention(90d, from: capturedAt)
@@ -1754,11 +1794,11 @@ A named filter declared once and reused — db.$scopedBy(name) applies it.
 @@scope(active, archived == false)
 ```
 
-#### `@@tenant` (<column> | none | via: parent)
+#### `@@tenant` (<column> | none | via: parent | admit: expression)
 
 tier: **common** · legal in: in a model, in a trait · also called: workspace, organization, organisation · see also: `tenancy`, `deny`
 
-How this model belongs to a tenant under `tenancy { strategy row }`. `none` says it spans tenants on purpose; `via: parent` says it carries no column of its own and inherits through its relation. A model with no column and no rule is reported by name at parse.
+How this model belongs to a tenant under `tenancy { strategy row }`. `none` says it spans tenants on purpose; `via: parent` says it carries no column of its own and inherits through its relation; `admit: expression` keeps it scoped and exempts the rows the expression names from the read/update/delete deny, for a row the tenant and one non-member both reach (an order the shop and the buyer read). A model with no column and no rule is reported by name at parse.
 
 ```lite
 @@tenant(none)
@@ -1779,11 +1819,11 @@ A state machine on a CLOSED column — an enum, or a Boolean, which is the two-s
 
 **Wire it to the app**
 
-#### `@@sync` (policy)
+#### `@@sync` (policy, on?)
 
 tier: **situational** · legal in: in a model, in a trait · see also: `gate`, `version`, `transitions`
 
-This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is a COLLISION policy, or `read`, the one member that states the direction instead: the table is HELD on a device and never written there — a roster, a reference table, a published schedule. `read` holds no write, carries no revision and needs no @version, and a create form for the model offers no client-minted key; a device keeps the table and a screen can read it with no network. The four collision policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.
+This model's rows may be written with no server reachable: the client holds the write and replays it when one is. `on:` names the operations a device may hold — `create`, `update`, `delete`, one or a list, every one when absent — so a model whose rows are created another way (an upload) still holds its patches: `@@sync(server, on: update)`. An operation not listed is not held; it goes live and fails offline as a model with no @@sync does, and a model whose `on:` omits `create` mints no key and earns no advice about a create replayed without its bytes. `read` and `append` take no `on:`. The first argument is a COLLISION policy, or `read`, the one member that states the direction instead: the table is HELD on a device and never written there — a roster, a reference table, a published schedule. `read` holds no write, carries no revision and needs no @version, and a create form for the model offers no client-minted key; a device keeps the table and a screen can read it with no network. The four collision policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.
 
 ```lite
 @@sync(server)
@@ -1813,7 +1853,7 @@ Every row is a person — where forgetting and export start. An @@auth model is 
 
 tier: **common** · legal in: in a model, in a trait · see also: `trail`, `database`, `anonymous`
 
-Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
+Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) and @redacted ones log as [redacted], @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 @@trail(audit)

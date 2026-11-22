@@ -63,7 +63,7 @@ export const POSITIONS = {
  */
 export const POSITION_RULES = {
   typeField:  { excludes: ['id', 'unique', 'map', 'relation', 'generated', 'from',
-                           'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'allow',
+                           'encrypted', 'guarded', 'secret', 'updatedAt', 'version', 'monotonic', 'history', 'allow',
                            'values', 'scale', 'money', 'big', 'override', 'validate'] },
   traitField: { excludes: ['id', 'override'] },
   traitBlock: { excludes: ['id', 'map', 'db', 'fts'] },
@@ -536,6 +536,15 @@ const FIELD = [
     { seeAlso: ['field:system', 'guarded', 'version', 'seals'] }
   ),
   t(
+    'monotonic',
+    'field',
+    'protect',
+    '[(down)]',
+    "The column may only grow — a resume offset a replayed chunk never moves backwards; (down) may only fall. Equal is legal, so the same write twice is idempotent, and NULL takes any first value but is never written back. Enforced in the UPDATE's own WHERE, so two racing writers cannot both pass, and a write the wrong way is refused by name (MonotonicError, 409, not retryable) with the row unchanged; an increment is held to the same direction, and one row going backwards refuses a whole updateMany. The constraint tier, as @immutable is: asSystem() does not drop it. Int (with or without @big) and DateTime; upsertMany naming the column in its conflict half is refused by name.",
+    'received Int @default(0) @monotonic',
+    { seeAlso: ['immutable', 'version'] }
+  ),
+  t(
     'sealed',
     'field',
     'protect',
@@ -619,6 +628,15 @@ const FIELD = [
         )
       ]
     }
+  ),
+  t(
+    'redacted',
+    'field',
+    'protect',
+    '',
+    'A readable column the audit trail does not keep: it logs as [redacted] in field entries and in before/after, as a protected one does, and changes nothing about who reads it — that is @omit and the gate. For a value that is not a person, such as a URL carrying a key in its query string; a column about a person is @personal.',
+    'url String @redacted',
+    { seeAlso: ['personal', 'model:trail', 'omit'] }
   ),
   t(
     'secret',
@@ -762,6 +780,18 @@ const FIELD = [
     'On a File field: keep old objects on update instead of cleaning them up.',
     'document File @keepVersions',
     { seeAlso: ['hardDelete', 'version'] }
+  ),
+  t(
+    'history',
+    'field',
+    'stamp',
+    '(into: <Model>)',
+    "Every value the column ever held is a row of the named model — every slug a post ever had, which a router reads to send an old address to the current one. The create, and every update that sets the column, appends {value, owner key} to that model in the write's own transaction at the system grade, so a seed, an asSystem() tinker and a caller the target's gate refuses all record, and a rollback takes the row with it. The target is an ordinary model with its own gate and @@allow: one @relation back to this model and one @id or @unique field of the column's type for the value. That key keeps a former value reserved — another row setting it is refused 409 (UniqueConflictError on this column), the same row may set it again and nothing is appended twice. String or Int; refused beside @encrypted, @hashed, @secret and @guarded.",
+    'slug String @unique @history(into: ExampleSlug)',
+    {
+      context: 'model ExampleSlug {\n  value     String @id\n  exampleId Int\n  example   Example @relation(fields: [exampleId], references: [id])\n}',
+      seeAlso: ['field:trail', 'immutable', 'keepVersions']
+    }
   ),
   t(
     'trail',
@@ -925,11 +955,20 @@ const FIELD = [
     'timeZone String @zone'
   ),
   t(
+    'cron',
+    'field',
+    'validate',
+    '[(message)]',
+    "Must be a five-field cron expression (minute hour day-of-month month day-of-week) as @frontierjs/toolbelt/cron reads it — the grammar Caravan's clock runs — so an expression the clock would refuse at bind is refused at write, naming the field it gets wrong (minute value is 61). A rule stored on a row is how a recurring wall-clock occurrence is declared: a job file binds one schedule per row from the column and a @zone beside it (defineJob schedules), and the once-ness of each occurrence across a daylight gap or overlap is Caravan's, not the schema's.",
+    'rule String @cron',
+    { seeAlso: ['zone'], extraFields: 'timeZone String @zone' }
+  ),
+  t(
     'zoned',
     'field',
     'shape',
     '([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])',
-    "The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.",
+    "The last argument is always the zone: a @zone column of this row, or of a to-one relation one hop away — never further, since every read of the column would pay the join. It may instead name an Int @unit(min) column, the fixed UTC offset a wall clock was recorded with (EXIF and ISO write +02:00): every read then resolves at that offset, with no gap or repeated hour, and a write outside -720..840 minutes is refused. A @zone carries the zone's rules and an offset only the moment already observed, so a clock that will fire in the future names a @zone. On a String @date or @time it is the only argument, and the column is a wall clock read in that zone: a @@commitment on a @zoned day is owed at midnight in the row's own zone, so one due() sweep closes a Tokyo row and a Los Angeles one each on its own calendar; a row whose zone is null is read in the call's timeZone, then UTC. Reaches the client as x-zoned, the path as written. On a DateTime it takes three — startsAt DateTime @zoned(onDate, startLocal, site.timeZone), a String @date and a String @time on this row — and the column is the instant they resolve to, which litestone writes: derived on create, refused from every caller, recomputed on a write to either source or the relation, and recomputed for every child in the same unit when the zone itself is written, with @@exclude graded over the new instants. A wall clock in a spring-forward gap takes the later side and a repeated hour its earlier instant. An update reaching several rows must move them all to one instant. An end that may fall on the next day names its start — endsAt DateTime @zoned(onDate, endLocal, site.timeZone, after: startsAt) — and is read on the day after when it resolves at or before that start, so 22:00–06:00 ends the next morning and an end equal to its start is 24 hours; the start must be a @zoned DateTime of this row on the same day and zone, and not anchored itself.",
     'endsOn String @date @zoned(timeZone)',
     { seeAlso: ['zone', 'date', 'time', 'commitment'], extraFields: 'timeZone String @zone' }
   ),
@@ -1163,8 +1202,8 @@ const MODEL = [
     'sync',
     'model',
     'operate',
-    '(policy)',
-    "This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is a COLLISION policy, or `read`, the one member that states the direction instead: the table is HELD on a device and never written there — a roster, a reference table, a published schedule. `read` holds no write, carries no revision and needs no @version, and a create form for the model offers no client-minted key; a device keeps the table and a screen can read it with no network. The four collision policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.",
+    '(policy, on?)',
+    "This model's rows may be written with no server reachable: the client holds the write and replays it when one is. `on:` names the operations a device may hold — `create`, `update`, `delete`, one or a list, every one when absent — so a model whose rows are created another way (an upload) still holds its patches: `@@sync(server, on: update)`. An operation not listed is not held; it goes live and fails offline as a model with no @@sync does, and a model whose `on:` omits `create` mints no key and earns no advice about a create replayed without its bytes. `read` and `append` take no `on:`. The first argument is a COLLISION policy, or `read`, the one member that states the direction instead: the table is HELD on a device and never written there — a roster, a reference table, a published schedule. `read` holds no write, carries no revision and needs no @version, and a create form for the model offers no client-minted key; a device keeps the table and a screen can read it with no network. The four collision policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.",
     '@@sync(server)',
     {
       seeAlso: ['model:gate', 'version', 'transitions'],
@@ -1257,8 +1296,8 @@ const MODEL = [
     'retention',
     'model',
     'shape',
-    '(<duration>[, from: <field>])',
-    "This model's rows are deleted once they are older than the window, by the same sweep as a database's `retention` — at startup and on `$retain()` — and its own window is read before the database's. The model keeps its file, its relations and their cascade, so ninety days beneath tables kept for ever needs no database of its own. `from:` names the clock, a `DateTime` column of this model, and defaults to `createdAt`; a model whose clock is missing or not a `DateTime` is refused at parse. The clock column earns the index the sweep reads. SQLite only: a jsonl database compacts as one file and takes its window on the database block.",
+    '(<duration>[, from: <field>][, into: <Model>, by: [<key>, …, day(<clock>)], sum|count|min|max: [<field>, …]])',
+    "This model's rows are deleted once they are older than the window, by the same sweep as a database's `retention` — at startup and on `$retain()` — and its own window is read before the database's. The model keeps its file, its relations and their cascade, so ninety days beneath tables kept for ever needs no database of its own. `from:` names the clock, a `DateTime` column of this model, and defaults to `createdAt`; a model whose clock is missing or not a `DateTime` is refused at parse. The clock column earns the index the sweep reads. SQLite only: a jsonl database compacts as one file and takes its window on the database block. `into:` FOLDS instead of only deleting: each batch of doomed rows is summed into the rollup model in the same transaction as its DELETE, so a reader adding both tables sees the same number before and after. `by:` is the rollup's key — fields both models hold — plus one `day(<clock>)`, which lands in the rollup's `day` (`String @date`, UTC) and makes the cutoff the start of a day so a day folds whole. `sum`/`min`/`max` read a field of this model into the rollup field of the same name, `count` names the rollup field that takes the row count, and the rollup needs a `@@unique` over the key. A day then lives in one table or the other: a create for a key and day the rollup already holds is refused with `FoldedSpanError` (409, `asSystem()` included), and a sweep reaching a sealed rollup row (`@immutable(after:)`) reports an error and keeps the rows.",
     '@@retention(90d, from: capturedAt)',
     {
       extraFields: 'capturedAt DateTime',
@@ -1348,8 +1387,8 @@ const MODEL = [
     'tenant',
     'model',
     'access',
-    '(<column> | none | via: parent)',
-    'How this model belongs to a tenant under `tenancy { strategy row }`. `none` says it spans tenants on purpose; `via: parent` says it carries no column of its own and inherits through its relation. A model with no column and no rule is reported by name at parse.',
+    '(<column> | none | via: parent | admit: expression)',
+    'How this model belongs to a tenant under `tenancy { strategy row }`. `none` says it spans tenants on purpose; `via: parent` says it carries no column of its own and inherits through its relation; `admit: expression` keeps it scoped and exempts the rows the expression names from the read/update/delete deny, for a row the tenant and one non-member both reach (an order the shop and the buyer read). A model with no column and no rule is reported by name at parse.',
     '@@tenant(none)',
     {
       context: 'tenancy {\n  strategy row\n  column   workspaceId\n}',
@@ -1398,7 +1437,7 @@ const MODEL = [
     'model',
     'operate',
     '(<database>[, reads: false][, writes: false])',
-    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) log as [redacted] @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
+    'Record writes to this model in a trail database. Protected fields (@encrypted/@guarded/@secret/@hashed) and @redacted ones log as [redacted], @personal ones as [personal] and @opaque ones as [opaque:<digest>], in field entries and in before/after images alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.',
     '@@trail(audit)',
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver trail\n}',
@@ -1714,6 +1753,8 @@ export const DOCS = {
   'field:local': 'modeling.md',
   'model:mirror': 'modeling.md',
   'field:immutable': 'modeling.md',
+  'field:monotonic': 'modeling.md',
+  'field:history': 'modeling.md',
   'field:sealed': 'modeling.md',
   'field:generated': 'schema.md',
   'field:hardDelete': 'soft-delete.md',
@@ -1726,6 +1767,7 @@ export const DOCS = {
   'field:hashed': 'encryption.md',
   'field:personal': 'trail.md',
   'field:opaque': 'encryption.md',
+  'field:redacted': 'trail.md',
   'field:secret': 'encryption.md',
 
   // stamp
@@ -1763,6 +1805,7 @@ export const DOCS = {
   'field:time': 'schema.md',
   'field:zone': 'schema.md',
   'field:zoned': 'schema.md',
+  'field:cron': 'schema.md',
   'field:regex': 'schema.md',
   'field:length': 'schema.md',
   'field:check': 'schema.md',
@@ -1946,10 +1989,12 @@ export const TIERS = {
     'transition:stamps'
   ],
   situational: [
+    'field:redacted',
     'model:mirror',
     'field:local',
     'field:zone',
     'field:zoned',
+    'field:cron',
     // declarations
     'schema:import',
     'schema:extend',
@@ -1976,6 +2021,8 @@ export const TIERS = {
     'field:startsWith',
     'field:check',
     'field:version',
+    'field:monotonic',
+    'field:history',
     'field:scale',
     'field:money',
     'field:unit',
@@ -2049,7 +2096,7 @@ export const AXES = {
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
     'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
     'field:email', 'field:url', 'field:phone', 'field:syntax', 'field:accept', 'field:digest', 'field:date',
-    'field:datetime', 'field:time', 'field:zone', 'field:zoned', 'field:regex', 'field:length', 'field:startsWith',
+    'field:datetime', 'field:time', 'field:zone', 'field:zoned', 'field:cron', 'field:regex', 'field:length', 'field:startsWith',
     'field:endsWith', 'field:contains', 'field:lt', 'field:lte', 'field:gt', 'field:gte',
     'field:minItems', 'field:maxItems', 'field:uniqueItems', 'field:type', 'model:index',
     'model:id', 'model:unique', 'model:exclude', 'model:rate', 'model:check', 'model:arc', 'model:relator',
@@ -2060,12 +2107,12 @@ export const AXES = {
   access: [
     'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal', 'field:opaque',
-    'field:secret', 'field:allow', 'transition:gate', 'transition:allow', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
+    'field:redacted', 'field:secret', 'field:allow', 'transition:gate', 'transition:allow', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
     'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],
   life: [
-    'field:keep', 'field:immutable', 'field:sealed', 'transition:seals', 'transition:stamps', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
+    'field:keep', 'field:immutable', 'field:monotonic', 'field:history', 'field:sealed', 'transition:seals', 'transition:stamps', 'field:updatedAt', 'field:updatedBy', 'field:createdBy',
     'field:version', 'field:trail', 'model:sync', 'model:mirror', 'field:local', 'model:softDelete', 'model:expires',
     'model:effective', 'model:retention', 'model:commitment', 'model:transitions', 'model:trail', 'model:createdBy',
     'model:updatedBy'
@@ -2115,12 +2162,13 @@ export const SYNONYMS = {
   'field:scale':       ['precision'],
   'field:money':       ['price', 'cents'],
   'field:version':     ['etag'],
-  'field:trail':       ['audit', 'history'],
+  'field:trail':       ['audit'],
   'field:immutable':   ['write-once', 'append-only'],
   'field:hashed':      ['password', 'bcrypt', 'argon'],
   'field:encrypted':   ['at-rest'],
   'field:personal':    ['pii', 'gdpr', 'personal data'],
   'field:opaque':      ['e2ee', 'client-sealed', 'end-to-end'],
+  'field:redacted':    ['keep out of audit', 'not logged', 'scrub'],
   'model:person':      ['data subject'],
   'field:required':    ['not null', 'notnull', 'mandatory'],
   'field:omit':        ['hide', 'private'],

@@ -101,7 +101,7 @@ describe('@@sync', () => {
 
 describe('@@sync crosses to the browser', () => {
   it('a declared policy is emitted as x-sync', () => {
-    expect(crossing(model('  @@sync(server)'))).toBe('server')
+    expect(crossing(model('  @@sync(server)')).policy).toBe('server')
   })
 
   // The half a default would break. `x-sync` absent is what the client reads as
@@ -184,7 +184,7 @@ describe('@@sync(read)', () => {
   })
 
   it('crosses to the browser as x-sync: read', () => {
-    expect(crossing(model('  @@sync(read)'))).toBe('read')
+    expect(crossing(model('  @@sync(read)')).policy).toBe('read')
   })
 
   // The Id box on an employee's form: a client-mintable key on a syncable model
@@ -198,5 +198,64 @@ describe('@@sync(read)', () => {
 
   it('the refusal for an unknown policy lists read', () => {
     expect(refusal(model('  @@sync(lww)'))).toContain('read')
+  })
+})
+
+// ─── @@sync(policy, on: …) ────────────────────────────────────────────────────
+//
+// Which operations a device may hold (`FJS-D1289`, `FJS-3055`). vellum's Asset
+// is CREATED by an upload, never offline, and its favorite is toggled on the
+// phone with no signal: the collision policy and the operations are two axes,
+// so the operations ride beside the policy rather than becoming a member.
+
+describe('@@sync on:', () => {
+  const sync = (src: string) =>
+    (parse(src).schema.models[0].attributes as any[]).find(a => a.kind === 'sync')
+  const defs = (src: string) => generateJsonSchema(parse(src).schema).$defs
+
+  it('reads one operation', () => {
+    expect(sync(model('  @@sync(server, on: update)'))).toEqual({ kind: 'sync', policy: 'server', on: ['update'] })
+  })
+
+  it('reads a list', () => {
+    expect(sync(model('  @@sync(server, on: [update, delete])')).on).toEqual(['update', 'delete'])
+  })
+
+  it('says nothing is every operation', () => {
+    expect(sync(model('  @@sync(server)')).on).toBe(null)
+  })
+
+  it('refuses an operation it does not know, and names the three', () => {
+    const err = refusal(model('  @@sync(server, on: patch)'))
+    expect(err).toContain('patch')
+    expect(err).toContain('create, update, delete')
+  })
+
+  it('refuses an operation named twice', () => {
+    expect(refusal(model('  @@sync(server, on: [update, update])'))).toContain('update')
+  })
+
+  it('refuses an argument that is not on', () => {
+    expect(refusal(model('  @@sync(server, ops: update)'))).toContain('ops')
+  })
+
+  // `read` holds no write and `append` already names its one operation, so
+  // `on:` beside either is a second answer to a question the policy settled.
+  it('refuses on: beside read and append', () => {
+    expect(refusal(model('  @@sync(read, on: update)'))).toContain('@@sync(read)')
+    expect(refusal(model('  @@sync(append, on: create)'))).toContain('@@sync(append)')
+  })
+
+  it('crosses as { policy, on }, every operation when none is listed', () => {
+    expect(crossing(model('  @@sync(server, on: update)'))).toEqual({ policy: 'server', on: ['update'] })
+    expect(crossing(model('  @@sync(server)'))).toEqual({ policy: 'server', on: ['create', 'update', 'delete'] })
+  })
+
+  // A key the client mints is what an offline CREATE needs; a model never
+  // created on the device has no use for one and its create form offers none.
+  it('mints no key where create is not listed', () => {
+    const src = (attr: string) => `model S { id String @id @default(uuid())  n String  @@gate(2)  ${attr} }`
+    expect(defs(src('@@sync(server, on: [create, update])')).S['x-mint']).toEqual({ field: 'id', kind: 'uuid' })
+    expect(defs(src('@@sync(server, on: update)')).S['x-mint']).toBeUndefined()
   })
 })

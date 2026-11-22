@@ -5,20 +5,12 @@ export function runSqliteRetention(rawWriteDb?: any, models?: any, retention?: a
     model: any;
     table: any;
     removed: number;
-    skipped: string;
-    error?: undefined;
+    into: any;
 } | {
     model: any;
     table: any;
     removed: number;
-    error: string;
-    skipped?: undefined;
-} | {
-    model: any;
-    table: any;
-    removed: number;
-    skipped?: undefined;
-    error?: undefined;
+    into?: undefined;
 })[]>;
 export function compactJsonl(filePath?: any, model?: any, retention?: any, maxSize?: any, now?: () => number): any;
 export const RETENTION_BATCH: 1000;

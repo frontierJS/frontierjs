@@ -708,3 +708,70 @@ model Period {
     expect(inv.properties.periodEnd['x-zoned']).toBe('customer.timeZone')
   })
 })
+
+// FJS-3054 · FJS-D1290: EXIF and ISO record a wall clock with a fixed offset,
+// and an offset names a zone only where some zone the app knows has it at that
+// instant. `@zoned` takes an `Int @unit(min)` column as its target, read per row
+// as that fixed offset. 2026-10-04 starts at 2026-10-03T22:00Z at +02:00 and at
+// 2026-10-04T04:00Z at -04:00.
+const OFFSET = `
+enum PhotoStatus { open closed }
+model Photo {
+  id             Int         @id
+  label          String
+  status         PhotoStatus @default(open)
+  takenOn        String      @date @zoned(takenOffsetMin)
+  takenTime      String?     @time
+  takenOffsetMin Int?        @unit(min)
+  takenAt        DateTime?   @zoned(takenOn, takenTime, takenOffsetMin)
+  @@transitions(status, close: open -> closed @system)
+  @@commitment(close, on: takenOn + 1d)
+}
+`
+
+describe('@zoned over a fixed offset (FJS-3054)', () => {
+  const seed = async () => {
+    const env = await createTestEnv({ schema: OFFSET, now: '2026-10-01T00:00:00.000Z' })
+    const db  = env.db.asSystem()
+    return { env, db }
+  }
+
+  test('parses, and a day is read at its row’s own offset', async () => {
+    expect(parse(OFFSET).errors).toEqual([])
+    const { env, db } = await seed()
+    await db.photo.create({ data: { label: 'paris', takenOn: '2026-10-03', takenOffsetMin: 120 } })
+    await db.photo.create({ data: { label: 'ny',    takenOn: '2026-10-03', takenOffsetMin: -240 } })
+    const owed = async (by, opts = {}) =>
+      (await labels(db, 'photo', (await db.photo.due({ by, ...opts })).map(d => d.id))).sort()
+    expect(await owed('2026-10-03T21:59:00.000Z')).toEqual([])
+    expect(await owed('2026-10-03T22:00:00.000Z')).toEqual(['paris'])
+    expect(await owed('2026-10-04T03:59:00.000Z', { timeZone: 'UTC' })).toEqual(['paris'])
+    expect(await owed('2026-10-04T04:00:00.000Z')).toEqual(['ny', 'paris'])
+    env.close?.()
+  })
+
+  test('the derived instant is the wall clock at that offset', async () => {
+    const { env, db } = await seed()
+    const p = await db.photo.create({ data: { label: 'p', takenOn: '2026-10-03', takenTime: '09:00', takenOffsetMin: 120 } })
+    expect(p.takenAt).toBe('2026-10-03T07:00:00.000Z')
+    const q = await db.photo.update({ where: { id: p.id }, data: { takenOffsetMin: -330 } })
+    expect(q.takenAt).toBe('2026-10-03T14:30:00.000Z')
+    env.close?.()
+  })
+
+  test('an offset outside -720..840 minutes is refused at its write', async () => {
+    const { env, db } = await seed()
+    await expect(db.photo.create({ data: { label: 'x', takenOn: '2026-10-03', takenOffsetMin: 841 } })).rejects.toThrow(/-720/)
+    await expect(db.photo.create({ data: { label: 'y', takenOn: '2026-10-03', takenOffsetMin: -721 } })).rejects.toThrow(/-720/)
+    expect((await db.photo.create({ data: { label: 'z', takenOn: '2026-10-03', takenOffsetMin: 840 } })).takenOffsetMin).toBe(840)
+    env.close?.()
+  })
+
+  test('an offset target must be an Int @unit(min)', () => {
+    const errs = (src) => parse(src).errors.join('\n')
+    expect(errs(OFFSET.replace('Int?        @unit(min)', 'Int?        @unit(h)')))
+      .toContain("'Photo.takenOffsetMin' must be a String @zone or an Int @unit(min) offset")
+    expect(errs(OFFSET.replace('Int?        @unit(min)', 'Int?')))
+      .toContain("'Photo.takenOffsetMin' must be a String @zone or an Int @unit(min) offset")
+  })
+})

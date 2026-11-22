@@ -68,6 +68,25 @@ export class VersionConflictError extends Error {
     retryable: boolean;
 }
 /**
+ * A `@monotonic` column was written the wrong way (`FJS-D1291`): a resume
+ * offset a replayed chunk would move backwards. 409 because the row is ahead of
+ * the caller, and not retryable, because the same write is refused the same way
+ * — the caller re-reads where the row is and resumes from there.
+ */
+export class MonotonicError extends Error {
+    constructor(model?: any, field?: any, direction?: any, actual?: any);
+    model: any;
+    field: any;
+    direction: any;
+    data: {
+        model: any;
+        field: any;
+        direction: any;
+    };
+    status: number;
+    retryable: boolean;
+}
+/**
  * Two writers moved the same column, and only a person can say which wins.
  *
  * `@@sync(field)`'s one refusal (`FJS-D334`, `FJS-D335`). It is deliberately
@@ -271,6 +290,23 @@ export class OverlapConflictError extends Error {
     }[];
     status: number;
     retryable: boolean;
+}
+export class FoldedSpanError extends Error {
+    constructor(model?: any, { into, day, key }?: {
+        key?: {};
+    });
+    model: any;
+    into: any;
+    day: any;
+    key: {};
+    status: number;
+    retryable: boolean;
+    data: {
+        model: any;
+        into: any;
+        day: any;
+        key: {};
+    };
 }
 export class RateLimitError extends Error {
     constructor(model?: any, { key, max, per, count, retryAt, now }?: {

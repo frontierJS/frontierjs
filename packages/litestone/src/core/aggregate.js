@@ -14,7 +14,7 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
   const {
     readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
     refuseMixedCurrency, visibleWhere, _aggCol, needsTiming, fireQuery, hydrateCols, exactSum,
-    buildWhereWithEncryption,
+    buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue, refuseValueAggKeys,
   } = deps
 
   // ── aggregate ────────────────────────────────────────────────────────────
@@ -33,11 +33,8 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
     // Every name this method can put inside a quoted identifier. Missing one
     // is silent: SQLite reads the unresolvable identifier as a string constant
     // and the aggregate answers it (FJS-202).
-    refuseAggregateKeys('aggregate', [
-      ...[_sum, _avg, _min, _max].filter(v => v && typeof v === 'object').flatMap(v => Object.keys(v)),
-      ...(_stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : []),
-      ...namedAggFields(extractNamedAggs(args).map(([, spec]) => spec)),
-    ])
+    refuseValueAggKeys('aggregate', [_sum, _avg, _min, _max], extractNamedAggs(args).map(([, spec]) => spec),
+      _stringAgg && typeof _stringAgg === 'object' ? [_stringAgg.field, _stringAgg.orderBy] : [])
     refuseCountShape('aggregate', _count)
     refuseMixedCurrency('aggregate', args)
     /** @type {any[]} */
@@ -68,13 +65,20 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
         selects.push(`COUNT(*) AS "__count"`)
       }
     }
+    // A member of a Json column binds its path in the SELECT, so its params
+    // join selectParams in SELECT order. alias → [fn, result key]
+    const members = new Map()
     for (const agg of ['_sum', '_avg', '_min', '_max']) {
       const spec = args[agg]
       if (!spec || spec === true) continue
       const fn = { _sum: 'SUM', _avg: 'AVG', _min: 'MIN', _max: 'MAX' }[agg]
       for (const [field, wanted] of Object.entries(spec)) {
         if (!wanted) continue
-        selects.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
+        if (isMemberSpec(wanted)) {
+          const m = memberAggCols('aggregate', fn, field, wanted, `${agg}__${field}`, selectParams)
+          members.set(`${agg}__${field}`, [fn, m.key])
+          selects.push(m.sql)
+        } else selects.push(`${fn}(${_aggCol(field)}) AS "${agg}__${field}"`)
       }
     }
     // _stringAgg: { field: 'name', separator: ', ', orderBy: 'name' }
@@ -94,7 +98,12 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
       !['_count','_sum','_avg','_min','_max','_stringAgg'].includes(k)
     )
     for (const [key, spec] of namedAggs) {
-      selects.push(buildNamedAggExpr(key, spec, selectParams))
+      selects.push(buildNamedAggExpr(key, spec, selectParams, (fn, target, filter) => {
+        const m = memberAggCols('aggregate', fn, target.column, target, `__nagg__${key}`, selectParams,
+          { distinct: !!spec.distinct, filter, named: true })
+        members.set(`__nagg__${key}`, [fn, m.key])
+        return m.sql
+      }))
     }
 
     if (!selects.length) throw new Error('aggregate() requires at least one aggregation (_count, _sum, _avg, _min, _max, _stringAgg, or a named aggregate)')
@@ -121,6 +130,8 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
       result[agg] = {}
       for (const [field, wanted] of Object.entries(spec)) {
         if (!wanted) continue
+        const member = members.get(`${agg}__${field}`)
+        if (member) { result[agg][member[1]] = memberAggValue('aggregate', member[0], member[1], `${agg}__${field}`, raw); continue }
         result[agg][field] = raw[`${agg}__${field}`] ?? null
         if (agg === '_sum') exactSum('aggregate', field, result[agg][field])
       }
@@ -131,7 +142,8 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
     }
     // Named aggregates
     for (const [key] of namedAggs) {
-      result[key] = raw[`__nagg__${key}`] ?? null
+      const member = members.get(`__nagg__${key}`)
+      result[key] = member ? memberAggValue('aggregate', member[0], member[1], `__nagg__${key}`, raw) : raw[`__nagg__${key}`] ?? null
     }
     return result
   }

@@ -26,19 +26,19 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4792 source file(s) read
+27 package(s) · 4806 source file(s) read
 369 entry point(s), 35 imported by nothing outside their package, 14 emitted
-1864 value export(s), 680 reached by nothing outside, 194 emitted
-472 type export(s), 343 reached by nothing outside
+1865 value export(s), 675 reached by nothing outside, 200 emitted
+473 type export(s), 344 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `litestone` | 41 | 5 | 278 | 131 | 43 | 1 | 1 |
+| `litestone` | 41 | 5 | 279 | 130 | 45 | 1 | 1 |
 | `junction` | 28 | 3 | 287 | 123 | 14 | 278 | 213 |
 | `mesa` | 34 | 4 | 359 | 122 | 85 | 0 | 0 |
 | `sierra` | 49 | 6 | 206 | 87 | 20 | 0 | 0 |
-| `toolbelt` | 92 | 1 | 347 | 48 | 12 | 0 | 0 |
+| `toolbelt` | 92 | 1 | 347 | 44 | 16 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 17 | 14 |
 | `ui` | 18 | 0 | 57 | 36 | 3 | 0 | 0 |
 | `jetty` | 14 | 4 | 43 | 29 | 3 | 0 | 0 |
@@ -49,7 +49,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `email-kit` | 5 | 0 | 10 | 4 | 1 | 0 | 0 |
 | `notifications` | 4 | 0 | 16 | 4 | 0 | 30 | 22 |
 | `oracle` | 1 | 0 | 19 | 3 | 2 | 0 | 0 |
-| `caravan` | 1 | 0 | 4 | 1 | 1 | 24 | 21 |
+| `caravan` | 1 | 0 | 4 | 1 | 1 | 25 | 22 |
 | `css` | 15 | 1 | 1 | 0 | 0 | 0 | 0 |
 | `print-kit` | 4 | 0 | 6 | 1 | 1 | 0 | 0 |
 | `testing` | 2 | 0 | 10 | 1 | 0 | 16 | 13 |
@@ -84,13 +84,13 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/caravan`
 
-`packages/caravan` · 1 entry point(s) · 4 value, 24 type export(s)
+`packages/caravan` · 1 entry point(s) · 4 value, 25 type export(s)
 
 **Unreached values (1):** `CARAVAN_CONFIG_KEYS`
 
 **Emitted (1):** `PAYLOAD_MAX_BYTES`
 
-**Unreached types (21):** `BulkDispatchOptions` `CaravanOptions` `CaravanStats` `CronEntry` `DispatchOptions` `HandlerOptions` `JobDefinition` `JobHandler` `JobRecord` `JobRef` `JobRegistrar` `JobSpec` `JobStatus` `NotJson` `OperatorOptions` `PayloadGuard` `QueueConfig` `QueueEvent` `QueueHandle` `QueuePause` `QueueStats`
+**Unreached types (22):** `BulkDispatchOptions` `CaravanOptions` `CaravanStats` `CronEntry` `DispatchOptions` `HandlerOptions` `JobDefinition` `JobHandler` `JobRecord` `JobRef` `JobRegistrar` `JobSpec` `JobStatus` `NotJson` `OperatorOptions` `PayloadGuard` `QueueConfig` `QueueEvent` `QueueHandle` `QueuePause` `QueueStats` `RowSchedules`
 
 ## `@frontierjs/cli`
 
@@ -184,15 +184,15 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/litestone`
 
-`packages/litestone` · 41 entry point(s) · 278 value, 1 type export(s)
+`packages/litestone` · 41 entry point(s) · 279 value, 1 type export(s)
 
 **Entries imported by nothing outside (5):** `./engines/sqlite-wasm` `./device-schema` `./import` `./transform` `./external-ref`
 
 **Entries not source (21, not graded):** `.` `./engine` `./browser` `./browser/worker` `./engines/sqlite-wasm` `./migrate` `./migrations` `./parser` `./device-schema` `./import` `./jsonschema` `./export` `./ddl` `./testing` `./types` `./storage` `./replicate` `./repl` `./transform` `./external-ref` `./references/*`
 
-**Unreached values (131):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSearchModel` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `RateLimitError` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionGuardError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
+**Unreached values (130):** `appliedMigrations` `arcDefaultMessage` `blockedRefusal` `buildEdgeMap` `buildFKGraph` `buildNamedAggExpr` `buildPristine` `buildPristineForDatabase` `buildShadow` `buildWindowCols` `canStoreBesideReplica` `clearEngine` `collectEdges` `columnDefaultExpr` `columnMapFor` `compactJsonl` `compileFormat` `createForDatabase` `createProvider` `createSearchIndex` `createSqliteWasmEngine` `currentEngine` `declarationCollisions` `declaredRedactColumns` `deriveAccess` `describeStanding` `detectFormat` `detectM2MPairs` `driftAgainstLive` `expectedVerdict` `ExternalRefPlugin` `extractNamedAggs` `fakeFor` `fileHeader` `FILES_ENV` `findLitestream` `ForeignKeyError` `gateLadder` `generateEdgeSideTableDDL` `generateFactory` `generateGateMatrix` `generateJoinTableDDL` `generateLiteSchema` `generateMigrationSQL` `generateModelDDL` `generateTableDDL` `generateValidationCases` `generateViewDDL` `getReplicaFile` `gradedKinds` `indexPredicate` `inlineImportsFromDisk` `introspectSQL` `isSoftDeleteCascade` `isStrict` `isUpdatedAtField` `jsRefusal` `labelColumn` `layoutManifest` `LEVEL_INTERVALS` `LITESTREAM_MIN` `LITESTREAM_PIN` `litestreamVersion` `loadSource` `lossRefusal` `mapIdentifiers` `migrationStatements` `modifiedRefusal` `mutationScore` `nextMigrationName` `normalizeTableDdl` `normalizeTriggerSql` `ON_DELETE_ACTIONS` `openDatabase` `OverlapConflictError` `parseChecks` `parseCollations` `parseGateString` `parseGeneratedColumns` `parseIndexColumns` `parseIndexSorts` `parseLayoutManifest` `parseLimit` `parseRef` `parseScales` `parseSize` `planEdgeStorage` `PluginRunner` `pointColumns` `pointDefaultMessage` `putReplicaFile` `RateLimitError` `REACHABLE_LEVELS` `readScaleConstraint` `recordReplayed` `renameCandidates` `renderAccessSnapshot` `REPEATABLE_FIELD_ATTRS` `REPEATABLE_MODEL_ATTRS` `replCommands` `requireLitestream` `resolveAllRowCounts` `resolveRedactColumns` `resolveRowCount` `restoreFile` `runSqliteRetention` `scaleConstraintName` `schemaForDatabase` `schemaMutants` `searchBackfillSql` `searchColumnsFor` `searchModels` `searchTriggerNames` `stripParens` `summarizeDiff` `SYNC_NEEDS_VERSION` `tenantAdmission` `TRAIT_FORBIDDEN_FIELD_ATTRS` `TRAIT_FORBIDDEN_MODEL_ATTRS` `TransitionGuardError` `TransitionSystemError` `TYPE_DEFAULT_FORBIDDEN_KINDS` `TYPE_FORBIDDEN_FIELD_ATTRS` `TYPE_FORBIDDEN_FIELD_TYPES` `unacceptedLoss` `unmatchedMigrationFiles` `unresolvedBlocks` `updatedAtFields` `useStorage` `ValueSetExtendError`
 
-**Emitted (43):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
+**Emitted (45):** `ALLOWED_TOKENIZERS` `arcCheckExpr` `BulkTransitionError` `COLLATIONS` `defineFactory` `describeSkipped` `factoryFrom` `fieldToColumnName` `fromStream` `FrontierGateGetLevel` `generateIndexDDL` `isIndexExpression` `isNamedAgg` `isSearchModel` `isSoftDelete` `isStoredField` `L0_CHECK_INTERVAL` `L0_RETENTION` `LAYOUT_FILE` `levelLabel` `loadFixture` `makeTestClient` `mapCol` `mapExprCols` `maskStrategies` `modelToTableName` `MONITOR_INTERVAL` `normalizeDdl` `placeModels` `pointColumnNames` `policyExprToString` `predicateToLite` `rescaleUpdate` `SEARCH_COLUMNS` `SEARCH_TABLE` `SEARCH_WEIGHTS` `searchRankExpr` `setEngine` `sqlType` `SYNC_OPERATIONS` `SYNC_POLICIES` `TransitionConflictError` `typedAttr` `VersionRequiredError` `VIEW_COLUMN_ATTRS`
 
 **Unreached types (1):** `CursorResult`
 
@@ -312,9 +312,9 @@ Every entry is imported and every name reached.
 
 **Entries not source (46, not graded):** `./aria` `./bearer` `./cells` `./cron` `./datetime` `./devline` `./directives` `./fill` `./gate` `./frontier` `./geo` `./docfences` `./env` `./frontmatter` `./glow` `./grammars` `./history` `./hooks` `./ids` `./inflect` `./json` `./jsonschema` `./keys` `./markdown` `./match` `./mailbox` `./mime` `./predicate` `./qr` `./query` `./transforms` `./rank` `./redact` `./seal` `./search` `./share` `./signature` `./sigv4` `./sse` `./sugar` `./textbox` `./textedit` `./trace` `./tty` `./typo` `./units`
 
-**Unreached values (48):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `grammarFor` `initialState` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `lineHTML` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stateGrammar` `stateStack` `stringDoc` `STRUCTURE` `TRANSFORM_NAMES` `transportFlags` `visualRange`
+**Unreached values (44):** `assertValues` `baseUnit` `canonicalRequest` `compileQuery` `CONTENT_TYPES` `DIGITS` `divRound` `editDoc` `encodePairs` `encodeShare` `evaluateValues` `extensionOf` `extensionsFor` `fieldShapes` `getIn` `invalidDirectives` `IRREGULAR` `isNear` `keepUnchanged` `knownCurrencies` `listedDirectives` `matchesFingerprint` `mergeKeys` `mergeRanges` `parseChord` `parseKeys` `patchText` `qrMatrix` `qrTerminal` `RECORDING` `resolveWall` `RUNNABLE_LANGS` `sealFile` `SECRET_KEY_NAMES` `SHARE_INFLATED_MAX` `SHARE_MAX` `shiftMarks` `signMessage` `stateStack` `stringDoc` `STRUCTURE` `TRANSFORM_NAMES` `transportFlags` `visualRange`
 
-**Emitted (12):** `CRON_FIELDS` `dayHeader` `distinctDays` `FILE_PLAIN_MAX` `formatChord` `inBoxes` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION`
+**Emitted (16):** `CRON_FIELDS` `dayHeader` `distinctDays` `FILE_PLAIN_MAX` `formatChord` `grammarFor` `inBoxes` `initialState` `lineHTML` `OPERATORS` `parseRow` `pointInPolygon` `polygonArea` `renderRow` `SIGNATURE_VERSION` `stateGrammar`
 
 ## `@frontierjs/ui`
 

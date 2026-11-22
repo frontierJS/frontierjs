@@ -170,6 +170,10 @@ const NEVER_QUEUED = new Set(['find', 'get'])
 // method is the app's own word, which this layer cannot read.
 const APPEND_REFUSES = new Set(['patch', 'remove', 'restore'])
 
+// The operation `@@sync(policy, on: …)` names for each built-in write. A
+// custom method is the app's own word and is held under any `on:`.
+const HELD_AS = { create: 'create', patch: 'update', update: 'update', restore: 'update', remove: 'delete' }
+
 /**
  * The write as the QUEUE should hold it, which is where `@@sync`'s argument
  * finally means something (`FJS-D304`).
@@ -780,7 +784,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // drain into it. Nor are a relayed page's: an MCP App view's storage is the
   // HOST's sandbox origin, and nothing drains there, since the drain waits on
   // a socket a view never opens (`IDEAS/agent-client-ui.md` 3.6).
-  const declaredSync = schema?.['x-sync'] ?? null
+  const declaredSync = schema?.['x-sync']?.policy ?? null
   const device       = !app && !isRelayed()
   const syncMode     = device ? declaredSync : null
 
@@ -789,6 +793,12 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // goes live and fails the way a model with no `@@sync` fails, because a queue
   // entry for it would replay a write nobody declared could happen offline.
   const holdMode = syncMode === 'read' ? null : syncMode
+
+  // An operation `on:` does not list is held no more than a `read` write is
+  // (`FJS-D1289`): vellum's Asset is created by an upload, so a create queued
+  // here would replay a row with no bytes that nobody declared could exist.
+  const heldOps = new Set(schema?.['x-sync']?.on ?? [])
+  const holdsMethod = method => !HELD_AS[method] || heldOps.has(HELD_AS[method])
 
   // The queue is built by the DECLARATION rather than the first write, because
   // building it is what arms its drain — and a device reopened after an outage
@@ -1083,7 +1093,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
     if (holdMode === 'append' && APPEND_REFUSES.has(method))
       throw _appendOnly(model, method)
 
-    const files = holdMode && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
+    const holds = holdMode && !NEVER_QUEUED.has(method) && holdsMethod(method)
+    const files = holds ? _filesIn(ctx.data) : {}
     const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
     const attachable = !Object.keys(files).length || rowId != null
 
@@ -1102,7 +1113,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       ? _read.get(ctx.id) ?? null
       : null
 
-    const held = holdMode && !NEVER_QUEUED.has(method) && attachable
+    const held = holds && attachable
       ? await pendingQueue().add({
           service: serviceName, model, method, id: ctx.id, idField,
           data: _heldData(_withoutFiles(ctx.data, files), holdMode, versionOf),

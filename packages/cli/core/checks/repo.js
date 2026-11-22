@@ -28,6 +28,7 @@ import { kindOf }                                                               
 import { packageMembers }  from '../workspace-members.js'
 import { packageTable }    from '../package-table.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
+import { catchFindings, CATCH_PATHS }                                                                                                                         from '../catches.js'
 
 export const CHECKS = {
 
@@ -640,6 +641,19 @@ export const CHECKS = {
 
   'home-path-literal':  ({ root }) => homePathLiteral({ root }),
   'home-dir-join':      ({ root }) => homeDirJoin({ root }),
+
+  // A warning here and a per-package ceiling in CI (scripts/catch-baselines.json):
+  // the sites are debt the ratchet holds, so the count is the gate, not each one.
+  'catch-names-its-error': ({ root }) => {
+    if (!Object.keys(CATCH_PATHS).some(p => existsSync(join(root, p)))) return { skipped: 'no junction, litestone or auth package' }
+    const findings = catchFindings(root).map(f => ({
+      file: f.file,
+      line: f.line,
+      message: `\`${f.text.slice(0, 80)}\` names no error and says nothing: a defect caught here never reaches ` +
+               'toFrameworkError(). Test what was caught and rethrow the rest, or say in a comment why it is best-effort.',
+    }))
+    return { findings }
+  },
 }
 
 /**

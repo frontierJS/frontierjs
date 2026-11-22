@@ -7,6 +7,15 @@
 export function buildZonedMap(schema?: any, pluralize?: boolean): {
     byModel: Record<string, any[]>;
     byParent: Record<string, any[]>;
+    windows: Record<string, Record<string, any>>;
+};
+/**
+ * `"<column>" <op> <the row's today>` at the instant `at`, as SQL and its binds.
+ * `all(sql)` runs `src.distinct` and answers its rows.
+ */
+export function zonedDayCompare(src?: any, op?: string, at?: string, all?: (sql: string) => any[]): {
+    sql: string;
+    params: string[];
 };
 /**
  * `2026-07-01` + `09:00` in `America/New_York` → `2026-07-01T13:00:00.000Z`; null when any source is.

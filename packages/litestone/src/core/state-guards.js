@@ -19,8 +19,9 @@ import { ident, sqlFragment, pairsOn } from './query.js'
 import { ValidationError } from './validate.js'
 import {
   TransitionViolationError, TransitionConflictError, TransitionGateError, TransitionSystemError, TransitionGuardError,
-  SoftDeleteWriteError, SealedDocumentError,
+  SoftDeleteWriteError, SealedDocumentError, FoldedSpanError,
 } from './errors.js'
+import { foldInsertSql, foldInsertParams, foldedDay } from './fold.js'
 
 // checkTransitions' answer for a row outside the caller's read scope — distinct
 // from null, which means *no move applies* and lets the write go on.
@@ -443,11 +444,16 @@ export function makeStateGuards(shape, ctx, deps) {
   // the bound foreign key varies. A NULL one matches no parent, which makes
   // NOT EXISTS true — an optional relation has no document to be sealed by, and
   // that falls out rather than being special-cased.
-  const _sealInsertSql = _sealParents.length
-    ? _sealParents.map(p =>
-        `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" WHERE ${p.referencedKeys.map(r => `"${r}" = ?`).join(' AND ')} AND ` +
-        `"${p.column}" IN (${p.states.map(() => '?').join(', ')}))`).join(' AND ')
-    : null
+  // A folding model's create rides the same guard: a row for a key and day its
+  // rollup already holds is refused, not left to be folded into a total a
+  // reader took as final (FJS-D1297).
+  const _fold = shape.fold
+  const _sealInsertSql = [
+    ..._sealParents.map(p =>
+      `NOT EXISTS (SELECT 1 FROM "${p.parentTable}" WHERE ${p.referencedKeys.map(r => `"${r}" = ?`).join(' AND ')} AND ` +
+      `"${p.column}" IN (${p.states.map(() => '?').join(', ')}))`),
+    ...(_fold ? [foldInsertSql(_fold)] : []),
+  ].join(' AND ') || null
 
   function sealInsertGuard(row) {
     if (!_sealInsertSql) return null
@@ -458,6 +464,11 @@ export function makeStateGuards(shape, ctx, deps) {
       params.push(...key, ...p.states.map(_ecp))
       if (key.every(v => v != null)) named.push({ ...p, key })
     }
+    if (_fold) {
+      const fp = foldInsertParams(_fold, row)
+      params.push(...fp)
+      named.push({ fold: fp })
+    }
     return { sql: _sealInsertSql, params, parents: named }
   }
 
@@ -466,6 +477,11 @@ export function makeStateGuards(shape, ctx, deps) {
   // be told THAT, not told the document is sealed.
   function sealRefusal(parents, operation) {
     for (const p of parents ?? []) {
+      if (p.fold) {
+        const hit = foldedDay(_fold, readDb, p.fold)
+        if (hit) return new FoldedSpanError(modelName, { into: _fold.into, day: hit.day, key: hit.key })
+        continue
+      }
       const row = readDb.query(
         `SELECT "${p.column}" AS s FROM "${p.parentTable}" WHERE ${p.referencedKeys.map(r => `"${r}" = ?`).join(' AND ')} LIMIT 1`).get(...p.key)
       if (row && p.states.some(s => _ecp(s) === row.s))

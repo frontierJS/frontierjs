@@ -565,8 +565,8 @@ export interface TableClient<
   }>>
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
-  aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
-  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown> | Record<string, unknown>[]; limit?: number; offset?: number; _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
+  aggregate(args: { _count?: boolean; /** `{ path }` reads a member of a Json column, keyed `column.member` in the answer. */ _sum?: Record<string, boolean | { path: (string | number)[] }>; _avg?: Record<string, boolean | { path: (string | number)[] }>; _min?: Record<string, boolean | { path: (string | number)[] }>; _max?: Record<string, boolean | { path: (string | number)[] }>; where?: TWhere }): Promise<Record<string, unknown>>
+  groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown> | Record<string, unknown>[]; limit?: number; offset?: number; _count?: boolean; /** `{ path }` reads a member of a Json column, keyed `column.member` in the answer. */ _sum?: Record<string, boolean | { path: (string | number)[] }>; _avg?: Record<string, boolean | { path: (string | number)[] }>; _min?: Record<string, boolean | { path: (string | number)[] }>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>
 }
 
@@ -1273,6 +1273,16 @@ export declare class VersionConflictError extends Error {
   retryable: true
 }
 
+/** A `@monotonic` column written the wrong way. 409 — re-read where the row is; the same write is refused again. */
+export declare class MonotonicError extends Error {
+  model:     string
+  field:     string
+  direction: 'up' | 'down'
+  data:      { model: string; field: string; direction: 'up' | 'down' }
+  status:    409
+  retryable: false
+}
+
 export declare class TransitionNotFoundError extends Error {
   model:      string
   transition: string
@@ -1458,6 +1468,23 @@ export declare class RateLimitError extends Error {
   errors:     Array<{ path: string[], message: string }>
   status:     409
   retryable:  false
+}
+
+/**
+ * A row for a key and day its model's `@@retention(…, into:)` has already
+ * folded into the rollup. Refused, `asSystem()` included, because the row
+ * would count twice beside the total or never once the total is sealed.
+ */
+export declare class FoldedSpanError extends Error {
+  model:     string
+  into:      string | null
+  /** The folded day, `YYYY-MM-DD` in UTC. */
+  day:       string | null
+  /** The rollup's key fields of the refused row. */
+  key:       Record<string, unknown>
+  data:      { model: string, into: string | null, day: string | null, key: Record<string, unknown> }
+  status:    409
+  retryable: false
 }
 
 /**

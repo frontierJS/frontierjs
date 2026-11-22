@@ -16,6 +16,12 @@
   // sees Ctrl+W or Ctrl+P typed into a shell. `passthrough` hands a key back
   // to the page, which is what lets it bubble to the page's keymap.
   //
+  // A URL the shell prints is a link when @xterm/addon-web-links is installed
+  // (an optional peer too; without it the pane works and draws no links).
+  // As in VS Code, Ctrl+click (Cmd+click on macOS) follows it, so a plain click
+  // still selects text, and it goes to `onlink`: a desktop shell hands it to the
+  // system browser, which `window.open` inside a webview would not reach.
+  //
   // The colors and font are read off the pane's own computed style, so the
   // terminal follows the theme instead of naming one. A theme that carries a
   // terminal palette sets the `--terminal-*` tokens below (`--terminal-bg`,
@@ -45,6 +51,11 @@
   export let passthrough = (_e) => false  // a key event the page answers instead of the shell
   export let onproblem = (_message) => {} // xterm failed to load
   export let fontSize = 0                 // px; 0 reads the pane's computed font size; a change applies live
+  export let onlink = (uri) => { window.open(uri, '_blank', 'noopener') } // a link Ctrl/Cmd+clicked
+
+  const mac = /Mac|iPhone|iPad/.test(globalThis.navigator?.platform ?? '')
+  const linkHint = `Follow link (${mac ? 'cmd' : 'ctrl'} + click)`
+  const follows = (e) => (mac ? e.metaKey : e.ctrlKey)
 
   let host = null
   let state = 'idle' // idle · connecting · open · closed
@@ -115,6 +126,8 @@
         onproblem(`the terminal did not load: ${e.message}`)
         return
       }
+      // Optional: a pane without it draws no links and is otherwise the same.
+      const WebLinksAddon = await import('@xterm/addon-web-links').then((m) => m.WebLinksAddon, () => null)
       if (gone) return
       const style = getComputedStyle(host)
       term = new Terminal({
@@ -128,6 +141,12 @@
       })
       fit = new FitAddon()
       term.loadAddon(fit)
+      if (WebLinksAddon) {
+        term.loadAddon(new WebLinksAddon((e, uri) => { if (follows(e)) onlink(uri) }, {
+          hover: () => { host.title = linkHint },
+          leave: () => { host.removeAttribute('title') },
+        }))
+      }
       term.attachCustomKeyEventHandler((e) => !passthrough(e))
       term.open(host)
       refit()

@@ -120,6 +120,27 @@ export class VersionConflictError extends Error {
 }
 
 /**
+ * A `@monotonic` column was written the wrong way (`FJS-D1291`): a resume
+ * offset a replayed chunk would move backwards. 409 because the row is ahead of
+ * the caller, and not retryable, because the same write is refused the same way
+ * — the caller re-reads where the row is and resumes from there.
+ */
+export class MonotonicError extends Error {
+  constructor(model, field, direction, actual) {
+    const way = direction === 'down' ? 'only fall' : 'only grow'
+    super(`${model}.${field} is @monotonic${direction === 'down' ? '(down)' : ''} and may ${way} — ` +
+      `the row is at ${actual ?? 'a value'} and this write would move it back`)
+    this.name      = 'MonotonicError'
+    this.model     = model
+    this.field     = field
+    this.direction = direction
+    this.data      = { model, field, direction }
+    this.status    = 409
+    this.retryable = false
+  }
+}
+
+/**
  * Two writers moved the same column, and only a person can say which wins.
  *
  * `@@sync(field)`'s one refusal (`FJS-D334`, `FJS-D335`). It is deliberately
@@ -521,6 +542,26 @@ export class OverlapConflictError extends Error {
     this.errors    = [{ path: field ? [field] : [], message }]
     this.status    = 409
     this.retryable = false
+  }
+}
+
+// A row for a day its model's `@@retention(…, into:)` has already folded
+// (`FJS-D1297`). The day's number lives in the rollup now, and a row written
+// beside it either counts twice or, once the rollup is sealed, never. A 409
+// that retrying does not change: the day is closed to raw rows for good.
+export class FoldedSpanError extends Error {
+  constructor(model, { into, day, key = {} } = {}) {
+    const keyText = Object.entries(key).map(([k, v]) => `${k} ${JSON.stringify(v)}`).join(', ')
+    super(`Cannot add a ${model} for ${day}${keyText ? ` (${keyText})` : ''} — that day is folded into ${into}, ` +
+      `and a row written beside its total would not count. A late row for a folded day is refused rather than lost silently.`)
+    this.name      = 'FoldedSpanError'
+    this.model     = model
+    this.into      = into ?? null
+    this.day       = day ?? null
+    this.key       = key
+    this.status    = 409
+    this.retryable = false
+    this.data      = { model, into: this.into, day: this.day, key }
   }
 }
 
