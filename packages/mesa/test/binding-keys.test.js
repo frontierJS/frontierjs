@@ -73,6 +73,24 @@ describe('the binding key', () => {
     expect(server).toEqual(dom)
   })
 
+  it('names a {#key} boundary on both walks, so the flagged client adopts it (FJS-4515)', async () => {
+    const src = '<script>\n  let id = 1\n</script>\n<b>x</b>{#key id}<i>{id}</i>{/key}'
+    const { dom, server } = await both(src)
+    expect(dom).toContain('block ' + bindingKey(src.indexOf('{#key')))
+    expect(server).toEqual(dom)
+    const ctx = await compile(src, { ...quiet, hydratable: true })
+    expect(ctx.result).not.toMatch(/unkeyed:/)
+  })
+
+  it('names an {@html} range on both walks, so the flagged client adopts it (FJS-4515)', async () => {
+    const src = '<script>\n  let m = \'<i>x</i>\'\n</script>\n<p>a{@html m}b</p>'
+    const { dom, server } = await both(src)
+    expect(dom).toContain('block ' + bindingKey(src.indexOf('{@html')))
+    expect(server).toEqual(dom)
+    const ctx = await compile(src, { ...quiet, hydratable: true })
+    expect(ctx.result).not.toMatch(/unkeyed:/)
+  })
+
   it('names a flagged <mesa:boundary> by its own offset on both walks (FJS-4517)', async () => {
     const src = "<script>\n  const u = $async(() => Promise.resolve(1))\n</script>\n<mesa:boundary>{#snippet pending()}<i>w</i>{/snippet}<p>{u}</p></mesa:boundary><b>after</b>"
     const dom = await keys(src, { hydratable: true }), server = await keys(src, { target: 'server', hydratable: true })
@@ -95,7 +113,7 @@ describe('the binding key', () => {
   })
 })
 
-const UNRESOLVED_TODAY = 51
+const UNRESOLVED_TODAY = 20
 
 describe('every corpus file', () => {
   // rg skips node_modules and gitignored build output, as scripts/corpus.mjs does.
@@ -122,7 +140,7 @@ describe('every corpus file', () => {
     const unresolved = []
     for (const file of files) {
       const source = readFileSync(join(ROOT, file), 'utf8')
-      const server = await keys(source, { filename: file, target: 'server' })
+      const server = await keys(source, { filename: file, target: 'server', hydratable: true })
       if (server.refused) continue
       let ctx
       try { ctx = await compile(source, { ...quiet, filename: file, hydratable: true }) }

@@ -1,0 +1,24 @@
+---
+title: The lot
+render: static
+---
+<script>
+  // The numbers are test/drive.mjs's demo constants (demo/serve.js); the drive
+  // predicts this route's map from those, so the two must stay equal.
+  import StaticMap from '../../../../../src/StaticMap.mesa'
+
+  const basemap = { tiles: '/tiles/{z}/{x}/{y}.svg', attribution: 'Fixture tiles', maxZoom: 19 }
+  const center = { lat: 40.7128, lng: -74.006 }
+  const lot = {
+    type: 'Polygon',
+    coordinates: [[[-74.0062, 40.7126], [-74.0058, 40.7126], [-74.0058, 40.713], [-74.0062, 40.713], [-74.0062, 40.7126]]],
+  }
+</script>
+
+<main>
+  <h1>The lot</h1>
+  <StaticMap
+    {basemap} {center} width={500} height={300} label="The lot at 14 Elm St"
+    shapes={[{ geojson: lot, tone: 'success', treatment: 'outlined' }]}
+    markers={[{ at: center, tone: 'info', label: '14 Elm St' }]} />
+</main>

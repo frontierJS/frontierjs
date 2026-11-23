@@ -64,7 +64,7 @@ carried by an HTML element and has no class of its own.
 `screen`<sup>main</sup> · `pane`<sup>section aria-labelledby</sup> · `view`<sup>article role=tabpanel</sup> · `tabs`
 
 **Region** — grouping and wayfinding
-Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `band`<sup>section</sup> · `kicker` · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
+Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `band`<sup>section</sup> · `kicker` · `lead`<sup>p</sup> · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
 
 **Block** — the main content citizens
 `card` · `tile` · `item` · `list-row`<sup>Row</sup> · `feed` · `alert` · `steps` · `facts`<sup>dl</sup> · `code`<sup>pre</sup> · `table` · `disclosure`<sup>details</sup> · `empty`

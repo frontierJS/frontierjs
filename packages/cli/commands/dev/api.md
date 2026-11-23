@@ -29,7 +29,11 @@ const { detectRunner } = await import(resolve(global.fliRoot, 'core/db-preflight
 const root   = $.paths.root
 const dir    = $.paths.api
 const runner = detectRunner(root)
-const env    = { ...process.env, ...(flag.test ? { NODE_ENV: 'test' } : {}) }
+const { devCorsOrigins } = await import(resolve(global.fliRoot, 'core/shell-origins.js'))
+// A desktop shell or an extension calls from an origin of its own, and its
+// socket is a silent 403 unless the API is told it (`FJS-4500`).
+const origins = devCorsOrigins(root, process.env.FRONTIER_CORS_ORIGINS)
+const env    = { ...process.env, ...(flag.test ? { NODE_ENV: 'test' } : {}), ...(origins ? { FRONTIER_CORS_ORIGINS: origins } : {}) }
 
 if (existsSync(resolve(dir, 'package.json'))) {
   $.exec({ command: `cd ${dir} && ${runner} run dev`, dry: flag.dry, env })

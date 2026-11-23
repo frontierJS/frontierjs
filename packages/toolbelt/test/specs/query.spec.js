@@ -15,7 +15,7 @@
 import {
   LIMITS, QueryLimitError, isNumericLiteral, parseValue, parseParams,
   parseQueryString, encodePairs, encodeQueryString, normalizeOrderBy,
-  readDayToken, dayToken, resolveDayTokens,
+  readDayToken, dayToken, resolveDayTokens, parsePopulate, parseSelectPaths,
 } from '../../src/query/query.js'
 
 /* ── The number rule ───────────────────────────────────────────────── */
@@ -364,4 +364,32 @@ test('query: only a named date column is rewritten, through the combinators, and
     { name: '@today', at: { in: ['@today'] }, $or: [{ due: '2026-10-28' }, { name: { contains: '@today' } }] })
   assert.equal(JSON.stringify(q), before)
   assert.deepEqual(parseQueryString(encodeQueryString({ due: { gte: '@today-7' } })), { due: { gte: '@today-7' } })
+})
+
+// ─── The relation-path grammar (FJS-D2332) ───────────────────────────────
+
+test('query: parseSelectPaths reads a name as a column and a path as nested selects', function () {
+  assert.deepEqual(parseSelectPaths(['id', ' title ']), { id: true, title: true })
+  assert.deepEqual(parseSelectPaths(['member:name']), { member: { select: { name: true } } })
+  assert.deepEqual(parseSelectPaths(['tickets.ticketType.event:title']),
+    { tickets: { select: { ticketType: { select: { event: { select: { title: true } } } } } } })
+  assert.deepEqual(parseSelectPaths(['a:x+ y']), { a: { select: { x: true, y: true } } })
+  assert.deepEqual(parseSelectPaths(['tickets.ticketType']), { tickets: { select: { ticketType: true } } })
+})
+
+test('query: parseSelectPaths merges entries naming one node, in either order', function () {
+  assert.deepEqual(parseSelectPaths(['member:name', 'member:email']),
+    { member: { select: { name: true, email: true } } })
+  assert.deepEqual(parseSelectPaths(['tickets:id', 'tickets.ticketType:title']),
+    { tickets: { select: { id: true, ticketType: { select: { title: true } } } } })
+  assert.deepEqual(parseSelectPaths(['tickets.ticketType:title', 'tickets:id']),
+    { tickets: { select: { ticketType: { select: { title: true } }, id: true } } })
+})
+
+test('query: parsePopulate nests a middle hop as include and keeps the last leaf named', function () {
+  assert.deepEqual(parsePopulate('words:text,words.lemma'),
+    { words: { select: { text: true }, include: { lemma: true } } })
+  assert.deepEqual(parsePopulate(['a.b.c:x+y']),
+    { a: { include: { b: { include: { c: { select: { x: true, y: true } } } } } } })
+  assert.deepEqual(parsePopulate('author:name,author:email'), { author: { select: { email: true } } })
 })

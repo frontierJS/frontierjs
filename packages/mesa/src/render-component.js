@@ -564,8 +564,9 @@ async function compileTree(filePath, visited = new Map(), opts = {}, sourceOverr
   const { cssRaw, cssId, css } = unit
   // Per-component styles, keyed by the scope hash. The concatenated `css` above
   // is what a caller drops into one <style> blob; this is the same content split
-  // so a consumer can emit `<style id="mHASH">` per component. That id is what
-  // lets the runtime's `addStyles` find a style already present in the document
+  // so a consumer can name each component's id, on a `<style id="mHASH">` or in
+  // a link's `data-mesa-styles`. That id is what lets the runtime's `addStyles`
+  // find a style already present in the document
   // and inject nothing — which is only possible because the hash is
   // content-addressed and therefore identical across compilations.
   //

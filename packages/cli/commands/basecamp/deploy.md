@@ -359,18 +359,6 @@ async function makeStatic({ origin, key, app, name, altSlug, surface }) {
   return made
 }
 
-/** The Domain row for `hostname` on `ownerId`: its own when a run that stopped
- *  after this write left it, since a second POST is refused by the
- *  per-workspace unique hostname. Basecamp's find filters on appId only, so
- *  the hostname is matched here. */
-async function domainOn({ origin, key, ownerId, hostname }) {
-  const host  = hostname.toLowerCase()
-  const found = (await basecampAll(origin, key, '/domains')).find(d => d.hostname.toLowerCase() === host)
-  if (found && found.appId !== ownerId)
-    throw new Error(`${hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different hostname`)
-  return found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: ownerId, hostname } })
-}
-
 /** Each of `prefixes` on the Domain routed to `app`, posting only what is not
  *  there. A prefix already routed elsewhere is a hand edit, and a reconcile
  *  never overwrites one (`FJS-D1599`). Basecamp stores a prefix lowercased

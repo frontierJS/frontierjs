@@ -82,6 +82,21 @@ new name; its indexes, constraints and views follow it by SQLite's own rule.
 are each refused by name before a file exists. On a terminal, `create` asks
 about each probable rename instead (`[y/N]`, default no).
 
+**The same document carries the rows a change reshapes** (`FJS-D683`,
+`FJS-D2313`); `--operations <file>` reads it from JSON.
+
+- `{ op: 'backfill', model, field, value }` gives a column this file adds a
+  constant for the rows already there; `first: 'Company'` takes the first live
+  parent row and refuses at apply when there is none; `create: { Company: { name:
+  'Imported' } }` inserts one parent row, only when the table has rows, and every
+  existing row links to it. A covered `NOT NULL` add is not BLOCKED.
+- `{ op: 'split', model: 'Page', column: 'body', into: 'Block', field: 'body',
+  link: 'pageId' }` copies each non-null `Page.body` into one new `Block` row
+  linked to its page, after the new tables and before the rebuild drops the
+  column, followed by a row-count check. `into` must be a model this file adds,
+  and every other required field of it needs a SQL default. The dropped column
+  gets no DESTRUCTIVE box.
+
 ### A rebuild SQLite refuses is graded, not thrown
 
 A rebuild copies surviving values through `INSERT … SELECT`, and a STRICT table

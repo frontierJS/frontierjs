@@ -8,7 +8,7 @@ import { mkdtempSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { renderTldr, tldrPrompt, readVocabulary, TLDR_RULES } from '../core/tldr.js'
-import { askArgv } from '../core/ask-claude.js'
+import { askArgv } from '@frontierjs/claude'
 
 const tag = name => s => `[${name}:${s}]`
 const chalk = {

@@ -17,6 +17,7 @@ import { nearest } from '@frontierjs/toolbelt/typo'
 import { compileStatic, policyExprToString, compileGenerated, generatedProblems, compileFromWhere } from './policy.js'
 import { tenantAdmission } from './tenancy.js'
 import { FOLD_AGGREGATES, foldProblems } from './fold.js'
+import { staleProblems } from './stale.js'
 import { pointColumnNames, isStoredField, mapIdentifiers, labelColumn, COLLATIONS, modelToTableName } from './ddl.js'
 import { inferFromFk, inferFromHop, inferToOneFrom, resolveHistory } from './schema-maps.js'
 import { sealedStates, sealFaults, machineWithMove } from './seal.js'
@@ -944,6 +945,7 @@ class Parser {
       case 'relation': return { kind: 'relation',  ...this.parseRelation() }
       case 'generated':return { kind: 'generated', ...this.parseGenerated() }
       case 'from': return { kind: 'from', ...this.parseFrom() }
+      case 'stale': return { kind: 'stale', sources: this.parseStale() }
       case 'edge':   return { kind: 'edge',   ...this.parseEdge() }
       case 'scoped': return { kind: 'scoped', ...this.parseScoped() }
 
@@ -1887,6 +1889,37 @@ class Parser {
     try { expr = compileFormat(raw) }
     catch (e) { throw new ParseError(e.message, tok) }
     return { expr, stored, template: raw }
+  }
+
+  // ── @stale parser ───────────────────────────────────────────────────────────
+  // @stale(on: [rel.rel, rel.rel(where: expr), …]) — what each path names is
+  // graded in validate() by staleProblems, where the model is known.
+  parseStale() {
+    this.eat(TK.LPAREN)
+    const at = this.peek()
+    if (this.eat(TK.IDENT).value !== 'on')
+      throw new ParseError(`@stale takes 'on: [<relation path>, …]'`, at)
+    this.eat(TK.COLON)
+    this.eat(TK.LBRACKET)
+    const sources = []
+    while (!this.check(TK.RBRACKET)) {
+      const path = [this.eat(TK.IDENT).value]
+      while (this.maybeEat(TK.DOT)) path.push(this.eat(TK.IDENT).value)
+      let where = null
+      if (this.maybeEat(TK.LPAREN)) {
+        const w = this.peek()
+        if (this.eat(TK.IDENT).value !== 'where')
+          throw new ParseError(`@stale source '${path.join('.')}' takes '(where: <expression>)' and nothing else`, w)
+        this.eat(TK.COLON)
+        where = this.parsePolicyExpr()
+        this.eat(TK.RPAREN)
+      }
+      sources.push({ path, where })
+      if (!this.maybeEat(TK.COMMA)) break
+    }
+    this.eat(TK.RBRACKET)
+    this.eat(TK.RPAREN)
+    return sources
   }
 
   // ── @from parser ────────────────────────────────────────────────────────────
@@ -9613,6 +9646,8 @@ function validate(schema) {
       errors.push(`Model '${model.name}': @@retention is per model on SQLite only — '${dbName}' is 'driver ${driver}', which compacts as one file; give the database block its retention`)
     errors.push(...foldProblems(model, schema))
   }
+
+  for (const model of schema.models) errors.push(...staleProblems(model, schema))
 
   // ── @@rate's key and clock ────────────────────────────────────────────────
   // The count compiles to `"<column>" = ?`, and SQLite reads an unknown quoted

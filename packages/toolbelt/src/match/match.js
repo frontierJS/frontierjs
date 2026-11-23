@@ -46,6 +46,7 @@
  */
 
 import { DIRECTIVE_PARAMS, CALLER_TOKEN } from '../directives/directives.js'
+import { startOfDay }         from '../datetime/datetime.js'
 import { isPoint, isNear }    from '../geo/geo.js'
 import { parseLength }        from '../units/units.js'
 
@@ -406,7 +407,12 @@ export function matchesQuery(fields, record, query) {
  * moment — neither changes as time passes. `withExpired`/`onlyExpired` step
  * outside the window, so they do not either.
  *
- * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean }|null} span
+ * A day's `to` is exclusive, so the row is gone from that day's first instant —
+ * in the zone `span.zone` names on the record (`account.timeZone`, a relation
+ * the load folded in, or an `Int` offset in minutes), as the Data boundary reads
+ * a `@zoned` day (`FJS-2782`). A zone absent or not one is UTC, as there.
+ *
+ * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean, zone?: string|null }|null} span
  *        the model's `x-effective`
  * @param {object} record
  * @param {{ asOf?: unknown, withExpired?: boolean, onlyExpired?: boolean }} [directives]
@@ -417,10 +423,17 @@ export function leavesAt(span, record, directives = {}) {
   if (directives.asOf != null || directives.withExpired || directives.onlyExpired) return null
   const edge = record[span.to]
   if (edge == null) return null
-  // A day span compares the UTC date, the way the Data boundary reads `now`,
-  // and `to` is exclusive: the row is gone from that day's first UTC instant.
-  const ms = span.kind === 'day'
-    ? Date.parse(`${String(edge).slice(0, 10)}T00:00:00Z`)
-    : (edge instanceof Date ? edge.getTime() : Date.parse(String(edge)))
-  return Number.isNaN(ms) ? null : ms
+  if (span.kind !== 'day') {
+    const ms = edge instanceof Date ? edge.getTime() : Date.parse(String(edge))
+    return Number.isNaN(ms) ? null : ms
+  }
+  const day = String(edge).slice(0, 10)
+  const utc = Date.parse(`${day}T00:00:00Z`)
+  if (Number.isNaN(utc)) return null
+  const zone = span.zone ? span.zone.split('.').reduce((v, k) => v?.[k], record) : null
+  if (typeof zone === 'number') return Number.isFinite(zone) ? utc - zone * 60_000 : utc
+  if (typeof zone === 'string') {
+    try { return startOfDay(day, zone) } catch { /* not a zone: UTC, as the read takes it */ }
+  }
+  return utc
 }

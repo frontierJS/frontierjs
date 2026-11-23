@@ -11,7 +11,7 @@
 // handlers to translate them — which only covered these routes, and left an
 // auth error raised from a SERVICE surfacing as a 500.
 
-import type { IAuth, SignInOrigin, SessionContext, ServiceContext, App, Plugin, TransportContext } from '@frontierjs/junction'
+import type { IAuth, SignInOrigin, SessionContext, ServiceContext, App, AppOAuth, Plugin, TransportContext } from '@frontierjs/junction'
 import { parseTtl, normalizePrefix, Unauthorized, BadRequest, Forbidden, NotFound, refuseDelegated } from '@frontierjs/junction'
 import { rateLimitHook } from '@frontierjs/junction/hooks'
 import type { AuthPluginOptions }                                  from './types.ts'
@@ -35,7 +35,19 @@ const CHALLENGE_COOKIE = 'login_challenge'
  *  through `reauthenticate`. `get` is `me`, which a page restoring the session
  *  asks: refused, the held person reads as signed out on every reload. */
 const ENROLLMENT_METHODS = new Set(['get', 'totpStatus', 'reauthenticate', 'setupTotp', 'confirmTotp'])
-import type { AuthOAuth }                                          from './oauth.ts'
+import type { AuthOAuth, OAuthGrantTarget }                        from './oauth.ts'
+
+declare module '@frontierjs/junction' {
+  interface AppOAuth {
+    /** Start a grant flow on the plugin's own callback: sets the state cookie on `ctx` and answers where to send the browser. */
+    beginGrant(ctx: TransportContext, provider: string, args: {
+      grant:      OAuthGrantTarget
+      initiator?: string | null
+      returnTo?:  string | null
+      extra?:     Record<string, string>
+    }): Promise<{ authorizeUrl: string }>
+  }
+}
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
 //
@@ -619,6 +631,25 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
       if (oauth) {
 
+        // A grant flow (FJS-D1313) is started from the app's own route, after
+        // a service has graded the caller against the row, and ends at the
+        // callback below, so the URI and the cookie's Path are this plugin's
+        // to answer (FJS-D2317). The route navigates to `authorizeUrl`.
+        app.own('oauth', {
+          async beginGrant(ctx, provider, args) {
+            if (!oauthAuth.oauthBegin) throw new Error('[auth] this IAuth has no OAuth flow engine, so no grant can start')
+            const { authorizeUrl, state } = await oauthAuth.oauthBegin(provider, {
+              redirectUri: callbackUri(app, prefix, provider),
+              grant:       args.grant,
+              initiator:   args.initiator ?? null,
+              returnTo:    args.returnTo ?? null,
+              extra:       args.extra,
+            })
+            setStateCookie(ctx, app, prefix, provider, state)
+            return { authorizeUrl }
+          },
+        } satisfies AppOAuth)
+
         app.get(`${oauthPath}/{provider}`, async (ctx: TransportContext) => {
           oauthLimiter(ctx)
           const provider = String(ctx.route?.provider ?? '')
@@ -634,28 +665,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
               link:        ctx.query?.link     ? String(ctx.query.link)     : null,
             })
 
-            // The browser half of the state. A flow record found by the state
-            // value ALONE is login CSRF: an attacker starts a flow, keeps their
-            // own code and state, and hands the callback URL to somebody else,
-            // who is then signed in as the attacker in their own browser.
-            //
-            // `lax`, never `strict`: the callback is a cross-site top-level GET
-            // navigation from the provider and `strict` withholds the cookie on
-            // exactly that, so the flow would fail every single time.
-            ctx.setCookie?.(OAUTH_STATE_COOKIE, state, {
-              httpOnly: true,
-              sameSite: 'lax',
-              secure:   process.env.NODE_ENV === 'production',
-              maxAge:   600,
-              // callbackPath and NOT `${oauthPath}/...`: a cookie Path is
-              // matched against the URL the browser actually requests, which
-              // carries apiPrefix. Scoped without it the cookie is never sent
-              // to the callback at all, so every sign-in fails the state check
-              // — and it fails the same way a real attack does, which is the
-              // worst possible thing for it to look like.
-              path:     callbackPath(app, prefix, provider),
-            })
-
+            setStateCookie(ctx, app, prefix, provider, state)
             return ctx.redirect!(authorizeUrl)
           } catch {
             return oauthFailure(ctx, oauth, 'unavailable')
@@ -983,6 +993,30 @@ function callbackUri(app: App, prefix: string, provider: string): string {
   // String concatenation and not `new URL(...).pathname`: the boot check asks
   // this for the literal `{provider}`, and URL percent-encodes the braces.
   return `${app.config.publicUrl}${callbackPath(app, prefix, provider)}`
+}
+
+/**
+ * The browser half of the state. A flow record found by the state value ALONE
+ * is login CSRF: an attacker starts a flow, keeps their own code and state, and
+ * hands the callback URL to somebody else, who is then signed in as the
+ * attacker in their own browser.
+ *
+ * `lax`, never `strict`: the callback is a cross-site top-level GET navigation
+ * from the provider and `strict` withholds the cookie on exactly that.
+ *
+ * The Path is callbackPath, apiPrefix included: a cookie Path is matched
+ * against the URL the browser requests, and scoped anywhere else the cookie is
+ * never sent to the callback, so every flow fails the state check the same way
+ * a real attack does.
+ */
+function setStateCookie(ctx: TransportContext, app: App, prefix: string, provider: string, state: string): void {
+  ctx.setCookie?.(OAUTH_STATE_COOKIE, state, {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure:   process.env.NODE_ENV === 'production',
+    maxAge:   600,
+    path:     callbackPath(app, prefix, provider),
+  })
 }
 
 /**

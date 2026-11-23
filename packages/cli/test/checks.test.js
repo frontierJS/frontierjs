@@ -6872,3 +6872,86 @@ describe('catch-names-its-error', () => {
     } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })
+
+// ─── claude-package-isolated, claude-spawn-owned (IDEAS/claude-calls.md 2.3) ────
+//
+// The fixtures build a start call with `start()` so this file never holds the
+// text the rule looks for: a literal one here would list the test as a starter.
+
+describe('claude boundary', () => {
+  const start = (fn, arg) => `${fn}(${arg}, ['-p'])\n`
+  const BARE  = "'" + 'claude' + "'"
+  const LIST  = (entries) => JSON.stringify({ '//': 'note', ...entries })
+  const files = (extra = {}) => ({ 'packages/claude/index.ts': 'export {}\n', 'scripts/claude-spawners.json': LIST({}), ...extra })
+  const run   = (name, rule, extra) => only(tree(name, files(extra)), rule, { scope: 'repo' })
+
+  test('claude-package-isolated: an import of the cli by name or by path fails; the package\'s own files do not', () => {
+    const { findings } = run('claude-iso-bad', 'claude-package-isolated', {
+      'packages/cli/core/x.js':           'export const x = 1\n',
+      'packages/claude/src/a.ts':         "import { x } from '@frontierjs/cli/core/x.js'\n",
+      'packages/claude/src/b.ts':         "import { x } from '../../cli/core/x.js'\n",
+      'packages/claude/src/c.ts':         "const m = await import('@frontierjs/cli')\n",
+      'packages/claude/src/d.ts':         "import { y } from './a.ts'\n// import '@frontierjs/cli'\n",
+      'packages/claude/package.json':     JSON.stringify({ name: '@frontierjs/claude', devDependencies: { '@frontierjs/cli': '*' } }),
+    })
+    expect(findings.map(f => relative(join(ROOT, 'claude-iso-bad'), f.file)).sort())
+      .toEqual(['packages/claude/package.json', 'packages/claude/src/a.ts', 'packages/claude/src/b.ts', 'packages/claude/src/c.ts'])
+  })
+
+  test('claude-package-isolated: a package that imports only itself and node passes', () => {
+    const { findings } = run('claude-iso-ok', 'claude-package-isolated', {
+      'packages/claude/src/a.ts': "import { spawn } from 'node:child_process'\nimport { y } from './b.ts'\n",
+      'packages/cli/core/uses.js': "import { runAsk } from '@frontierjs/claude'\n",
+    })
+    expect(findings).toEqual([])
+  })
+
+  test('claude-spawn-owned: a starter that is not listed fails, whatever shape the start takes', () => {
+    const { findings } = run('claude-spawn-bad', 'claude-spawn-owned', {
+      'packages/a/one.js':   start('spawn', BARE),
+      'packages/a/two.ts':   start('Bun.spawn', `[${BARE}`).replace(', [\'-p\']', ''),
+      'packages/a/three.mjs': `const bin = process.env.CLAUDE_BIN || ${BARE}\n` + start('execFile', 'bin'),
+      'scripts/four.mjs':    '$' + '`' + 'claude -p hi`\n',
+      'example/five.js':     start('spawn', 'env.CLAUDE_BIN'),
+    })
+    expect(findings.map(f => relative(join(ROOT, 'claude-spawn-bad'), f.file)).sort())
+      .toEqual(['example/five.js', 'packages/a/one.js', 'packages/a/three.mjs', 'packages/a/two.ts', 'scripts/four.mjs'])
+  })
+
+  test('claude-spawn-owned: a listed starter passes, and the package itself is exempt', () => {
+    const { findings } = run('claude-spawn-listed', 'claude-spawn-owned', {
+      'scripts/claude-spawners.json': LIST({ 'scripts/loop.mjs': '3.3' }),
+      'scripts/loop.mjs':             start('spawn', BARE),
+      'packages/claude/src/run.ts':   start('spawn', 'bin') + `export const BIN = ${BARE}\n`,
+    })
+    expect(findings).toEqual([])
+  })
+
+  test('claude-spawn-owned: a listed file that no longer starts it fails, so the list only shrinks', () => {
+    const { findings } = run('claude-spawn-stale', 'claude-spawn-owned', {
+      'scripts/claude-spawners.json': LIST({ 'scripts/loop.mjs': '3.3', 'scripts/gone.mjs': '4.4' }),
+      'scripts/loop.mjs':             "import { runAsk } from '@frontierjs/claude'\n",
+    })
+    expect(findings.length).toBe(2)
+    expect(findings.map(f => f.message).join('\n')).toMatch(/scripts\/loop\.mjs \(3\.3\).*no longer starts/s)
+    expect(findings.map(f => f.message).join('\n')).toMatch(/scripts\/gone\.mjs \(4\.4\).*file is gone/s)
+  })
+
+  test('claude-spawn-owned: a bare bin in a file that never names claude, a comment, and a fake on PATH are not starters', () => {
+    const { findings } = run('claude-spawn-quiet', 'claude-spawn-owned', {
+      'packages/a/lathe.ts':  start('spawn', 'bin'),
+      'packages/a/note.js':   `// ${start('spawn', BARE)}`,
+      'packages/a/fake.mjs':  `writeFileSync(join(binDir, ${BARE}), '#!/bin/sh')\nconst env = { PATH: binDir }\n` + start('spawnSync', 'cmd'),
+    })
+    expect(findings).toEqual([])
+  })
+
+  test('both rules skip a tree with no packages/claude', () => {
+    const root = tree('claude-none', { 'scripts/a.mjs': start('spawn', BARE) })
+    for (const id of ['claude-spawn-owned', 'claude-package-isolated']) {
+      const out = only(root, id, { scope: 'repo' })
+      expect(out.skipped.map(s => s.rule)).toEqual([id])
+      expect(out.findings).toEqual([])
+    }
+  })
+})

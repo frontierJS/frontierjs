@@ -26,7 +26,7 @@ import {
   withCache,
 } from './src/credentials.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './src/trace.ts'
-import { ConduitStreamError, CONDUIT_ERROR_KINDS } from './src/types.ts'
+import { ConduitStreamError, CONDUIT_ERROR_KINDS, errorBody } from './src/types.ts'
 import { countsAsTargetFault } from './src/resilience.ts'
 import type {
   TargetDescriptor,
@@ -771,6 +771,22 @@ describe('StubTransport', () => {
     // Mock is gone — should fall back to default
     const result = await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/deploy' })
     expect(result.data).toEqual({ ok: true })
+  })
+
+  it('answers a binary mock with the content-type a tile route passes on', async () => {
+    const stub = new StubTransport(descriptor)
+    const png  = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    stub.mock('GET /tile/3/2/1', png, { headers: { 'Content-Type': 'image/png' } })
+    const result = await stub.send<Uint8Array>({ target: 'outpost:srv-test', method: 'GET', path: '/tile/3/2/1' })
+    expect(result.data).toBe(png)
+    expect(result.meta.headers).toEqual({ 'content-type': 'image/png' })
+  })
+
+  it('a mock without headers answers no meta.headers', async () => {
+    const stub = new StubTransport(descriptor)
+    stub.mock('/deploy', { deployed: true })
+    const result = await stub.send({ target: 'outpost:srv-test', method: 'POST', path: '/deploy' })
+    expect(result.meta.headers).toBeUndefined()
   })
 
   it('supports method chaining', () => {
@@ -2272,6 +2288,69 @@ describe('retries', () => {
 
       expect(result.error).toBe(null)
       expect(result.data).toBe('café')
+    } finally { s.stop() }
+  })
+
+  it('an image tile arrives byte for byte, its content-type on meta.headers', async () => {
+    const tile = new Uint8Array(40_000).map((_, i) => (i * 31 + 7) & 0xff)
+    tile.set([0xff, 0xd8, 0xff, 0xe0], 0)
+    const s = recorder(() => new Response(tile, { headers: { 'content-type': 'image/jpeg' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send<Uint8Array>({ target: target.id, method: 'GET', path: '/tile/3/2/1' })
+
+      expect(result.error).toBe(null)
+      expect(result.data).toBeInstanceOf(Uint8Array)
+      expect(Buffer.from(result.data!).equals(Buffer.from(tile))).toBe(true)
+      expect(result.meta.headers!['content-type']).toBe('image/jpeg')
+    } finally { s.stop() }
+  })
+
+  it('an image past max_response_bytes is invalid_response, not a truncated tile', async () => {
+    const s = recorder(() => new Response(new Uint8Array(50_000), { headers: { 'content-type': 'image/png' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0, max_response_bytes: 4_096 })
+
+      const result = await t.send({ target: target.id, method: 'GET', path: '/tile/3/2/1' })
+
+      expect(result.data).toBe(null)
+      expect(result.error!.kind).toBe('invalid_response')
+      expect(result.error!.retryable).toBe(false)
+    } finally { s.stop() }
+  })
+
+  it('a 404 carrying an image is client_error, its raw a name and not the bytes', async () => {
+    const placeholder = new Uint8Array(200_000).fill(0xfe)
+    const s = recorder(() => new Response(placeholder, {
+      status: 404, headers: { 'content-type': 'image/png', 'content-length': String(placeholder.byteLength) },
+    }))
+    try {
+      const target = providerTarget({ address: s.url })
+      // A cap below the body: read, the 404 would have become invalid_response.
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0, max_response_bytes: 4_096 })
+
+      const result = await t.send({ target: target.id, method: 'GET', path: '/tile/30/2/1' })
+
+      expect(result.error!.kind).toBe('client_error')
+      expect(result.error!.retryable).toBe(false)
+      expect(result.error!.raw).toBe('[image/png body, 200000 bytes]')
+      expect(result.meta.status).toBe(404)
+    } finally { s.stop() }
+  })
+
+  it('a 4xx JSON body is still the vendor report in raw', async () => {
+    const s = recorder(() => Response.json({ error: { code: 400, message: 'Invalid level' } }, { status: 400 }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send({ target: target.id, method: 'GET', path: '/tile/99/2/1' })
+
+      expect(result.error!.kind).toBe('client_error')
+      expect(errorBody<{ error: { message: string } }>(result.error!.raw)!.error.message).toBe('Invalid level')
     } finally { s.stop() }
   })
 

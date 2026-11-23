@@ -2,8 +2,8 @@
 // draft (`IDEAS/owner-editing.md` 4.1, `FJS-D1242`).
 //
 // **The run is the ask panel's.** `askArgv({ edit })` and the stream reader are
-// `@frontierjs/cli/core/ask-claude.js`, the one owner of how this repo talks to
-// Claude Code, imported by path. The scope is a folder: the
+// `@frontierjs/claude`, the one owner of how this repo talks to Claude Code, and
+// the words are the cli's `core/edit-prompt.js`, imported by path. The scope is a folder: the
 // draft's `content/**.md` written out to a temp directory, `Edit`/`Write`
 // allowed there and denied everywhere else, every settings source and hook
 // off. The run never sees the clone, so nothing it does reaches git until a
@@ -30,6 +30,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { runAsk, type AskEvent } from '@frontierjs/claude'
 import { childEnv } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import { LOCKED_KEYS, changeRefusal, pathRefusal } from '@frontierjs/site-kit/editable'
@@ -115,17 +116,13 @@ export const ASK_MAX_REQUEST = 2000
 
 export const NO_KEY = 'asking a model is off for this workspace — connect an Anthropic key on /secrets/ to turn it on'
 
-interface AskEvent { type: string, text?: string, ok?: boolean, stop?: string | null, cost?: number | null, denied?: number }
-interface AskClaude {
+type AskResult = Extract<AskEvent, { type: 'result' }>
+interface EditPrompt {
   contentPrompt: (o: { request: string, locked?: readonly string[], page?: { path: string, files: { path: string, text: string | null }[] } | null }) => string
   editEffort:    (kind: string | null, asked?: string | null) => string
-  runAsk: (o: {
-    root: string, prompt: string, edit: string, effort: string, bin: string,
-    env: Record<string, string | undefined>, onEvent: (e: AskEvent) => void,
-  }) => { error: string } | { child: { pid?: number, kill: (s?: string) => void }, done: Promise<number | null> }
 }
-let askClaude: Promise<AskClaude> | undefined
-const loadAskClaude = () => askClaude ??= import('@frontierjs/cli/core/ask-claude.js') as unknown as Promise<AskClaude>
+let editPrompt: Promise<EditPrompt> | undefined
+const loadEditPrompt = () => editPrompt ??= import('@frontierjs/cli/core/edit-prompt.js') as unknown as Promise<EditPrompt>
 
 const fileOf = (appId: string, root: string) => join(root, `${appId}.asks.json`)
 
@@ -224,10 +221,10 @@ export async function askDraft(app: App, appId: string, draft: string,
     const before = new Map([...blobs.keys()].map(path => [path, readFileSync(join(dir, path), 'utf8')]))
     markAsk(appId, draft, { state: 'running', commit: head }, root)
 
-    const { runAsk, contentPrompt, editEffort } = await loadAskClaude()
+    const { contentPrompt, editEffort } = await loadEditPrompt()
     const texts: string[] = []
     const errors: string[] = []
-    let result: AskEvent | null = null
+    let result: AskResult | null = null
     const run = runAsk({
       root: dir, edit: join(dir, 'content'), bin,
       prompt: contentPrompt({ request: asked.request, locked: LOCKED_KEYS, page: asked.page ? { path: asked.page.path, files: pageFiles(asked.page, before) } : null }),
@@ -245,7 +242,7 @@ export async function askDraft(app: App, appId: string, draft: string,
     const timer = setTimeout(() => { try { process.kill(-run.child.pid!, 'SIGTERM') } catch {} }, ASK_TIMEOUT_MS)
     await run.done.finally(() => clearTimeout(timer))
 
-    const r = result as AskEvent | null
+    const r = result as AskResult | null
     const cost = r?.cost ?? null
     if (!r?.ok) {
       const why = r?.stop === 'error_max_budget_usd' ? 'the ask reached its spending limit before it finished'

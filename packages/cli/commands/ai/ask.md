@@ -178,7 +178,7 @@ its one-line description, rides in the prompt, so an answer names the command
 that does it rather than another framework's.
 
 When Claude Code is installed and logged in, the question goes to the read-only
-session `fli tldr` runs (`core/ask-claude.js`): `claude -p` at the repository
+session `fli tldr` runs (`@frontierjs/claude`): `claude -p` at the repository
 root with Read, Grep, Glob and `rg`/`ls`/`git`, hooks off and a $2 cap, so it
 opens the command file before quoting a flag. Otherwise it goes to the API with
 `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or the profile `ant auth login`
@@ -186,7 +186,8 @@ writes, and answers from the command list alone. `--verbose` prints each file
 it reads.
 
 ```js
-const { runAsk, questionPrompt }         = await import(resolve(global.fliRoot, 'core/ask-claude.js'))
+const { runAsk }                        = await import('@frontierjs/claude')
+const { questionPrompt }                = await import(resolve(global.fliRoot, 'core/ask-prompt.js'))
 const { buildRegistry, uniqueCommands } = await import(resolve(global.fliRoot, 'core/registry.js'))
 
 let question = arg.prompt || await tty.line('Ask Claude: ')

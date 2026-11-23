@@ -24,7 +24,7 @@ import {
 } from './migrate.js'
 import { quoteIdent } from './query.js'
 import { derivedOnce } from './schema-maps.js'
-import { resolveOperations, checkAgainstHistory, renameStatements, describeOperation, guessRenames } from './operations.js'
+import { resolveOperations, checkAgainstHistory, renameStatements, carryStatements, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -499,7 +499,9 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
       : 'the schema declares nothing to build — no migration needed',
   }
 
-  const sql     = generateMigrationSQL(diffResult, parseResult, { pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill') })
+  const sql     = generateMigrationSQL(diffResult, parseResult, {
+    pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill'), carry: carryStatements(ops),
+  })
   const name    = nextMigrationName(dir, label)
   const diffSummary = diffResult.hasChanges ? summarizeDiff(diffResult) : ''
   const summary = [...ops.map(o => `  ~ ${o.table}  ${describeOperation(o)}`), diffSummary].filter(Boolean).join('\n')
@@ -516,7 +518,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   // 0 (`FJS-1784`). The box therefore ends in the answer apply reads, and it is
   // written `no` — accepting is an act on the file after it exists, and the file
   // is what a deploy replays, so a flag on any command could not carry it there.
-  const loss   = describeDataLoss(diffResult)
+  const loss   = carriedOff(describeDataLoss(diffResult), ops)
   const rename = loss.find(l => l.renameTo)
   const guess  = guessRenames(diffResult.tableDiffs, parseResult, { pluralize })[0]
   const banner = loss.length ? [
@@ -1159,6 +1161,15 @@ function describeDataLoss({ tableDiffs, droppedTables = [] }) {
     })
   }
   return out
+}
+
+// A column a split copies out before the rebuild drops it is not lost, and a box
+// over it would ask the reviewer to accept a loss the file does not cause.
+function carriedOff(loss, ops) {
+  const split = new Set(ops.filter(o => o.op === 'split').map(o => `${o.table}.${o.column}`))
+  return loss
+    .map(l => ({ ...l, columns: l.columns.filter(c => !split.has(`${l.table}.${c}`)) }))
+    .filter(l => l.wholeTable || l.columns.length)
 }
 
 const lossLine = (l) => l.wholeTable ? `${l.table} (the whole table)` : `${l.table}.${l.columns.join(', ')}` +

@@ -620,6 +620,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // in this repo). Neither reaches a prerendered page any other way.
           stylesheets: (sierraContext.cssAssets ?? [])
             .map((f) => (config.base ?? '/').replace(/\/$/, '') + '/' + f),
+          base: config.base ?? '/',
           bodyClass: config.document?.bodyClass,
           bodyAttrs: config.document?.bodyAttrs,
           docHead:    config.document?.head,

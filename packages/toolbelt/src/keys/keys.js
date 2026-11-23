@@ -186,6 +186,31 @@ export function chordOf(e) {
   }
 }
 
+const ARIA_MODIFIERS = { Control: 'ctrl', Alt: 'alt', Meta: 'meta', Shift: 'shift' }
+const ARIA_KEYS = { Space: ' ', Plus: '+' }
+
+/**
+ * The chords a WAI-ARIA `aria-keyshortcuts` value names, in this kit's
+ * spelling: `'Control+K Meta+K /'` is `['<C-k>', '<D-k>', '/']`, the string
+ * `formatChord(chordOf(e))` writes for each press. The attribute writes a
+ * letter in capitals; it is Shift only where `Shift` is named.
+ */
+export function parseKeyShortcuts(value) {
+  if (typeof value !== 'string') refuse('parseKeyShortcuts', value, "an aria-keyshortcuts value is a string, as in 'Control+K /'")
+  return value.split(/\s+/).filter(Boolean).map((one) => {
+    const parts = one.split('+')
+    const named = parts.pop()
+    const flags = {}
+    for (const m of parts) {
+      if (!ARIA_MODIFIERS[m]) refuse('parseKeyShortcuts', value, `'${m}' is no modifier aria-keyshortcuts names; it names Control, Alt, Meta and Shift`)
+      flags[ARIA_MODIFIERS[m]] = true
+    }
+    let key = ARIA_KEYS[named] ?? named
+    if (isChar(key) && isLetter(key)) key = flags.shift ? key.toUpperCase() : key.toLowerCase()
+    return spell(chord(key, flags)) ?? refuse('parseKeyShortcuts', value, `'${named}' is no key vim's spelling names`)
+  })
+}
+
 // A chord's one spelling, or null for a key vim's spelling has no name for.
 function spell(c) {
   let { key } = c
@@ -435,11 +460,13 @@ export function browserOwned(km, { browserChords = false } = {}) {
 
 // Each row read through `parseChord`, so one written in any spelling but the
 // one an event is formatted in fails at import rather than matching nothing.
+// Marked pure so a bundle that never calls browserOwned, an island page's
+// loader among them, drops the tables.
 const owned = (rows, kind) => Object.entries(rows).map(([k, why]) => [formatChord(parseChord(k)), { kind, why }])
-const OWNED = {
+const OWNED = /* @__PURE__ */ (() => ({
   mac: new Map([...owned(BROWSER_ROWS.mac, 'browser'), ...owned(OS_ROWS.mac, 'os')]),
   other: new Map([...owned(BROWSER_ROWS.other, 'browser'), ...owned(OS_ROWS.other, 'os')]),
-}
+}))()
 
 // vim's `timeoutlen`: how long an exact binding that is also a prefix waits
 // for the key that would continue it (`FJS-D1385`).

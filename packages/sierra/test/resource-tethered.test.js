@@ -1070,3 +1070,59 @@ describe('a gate the visitor cannot pass: the list waits for somebody to ask as'
     expect(sent).toHaveLength(1)
   })
 })
+
+// ─── A zoned day window: the load carries the zone ──────────────────────────
+
+// FJS-4548 · FJS-D2311: a tether drops a row at its window's edge by the clock,
+// and a @zoned day ends at midnight in the row's own zone. A zone one relation
+// away reaches the record only if the load asked for it, so the load folds it in
+// -- driven by x-effective alone, and never narrowing an include the caller made.
+describe('a zoned day window folds its one-hop zone into the load', () => {
+  async function build(zone) {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-list-'))
+    const file = join(dir, 'schema.lite')
+    writeFileSync(file, `
+      model Customer {
+        id       Int     @id
+        name     String
+        timeZone String? @zone
+        invoices Invoice[]
+      }
+      model Invoice {
+        id         Int       @id
+        number     String
+        timeZone   String?   @zone
+        customerId Int?
+        customer   Customer? @relation(fields: [customerId], references: [id])
+        dueOn      String    @date @zoned(${zone})
+        @@expires(dueOn)
+      }
+    `)
+    const g = await generateSchemas(file, () => {}, SIERRA_ROOT)
+    registerSchemas(g.defs, g.models, g.updatePatch, g.readPatch)
+  }
+
+  test('a zone one relation away is asked for, and an include the caller made is kept whole', async () => {
+    await build('customer.timeZone')
+    await boot('/invoices/')
+    track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
+    await settle()
+    expect(last().get('$populate')).toBe('customer:timeZone')
+
+    track(createResource('invoices', { model: 'Invoice', tetheredQuery: { directives: { populate: 'customer' } } }).tethered({ state: 'local' }))
+    await settle()
+    expect(last().get('$populate')).toBe('customer')
+
+    track(createResource('invoices', { model: 'Invoice', tetheredQuery: { directives: { populate: 'customer:name' } } }).tethered({ state: 'local' }))
+    await settle()
+    expect(last().get('$populate')).toBe('customer:name+timeZone')
+  })
+
+  test('a same-row zone loads nothing extra', async () => {
+    await build('timeZone')
+    await boot('/invoices/')
+    track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
+    await settle()
+    expect(last().has('$populate')).toBe(false)
+  })
+})

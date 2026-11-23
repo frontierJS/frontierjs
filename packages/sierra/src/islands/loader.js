@@ -63,6 +63,7 @@
  */
 
 import { mount, schedule } from '@frontierjs/mesa/runtime'
+import { chordOf, formatChord, parseKeyShortcuts } from '@frontierjs/toolbelt/keys'
 
 const OPEN   = 'mesa-island '
 const CLOSE  = '/mesa-island'
@@ -235,6 +236,42 @@ function hasNativeDefault(el) {
   return !!button?.form && button.type !== 'button'
 }
 
+// The input types a letter cannot type into.
+const NOT_TEXT = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image', 'hidden'])
+
+function editable(n) {
+  if (!n || typeof n.tagName !== 'string') return false
+  if (n.isContentEditable) return true
+  if (n.tagName === 'TEXTAREA' || n.tagName === 'SELECT') return true
+  return n.tagName === 'INPUT' && !NOT_TEXT.has(n.type)
+}
+
+// A lone Shift or a dead key has no spelling and is nobody's shortcut.
+function spelled(chord) {
+  try { return formatChord(chord) } catch { return null }
+}
+
+/**
+ * Each element in the range that names its keys in `aria-keyshortcuts`, with
+ * their spellings. A value the attribute's grammar refuses is warned about
+ * and that element skipped, since the island still mounts without it.
+ */
+function shortcutsIn(island) {
+  const found = []
+  for (const top of nodesBetween(island.open, island.close)) {
+    if (top.nodeType !== 1) continue
+    for (const el of [top, ...top.querySelectorAll('[aria-keyshortcuts]')]) {
+      if (!el.hasAttribute('aria-keyshortcuts')) continue
+      try {
+        found.push({ el, keys: new Set(parseKeyShortcuts(el.getAttribute('aria-keyshortcuts'))) })
+      } catch (err) {
+        console.warn(`[Sierra islands] <${island.meta.component}>: ${err.message} — its keys do nothing until it mounts.`)
+      }
+    }
+  }
+  return found
+}
+
 /** Element indices from the island's range down to `el`, or null when `el` is outside it. */
 function pathTo(el, range) {
   const path = []
@@ -269,31 +306,58 @@ function follow(path, range) {
  * A link, a form control or a submit button is left alone — the browser acted
  * on that click already.
  *
+ * A window shortcut is bound by code that has not arrived, so a key reaches
+ * the island only through an element that names it in `aria-keyshortcuts`: the
+ * key is held as a click on that element (`FJS-D2312`), and `preventDefault`ed
+ * at the press, because Ctrl+K and `/` are the browser's own keys otherwise. A
+ * key some listener already took is left to it, and a key without Ctrl, Alt or
+ * Cmd is the field's when one has focus (`FJS-D1386`).
+ *
  * @returns {{ replay(): void, release(): void }}
  */
 function catchEarlyClicks(island, wake) {
   const name = island.meta.component
+  const view = island.open.ownerDocument.defaultView
   let held = null
+  const hold = (el, event) => {
+    if (held) return
+    const path = pathTo(el, nodesBetween(island.open, island.close))
+    if (path) held = { path, tag: el.tagName, event }
+  }
   const onPointer = () => wake()
   const onClick = (e) => {
     wake()
-    if (_caught.has(e) || !(e.target instanceof island.open.ownerDocument.defaultView.Element)) return
+    if (_caught.has(e) || !(e.target instanceof view.Element)) return
     _caught.add(e)
-    if (held || hasNativeDefault(e.target)) return
-    const path = pathTo(e.target, nodesBetween(island.open, island.close))
-    if (path) held = { path, tag: e.target.tagName, event: e }
+    if (!hasNativeDefault(e.target)) hold(e.target, e)
+  }
+  const shortcuts = shortcutsIn(island)
+  const onKey = (e) => {
+    if (e.defaultPrevented || typeof e.key !== 'string') return
+    const chord = chordOf(e)
+    if (!chord.ctrl && !chord.alt && !chord.meta && editable(e.target)) return
+    const name = spelled(chord)
+    const hit = name && shortcuts.find(({ keys }) => keys.has(name))
+    if (!hit) return
+    e.preventDefault()
+    wake()
+    // A plain click, as a keyboard press of the element is: the shortcut's
+    // Ctrl or Cmd on the replayed click would read as a modified one.
+    hold(hit.el, null)
   }
   const targets = island.nodes.filter((n) => n.nodeType === 1)
   for (const el of targets) {
     el.addEventListener('pointerdown', onPointer)
     el.addEventListener('click', onClick)
   }
+  if (shortcuts.length) view.addEventListener('keydown', onKey)
 
   const release = () => {
     for (const el of targets) {
       el.removeEventListener('pointerdown', onPointer)
       el.removeEventListener('click', onClick)
     }
+    view.removeEventListener('keydown', onKey)
     held = null
   }
 
@@ -309,7 +373,7 @@ function catchEarlyClicks(island, wake) {
       )
       return
     }
-    const { clientX, clientY, screenX, screenY, button, buttons, ctrlKey, shiftKey, altKey, metaKey, detail } = caught.event
+    const { clientX, clientY, screenX, screenY, button, buttons, ctrlKey, shiftKey, altKey, metaKey, detail } = caught.event ?? {}
     const View = el.ownerDocument.defaultView
     el.dispatchEvent(new View.MouseEvent('click', {
       bubbles: true, cancelable: true, composed: true,

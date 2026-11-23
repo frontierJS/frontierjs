@@ -110,8 +110,8 @@ export const RULES = {
   members:     'A `members` entity has a required link back to the container and a link to User.',
   roles:       'A container\'s `roles` is `{ update: [...] }` beside `members`, naming values of the membership\'s `role` enum: the members holding one rename the container, decide who is in it and change the rows under it, and the person whose sign-up creates it holds the first. A container without it leaves its membership to the application, and that person holds the role column\'s default. An entity `via` such a container may say `roles: { update: [...], delete: [...] }` to limit that write to members holding one of those roles, in place of the container\'s own rule; it is the container itself in `via`, never a parent of a parent. A lifecycle move takes `by: "finance"` or `by: ["finance", "admin"]` for the same limit on that move alone; a move is never a key of `roles`.',
   pattern:     'A cited pattern is one the catalog lists.',
-  rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field. Content moving from one entity into another is not carried yet: the answer says `risk: migration` with an `escape`, and asks in `open` whether the old values may go.',
-  backfill:    'A field or link you add to an entity whose rows already exist says `backfill` with the value those rows take: a field `{ value }`, a constant of its type, and a link `{ first: true }`, the first row of the entity it links to. Never on a catalog field, beside `was`, or on a link to User.',
+  rename:      'A field says `was` only when it is the same column under a new name: the camelCase name the app has now, which no column of the entity holds under the new schema and no other field claims. It names a field you added, never a catalog field. Content moving into a NEW entity says `was: "Page.body"` on the field that receives it: the entity has exactly one link to Page, Page no longer declares `body`, and each Page with a body becomes one row. A move any other way is not carried: the answer says `risk: migration` with an `escape`, and asks in `open` whether the old values may go.',
+  backfill:    'A field or link you add to an entity whose rows already exist says `backfill` with the value those rows take: a field `{ value }`, a constant of its type, and a link `{ first: true }`, the first row of the entity it links to, or `{ create: { field: value } }`, one new row of it every existing row links to, which is the only one that works when that entity is new too. Never on a catalog field, beside `was`, or on a link to User.',
   currency:    '`currency` is one ISO 4217 code, or a list of them when each row with money names its own; the first is the default.',
   fts:         '`fts` lists fields of the entity a person types text into: text, longtext, markdown, email, url, phone or slug.',
   extensible:  '`extensible` names the entity of this answer whose rows declare the fields: required `model` and `key` text fields and a required `type` enum, and not extensible itself.',
@@ -219,6 +219,9 @@ export function checkAnswer(answer) {
     const renames = []
     /** @type {Operation[]} */
     const backfills = []
+    // A `was` naming another entity's column, read once the links are known.
+    /** @type {{ field: string, from: string, fat: string }[]} */
+    const moved = []
     for (const [j, f] of [...kept, ...added].entries()) {
       const fat = `${at}.${f?.name ?? `fields[${j - kept.length}]`}`
       if (!f || typeof f.name !== 'string' || !IDENT.test(f.name)) { refuse('field', fat, 'A field has a camelCase name.'); continue }
@@ -232,7 +235,7 @@ export function checkAnswer(answer) {
       if (typeof f.why === 'string' && GUESS.test(f.why)) refuse('inferred', fat, `This field's reason reads as a guess. Ask it in \`open\` instead.`)
       if (f.was != null) {
         if (j < kept.length) refuse('rename', fat, 'A catalog field has no former name; `was` belongs on a field you added.')
-        else if (typeof f.was === 'string' && MOVED.test(f.was)) refuse('rename', fat, `\`was: ${f.was}\` moves a column from another entity, and no migration carries a move yet. Leave \`was\` off, say \`risk: migration\` on ${e.name} with an \`escape\` naming what the old values become, and ask in \`open\` whether they may go.`)
+        else if (typeof f.was === 'string' && MOVED.test(f.was)) moved.push({ field: f.name, from: f.was, fat })
         else if (typeof f.was !== 'string' || !IDENT.test(f.was)) refuse('rename', fat, '`was` is the camelCase name the column has in the app now.')
         else if (f.was === f.name) refuse('rename', fat, '`was` is the field\'s own name, which is not a rename.')
         else if (renames.some(r => r.from === f.was)) refuse('rename', fat, `\`was: ${f.was}\` is claimed by two fields; one column becomes one field.`)
@@ -274,10 +277,31 @@ export function checkAnswer(answer) {
         // The first User would reach every existing row through an actor link.
         if (l.to === 'User') { refuse('backfill', lat, 'A link to User is never backfilled: the first User would reach every row already there. Make the link optional, or ask in `open` who those rows belong to.'); continue }
         const b = l.backfill
-        if (!b || typeof b !== 'object' || Array.isArray(b) || Object.keys(b).join() !== 'first' || b.first !== true) { refuse('backfill', lat, 'A link\'s `backfill` is `{ first: true }`: every row already there links to the first row of the entity it names.'); continue }
-        backfills.push({ op: 'backfill', model: e.name, field: `${l.name}Id`, first: l.to })
+        const shape = b && typeof b === 'object' && !Array.isArray(b) ? Object.keys(b).join() : ''
+        if (shape === 'create') {
+          const row = b.create
+          if (!row || typeof row !== 'object' || Array.isArray(row) || Object.values(row).some(v => !['string', 'number', 'boolean'].includes(typeof v) || (typeof v === 'number' && !Number.isFinite(v)))) {
+            refuse('backfill', lat, `A link's \`backfill\` that makes the parent is \`{ create: { field: value } }\`: the one ${l.to} every row already there links to, each value a string, a number or a boolean.`); continue
+          }
+          backfills.push({ op: 'backfill', model: e.name, field: `${l.name}Id`, create: { [l.to]: { ...row } } })
+        } else if (shape !== 'first' || b.first !== true) {
+          refuse('backfill', lat, `A link's \`backfill\` is \`{ first: true }\`, every row already there links to the first ${l.to}, or \`{ create: { field: value } }\`, they link to one new ${l.to}.`); continue
+        } else backfills.push({ op: 'backfill', model: e.name, field: `${l.name}Id`, first: l.to })
       }
       links.push({ name: l.name, to: l.to, actor: l.actor, required: !!l.required, why: l.why })
+    }
+
+    // A move is carried as a split: each source row with a value becomes one row
+    // here, and the link is what says which row it came from (`FJS-D2313`).
+    /** @type {Operation[]} */
+    const splits = []
+    for (const m of moved) {
+      const [source, column] = m.from.split('.')
+      const back = links.filter(l => l.to === source)
+      if (back.length === 1) { splits.push({ op: 'split', model: source, column, into: e.name, field: m.field, link: `${back[0].name}Id` }); continue }
+      refuse('rename', m.fat, back.length
+        ? `\`was: ${m.from}\` moves a column into ${e.name}, which has ${back.length} links to ${source}; a moved value belongs to one of them, so keep one.`
+        : `\`was: ${m.from}\` moves a column into ${e.name}, which has no link to ${source} to say which ${source} each row came from. Add a required link to ${source}, or leave \`was\` off, say \`risk: migration\` on ${e.name} with an \`escape\` naming what the old values become, and ask in \`open\` whether they may go.`)
     }
 
     // ── lifecycle ──
@@ -329,8 +353,17 @@ export function checkAnswer(answer) {
       fields, links, lifecycle: life, access: e.access ?? {}, patterns: e.patterns ?? [],
       softDelete: e.softDelete === true, fts: Array.isArray(fts) ? fts : [],
       extensible: typeof e.extensible === 'string' ? e.extensible : null, currency: money ? CURRENCY : null,
-      renames, backfills, members: null, container: null, reach: null, opRoles: {},
+      renames, backfills, splits, members: null, container: null, reach: null, opRoles: {},
     })
+  }
+
+  // A move leaves its source, or the copy is a second column and the old one
+  // still holds the values.
+  const columnsOf = (m) => [...m.fields.map(f => f.name), ...m.links.flatMap(l => [l.name, `${l.name}Id`])]
+  for (const m of models) for (const s of m.splits) {
+    const source = models.find(x => x.name === s.model)
+    if (source && columnsOf(source).includes(s.column))
+      refuse('rename', `${m.name}.${s.field}`, `\`was: ${s.model}.${s.column}\` moves the column, and ${s.model} still declares \`${s.column}\`; remove it there, or this is a copy and not a move.`)
   }
 
   // ── access, which reads across entities ──
@@ -489,7 +522,7 @@ export function checkAnswer(answer) {
     actors: Array.isArray(answer.actors) ? answer.actors : [],
     open: Array.isArray(answer.open) ? answer.open.filter(q => typeof q === 'string') : [],
     models,
-    operations: models.flatMap(m => [...m.renames, ...m.backfills]),
+    operations: models.flatMap(m => [...m.renames, ...m.backfills, ...m.splits]),
     findings,
   } : null
   return { ok, refusals, findings, plan }
@@ -505,17 +538,18 @@ export function checkAnswer(answer) {
  *   access: { via?: string, members?: string, roles?: { update?: string[], delete?: string[] }, public?: string[], publicWhen?: Record<string, any>, shared?: string|{ reason: string, ops: string[] }, sharedOps?: string[], system?: boolean, why?: string },
  *   patterns: string[],
  *   softDelete: boolean, fts: string[], extensible: string|null, currency: string|null,
- *   renames: Operation[], backfills: Operation[],
+ *   renames: Operation[], backfills: Operation[], splits: Operation[],
  *   members: { model: string, link: string, user: string, admins: string[]|null }|null,
  *   container: { model: string, link: string, user: string, admins: string[]|null }|null,
  *   reach: { link: string|null, container: string }|null,
  *   opRoles: { update?: string[], delete?: string[] },
  * }} Model
  * A row-keeping operation `litestone migrate create` takes (`FJS-D603`).
- * `split` joins this union in the second pass (`FJS-D683`).
  * @typedef {{ op: 'rename', model: string, from: string, to: string }
  *   | { op: 'backfill', model: string, field: string, value: string|number|boolean }
- *   | { op: 'backfill', model: string, field: string, first: string }} Operation
+ *   | { op: 'backfill', model: string, field: string, first: string }
+ *   | { op: 'backfill', model: string, field: string, create: Record<string, Record<string, string|number|boolean>> }
+ *   | { op: 'split', model: string, column: string, into: string, field: string, link: string }} Operation
  * @typedef {{ summary: string, currency: string[], actors: any[], open: string[], models: Model[], operations: Operation[], findings: Finding[] }} Plan
  */
 

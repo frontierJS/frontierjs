@@ -77,6 +77,20 @@ export function renameStatements(ops: any[]): string[];
  */
 export function backfillExpression(o: any): any;
 /**
+ * The statements that run after the new tables and before any rebuild, where
+ * the table a row goes into and the column a value comes from both exist
+ * (`FJS-D2313`). A split's copy is followed by a count the constraint name
+ * explains when it fails.
+ *
+ * A created parent is inserted only over a table that has rows: a fresh
+ * database replays this file too, and would otherwise start with a parent row
+ * nobody asked for.
+ *
+ * @param {any[]} ops
+ * @returns {string[]}
+ */
+export function carryStatements(ops: any[]): string[];
+/**
  * Whether the parent is empty is known only where the file is APPLIED, and an
  * empty parent turns the expression into NULL — refused by the column as a bare
  * `NOT NULL constraint failed` that names no operation. The guard refuses first

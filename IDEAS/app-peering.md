@@ -235,9 +235,30 @@ secret, and a rotation started in Basecamp lands on both ends.
 Goal: a fleet machine with no public route is still reachable by its peers.
 Done when: two Outposts on private addresses carry a peer call between them.
 
-- [ ] 3.1 Hearing — which overlay Outpost installs: NetBird and headscale are
-  self-hosted, Tailscale is a vendor, Nebula is the smallest.
-- [ ] 3.2 Outpost enrolls its machine into the overlay at fleet enrollment.
+- [x] 3.1 Hearing — which overlay Outpost installs: Headscale (`FJS-D2331`),
+  on the conditions Q15 A names.
+- [x] 3.2 Hearing — where the Headscale server runs and in what form: a
+  Basecamp App on yuma-test at `hs.awe.dev` with its own DERP (`FJS-D2338`).
+- [x] 3.3 Hearing — whether an App publishes a UDP port: not yet (`FJS-D2342`).
+  Headscale takes Q16's fallback, and `udpPorts` (Q17 A) is built when a second
+  consumer needs UDP.
+- [ ] 3.4 One fli command makes the Headscale App (Q18): an App and a Domain row
+  in a named Basecamp, the official image, a config with the embedded DERP on over
+  HTTPS and STUN from Tailscale's public servers, then a deploy. Done when it
+  runs against a local Basecamp, `headscale nodes list` answers inside the
+  container, DERP answers through Caddy's reverse proxy, a Basecamp backup holds
+  the App's SQLite file, and the DERP map relays through no Tailscale region.
+- [ ] 3.5 Live on yuma-test (owner's go-ahead first, it changes a live box):
+  `hs.awe.dev` DNS-only in Cloudflare, the command run against yuma-test's
+  Basecamp. Done when `https://hs.awe.dev/health` answers and the DERP map
+  relays only through our region. `hs.awe.dev` is a role name, so a later move to prod repoints
+  DNS and no client rejoins.
+- [ ] 3.6 The owner's phone joins: a key minted by hand with the headscale CLI,
+  shown as a QR, entered in the Tailscale app as a custom control server. Done
+  when `tailscale status` on a second node shows the phone, relayed through
+  `hs.awe.dev`. The hand-minted key is a stand-in that 3.7 retires.
+- [ ] 3.7 Outpost enrolls its machine into the overlay at fleet enrollment, with
+  the pre-auth key Basecamp mints (`FJS-D2331`).
 
 ### Phase 4 — Across owners
 
@@ -307,6 +328,20 @@ hit is listed under 5.2.
   ELA's owner's agreement. ELA mirrors Service Autopilot, so say whose fact this
   is before building it.
 - [ ] 5.4 Friction on the real pair.
+- [ ] 5.5 Build `FJS-D2111` in Basecamp, ahead of 5.3: the real pair dials from it. A `Peer` model beside `ApiKey`
+  (`name`, `url @url`, `keyId`, `@@gate(5)`, `@@trail(audit)`,
+  `@@unique([workspaceId, name])`), landed with `bun run db:migrate`.
+  `peerSigningKeys(workspaceId)` in `core/credentials.ts`, sharing one HKDF
+  helper with `hubSigningKeys` under the label `basecamp peer key v1
+  <workspaceId>`. `domain/peer/dial.ts` builds one `createPeer` per call, because
+  a conduit pins one target id and a shared one sends the second peer's call to
+  the first peer's address. A `peers` service: CRUD at admin plus `identity`,
+  the public half a far owner pastes. On the API keys screen, a "This workspace
+  as a peer" panel showing that key, and a "Peers we ask" list. Done when
+  `peer.test.ts` shows three things, which a scratch probe already showed
+  against real conduit and toolbelt on 2026-11-12: the key is stable per
+  workspace and distinct across two, two peers dial from one process, and one
+  workspace's key sent under another's `keyId` is refused 401.
 
 ### Phase 6 — Refusals hold
 
@@ -551,6 +586,88 @@ Done when: somebody other than this project's owner runs one side in production.
     schema and answers only the fact, at the cost of a stored copy.
   - **Recommend C** — low confidence: not yet drafted as code, and neither
     `decision-rules` nor prior art has been run on it. Draft it first.
+- ~~**Q15 — Which overlay Outpost installs.**~~ **Answered 2026-11-23 (`FJS-D2331`): A — Headscale: a self-hosted Tailscale control server, one Go binary on SQLite, BSD-3, a single tailnet for "personal use, or a small open-source organisation" (its README); boxes and phones run the official Tailscale clients. Conditions: Basecamp mints the pre-auth key at enrollment (`FJS-D557`) and the Headscale db is derived from the enrolled machines; its ACL stays allow-all, because trust never comes from the network; the overlay stays a severable Outpost option. Tailscale owns the protocol, which Headscale follows.** Blocks 3.1. Reachability is a
+  commodity Go daemon in every option (§ Two layers), so the choice is size,
+  license and how Outpost drives enrollment.
+  - **A** — Headscale: a self-hosted Tailscale control server, one Go binary on
+    SQLite, BSD-3, a single tailnet for "personal use, or a small open-source
+    organisation" (its README); boxes and phones run the official Tailscale
+    clients. Conditions: Basecamp mints the pre-auth key at enrollment
+    (`FJS-D557`) and the Headscale db is derived from the enrolled machines;
+    its ACL stays allow-all, because trust never comes from the network; the
+    overlay stays a severable Outpost option. Tailscale owns the protocol, which
+    Headscale follows.
+  - **B** — NetBird: one project owns client, server and protocol, with
+    dashboard, REST API and policies; the server needs an OIDC provider and
+    more components, and its server license is AGPL (unverified).
+  - **C** — hosted Tailscale, a vendor's control plane (`FJS-D2248` took the
+    vendor path for the tunnel).
+  - **D** — Nebula: the smallest, a certificate authority and no coordination
+    server, and no phone-grade clients.
+  - **Recommend A** — the fewest parts and a permissive license, an enrollment
+    API Outpost can drive, and the best phone clients, which also serve the
+    owner reaching a laptop from a phone. Reopen to B if the single-tailnet
+    limit blocks a Phase 4 cross-owner pair.
+- ~~**Q16 — Where the Headscale server runs, and in what form.**~~ **Answered 2026-11-23 (`FJS-D2338`): A — a container App on yuma-test, deployed by its Basecamp with a Domain row for `hs.awe.dev` (DNS-only, since the control protocol does not pass Cloudflare's proxy), and its own DERP relay with STUN on UDP 3478, so no traffic relays through Tailscale's servers. Basecamp's deploy, logs and backups cover it like any App; prod moves later. If 3.3 finds an App cannot publish UDP, the relay falls back to Tailscale's public STUN with our DERP still over HTTPS. Only the relay source changes, so this ruling does not reopen.** Blocks 3.2.
+  Headscale needs a public address and an HTTPS hostname that every client
+  stores, so moving the hostname later means rejoining every device. A control
+  server that is down stops only new joins; live tunnels keep working.
+  - **A** — a container App on yuma-test, deployed by its Basecamp with a Domain
+    row for `hs.awe.dev` (DNS-only, since the control protocol does not pass
+    Cloudflare's proxy), and its own DERP relay with STUN on UDP 3478, so no
+    traffic relays through Tailscale's servers. Basecamp's deploy, logs and
+    backups cover it like any App; prod moves later. If 3.3 finds an App cannot
+    publish UDP, the relay falls back to Tailscale's public STUN with our DERP
+    still over HTTPS. Only the relay source changes, so this ruling does not
+    reopen.
+  - **B** — `fli overlay:install <box>` over ssh, the way `outpost:install`
+    works: binary, systemd unit, Caddy route. Fastest to write, invisible to
+    Basecamp.
+  - **C** — a dedicated small box bought by `fli server:create`: isolated, one
+    more box to back up and patch.
+  - **D** — Tailscale's public DERP servers instead of our own: no UDP port, but
+    relayed traffic crosses a vendor.
+  - **Recommend A** — the owner's picks of 2026-11-23: the same deploy path as
+    every other App, and a test hub rather than prod. Its one unknown is whether
+    an App publishes a UDP port (3.3).
+- ~~**Q17 — How an App publishes a UDP port.**~~ **Answered 2026-11-23 (`FJS-D2342`): D — no column yet: Headscale takes Q16's fallback, Tailscale's public STUN with our DERP relay over HTTPS, until something else needs UDP.** Blocks 3.3. An App has one `port`,
+  published TCP (`docker.js` `deploy`), and `hasExposedPort` puts that one number
+  in the box firewall's `exposed` set through the `fjs.exposed-port` label. The
+  set's forward rule already matches udp. Caddy cannot front UDP, so a UDP port is
+  reached on the box's public address or not at all.
+  - **A** — `udpPorts Int[] @default([])` on App: each published `N:N/udp` on
+    every interface and always in the exposed set (the label becomes a list).
+    `host-port.ts` refuses two Apps on one box with the same UDP port, and the
+    posture grader counts each as declared. One column, holding only the ports
+    Caddy cannot front.
+  - **B** — `extraPorts String[]` in docker's `-p` spelling (`3478/udp`,
+    `9000:9000/tcp`): any protocol and any mapping, at the cost of a grammar to
+    parse and a second TCP door beside `port` and Caddy.
+  - **C** — an `AppPort` model (`port`, `containerPort`, `protocol`, `exposed`),
+    which would eventually absorb `port`, `containerPort` and `hasExposedPort`.
+    The most general, at the cost of a new noun, a relation and a migration of
+    every App.
+  - **D** — no column yet: Headscale takes Q16's fallback, Tailscale's public
+    STUN with our DERP relay over HTTPS, until something else needs UDP.
+  - **Recommend A** — names the one need with no grammar. Reopen to C when an
+    App needs a second TCP port.
+- ~~**Q18 — What the "one fli command" for Headscale is.**~~ **Answered 2026-11-23 (`FJS-D2343`): A — a `headscale` Blueprint row plus a generic `fli basecamp:blueprint <slug>` that calls `fromBlueprint` (params as flags), then `place` on `--server` and `deployments.create`, as the Blueprints page does. Its `--domain` uses the Domain helper, which moves out of `deploy.md` into `core/basecamp.js`. One new verb, and every catalog entry gets it.** Blocks 3.4. Third-party
+  Apps are `Blueprint` rows in `packages/basecamp/db/blueprints.js` (ntfy is the
+  sibling, `FJS-D2274`), made into an App by `apps.fromBlueprint`. That path is
+  reached only from Basecamp's Blueprints page, and no fli command calls it.
+  - **A** — a `headscale` Blueprint row plus a generic `fli basecamp:blueprint
+    <slug>` that calls `fromBlueprint` (params as flags), then `place` on
+    `--server` and `deployments.create`, as the Blueprints page does. Its
+    `--domain` uses the Domain helper, which moves out of `deploy.md` into
+    `core/basecamp.js`. One new verb, and every catalog entry gets it.
+  - **B** — the Blueprint row only, installed from the Blueprints page: no new
+    command, but no fli path either.
+  - **C** — a bespoke `fli headscale:install`: Headscale-specific, and a second
+    way to make an App beside `fromBlueprint`.
+  - **Recommend A** — the catalog stays the one place a third-party App is
+    described, and the verb serves all ten entries. Reopen to C only if
+    Headscale needs a step `fromBlueprint` cannot express, such as bootstrapping
+    a key after first boot.
 
 ---
 

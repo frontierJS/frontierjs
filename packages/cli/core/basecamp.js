@@ -90,6 +90,100 @@ export async function resolveBasecampApp(origin, key, anchorAppId, target, { whe
   return basecamp(origin, key, `/apps/${encodeURIComponent(sibling.id)}`)
 }
 
+/** The lowercase, dash-separated slug Basecamp keeps a name under. */
+export const slugOf = (name) => String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+
+/** The online Basecamp server an App is placed on: the one named by
+ *  `flag.server`, the only one, or the one picked at a terminal. */
+export async function pickServer({ origin, key, flag, name, tty, chalk }) {
+  const servers = (await basecampAll(origin, key, '/servers')).filter(s => s.status === 'online')
+  if (flag.server) {
+    const named = servers.find(s => [s.id, s.slug, s.name].includes(flag.server))
+    if (!named) throw new Error(`no online server '${flag.server}' — online: ${servers.map(s => s.slug).join(', ') || 'none'}`)
+    return named
+  }
+  if (servers.length === 1) return servers[0]
+  if (!servers.length) throw new Error('Basecamp has no online server to place the App on — add one in Basecamp first')
+  if (process.stdin.isTTY && servers.length <= 9) {
+    const picks = Object.fromEntries(servers.map((s, i) => [String(i + 1), `${s.name}${s.ipAddress ? chalk.dim(` ${s.ipAddress}`) : ''}`]))
+    return servers[Number(await tty.keys(chalk`{cyan ?} {bold Which server runs ${name}?}`, picks)) - 1]
+  }
+  throw new Error(`${servers.length} servers are online — pass --server ${servers.map(s => s.slug).join('|')}`)
+}
+
+/** The Domain row for `hostname` on `ownerId`: its own when a run that stopped
+ *  after this write left it, since a second POST is refused by the
+ *  per-workspace unique hostname. Basecamp's find filters on appId only, so
+ *  the hostname is matched here. */
+export async function domainOn({ origin, key, ownerId, hostname }) {
+  const host  = hostname.toLowerCase()
+  const found = (await basecampAll(origin, key, '/domains')).find(d => d.hostname.toLowerCase() === host)
+  if (found && found.appId !== ownerId)
+    throw new Error(`${hostname} is already a Domain of another App (${found.appId}) — move it in Basecamp, or pass a different hostname`)
+  return found ?? await basecamp(origin, key, '/domains', { method: 'POST', body: { appId: ownerId, hostname } })
+}
+
+/** The catalog entry `slug`, or a refusal naming the slugs the catalog holds. */
+export async function blueprintNamed(origin, key, slug) {
+  const rows = (await basecampAll(origin, key, '/blueprints')).filter(b => !b.deprecatedAt)
+  const found = rows.find(b => b.slug === slug)
+  if (!found) throw new Error(`no blueprint '${slug}' in this Basecamp's catalog — it holds: ${rows.map(b => b.slug).join(', ') || 'none'}`)
+  return found
+}
+
+/** Where an App made from a blueprint lives, read and not made: the
+ *  environment named by id, else `slug`'s project and its production
+ *  environment, either of which may not exist yet. */
+export async function homeFor({ origin, key, environment, slug }) {
+  if (environment) {
+    const row = await basecamp(origin, key, `/environments/${encodeURIComponent(environment)}`).catch(err => {
+      if (err.status === 404) throw new Error(`no environment '${environment}' on this Basecamp`)
+      throw err
+    })
+    return { environment: row, project: null }
+  }
+  const project = (await basecampAll(origin, key, '/projects')).find(p => p.slug === slug) ?? null
+  const found   = project && (await basecampAll(origin, key, `/environments?projectId=${encodeURIComponent(project.id)}`)).find(e => e.tier === 'production')
+  return { environment: found ?? null, project }
+}
+
+/**
+ * What the Blueprints page does, in its order: `fromBlueprint`, `place`, the
+ * Domain, then a queued release. The page keeps an App whose later step failed
+ * and says so; this does too, and the refusal carries the App so the caller
+ * can name it. `step(what, row)` reports each row as it lands.
+ *
+ * @param {{ origin: string, key: string, blueprint: { id: string }, home: { environment: object|null, project: object|null },
+ *   name: string, values: Record<string, string>, serverId: string, hostname?: string, step?: Function }} o
+ */
+export async function installBlueprint({ origin, key, blueprint, home, name, values, serverId, hostname = '', step = () => {} }) {
+  const slug = slugOf(name)
+  let { environment, project } = home
+  if (!environment) {
+    project ??= await basecamp(origin, key, '/projects', { method: 'POST', body: { name, slug } })
+    environment = await basecamp(origin, key, '/environments', { method: 'POST', body: { projectId: project.id, name: 'production', slug: 'production', tier: 'production' } })
+    step('environment', environment)
+  }
+  const held = (await basecampAll(origin, key, `/apps?environmentId=${encodeURIComponent(environment.id)}`)).find(a => a.slug === slug)
+  if (held) throw new Error(`the environment already holds App '${slug}' (${held.id}) — fli basecamp:deploy --app ${held.id} releases it, or pass --name for another`)
+
+  const app = await basecamp(origin, key, '/apps', { method: 'POST', headers: { 'x-service-method': 'fromBlueprint' }, body: {
+    blueprintId: blueprint.id, environmentId: environment.id, name, values,
+  } })
+  step('app', app)
+  try {
+    await basecamp(origin, key, `/apps/${encodeURIComponent(app.id)}`, { method: 'POST', headers: { 'x-service-method': 'place' }, body: { serverId } })
+    step('placed', app)
+    const domain = hostname ? await domainOn({ origin, key, ownerId: app.id, hostname }) : null
+    if (domain) step('domain', domain)
+    const release = await basecamp(origin, key, '/deployments', { method: 'POST', body: { appId: app.id } })
+    step('release', release)
+    return { app, domain, release }
+  } catch (err) {
+    throw Object.assign(new Error(`App '${name}' (${app.id}) was made but not released: ${err.message}`), { app, cause: err })
+  }
+}
+
 // A root login on a box with no sudo installed runs the same scripts through a
 // function of that name.
 export const SUDO = 'command -v sudo >/dev/null 2>&1 || sudo() { "$@"; }'

@@ -38,7 +38,12 @@ export function matchesQuery(fields: Record<string, object>, record: object, que
  * moment — neither changes as time passes. `withExpired`/`onlyExpired` step
  * outside the window, so they do not either.
  *
- * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean }|null} span
+ * A day's `to` is exclusive, so the row is gone from that day's first instant —
+ * in the zone `span.zone` names on the record (`account.timeZone`, a relation
+ * the load folded in, or an `Int` offset in minutes), as the Data boundary reads
+ * a `@zoned` day (`FJS-2782`). A zone absent or not one is UTC, as there.
+ *
+ * @param {{ to?: string|null, kind?: 'instant'|'day', imposed?: boolean, zone?: string|null }|null} span
  *        the model's `x-effective`
  * @param {object} record
  * @param {{ asOf?: unknown, withExpired?: boolean, onlyExpired?: boolean }} [directives]
@@ -48,6 +53,7 @@ export function leavesAt(span: {
     to?: string | null;
     kind?: "instant" | "day";
     imposed?: boolean;
+    zone?: string | null;
 } | null, record: object, directives?: {
     asOf?: unknown;
     withExpired?: boolean;

@@ -500,6 +500,16 @@ export default createService({
     // A guest has no Customer row until this moment, and a returning one must
     // not get a second. `email` is @unique @lower, so this is the lookup.
     const existing = await system.customer.findFirst({ where: { email: email.toLowerCase() } })
+
+    // An address whose record belongs to an account is that account's to buy
+    // with. Every billing row reads through `customer.userId`, so attaching by
+    // address alone would put a stranger's order, address included, in the
+    // account holder's history (`FJS-D2316`).
+    const buyerId = ($.me as { id?: string } | null)?.id ?? null
+    if (existing?.userId && existing.userId !== buyerId) {
+      throw bad('That address has an account — sign in to check out with it')
+    }
+
     const customer = existing ?? await system.customer.create({ data: {
       email,
       name,
@@ -539,11 +549,8 @@ export default createService({
     // screen and the NEXT sale find the person rather than a second record
     // with the same address.
     //
-    // The customer link is written only when it is empty. It is `@unique`, so
-    // overwriting one is taking somebody else's record — an address shared by
-    // two accounts is a support conversation, not a silent reassignment.
-    const buyer = $.me as { id?: string } | null
-    const buyerId = buyer?.id ?? null
+    // The customer link is written only when it is empty; a record linked to
+    // anyone else was refused above.
     if (buyerId && !customer.userId) {
       await system.customer.update({ where: { id: customer.id }, data: { userId: buyerId } })
     }

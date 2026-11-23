@@ -238,6 +238,7 @@ var QUESTIONS = {
     options: [
       { label: 'A heading', hint: 'it names the section below it', on: 'Heading' },
       { label: 'A short label ABOVE a title', hint: 'Structure, Learn — publishing calls it a kicker', on: 'Kicker' },
+      { label: 'The paragraph BELOW a page title', hint: 'what the page is, in a sentence — publishing calls it a standfirst', on: 'Lead' },
       { label: 'Prose', on: 'Text' },
     ],
   },
@@ -879,6 +880,19 @@ var OUTCOMES = {
       { term: 'Badge', when: 'it is a status on a thing rather than a label over one — a Badge sits inline' },
       { term: 'Divider', when: 'it labels the break BETWEEN two groups rather than the thing below it' },
       { term: 'Heading', when: 'it names the section and a reader should be able to jump to it. A Kicker is not outline structure' },
+    ],
+  },
+
+  Lead: {
+    page: 'layouts',
+    lead: 'The standfirst below a page or hero title.',
+    markup: function (c) { return '<h1>Structure</h1>\n<p class="' + c + '">How a screen is put together.</p>' },
+    tones: false,
+    treatments: [],
+    states: [],
+    instead: [
+      { term: 'Heading', when: 'it names a section a reader should be able to jump to. A Lead outlines nothing' },
+      { term: 'Prose', when: 'it runs past one paragraph — that is body copy, and Prose sets its measure and ink' },
     ],
   },
 

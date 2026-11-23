@@ -56,7 +56,7 @@
     }
   }
 
-  // The stream's events, as `ask-claude.js` reads them; a delta is the reply
+  // The stream's events, as `@frontierjs/claude`'s `readAskEvent` reads them; a delta is the reply
   // so far and the text after it replaces it.
   function take(e) {
     const last = lines.at(-1)

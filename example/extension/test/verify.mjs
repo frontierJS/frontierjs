@@ -35,13 +35,13 @@
 export const holds = ['ports']
 
 import { spawn, execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { existsSync, realpathSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
 import { PORTS, TEST_SINK_ENV } from '../../web/test/lib/preflight.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
+import { devCorsOrigins } from '../../../packages/cli/core/shell-origins.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const EXT  = join(HERE, '..')
@@ -123,16 +123,12 @@ execFileSync('bunx', ['jetty', 'build', '--root=extension', '--browser=chrome'],
 // The harbor's socket is a cross-origin upgrade from `chrome-extension://<id>`,
 // which the API refuses with a 403 unless the origin is named (`FJS-D1207`).
 // Nothing reports it: the page sees close 1006, every call falls back to HTTP
-// and passes, and only a push never arrives (`FJS-4483`). Chrome derives an
-// unpacked extension's id from its real path — the first 16 bytes of its
-// SHA-256, each hex digit spelled a–p — so the origin is known before Chrome
-// starts, and the id `loadUnpacked` answers is checked against it below.
-const EXT_ID = [...createHash('sha256').update(realpathSync(DIST)).digest('hex').slice(0, 32)]
-  .map(h => String.fromCharCode(97 + parseInt(h, 16))).join('')
-
+// and passes, and only a push never arrives (`FJS-4483`). The API gets the list
+// `fli dev` hands it, the extension schemes whole (`FJS-D2310`), so a fli that
+// stops naming them fails the live checks below.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 start('bun', ['run', 'api/index.ts'], 'api', ROOT,
-      { FRONTIER_CORS_ORIGINS: `chrome-extension://${EXT_ID}` })
+      { FRONTIER_CORS_ORIGINS: devCorsOrigins(ROOT, undefined) })
 if (!await waitFor(`${API}/api/health`, 'the API')) { stopAll(); process.exit(1) }
 
 // Sierra's own static server — the one `bun run serve:site` runs and the one a
@@ -204,7 +200,6 @@ const extId = await send('Extensions.loadUnpacked', { path: resolve(DIST) })
   .then((r) => r?.id, (e) => { console.error(e.message); return null })
 check('the built extension loads unpacked, manifest and all', typeof extId === 'string' && extId.length === 32, true)
 if (!extId) { stopAll(); process.exit(1) }
-check('and its id is the one the API was told to admit a socket from', extId, EXT_ID)
 
 // ─── the harbor ────────────────────────────────────────────────────────────
 //

@@ -460,7 +460,7 @@ describe('asking a model for a change', () => {
     const before = new Map([['content/a.md', big], ['content/b.md', 'too much'], ['content/c.md', 'ok']])
     expect(pageFiles({ path: '/', files: ['content/a.md', 'content/gone.md', 'content/b.md', 'content/c.md'] }, before))
       .toEqual([{ path: 'content/a.md', text: big }, { path: 'content/b.md', text: null }, { path: 'content/c.md', text: 'ok' }])
-    const { contentPrompt } = await import('@frontierjs/cli/core/ask-claude.js' as string)
+    const { contentPrompt } = await import('@frontierjs/cli/core/edit-prompt.js' as string)
     const prompt = contentPrompt({ request: 'x', page: { path: '/', files: [{ path: 'content/b.md', text: null }, { path: 'content/c.md', text: 'ok' }] } })
     expect(prompt).toContain('The page also shows content/b.md, too long to include here')
     expect(prompt).toContain('<file path="content/c.md">\nok\n</file>')

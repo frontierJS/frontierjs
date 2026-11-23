@@ -1288,10 +1288,12 @@ Things worth knowing:
 - **Mounting replaces the prerendered markup**; it does not adopt it. Mesa has no
   hydration, so there is nothing to adopt with. For equal props the markup is identical,
   so nothing visibly moves.
-- **An island's CSS ships once.** Scope hashes are content-addressed, so the
-  `<style id="mHASH">` in the prerendered page is the same id the island's chunk
-  would inject under — and Mesa's `addStyles` skips an id already in the
-  document. Each component gets its own `<style>` block rather than one blob.
+- **An island's CSS ships once, as a linked file.** A prerendered page writes no
+  `<style>` element, which `style-src 'self'` refuses (`FJS-4585`): its components'
+  CSS is one content-hashed `assets/page-*.css`, shared by every page with the same
+  CSS, and the link names each component's scope id in `data-mesa-styles`. Scope
+  hashes are content-addressed, so those are the ids the island's chunk would adopt
+  under, and Mesa's `addStyles` skips an id a link already names.
 - **Props must survive JSON.** They are serialized into the marker at render time, so a
   function prop is dropped with a warning and the island mounts without it.
 - **One chunk per island, fetched when its directive fires.** A `client:visible` island

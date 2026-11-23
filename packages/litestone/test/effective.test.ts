@@ -476,6 +476,18 @@ model Desk {
 }
 `
 
+// FJS-4548 · FJS-D2311: a tether drops a zoned day at the row's own midnight
+// only if x-effective names where that zone is, as the schema spells it.
+describe('x-effective names a zoned day edge\'s zone', () => {
+  test('one hop, same row and an offset each carry their path; an unzoned day carries none', () => {
+    const defs = generateJsonSchema(parse(QUOTED).schema).$defs
+    expect(defs.Quote['x-effective']).toEqual({ from: null, to: 'expiresOn', kind: 'day', imposed: true, zone: 'account.timeZone' })
+    expect(defs.Shift['x-effective'].zone).toBe('timeZone')
+    expect(defs.Desk['x-effective'].zone).toBe('offset')
+    expect(generateJsonSchema(parse(DEADLINE).schema).$defs.Hold['x-effective'].zone).toBeUndefined()
+  })
+})
+
 describe('a day window read in its row’s own zone (FJS-2782)', () => {
   async function staged(now = '2026-10-03T15:00:00.000Z') {
     const env = await createTestEnv({ schema: QUOTED, now })

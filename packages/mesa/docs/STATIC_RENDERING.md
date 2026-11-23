@@ -254,7 +254,7 @@ and server state ride in one `<script type="application/json"
 data-sierra-data>`, and the page needs a db wired if it carries state, as any
 data read does. Not covered: a `$async` const inside `<mesa:boundary>` loads
 on the client (`FJS-4517`), `bind:this` on a deferred child (`FJS-4518`), and
-the corpus files `FJS-4515` counts, which re-render rather than adopt.
+the corpus files `FJS-4573` counts, which re-render rather than adopt.
 
 **Not built:** per-worker windows. Without the flag, islands are REPLACED:
 mesa writes the markers (§ *Island markers*) and sierra's

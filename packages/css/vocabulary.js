@@ -92,6 +92,7 @@ const VOCAB = [
       ["Band", "<section>", "A full-width stripe of a page: a Surface reaching both viewport edges, padded by density, with a .container inside for width. It states no arrangement — put a Grid or a Split inside it. A .band-media photo sits behind it under the scrim"],
       ["Divider", "<hr>", "A labeled or plain break between groups"],
       ["Kicker", "<div>", "The short uppercase label ABOVE a title — publishing's word for it. Not a Badge (a status, inline) and not a Divider label (a break between things, not a label on one). It is muted and carries no color of its own — the guide's accent-colored copy was drift, not a variant"],
+      ["Lead", "<p>", "The standfirst BELOW a page's or a hero's title — the Kicker's partner. One rung up from body, in the soft ink, capped at the measure. Not a Heading (it outlines nothing) and not Prose (a Lead is one paragraph and needs no Prose around it)"],
       ["Nav", "<ul> + <li> + <a>", "A list of navigation links. The link is .navlink; a heading above it is .navlist-label", "navlist"],
       ["Breadcrumb", '<nav aria-label="Breadcrumb"> + <ol>', "The trail back up. The current page carries aria-current"],
       ["Pagination", '<nav aria-label="Pagination">', "Page-by-page movement through a list. Each control is .pagination-link"],

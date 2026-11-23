@@ -185,14 +185,39 @@ hr, .divider {
  * declarations are the ones nav had already tokenized, which is what makes
  * this a promotion rather than a design.
  *
- * No color of its own beyond the muted default: a Kicker that wants the accent
- * takes a tone, orthogonally, the way everything else here does.
+ * Muted by default; a theme that sets --color-accent colors every Kicker in it
+ * (`FJS-D2315`). The accent is text here, so it goes through the tone window.
+ * The window is its own step because a relative color over an unset
+ * --color-accent is invalid at computed-value time, which would drop `color`
+ * to inherit rather than to the muted ink.
  */
 .kicker,
 .navlist-label {
+  --_kicker-ink:  oklch(from var(--color-accent)
+                    clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
   font-size:      var(--text-2xs);
   font-weight:    var(--label-font-weight);
   text-transform: var(--label-text-transform);
   letter-spacing: var(--label-letter-spacing);
-  color:          var(--ink-mute);
+  color:          var(--_kicker-ink, var(--ink-mute));
+}
+
+/* ── Lead — the standfirst under a title ───────────────────────────
+ *
+ * Publishing's word again: the paragraph under a page's or a hero's h1 that
+ * says what the page is, louder than body copy and quieter than a heading.
+ * It is the Kicker's partner — one sits above the title, one below.
+ *
+ * A term rather than `.text-xl` inside a Prose (`FJS-D2314`): a hero is not a
+ * Prose, so that spelling left its standfirst as plain body copy, and the
+ * hand-built copies drifted on size, ink and measure.
+ *
+ * The measure reads Prose's `--measure`, so a page that retunes one retunes
+ * both.
+ */
+.lead {
+  font-size:       var(--text-xl);
+  line-height:     var(--leading-relaxed);
+  color:           var(--ink-soft);
+  max-inline-size: var(--measure, 64ch);
 }

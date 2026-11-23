@@ -1,7 +1,7 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "counts": {
-    "terms": 63,
+    "terms": 64,
     "tiers": 8,
     "anatomy": 29
   },
@@ -157,6 +157,14 @@
       "element": "<div>",
       "meaning": "The short uppercase label ABOVE a title — publishing's word for it. Not a Badge (a status, inline) and not a Divider label (a break between things, not a label on one). It is muted and carries no color of its own — the guide's accent-colored copy was drift, not a variant",
       "class": "kicker"
+    },
+    {
+      "term": "Lead",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<p>",
+      "meaning": "The standfirst BELOW a page's or a hero's title — the Kicker's partner. One rung up from body, in the soft ink, capped at the measure. Not a Heading (it outlines nothing) and not Prose (a Lead is one paragraph and needs no Prose around it)",
+      "class": "lead"
     },
     {
       "term": "Nav",

@@ -20,6 +20,8 @@ A prerendered page ships HTML and CSS and no script, so on its own it never resp
 - `client:media="(min-width: 600px)"` mounts when the query matches
 - `client:static` never mounts, and its chunk is never fetched
 - Each island is its own chunk, fetched when its directive fires
+- A click on an island before it mounts fetches it at once and lands on the live element after
+- A key reaches an island before it mounts only through an element that names it in `aria-keyshortcuts="Control+K /"`: the key presses that element once the island is live. A key that presses no element, like a game's arrows, is lost until the island mounts
 - A page with no island gets no script tag
 - Props are serialized into the page, so they must survive JSON
 - An island's CSS ships once, in the prerendered page

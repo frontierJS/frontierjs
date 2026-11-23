@@ -572,6 +572,39 @@ describe('a grant provider', () => {
     expect(await g.sys.credential.count({ where: { type: 'oauth:google-business' } })).toBe(0)
   })
 
+  // A route that rebuilt the callback path by hand scoped the cookie somewhere
+  // the browser never sends it once apiPrefix or the plugin's prefix moved,
+  // and every connect then failed the state check the way an attack does.
+  test('app.oauth.beginGrant starts it on the plugin\'s own callback, under a moved apiPrefix and prefix', async () => {
+    granted.length = 0
+    const papp: any = await createTestApp({ auth: g.auth as any, config: { publicUrl: PUBLIC_URL, apiPrefix: '/api' } as any })
+    papp.setAuth(g.auth as any)
+    papp.configure(auth({ auth: g.auth, prefix: '/id', cookieAuth: true, oauth: { errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } } }))
+    papp.get('/connect/{id}', async (ctx: any) => {
+      const { authorizeUrl } = await papp.oauth.beginGrant(ctx, 'google-business', {
+        grant:     { model: 'Integration', id: String(ctx.route.id) },
+        initiator: 'u-1',
+        returnTo:  '/settings/',
+      })
+      return ctx.redirect(authorizeUrl)
+    })
+
+    const begun = await request(papp).get('/api/connect/i-3')
+    const uri   = new URL(new URL(String(begun.headers['location'])).searchParams.get('redirect_uri')!)
+    const state = new URL(String(begun.headers['location'])).searchParams.get('state')
+    expect(uri.href).toBe(`${PUBLIC_URL}/api/id/oauth/google-business/callback`)
+    expect(/Path=([^;]+)/.exec(cookieOf(begun))?.[1]).toBe(uri.pathname)
+    expect(cookieOf(begun)).toContain(`${OAUTH_STATE_COOKIE}=${state}`)
+
+    stubProvider()
+    const res = await request(papp)
+      .get(`${uri.pathname}?code=c&state=${state}`)
+      .set('cookie', `${OAUTH_STATE_COOKIE}=${state}`)
+    expect(String(res.headers['location'])).toBe('/settings/')
+    expect(granted).toHaveLength(1)
+    expect(granted[0]).toMatchObject({ grant: { model: 'Integration', id: 'i-3' }, initiator: 'u-1' })
+  })
+
   test('cannot be resolved into a sign-in', async () => {
     await expect(g.auth.oauthResolve('google-business', { providerId: 'g-1', email: 'owner@agency.test', isEmailVerified: true, name: null }))
       .rejects.toThrow(/signs nobody in/)

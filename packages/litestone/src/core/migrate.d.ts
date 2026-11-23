@@ -155,10 +155,11 @@ export function rescaleUpdate(tableName?: any, { column, from, to }?: {
     from: any;
     to: any;
 }): string;
-export function generateMigrationSQL(diffResult?: any, parseResult?: any, { pluralize, first, backfills }?: {
+export function generateMigrationSQL(diffResult?: any, parseResult?: any, { pluralize, first, backfills, carry }?: {
     pluralize?: boolean;
     first?: any[];
     backfills?: any[];
+    carry?: any[];
 }): string;
 export function summarizeDiff(diffResult?: any): string;
 export function checksum(str?: any): string;

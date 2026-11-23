@@ -153,7 +153,7 @@ Done when: in `packages/notifications`, an app crashed by an uncaught throw deli
 Goal: in an app Basecamp deploys, the crash ping reaches the channels the operator picked on the App page, and an app with no Basecamp rings exactly as Phase 1 does.
 Done when: an app deployed by a local Basecamp, with a webhook channel picked and crash alerts on, crashes and the webhook listener receives one `AppCrashed` POST and the workspace topic one push; with Basecamp stopped the same crash reaches the ntfy trio directly; a second crash inside the window sends nothing either way.
 
-- [x] 2.1 Rule Q5–Q7. (`FJS-D2272`–`FJS-D2274`)
+- [x] 2.1 Rule Q5–Q7. (`FJS-D2272`, `FJS-D2273`, `FJS-D2275`)
 - [ ] 2.2 basecamp schema: `AppCrashed` in `NotificationKind` and `kinds.ts` (email, in-app, push); the `AppChannel` join; the on/off switch on `App`. Check whether `NotificationContext` needs `App`.
 - [ ] 2.3 basecamp: find the seam that writes an app's env at release, and mint the per-app crash credential there. A raw route takes the crash (typed body, the credential, a rate limit after `FJS-D2183`), queues the fan-out and answers 202 — the app holds its exit for at most 3 s (`FJS-D2185`), so nothing is delivered inline.
 - [ ] 2.4 notifications `crash.ts`: the destination is the relay when its settings are present, else the Q1 trio, else off; a relay that fails falls back to the trio; the window stays here (`FJS-D2186`), so a crash loop POSTs once. The boot line names the destination. `crash-ping.test.ts` gains the relay and the fallback.

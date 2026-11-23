@@ -37,26 +37,6 @@ flags:
     defaultValue: '.env'
 ---
 
-<script>
-// The online Basecamp server the App is placed on: the one named, the only one,
-// or the one picked at a terminal.
-const pickServer = async ({ origin, key, flag, name, tty, chalk }) => {
-  const servers = (await basecampAll(origin, key, '/servers')).filter(s => s.status === 'online')
-  if (flag.server) {
-    const named = servers.find(s => [s.id, s.slug, s.name].includes(flag.server))
-    if (!named) throw new Error(`no online server '${flag.server}' — online: ${servers.map(s => s.slug).join(', ') || 'none'}`)
-    return named
-  }
-  if (servers.length === 1) return servers[0]
-  if (!servers.length) throw new Error('Basecamp has no online server to place the App on — add one in Basecamp first')
-  if (process.stdin.isTTY && servers.length <= 9) {
-    const picks = Object.fromEntries(servers.map((s, i) => [String(i + 1), `${s.name}${s.ipAddress ? chalk.dim(` ${s.ipAddress}`) : ''}`]))
-    return servers[Number(await tty.keys(chalk`{cyan ?} {bold Which server runs ${name}?}`, picks)) - 1]
-  }
-  throw new Error(`${servers.length} servers are online — pass --server ${servers.map(s => s.slug).join('|')}`)
-}
-</script>
-
 The step before an app's first `fli deploy` through Basecamp: the App row it
 releases onto. The target is `fli deploy`'s (`--production`, `--stage`, a
 stage/staging branch, else development), and the environment is named for its
@@ -117,7 +97,7 @@ if (anchorId) {
 } else {
   const pkg = existsSync(resolve(root, 'package.json')) ? JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) : {}
   name = (flag.name || String(pkg.name ?? '').replace(/^@[^/]+\//, '') || basename(root)).trim()
-  slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  slug = slugOf(name)
   if (!slug) throw new Error(`'${name}' makes no slug — pass --name`)
 }
 

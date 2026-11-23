@@ -24,7 +24,6 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
 
 1. **Rulings that block later steps.** Write the options into each question's bullet, then ask the owner.
    - `FJS-D623`: how an answer names which membership role administers a container. Blocks `FJS-1799`.
-   - `FJS-D683`: what a backfill and a split look like in the operations document. Blocks `FJS-1787`.
 2. **Where the finding the person approves and the rule emit writes disagree.** These need no ruling. `FJS-2549` was this class and is closed.
    - `FJS-2552`: the finding says an administrator writes, and the emitted `@@allow` refuses one.
    - `FJS-1885`: emit writes `@system` moves on models whose row policy admits no system principal, so the commitment never fires.
@@ -35,7 +34,7 @@ Planned 2026-10-10. **Access defects come before features**, because getting acc
    - `FJS-2550`: the one-business team shape, where every signed-in staff member writes.
    - `FJS-2551`: a visitor without an account has no actor archetype.
 5. **The edit path.** Oracle edits exist only in the prototype: `fjs-prototypes/charter/builder/edit.ts` re-answers and calls `emit(json, { scaffold })`. Its M11 rerun applied 7 of 9 edits on populated apps and lost 0 rows. The 2 it did not apply are renames.
-   - `FJS-1787`, after `FJS-D683`: renames, backfills and rows carried into a new model.
+   - **Built:** `FJS-1787` (`FJS-D683`, `FJS-D2313`). An answer's `was`, `backfill` (`value`, `first`, `create`) and `was: "Page.body"` move reach `emit()`'s `document`. Charter's `revise.ts` still has to pass `out.document` to `--operations` before M11 re-measures.
    - Then move that route into the framework and join it to `fli intent` (`packages/cli/core/intent.js`). Nothing outside this package imports oracle today.
    - **Done 2026-10-11:** an answer now says `softDelete`, `fts` and `extensible` on an entity and `currency` on the answer. Each emits its litestone word, has a refusing rule, and runs on a real client in `test/oracle.test.js`. The corpus run has not been repeated with them.
 6. **Last.**

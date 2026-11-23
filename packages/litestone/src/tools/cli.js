@@ -28,7 +28,7 @@ import { create, apply, migrationStatus, verify,
          baseline, accept, historyGap, driftAgainstLive,
          unacceptedLoss, unresolvedBlocks, renameCandidates } from '../core/migrations.js'
 import { parseRenameFlag, readOperations, askRenames, resolveOperations,
-         checkAgainstHistory, renameStatements, describeOperation } from '../core/operations.js'
+         checkAgainstHistory, renameStatements, carryStatements, describeOperation } from '../core/operations.js'
 import { backupSqliteTo, writeBackupStamp }            from '../core/backup.js'
 import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy, placedTrails, isUrl }         from '../core/tenancy.js'
@@ -699,7 +699,7 @@ async function cmdDryRun(label, cfg) {
       console.log()
       console.log(`  ${dim('─── SQL preview (not written) ' + '─'.repeat(33))}`)
       console.log()
-      console.log(generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill') })
+      console.log(generateMigrationSQL(diffResult, parseResult, { pluralize: cfg.pluralize, first: renameStatements(ops), backfills: ops.filter(o => o.op === 'backfill'), carry: carryStatements(ops) })
         .split('\n').map(l => `  ${l}`).join('\n'))
       console.log()
     }

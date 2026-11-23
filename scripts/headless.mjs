@@ -10,13 +10,13 @@
 // picked, briefed, and read back as done — stays in the loop.
 // ============================================================
 
-import { spawn, spawnSync }                                     from 'node:child_process'
+import { spawnSync }                                           from 'node:child_process'
 import { appendFileSync, mkdirSync, readFileSync }             from 'node:fs'
 import { homedir }                                              from 'node:os'
 import { stateDir }                                             from '../packages/cli/core/paths.js'
 import { dirname, join }                                        from 'node:path'
-import { createInterface }                                      from 'node:readline'
 import { fileURLToPath }                                        from 'node:url'
+import { runAsk }                                              from '../packages/claude/index.ts'
 
 import { SOURCE, LOOPS, logFiles, readSchedule, spentToday, overDayCap } from '../packages/cli/core/autopilot.js'
 
@@ -55,22 +55,6 @@ const FLI       = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
  * main tree its linked register lives in, and its own `fli` first on PATH.
  */
 export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf, where = '', cwd = ROOT, addDirs = [], env = {} }) {
-  // The Stop hook is off: each skill runs `fli done` as its own step, and the
-  // hook was that report a second time, after a `--baseline` run of it before
-  // the session, at forty seconds each.
-  const child = spawn('claude', [
-    '-p', prompt,
-    '--model',           model,
-    '--effort',          effort,
-    '--output-format',   'stream-json',
-    '--verbose',
-    '--max-budget-usd',  String(cap),
-    '--permission-mode', permission,
-    '--setting-sources', 'project,local',
-    '--strict-mcp-config',
-    ...addDirs.flatMap(d => ['--add-dir', d]),
-  ], { cwd, stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, FLI_DONE_STOP: 'off', ...env } })
-
   let result   = {}
   let session  = null
   let edited   = false
@@ -98,9 +82,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
     console.log(`[${tag}]       … ${where ? `${where} - ` : ''}${call ? `${call.name} running` : 'model thinking'} ${clock(s)}`)
   }, 5_000)
 
-  createInterface({ input: child.stdout }).on('line', line => {
-    let event
-    try { event = JSON.parse(line) } catch { return }
+  const onFrame = event => {
     if (event.type === 'result') result = event
     if (event.type === 'system' && event.subtype === 'init') session = event.session_id
     if (event.type === 'user') for (const part of event.message?.content ?? []) {
@@ -121,12 +103,22 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       tally[phase] = (tally[phase] ?? 0) + 1
       console.log(`[${tag}]     ${part.name}: ${describe(part.input, cwd)}`)
     }
-  })
+  }
 
-  return new Promise(done => child.on('close', code => {
+  // The Stop hook is off: each skill runs `fli done` as its own step, and the
+  // hook was that report a second time, after a `--baseline` run of it before
+  // the session, at forty seconds each.
+  const run = runAsk({
+    root: cwd, prompt, model, effort, work: { budget: cap, hooks: true, permission, settingSources: 'project,local', mcp: false, addDirs },
+    env: { ...process.env, FLI_DONE_STOP: 'off', ...env }, onFrame,
+    onEvent: e => { if (e.type === 'error') console.log(`[${tag}]   ${e.text.split('\n').join(`\n[${tag}]   `)}`) },
+  })
+  if ('error' in run) { clearInterval(beat); throw new Error(run.error) }
+
+  return run.done.then(code => {
     clearInterval(beat)
     if (!result.type) console.log(`[${tag}]   claude ended with no result (exit ${code})`)
-    done({
+    return {
       cost:    result.total_cost_usd ?? 0,
       turns:   result.num_turns,
       stop:    result.subtype,
@@ -145,8 +137,8 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       report:  result.result ?? '',
       phases:  tally,
       minutes: result.duration_ms ? +(result.duration_ms / 60000).toFixed(1) : null,
-    })
-  }))
+    }
+  })
 }
 
 // A heuristic over the command text: a Bash call that writes a source or

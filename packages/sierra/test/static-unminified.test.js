@@ -121,7 +121,8 @@ describe('the build acts on it', () => {
 
   test('the stylesheet is still minified', async () => {
     const assets = await readdir(join(dir, 'dist/assets'))
-    const css = assets.find((f) => f.endsWith('.css'))
+    // The prerender writes its own sheets beside the app's, as written.
+    const css = assets.find((f) => f.endsWith('.css') && !/^(sierra-shell|page)-/.test(f))
     expect(css).toBeDefined()
     const text = await readFile(join(dir, 'dist/assets', css), 'utf8')
     expect(text).toContain('body{margin:0}main{padding:1rem}')

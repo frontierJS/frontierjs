@@ -276,9 +276,9 @@ try {
     'the catalog never rendered a card')
 
   const cards = await evaluate(`document.querySelectorAll('#blueprint-grid .card').length`)
-  // Eight of nine: Ghost is seeded withdrawn, and a withdrawn blueprint is off
+  // Nine of ten: Ghost is seeded withdrawn, and a withdrawn blueprint is off
   // the list while still readable by id.
-  check('eight blueprints offered, the withdrawn one hidden', cards === 8, `saw ${cards}`)
+  check('nine blueprints offered, the withdrawn one hidden', cards === 9, `saw ${cards}`)
 
   const chips = await evaluate(`[...document.querySelectorAll('#blueprint-filters .pill')].map(e => e.textContent.trim())`)
   check('category chips are derived from the rows', chips.some(c => c.startsWith('Analytics (2)')),

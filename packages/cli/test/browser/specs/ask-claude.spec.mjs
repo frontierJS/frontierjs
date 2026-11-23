@@ -1,8 +1,9 @@
 /*
  * ask-claude.spec.mjs — the output panel handed to Claude Code, on screen.
  *
- * `test/ask-claude.test.js` covers the argv, the prompt and the stream reading
- * against a fake `claude`; `test/server.test.js` the endpoint's refusals. What
+ * `@frontierjs/claude`'s `test/transport.test.ts` covers the argv and the stream reading against a
+ * fake `claude`, `test/ask-prompt.test.js` the prompt; `test/server.test.js`
+ * the endpoint's refusals. What
  * is here is the page: what it SENDS — a follow-up must carry only the lines
  * since the last ask and none Claude wrote, or the session reads its own answer
  * back as evidence — and that the reply is drawn by rules that exist in the

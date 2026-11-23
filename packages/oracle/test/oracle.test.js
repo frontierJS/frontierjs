@@ -975,13 +975,102 @@ describe('a backfilled link', () => {
     expect(refuse(a => { a.entities[1].fields.push({ name: 'note', type: 'text', backfill: 'x' }) })[0]).toContain('{ value }')
   })
 
-  test('a move into another entity is refused until a migration can carry it', () => {
+  test('a link takes one new parent row, the measured case where the parent is new too', () => {
+    const a = v2()
+    a.entities[1].links[1].backfill = { create: { name: 'Imported' } }
+    expect(emit(a, { scaffold: SCAFFOLD }).document).toEqual({ operations: [{ op: 'backfill', model: 'Job', field: 'companyId', create: { Company: { name: 'Imported' } } }] })
+    const refuse = (b) => { const x = v2(); x.entities[1].links[1].backfill = b; return checkAnswer(x).refusals.filter(r => r.rule === 'backfill').map(r => r.message)[0] }
+    expect(refuse({ create: { name: { nested: 1 } } })).toContain('{ create: { field: value } }')
+    expect(refuse({ create: [] })).toContain('{ create: { field: value } }')
+    expect(refuse({ first: true, create: {} })).toContain('{ first: true }')
+  })
+
+  test('a move into an entity with no link back to the source is refused toward risk: migration', () => {
     const a = v1()
     a.entities[1].fields.push({ name: 'body', type: 'longtext', was: 'Company.name' })
     const msg = checkAnswer(a).refusals.filter(r => r.rule === 'rename').map(r => r.message)[0]
-    expect(msg).toContain('no migration carries a move yet')
+    expect(msg).toContain('no link to Company')
     expect(msg).toContain('`risk: migration`')
     expect(msg).toContain('`escape`')
+  })
+
+  // jazzhr, measured: Company is new in the same answer, so `first` has nothing
+  // to read and the file refused at apply.
+  test('reaches a populated database where the parent is new, and every row links to the row it creates', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oracle-create-'))
+    const shared = (jobLinks) => {
+      const a = hiringApp(jobLinks)
+      a.entities[0].links = []
+      a.entities[0].access = { shared: 'every recruiter places candidates at every company' }
+      return a
+    }
+    try {
+      const db = new Database(':memory:')
+      const before = shared([])
+      before.entities.shift()
+      create(db, parse(emit(before, { scaffold: SCAFFOLD }).text), 'init', dir)
+      await apply(db, dir)
+      db.run(`INSERT INTO user (id, email) VALUES ('u1', 'a@example.com')`)
+      for (const t of ['j1', 'j2', 'j3']) db.run(`INSERT INTO job (title, ownerId) VALUES ('${t}', 'u1')`)
+
+      const out = emit(shared([{ name: 'company', to: 'Company', required: true, backfill: { create: { name: 'Imported' } } }]), { scaffold: SCAFFOLD })
+      const made = create(db, parse(out.text), 'company', dir, { operations: out.document.operations })
+      expect(made.message).toBeUndefined()
+      expect(made.created).toBe(true)
+      expect((await apply(db, dir)).applied.at(-1).ok).toBe(true)
+      expect(db.query('SELECT id, name FROM company').all()).toEqual([{ id: 1, name: 'Imported' }])
+      expect(db.query('SELECT DISTINCT companyId FROM job').all()).toEqual([{ companyId: 1 }])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  // Reaching the database is the whole of the second half: notion's answer moved
+  // Page.body into Block and the rebuild dropped all 8 bodies.
+  describe('a move into a new entity', () => {
+    const notes = (blocks) => ({
+      summary: 'pages of blocks',
+      entities: [
+        { name: 'Doc', rung: 'novel', why: 'a document', links: [owner()],
+          fields: [{ name: 'title', type: 'text', required: true }, ...(blocks ? [] : [{ name: 'body', type: 'longtext' }])] },
+        ...(blocks ? [{ name: 'Block', rung: 'novel', why: 'a piece of a doc', access: { via: 'doc' },
+          fields: [{ name: 'body', type: 'longtext', required: true, was: 'Doc.body' }],
+          links: [{ name: 'doc', to: 'Doc', required: true }] }] : []),
+      ],
+    })
+
+    test('becomes a split entry when the entity links to the source', () => {
+      const out = emit(notes(true), { scaffold: SCAFFOLD })
+      expect(out.ok).toBe(true)
+      expect(out.document).toEqual({ operations: [{ op: 'split', model: 'Doc', column: 'body', into: 'Block', field: 'body', link: 'docId' }] })
+      expect(out.text).not.toContain('was')
+    })
+
+    test('is refused while the source still declares the column', () => {
+      const a = notes(true)
+      a.entities[0].fields.push({ name: 'body', type: 'longtext' })
+      expect(checkAnswer(a).refusals.filter(r => r.rule === 'rename').map(r => r.message)[0]).toContain('Doc still declares `body`')
+    })
+
+    test('carries every body into a Block row of its doc', async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'oracle-split-'))
+      try {
+        const db = new Database(':memory:')
+        create(db, parse(emit(notes(false), { scaffold: SCAFFOLD }).text), 'init', dir)
+        await apply(db, dir)
+        db.run(`INSERT INTO user (id, email) VALUES ('u1', 'a@example.com')`)
+        db.run(`INSERT INTO doc (title, body, ownerId) VALUES ('a', 'alpha', 'u1'), ('b', NULL, 'u1'), ('c', 'gamma', 'u1')`)
+
+        const out = emit(notes(true), { scaffold: SCAFFOLD })
+        const made = create(db, parse(out.text), 'blocks', dir, { operations: out.document.operations })
+        expect(made.message).toBeUndefined()
+        expect(made.loss).toEqual([])
+        expect((await apply(db, dir)).applied.at(-1).ok).toBe(true)
+        expect(db.query('SELECT docId, body FROM block ORDER BY docId').all()).toEqual([{ docId: 1, body: 'alpha' }, { docId: 3, body: 'gamma' }])
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
   })
 
   // The whole path: the answer, the document, `migrate create`, `apply`, and the

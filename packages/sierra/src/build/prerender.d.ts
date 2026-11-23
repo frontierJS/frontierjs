@@ -66,15 +66,20 @@ export function documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass,
     bodyEnd: string;
 };
 /**
+ * The build-output path a page's own CSS is written to, named by its content.
+ * The name has the `-XXXXXXXX.css` shape under `assets/` that `isHashedAsset`
+ * caches forever, and two pages with the same CSS name the same file.
+ */
+export function sheetFile(prefix?: any, css?: any): string;
+/**
  * Wrap rendered body HTML in a document.
  *
- * Mesa's wrapPage() takes `css` as an href, which would mean coordinating an
- * emitted asset name with Vite's hashing for what is usually a few hundred
- * bytes of scoped CSS. Inlining it keeps each page self-contained and costs one
- * fewer request — these pages ship no JS, so the style block is the only thing
- * standing between HTML and first paint.
+ * Every rule Sierra adds is LINKED, never inlined: a `<style>` element is
+ * refused by a policy of `style-src 'self'`, and the page then renders with no
+ * component CSS at all (`FJS-4585`). The CSS goes in `sheets` (path → text)
+ * for the caller to write beside the page, and the link names it under `base`.
  */
-export function wrapDocument(bodyHTML?: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, hydrateJson, }?: {
+export function wrapDocument(bodyHTML?: any, { title, description, css, styles, lang, stylesheets, bodyClass, htmlClass, meta, links, jsonLd, bodyAttrs, head, bodyEnd, hydrateJson, base, sheets, }?: {
     lang?: string;
     stylesheets?: any[];
     bodyClass?: string;
@@ -86,6 +91,8 @@ export function wrapDocument(bodyHTML?: any, { title, description, css, styles, 
     head?: string;
     bodyEnd?: string;
     hydrateJson?: any;
+    base?: string;
+    sheets?: Map<any, any>;
 }): string;
 /**
  * A page's hydrate props as the JSON a `<script type="application/json">` can
@@ -167,10 +174,7 @@ export function hasSkipLink(html?: any): boolean;
  * layer named first here would become the package's lowest. It never matches a
  * focused link, so a keyboard user who tabs to it before the CSS sees it.
  */
+export const SKIP_LINK_GUARD_CSS: "@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}";
 export const SKIP_LINK_GUARD: "<style id=\"sierra-skip-link\">@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}</style>";
-/**
- * The hydrate root lays out as if it were not there, so a layout written for
- * `body > main` keeps its box. A rule, not a `style=` attribute, which a
- * strict CSP drops.
- */
-export const HYDRATE_ROOT_STYLE: "<style id=\"sierra-root\">[data-sierra-root]{display:contents}</style>";
+/** A rule, not a `style=` attribute, which a strict CSP drops. */
+export const HYDRATE_ROOT_CSS: "[data-sierra-root]{display:contents}";

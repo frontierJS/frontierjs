@@ -33,7 +33,7 @@ import { spawnSync } from 'child_process'
 
 Claude Code (`claude -p`) started at the repository root, read-only — Read,
 Grep, Glob, and `rg`/`ls`/`git` in Bash — with hooks off and a $2 cap, the same
-session `fli gui`'s *ask claude* runs (`core/ask-claude.js`). It searches the
+session `fli gui`'s *ask claude* runs (`@frontierjs/claude`). It searches the
 READMEs, `CLAUDE.md` files, `docs/` and the fli command files, then answers in
 tldr-pages shape: a one-line summary and two to six examples.
 
@@ -44,7 +44,7 @@ project with no `VOCABULARY.md` gets the plain page. Needs the `claude`
 CLI on `PATH` and signed in. `--verbose` prints each file it reads.
 
 ```js
-const { runAsk }                                 = await import(resolve(global.fliRoot, 'core/ask-claude.js'))
+const { runAsk }                                 = await import('@frontierjs/claude')
 const { tldrPrompt, renderTldr, readVocabulary } = await import(resolve(global.fliRoot, 'core/tldr.js'))
 
 const question = arg.question || await tty.line('tldr: ')

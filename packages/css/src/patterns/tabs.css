@@ -53,7 +53,7 @@
  * because --bg-mix is element-scoped (see tones.css).
  */
 .tablist {
-  --tab-accent: var(--bg-mix, var(--color-primary));
+  --tab-accent: var(--bg-mix, var(--color-accent, var(--color-primary)));
 
   /*
    * The indicator has to be THICKER than the strip it sits on, or a heavy

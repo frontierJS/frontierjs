@@ -594,6 +594,55 @@ describe('island loader', () => {
     expect(counter.n).toBe(0)
   })
 
+  // FJS-4510: a window shortcut is bound by code that has not arrived, so the
+  // key names the element it presses through aria-keyshortcuts (FJS-D2312).
+  const press = (target, init) => {
+    const e = new win.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(e)
+    return e
+  }
+  const shortcut = '<button type="button" aria-keyshortcuts="Control+K Meta+K /">s</button>'
+
+  test('a key an element names in aria-keyshortcuts, before the mount, wakes the island and presses it once', async () => {
+    win.document.body.innerHTML = `<header>${marker({ component: 'S', directive: 'idle' }, shortcut)}</header>`
+    const counter = { n: 0 }
+    const entry = held(clickable(shortcut, counter))
+
+    loader.hydrateIslands({ S: entry }, { root: win.document.body })
+    const e = press(win.document.body, { key: 'k', ctrlKey: true })
+    press(win.document.body, { key: 'k', ctrlKey: true })
+    expect(entry.requested).toBe(true)
+    expect(e.defaultPrevented).toBe(true)
+
+    entry.release()
+    await settle()
+    expect(counter.n).toBe(1)
+    // Released at the mount: the live island binds its own keys.
+    expect(press(win.document.body, { key: 'k', ctrlKey: true }).defaultPrevented).toBe(false)
+  })
+
+  test('a printable shortcut typed in a field, another key, or one already taken is left alone', async () => {
+    win.document.body.innerHTML = `<input>${marker({ component: 'S', directive: 'idle' }, shortcut)}`
+    const counter = { n: 0 }
+    const entry = held(clickable(shortcut, counter))
+
+    loader.hydrateIslands({ S: entry }, { root: win.document.body })
+    expect(press(win.document.querySelector('input'), { key: '/' }).defaultPrevented).toBe(false)
+    expect(press(win.document.body, { key: 'j', ctrlKey: true }).defaultPrevented).toBe(false)
+    expect(press(win.document.body, { key: 'K', ctrlKey: true, shiftKey: true }).defaultPrevented).toBe(false)
+    const taken = (e) => e.preventDefault()
+    win.document.body.addEventListener('keydown', taken)
+    press(win.document.body, { key: 'k', ctrlKey: true })
+    win.document.body.removeEventListener('keydown', taken)
+    expect(entry.requested).toBeFalsy()
+
+    // Ctrl+K is a chord, so it reaches the button from inside a field too.
+    expect(press(win.document.querySelector('input'), { key: 'k', ctrlKey: true }).defaultPrevented).toBe(true)
+    entry.release()
+    await settle()
+    expect(counter.n).toBe(1)
+  })
+
   test('a chunk that fails to load leaves the island as prerendered, loudly', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {})
     win.document.body.innerHTML =

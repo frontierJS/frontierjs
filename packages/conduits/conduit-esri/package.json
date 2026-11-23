@@ -1,0 +1,34 @@
+{
+  "name": "@frontierjs/conduit-esri",
+  "version": "0.0.1",
+  "description": "Aerial imagery tiles over @frontierjs/conduit — Esri World Imagery under a per-account key, and USGS NAIP with none.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
+    "drive": "bun test/esri.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  },
+  "keywords": [
+    "esri",
+    "naip",
+    "tiles",
+    "conduit",
+    "frontierjs"
+  ]
+}

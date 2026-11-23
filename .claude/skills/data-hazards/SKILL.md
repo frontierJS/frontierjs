@@ -102,6 +102,7 @@ Detail: `references/columns-and-clocks.md`
 - **A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes** (`FJS-D963`, `FJS-D1434`)
 - **A `File` column's stored object is its row's own, so the same bytes on two rows are two objects** (`FJS-D1293`, `FJS-3050`)
 - **A folding `@@retention(…, into:)` writes its rollup in raw SQL, so the rollup's trail, write events and plugins never hear the fold** (`FJS-D1297`, `FJS-3030`)
+- **A `@stale` flag is set by a trigger, so the mark is in no audit trail, stamps no clock, and climbs one level per write** (`FJS-D2307`, `FJS-3023`)
 
 ## The audit trail and the log
 Detail: `references/the-audit-trail-and-the-log.md`

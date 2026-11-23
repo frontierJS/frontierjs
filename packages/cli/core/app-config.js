@@ -158,6 +158,7 @@ export const APP_DEV_DEPS = {
 // npm for a version only the host serves, and the install stops. Exact, so
 // `ws:pub` raises it with the rest.
 export const FJS_TRANSITIVE = {
+  '@frontierjs/claude':  '0.0.1',
   '@frontierjs/outpost': '0.1.18',
 }
 

@@ -118,6 +118,18 @@ the chat prototype proved (`IDEAS/mirror-apps.md`), and Workbench hosts both.
   - **A** — `conduit-37signals`, through `app.conduit.send()`.
   - **B** — a shell-out to the `basecamp` CLI the owner is already signed into.
   - **Recommend A** — a drive runs it on the connector's sink, as every Messages verb was proved; its live grant is the 37signals plan's 5.2, which Intake waits on too.
+- ~~**Q11 — whose 37signals grant Workbench sends a to-do on.**~~ **Answered 2026-11-23 (`FJS-D2341`): A — Workbench's own: one more authorization-code exchange through the OAuth app Intake uses, refreshed by `basecampTokenResolver`.** 6.5 reads a fixed
+  `BC3_TOKEN`, and a Basecamp access token expires in about two weeks, so the
+  live feature needs a refresh token.
+  - **A** — Workbench's own: one more authorization-code exchange through the
+    OAuth app Intake uses, refreshed by `basecampTokenResolver`.
+  - **B** — through Intake: a route on Intake's deployed `api/` makes the to-do
+    on Intake's grant, and Workbench signs in to Intake.
+  - **C** — a copy of Intake's refresh token.
+  - **Recommend A** — if Basecamp rotates refresh tokens (unmeasured,
+    `conduit-37signals` 4.1), two holders of one token log each other out, so C
+    breaks the 37signals plan's 5.1 ruling (each app's grant is its own); B adds
+    a cross-app route and fails whenever Intake is down.
 
 ---
 
@@ -272,7 +284,24 @@ None of this needs the server's help: 6.1 and 6.3 are queries over `Post`,
   project cannot be taken back; the drive makes a to-do from a DM post and
   asserts the notes hold the permalink alone. No local record of the link in
   v1, so a post can be turned into a to-do twice.
-- [ ] 6.6 Live — the owner seeds the 37signals grant (`IDEAS/conduit-37signals.md`
-  5.2) and makes the first real to-do from a post. The owner's. Open: whether
-  Workbench takes its own refresh token through the OAuth app Intake uses, or
-  waits on Intake's grant.
+- [ ] 6.6 Live — after 6.7 and 6.8, the owner signs Workbench in to Basecamp
+  and makes the first real to-do from a post, onto the Intake list. The
+  owner's. Done when the to-do is in Basecamp with the permalink alone as its
+  notes, and the first refresh records whether Basecamp rotated the refresh
+  token. This also closes Intake's PLAN 4.2 (`fjs-prototypes/intake`).
+- [ ] 6.7 A grant of Workbench's own (Q11, `FJS-D2341`) — the fixed `BC3_TOKEN`
+  is replaced by a refresh token in a grant store of Workbench's, minted by
+  `basecampTokenResolver`, so a to-do still sends after the two-week access
+  token expires. One authorization-code exchange through the OAuth app Intake
+  uses (`conduit-37signals` 5.2), started from a *Connect Basecamp* card on
+  `/laptop/` beside the Mattermost link card. Never a copy of Intake's or the
+  CLI's token. Check first which redirect URI that OAuth app allows. A lost
+  grant is a typed `auth_failed` that the dialog shows, with the card offering
+  to connect again. The drive runs the exchange and a refresh on the sink.
+- [ ] 6.8 The dialog opens on the last place used — the to-do dialog opens on
+  the project and list the member picked last, stored as bare ids per member,
+  so the first pick of the Intake list sticks. The names are still read live
+  from Basecamp, and a stored id Basecamp no longer answers falls back to the
+  picker. No configured list id. The drive makes two to-dos and asserts the
+  second opens on the first's list, then deletes the list on the sink and
+  asserts the picker.

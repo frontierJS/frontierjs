@@ -23,12 +23,12 @@ export function openUrl(url) {
 
 /**
  * Open `url` in one named program — `surf`, say — instead of the system's
- * default browser, detached the same way.
+ * default browser, detached the same way. `flags` go before the URL.
  *
  * @returns {Promise<boolean>} false when the program is not installed; never rejects
  */
-export function openUrlIn(program, url) {
-  return launch(program, [url])
+export function openUrlIn(program, url, flags = []) {
+  return launch(program, [...flags, url])
 }
 
 function launch(cmd, args) {

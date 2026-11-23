@@ -420,18 +420,10 @@
   color: var(--ink);
 }
 /*
- * A Lead — the standfirst under a page title. Under discussion as a shipped
- * term, FJS-D25: tokens.css already comments --text-lg as "lead paragraph",
- * so the rung is tuned for this and there is no class for it. Two of these
- * three declarations are Prose's job now, which is part of the question.
+ * The shipped `.lead` owns how the page header's standfirst looks; only the
+ * UA paragraph margin is the guide's to remove, since the header spaces it.
  */
-.sg-lead {
-  font-size: 18px;
-  line-height: 1.5;
-  color: var(--ink-soft);
-  margin: 0;
-  max-width: 60ch;
-}
+.sg-lead { margin: 0; }
 /*
  * The rule under a page header is a bare <hr>. bars.css already styles the
  * element unscoped, and .sg-divider was a second owner that got it wrong: the

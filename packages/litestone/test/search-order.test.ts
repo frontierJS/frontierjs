@@ -210,7 +210,7 @@ describe('search() grades the options it takes', () => {
     // reason the two wrappers share a list rather than being checked against
     // each other.
     const db = await open()
-    expect(await refusal(() => db.doc.search('widget', { select: ['id'] }))).toBeTruthy()
+    expect(await refusal(() => db.doc.search('widget', { select: 'id' }))).toBeTruthy()
     expect(await refusal(() => db.doc.search('widget', { where: { nope: 1 } }))).toBeTruthy()
     expect(await refusal(() => db.doc.search('widget', { take: 2 } as any))).toMatch(/limit/)
     // The control beside all three: the same call with nothing wrong answers.

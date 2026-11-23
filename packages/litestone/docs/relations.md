@@ -583,6 +583,66 @@ needs no `via`, but add a second (`blocker`/`blocked`) and both need naming. Pic
 first that fits was the old behavior, and the count it returned answered a different
 question with nothing in the value to say so.
 
+## @stale — a stored rollup that says when it is out of date
+
+A rollup a `@from` cannot express, such as a category grade that is the weighted mean of
+its children with the lowest one dropped, is computed by the app's job and stored. The
+schema then states what the stored value depends on, and litestone marks it when that
+input changes (`FJS-D1301`, `FJS-D2307`):
+
+```lite
+model Category {
+  id      Int        @id @default(autoincrement())
+  items   Item[]     @relation("CategoryItems")
+  ownItem Item?      @relation("CategoryItem")
+}
+
+model Item {
+  id                   Int       @id @default(autoincrement())
+  categoryId           Int?
+  category             Category? @relation("CategoryItems", fields: [categoryId], references: [id])
+  aggregatesCategoryId Int?      @unique
+  aggregatesCategory   Category? @relation("CategoryItem", fields: [aggregatesCategoryId], references: [id])
+  weight               Int       @default(1)
+  grades               Grade[]
+}
+
+model Grade {
+  id           Int       @id @default(autoincrement())
+  itemId       Int
+  item         Item      @relation(fields: [itemId], references: [id])
+  userId       Int
+  score        Int?
+  computedAt   DateTime  @default(now())
+  supersededAt DateTime?
+  stale        Boolean   @default(false) @system @stale(on: [
+    item.aggregatesCategory.items.grades(where: userId == this.userId),
+    item.aggregatesCategory.items
+  ])
+  @@effective(from: computedAt, to: supersededAt)
+}
+```
+
+Each source is a relation path walked from the declaring row. `where:` is `@from`'s:
+unqualified names belong to the source row, and `this.col` to the declaring row. Litestone
+emits an AFTER INSERT/UPDATE/DELETE trigger trio on each source table. A write sets the flag
+on every live declaring row that reaches the written row, in the write's own statement. A
+raw `UPDATE`, a delete and a move between parents are all caught. Live means `to:` of
+`@@effective` is null and the row is not soft-deleted. The job finds work with
+`where: { stale: true }`, and it clears the mark by writing the successor row with the flag
+`false`.
+
+- **What it marks is the dependency, not the value.** The arithmetic stays the job's.
+- **Two things stay silent:** a source nobody listed, and a declaring row that does not
+  exist yet, which the job must select for itself.
+- **A mark climbs one level per write.** The update trigger ignores the flag column, and
+  SQLite's `recursive_triggers` is off. A job that writes leaf to root marks each parent
+  as it writes the child's successor.
+- **Trigger writes skip the audit trail and the client's clock.**
+- Refused by name: a flag that is not a `Boolean`, a flag without `@system`, a path segment
+  that is not a relation or that is a many-to-many, a source in another database, and a
+  `where:` that reads the clock or names a column the source does not have.
+
 ## Recursive tree queries
 
 A model with a relation to itself — a task with subtasks, a category with

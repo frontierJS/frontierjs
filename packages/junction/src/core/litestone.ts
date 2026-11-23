@@ -42,7 +42,7 @@ import { CALLER_TOKEN, COMBINATORS, parseDirectives, resolveCallerTokens } from 
 import { gradeStanding, levelPasses } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { BEARER, type ResolvedBearer } from './bearer.ts'
-import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from '@frontierjs/toolbelt/query'
+import { normalizeOrderBy, normalizeSelect, parsePopulate, type SortParam, type SelectParam, type OrderBy, type IncludeTree } from '@frontierjs/toolbelt/query'
 
 // Module augmentation: typing `$.db` without forcing a hard
 // Litestone dependency on junction core. An app that augments `AppDb` (`litestone
@@ -501,10 +501,9 @@ function translateOps(ops: Record<string, unknown>): Record<string, unknown> {
 const parseSort   = normalizeOrderBy
 const parseSelect = normalizeSelect
 
+// `$populate`'s path grammar is toolbelt's too, because Litestone's `select`
+// list reads the same grammar and cannot import this package (`FJS-D2332`).
 type PopulateParam = string | string[]
-
-type IncludeTree = { [relation: string]: boolean | IncludeNode }
-type IncludeNode = { select?: Record<string, boolean | { where: Record<string, unknown> }>; include?: IncludeTree }
 
 /**
  * `$count` → Litestone's `include._count` (`FJS-D945`), which answers
@@ -524,34 +523,6 @@ function withCounts(tree: IncludeTree | undefined, raw: QueryDirectives['count']
   const select = Object.fromEntries(Object.entries(counts).map(([rel, spec]) =>
     [rel, spec === true ? true : { where: parseWhere(spec.where) }]))
   return { ...tree, _count: { select } }
-}
-
-// `words.lemma:root` is the second level: the dots before the colon are the
-// path, so `words:text,words.lemma` lands on one `words` node. Litestone's
-// `include` is already a tree — this only spells it.
-function parsePopulate(populate: PopulateParam): IncludeTree {
-  const relations = Array.isArray(populate) ? populate : populate.split(',')
-  const result: IncludeTree = {}
-
-  for (const rel of relations.map(r => r.trim())) {
-    const colonIdx = rel.indexOf(':')
-    const path = (colonIdx === -1 ? rel : rel.slice(0, colonIdx)).split('.').map(s => s.trim())
-    let level = result
-    path.forEach((name, i) => {
-      if (i === path.length - 1) {
-        if (colonIdx === -1) { level[name] ??= true; return }
-        const fields = rel.slice(colonIdx + 1).split('+').map((f) => f.trim())
-        const node = level[name]
-        level[name] = { ...(typeof node === 'object' ? node : {}), select: parseSelect(fields) }
-        return
-      }
-      let node = level[name]
-      if (typeof node !== 'object') node = level[name] = {}
-      level = node.include ??= {}
-    })
-  }
-
-  return result
 }
 
 /**

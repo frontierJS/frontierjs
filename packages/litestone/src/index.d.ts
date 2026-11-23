@@ -522,22 +522,22 @@ export interface TableClient<
   TWhere   = { [K in keyof TRow]?: WhereOp<TRow[K]> } & WhereBase,
   TOrderBy = { [K in keyof TRow]?: 'asc' | 'desc' }
 > {
-  findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
-  findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
-  findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
-  findFirstOrThrow(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
-  findUniqueOrThrow(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
+  findMany(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; include?: Record<string, boolean>; select?: Record<string, boolean> | string[]; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; recursive?: boolean | { direction?: 'descendants' | 'ancestors'; nested?: boolean; maxDepth?: number; via?: string }; distinct?: boolean; window?: WindowSpec }): Promise<(TRow & Record<string, unknown>)[]>
+  findFirst(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean> | string[]; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
+  findUnique(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean> | string[]; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow | null>
+  findFirstOrThrow(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; include?: Record<string, boolean>; select?: Record<string, boolean> | string[]; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
+  findUniqueOrThrow(args: { where: TWhere; include?: Record<string, boolean>; select?: Record<string, boolean> | string[]; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow>
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<number>
   exists(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<boolean>
   findManyCursor(args?: { where?: TWhere; limit?: number; cursor?: string; orderBy?: TOrderBy | TOrderBy[] }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key (a `select` dropped one). Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: TOrderBy | TOrderBy[]): string | null
   search(query: string, args?: { where?: TWhere; limit?: number; offset?: number; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean }): Promise<TRow[]>
-  create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  create(args: { data: TCreate; include?: Record<string, boolean>; select?: Record<string, boolean> | string[] | false; system?: SystemNames<TRow> }): Promise<TRow | null>
   createMany(args: { data: TCreate[]; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
-  update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  update(args: { where: TWhere; data: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | string[] | false; system?: SystemNames<TRow> }): Promise<TRow | null>
   updateMany(args: { where: TWhere; data: TUpdate; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
-  upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | false; system?: SystemNames<TRow> }): Promise<TRow | null>
+  upsert(args: { where: TWhere; create: TCreate; update: TUpdate; include?: Record<string, boolean>; select?: Record<string, boolean> | string[] | false; system?: SystemNames<TRow> }): Promise<TRow | null>
   upsertMany(args: { data: TCreate[]; conflictTarget: string[]; update?: string[]; announce?: AnnounceMode; system?: SystemNames<TRow> }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args: { where: TWhere; announce?: AnnounceMode }): Promise<{ count: number }>
@@ -564,7 +564,7 @@ export interface TableClient<
     target: { model: string; accessor: string; transition: string; id: number | string }
   }>>
   optimizeFts(): void
-  findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
+  findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> | string[] }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; /** `{ path }` reads a member of a Json column, keyed `column.member` in the answer. */ _sum?: Record<string, boolean | { path: (string | number)[] }>; _avg?: Record<string, boolean | { path: (string | number)[] }>; _min?: Record<string, boolean | { path: (string | number)[] }>; _max?: Record<string, boolean | { path: (string | number)[] }>; where?: TWhere }): Promise<Record<string, unknown>>
   groupBy(args: { by: (string | { field: string; interval: 'year' | 'quarter' | 'month' | 'week' | 'day' | 'hour' })[]; interval?: Record<string, string>; fillGaps?: boolean | { start: string | number | Date; end: string | number | Date }; /** IANA zone the interval is cut in; UTC when absent. */ timeZone?: string; /** First day of a `week` bucket, which is also its label; Monday when absent. */ weekStart?: 'monday' | 'sunday'; where?: TWhere; having?: Record<string, unknown>; orderBy?: Record<string, unknown> | Record<string, unknown>[]; limit?: number; offset?: number; _count?: boolean; /** `{ path }` reads a member of a Json column, keyed `column.member` in the answer. */ _sum?: Record<string, boolean | { path: (string | number)[] }>; _avg?: Record<string, boolean | { path: (string | number)[] }>; _min?: Record<string, boolean | { path: (string | number)[] }>; _max?: Record<string, boolean> }): Promise<Record<string, unknown>[]>
   query(args?: Record<string, unknown>): Promise<TRow[] | Record<string, unknown>[] | Record<string, unknown>>

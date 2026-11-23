@@ -1,0 +1,98 @@
+<script>
+  // StaticMap.mesa
+  // A map drawn as one SVG, so a server render holds the whole of it and no
+  // script has to run: tiles, shapes and markers are SVG attributes only.
+  //
+  // Nothing is placed by a style attribute. Under style-src 'self' Chromium
+  // applies one on markup cloned from a template and Firefox does not, so the
+  // two engines would draw different maps.
+  //
+  // The window is declared, never measured: a server render cannot know a box.
+  // The svg scales to its box in CSS from the viewBox.
+  //
+  // Usage:
+  //   <StaticMap
+  //     basemap={imagery} width={640} height={360}
+  //     fit={[outline]}
+  //     shapes={[{ geojson: outline, tone: 'success', treatment: 'outlined' }]}
+  //     markers={[{ at: { lat, lng }, tone: 'info', label: '14 Elm St' }]}
+  //     label="The property at 14 Elm St" />
+  //
+  // Props:
+  //   basemap   { tiles, attribution, maxZoom, tileSize, subdomains }  required
+  //   label     the map's accessible name                               required
+  //   width, height   logical pixels                              500 x 300
+  //   fit       geometries or points to frame        ┐ exactly one
+  //   center    { lat, lng }                         ┘ of the two
+  //   zoom      whole zoom, with center; default 19 capped at basemap.maxZoom
+  //   padding   pixels kept clear around a fit                    20
+  //   maxZoom   a fit's zoom ceiling; default as zoom's
+  //   shapes    [{ geojson, tone, treatment }]  treatment: 'outlined' or none
+  //   markers   [{ at: { lat, lng }, tone, label }]
+  //   r         the {r} value; default '@2x' when the template has {r}
+  //
+  // A tone is one of @frontierjs/css's seven. The attribution renders as text.
+
+  import { mapModel } from './draw.js'
+
+  export let basemap
+  export let label
+  export let width = 500
+  export let height = 300
+  export let fit = undefined
+  export let center = undefined
+  export let zoom = undefined
+  export let padding = undefined
+  export let maxZoom = undefined
+  export let shapes = []
+  export let markers = []
+  export let r = undefined
+
+  const m = mapModel({ basemap, label, width, height, fit, center, zoom, padding, maxZoom, shapes, markers, r })
+</script>
+
+<figure class="static-map">
+  <svg viewBox={m.viewBox} role="img" aria-label={m.label} preserveAspectRatio="xMidYMid slice">
+    <rect class="ground" width={m.width} height={m.height} />
+    {#each m.tiles as t}
+      <image x={t.x} y={t.y} width={t.size} height={t.size} href={t.href} />
+    {/each}
+    {#each m.shapes as s}
+      <path class={s.class} d={s.d} />
+    {/each}
+    {#each m.markers as k}
+      <g class={k.class} transform={k.transform}>
+        {#if k.label}<title>{k.label}</title>{/if}
+        <path class="pin" d="M0 0C-4 -8 -9 -13 -9 -19A9 9 0 1 1 9 -19C9 -13 4 -8 0 0Z" />
+        <circle class="dot" cx="0" cy="-19" r="3.5" />
+      </g>
+    {/each}
+  </svg>
+  {#if m.labels.length}
+    <ul class="visually-hidden">
+      {#each m.labels as l}<li>{l}</li>{/each}
+    </ul>
+  {/if}
+  {#if m.attribution}<figcaption>{m.attribution}</figcaption>{/if}
+</figure>
+
+<style>
+  .static-map { margin: 0; }
+  svg { display: block; inline-size: 100%; block-size: auto; }
+  .ground { fill: var(--surface-sunken); }
+  /* A rule reading --bg-mix must sit on the element that carries the tone
+     class (tones.css), so the marker hands its children an inheriting copy. */
+  .shape {
+    --shape-ink: var(--bg-mix, var(--ink-soft));
+    fill: color-mix(in srgb, var(--shape-ink) 25%, transparent);
+    stroke: var(--shape-ink);
+    stroke-width: 2;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .shape.outlined { fill: none; }
+  .marker { --marker-ink: var(--bg-mix, var(--ink)); }
+  .pin { fill: var(--marker-ink); stroke: var(--surface); stroke-width: 1.5; }
+  .dot { fill: var(--surface); }
+  figcaption { font-size: 0.75em; color: var(--ink-mute); }
+</style>

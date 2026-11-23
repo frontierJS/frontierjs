@@ -1405,7 +1405,10 @@ export const addStyles = (id, css) => {
     _injectStyle(root, id, css)
     return
   }
-  if (document.head.querySelector(`style#${id}`)) return
+  // A prerendered page links its components' CSS and names their ids on the
+  // link (Sierra's `wrapDocument`); adopting a second copy would outrank every
+  // stylesheet linked after it.
+  if (document.head.querySelector(`style#${id}, link[data-mesa-styles~="${id}"]`)) return
   _injectStyle(document.head, id, css)
 }
 
@@ -3148,6 +3151,21 @@ export function hydIf(anchor, condFn, blocks, noAnchor) {
     return _adopt(_handle(b.page, b.inst, b.opts, frag.firstChild, frag), b.opts, `{#if} ${b.key} in ${b.inst.id}`, () => _call(f))
   }))
   return ifBlock(anchor, cond, wrapped, noAnchor)
+}
+
+/** `keyBlock` under the flag: the first run adopts the server's content; a later key builds afresh. */
+export function hydKey(anchor, keyFn, makeBlock, noAnchor) {
+  const b = anchor?.__hyd
+  if (!b) return keyBlock(anchor, keyFn, makeBlock, noAnchor)
+  anchor.__hyd = null
+  let first = true
+  return keyBlock(anchor, keyFn, () => {
+    if (!first) return _call(makeBlock)
+    first = false
+    const frag = _takeRange(b.open, b.close)
+    b.open.remove()
+    return _adopt(_handle(b.page, b.inst, b.opts, frag.firstChild, frag), b.opts, `{#key} ${b.key} in ${b.inst.id}`, () => _call(makeBlock))
+  }, noAnchor)
 }
 
 /** `$$eachBlock` under the flag: each server row is adopted by its key. */
@@ -7126,7 +7144,20 @@ export function set_text(node, value) {
 // {@html expr} — inserts raw HTML before the anchor comment.
 // Replaces previously injected nodes on each reactive re-run.
 export function setInnerHTML(anchor, html) {
-  // Remove previously injected nodes (tracked via anchor.__htmlNodes)
+  // An adopted anchor is the close of the range the server wrote; its nodes
+  // stay when they are the parse of this same markup, as text bindings do.
+  const b = anchor.__hyd
+  if (b) {
+    anchor.__hyd = null
+    const nodes = [..._takeRange(b.open, b.close).childNodes]
+    b.open.remove()
+    const mine = document.createElement('template'), theirs = document.createElement('template')
+    mine.innerHTML = html ?? ''
+    theirs.content.append(...nodes.map((n) => n.cloneNode(true)))
+    anchor.__htmlNodes = nodes
+    nodes.forEach((n) => anchor.before(n))
+    if (mine.innerHTML === theirs.innerHTML) return
+  }
   if (anchor.__htmlNodes) {
     anchor.__htmlNodes.forEach(n => n.remove())
   }

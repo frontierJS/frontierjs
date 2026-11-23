@@ -299,8 +299,22 @@ try {
   `), { underTheBox: true, stillOnTheBasket: true, invalid: 'true' })
 
   // ─── 6. buying it ──────────────────────────────────────────────────────
-  const receipt = await evaluate(`
+  //
+  // Robin's address first, signed out. Every billing row reads through
+  // `customer.userId`, so an order attached by address alone lands in Robin's
+  // history; the guest is refused and keeps the basket (`FJS-D2316`).
+  check('a guest naming an account’s address is sent to sign in, basket kept', await evaluate(`
     $('#checkout-email').value = 'robin@buyer.test';
+    $('#checkout-email').dispatchEvent(new Event('input', { bubbles: true }));
+    $('#checkout-place').click();
+    const refusal = () => ($('#basket-error')?.textContent ?? '').includes('sign in');
+    await waitFor(() => refusal() || $('#basket-receipt'), 20000);
+    return { refused: refusal(),
+             stillOnTheBasket: !!$('#basket-lines') };
+  `), { refused: true, stillOnTheBasket: true })
+
+  const receipt = await evaluate(`
+    $('#checkout-email').value = 'shop-guest@drive.test';
     $('#checkout-email').dispatchEvent(new Event('input', { bubbles: true }));
     $('#checkout-place').click();
     await waitFor(() => $('#basket-receipt'), 20000);
@@ -349,7 +363,7 @@ try {
     total:    formatMoney(fromMinor(order?.total ?? 0, 'USD'), 'USD') === receipt.total,
     lines:    lines.map(l => [l.sku, l.quantity]),
   }, {
-    exists: true, status: 'pending', email: 'robin@buyer.test', total: true,
+    exists: true, status: 'pending', email: 'shop-guest@drive.test', total: true,
     lines: [['JCT-CAP-PCH-ONE', 2]],
   })
 

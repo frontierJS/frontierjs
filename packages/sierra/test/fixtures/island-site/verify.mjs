@@ -150,17 +150,20 @@ const PROBE = `
   out.laterNotBg   = bg('later');
 
   // CSS ships once, per component. The scope hash is content-addressed, so the
-  // prerendered <style id="mHASH"> is the same id the island's chunk would
-  // inject under — and addStyles skips an id already in the document. Before
-  // that, the same rules were on the page three times: Mesa's blob, Sierra's
-  // blob, and the runtime's injection under a second hash.
-  //
-  // Three components carry CSS, so this pins more than the dedupe: one tag per
-  // component, one id each, and an order that survives later mounts.
+  // id the prerendered sheet's link names in data-mesa-styles is the id the
+  // island's chunk would adopt under -- and addStyles skips an id a link
+  // already names. A second copy is an adopted sheet, which outranks every
+  // stylesheet linked after it. No <style> element at all: style-src 'self'
+  // refuses one (FJS-4585).
   const styleEls = () => [...document.querySelectorAll('style')];
-  const copies = needle => styleEls().filter(el => el.textContent.includes(needle)).length;
+  const sheetText = sheet => [...sheet.cssRules].map(r => r.cssText).join(' ');
+  const allSheets = () => [...document.styleSheets, ...document.adoptedStyleSheets];
+  const copies = needle => allSheets().filter(sh => sheetText(sh).includes(needle)).length;
+  const linkedIds = () => [...document.querySelectorAll('link[data-mesa-styles]')]
+    .flatMap(el => el.dataset.mesaStyles.split(' '));
   out.styleTags       = styleEls().length;
-  out.styleIds        = styleEls().map(el => el.id || '(anonymous)');
+  out.adoptedSheets   = document.adoptedStyleSheets.length;
+  out.styleIds        = linkedIds();
   out.uniqueStyleIds  = new Set(out.styleIds).size;
   out.ruleCopies      = copies('rgb(10, 20, 30)');   // Styled
   out.outerRuleCopies = copies('rgb(1, 2, 3)');      // Outer
@@ -177,9 +180,9 @@ const PROBE = `
   // chunk, fetched once.
   out.fetchedAtEnd = fetched();
 
-  // A late mount must not add a fourth <style> or reorder the three: the ids
-  // are the same ids, in the same places, after everything on the page is live.
-  out.styleIdsAfterScroll = styleEls().map(el => el.id || '(anonymous)');
+  // A late mount must not adopt a copy of any of the three.
+  out.styleIdsAfterScroll = linkedIds();
+  out.adoptedAfterScroll  = document.adoptedStyleSheets.length;
 
   // Everything the loader said, in order. A subsumed island used to reach
   // mount() with a detached anchor and get logged as a load failure — correct
@@ -287,7 +290,9 @@ const expected = {
   laterNotBg:         'rgb(239, 239, 239)',
 
   // Three components carry CSS → three tags, three ids, one copy of each rule.
-  styleTags:           3,
+  styleTags:           0,
+  adoptedSheets:       0,
+  adoptedAfterScroll:  0,
   uniqueStyleIds:      3,
   ruleCopies:          1,
   outerRuleCopies:     1,
@@ -300,11 +305,8 @@ const expected = {
   fetchedAtEnd:  ['Below', 'Counter', 'Inner', 'Later', 'Narrow', 'Outer', 'Seen', 'Styled'],
 }
 if (HYDRATABLE) {
-  // Every server node is the node the page ends with, and the root's own
-  // <style id="sierra-root"> is the fourth tag.
+  // Every server node is the node the page ends with.
   expected.nodesKept = []
-  expected.styleTags = 4
-  expected.uniqueStyleIds = 4
 }
 
 let failed = 0
@@ -315,17 +317,15 @@ for (const [k, want] of Object.entries(expected)) {
   console.log(`${ok ? '  ✓' : '  ✗'} ${k}: ${JSON.stringify(have)}${ok ? '' : `  (expected ${JSON.stringify(want)})`}`)
 }
 
-// Ordering, which a count alone cannot see. The served HTML fixes the order of
-// the three <style> blocks; live mounting must not disturb it — not when a
-// client:load island injects its own copy, and not when a chunk arrives late
-// after a scroll. Compared against the file rather than a hardcoded list, so
-// this stays true when the fixture's CSS changes.
+// The ids the page names are the ids the served file names, before and after
+// every island mounted. Compared against the file rather than a hardcoded list,
+// so this stays true when the fixture's CSS changes.
 const servedIds = [...(await readFile(join(DIST, 'index.html'), 'utf8'))
-  .matchAll(/<style id="([^"]+)"/g)].map((m) => m[1])
+  .matchAll(/data-mesa-styles="([^"]+)"/g)].flatMap((m) => m[1].split(' '))
 for (const [label, ids] of [['at load', got.styleIds], ['after a late mount', got.styleIdsAfterScroll]]) {
   const ok = JSON.stringify(ids) === JSON.stringify(servedIds)
   if (!ok) failed++
-  console.log(`${ok ? '  ✓' : '  ✗'} <style> order ${label}: ${JSON.stringify(ids)}` +
+  console.log(`${ok ? '  ✓' : '  ✗'} linked style ids ${label}: ${JSON.stringify(ids)}` +
               `${ok ? '' : `  (served order ${JSON.stringify(servedIds)})`}`)
 }
 

@@ -18,6 +18,7 @@ import { BYTES_PER_DIM } from './vector.js'
 // The one spelling of a quoted identifier (Invariant 8); query.js imports
 // pointColumns from here, and both edges are call-time, so the cycle is inert.
 import { quoteIdent, sqliteShiftModifier } from './query.js'
+import { createStaleTriggers } from './stale.js'
 
 // ─── Scale constraints ────────────────────────────────────────────────────────
 
@@ -1387,6 +1388,11 @@ export function generateDDL(schema, { foreignKeys = true, pluralize = false } = 
   for (const g of ownGroups) {
     sections.push(generateEdgeSideTableDDL(g))
   }
+
+  // After every table: a @stale trigger sits on a source table that may sort
+  // after the model declaring it.
+  const stale = createStaleTriggers(schema, pluralize)
+  if (stale) sections.push(stale)
 
   // Views — after all tables since they reference them
   for (const view of (schema.views ?? [])) {

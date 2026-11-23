@@ -128,6 +128,13 @@ that is the contract, and it decides what a look can be: if a design needs a
 rule of its own, the token that would have carried it is missing.
 `themes/press.css` exists to probe exactly that.
 
+**`--color-accent` is a theme's second hue** without markup writing
+`.secondary`. Unset, it is nothing: the tab indicator, the step marker, a
+checkbox and switch inside `.field-check` read `--color-primary`, and a
+`.kicker` (and the nav group label) stays muted. Set, it moves all of them; the
+Kicker reads it through the tone window, since it is text. A tone on the
+element still wins.
+
 ### What a theme can move, besides color
 
 | Token | Moves |

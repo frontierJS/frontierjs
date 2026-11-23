@@ -5,7 +5,7 @@ description: A box at a cloud — buy one, list them, power one off, destroy it
 
 <script>
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, withHosts, hostRecord,
-  publicKey, boxName, buyBox, machineLine } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
+  publicKey, boxName, buyBox, machineLine, unreachedBasecamps, unreachedLine } = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
 </script>
 
 A Server is a place (`FJS-D29`): one machine at a cloud, bought here with your

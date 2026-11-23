@@ -12,7 +12,7 @@ This folder is the live home (`FJS-D1559`, which superseded `FJS-D1185`). Every 
 - **A connector built on another imports it as a package**: gmail imports `@frontierjs/conduit-oidc` as `workspace:*`, and s3 peers on `@frontierjs/toolbelt/sigv4`.
 - **Held out of releases** until each is on npm; `DRIVES.md` has one row for the group and `docs/TESTING.md` one runner row.
 
-## The 29 connectors
+## The 30 connectors
 
 | Area | Connector | Covers |
 | --- | --- | --- |
@@ -41,6 +41,7 @@ This folder is the live home (`FJS-D1559`, which superseded `FJS-D1185`). Every 
 | Identity and abuse | `conduit-oidc` | Discovery, JWKS, code+PKCE and refresh, userinfo, the `id_token` verifier |
 | | `conduit-turnstile` | Cloudflare Turnstile siteverify |
 | Google | `conduit-google` | Maps Platform (Places New, Routes, Geocoding) and Firebase Cloud Messaging (HTTP v1) |
+| Imagery | `conduit-esri` | Aerial tiles: Esri World Imagery under a per-account key, USGS NAIP keyless (sink-only) |
 | Data | `conduit-plausible` | The read-only, rate-limited stats query |
 | | `conduit-airtable` | Airtable records by field id, the one formula builder, the schema's field types (sink-only) |
 

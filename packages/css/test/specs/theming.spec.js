@@ -898,3 +898,55 @@ test('theming: --heading-text-transform sets heading case; unset, only h6 is in 
   assert.equal(style(none.querySelector('h6'), 'text-transform'), 'none', '--heading-text-transform cannot take h6 out of caps');
   cleanup();
 });
+
+/* ── FJS-4196 — the accent role (FJS-D2315) ──────────────────────── */
+
+/*
+ * --color-accent is a theme knob read at four named sites. Each component
+ * knob is read through a use site on the element that derives it, since an
+ * unregistered custom property computes to its token stream.
+ */
+function accentReads(tokens) {
+  var wrap = themedBy(
+    tokens,
+    '<div>' +
+      '<div class="tablist" style="outline-color: var(--tab-accent)"></div>' +
+      '<ol class="steps" style="outline-color: var(--step-accent)"></ol>' +
+      '<label class="field-check"><input type="checkbox" class="switch" checked> On</label>' +
+      '<p class="kicker">Learn</p>' +
+      '<p class="primary" style="color: var(--bg-mix)">x</p>' +
+      '<p class="mute" style="color: var(--ink-mute)">x</p>' +
+    '</div>'
+  );
+  var read = {
+    tab:     style(wrap.querySelector('.tablist'), 'outline-color'),
+    step:    style(wrap.querySelector('.steps'), 'outline-color'),
+    check:   style(wrap.querySelector('.switch'), 'background-color'),
+    kicker:  style(wrap.querySelector('.kicker'), 'color'),
+    primary: style(wrap.querySelector('.primary'), 'color'),
+    mute:    style(wrap.querySelector('.mute'), 'color')
+  };
+  cleanup();
+  return read;
+}
+
+test('theming: --color-accent moves the tab indicator, step marker, check and kicker', function () {
+  var plain = accentReads('');
+  var navy = accentReads('--color-accent: rgb(20, 30, 90)');
+  ['tab', 'step', 'check'].forEach(function (site) {
+    assert.equal(plain[site], plain.primary, 'unset, the ' + site + ' accent is no longer the primary');
+    assert.equal(navy[site], 'rgb(20, 30, 90)', '--color-accent did not reach the ' + site + ' accent');
+  });
+  assert.equal(plain.kicker, plain.mute, 'unset, the kicker is no longer the muted ink');
+  assert.ok(navy.kicker !== plain.kicker, '--color-accent did not reach the kicker');
+  cleanup();
+});
+
+test('theming: a tone still beats --color-accent on a toned tablist', function () {
+  var tab = themedBy(
+    '--color-accent: rgb(20, 30, 90); --color-danger: rgb(200, 10, 10)',
+    '<div class="tablist danger" style="outline-color: var(--tab-accent)"></div>'
+  );
+  assert.equal(style(tab, 'outline-color'), 'rgb(200, 10, 10)', 'the accent beat a tone on the tablist');
+  cleanup();
+});

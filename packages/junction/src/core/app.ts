@@ -26,7 +26,7 @@ import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { NotFound, toFrameworkError, type ErrorMapper } from './errors.ts'
-import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
+import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit, originListed, schemeEntry } from '../transport/middleware.ts'
 import type { HelmetOptions } from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig, publicUrlMisfit, shutdownBudgets, unknownKeys, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
@@ -243,6 +243,13 @@ export interface AppNotify {}
 export interface AppMcp {}
 
 /**
+ * The shape of `app.oauth`: a grant flow (`FJS-D1313`) started from an app's
+ * own route on the auth plugin's callback and state cookie (`FJS-D2317`).
+ * Empty here so Junction keeps no dependency on @frontierjs/auth.
+ */
+export interface AppOAuth {}
+
+/**
  * The slots of the batteries junction ships itself (`FJS-D639`, `FJS-D640`).
  *
  * The AppJobs contract, for the same reason: each battery augments its own slot
@@ -364,6 +371,7 @@ export interface App {
 
   // The agent surface, from @frontierjs/mcp. Same augmentable-interface rule.
   mcp:       AppMcp
+  oauth:     AppOAuth
 
   // The outbox relay. `ctx.enqueue` refuses when it is absent — a row nothing
   // delivers is worse than a refusal.
@@ -981,6 +989,7 @@ const APP_SLOTS = {
   conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
   jobs:            "app.configure(caravan()) from '@frontierjs/caravan'",
   mcp:             "app.configure(mcp()) from '@frontierjs/mcp'",
+  oauth:           "app.configure(auth({ auth, oauth })) from '@frontierjs/auth'",
   outbox:          'app.configure(outbox())',
   commitments:     'app.configure(commitments())',
   notify:          "app.configure(notifications(...)) from '@frontierjs/notifications'",
@@ -2597,23 +2606,27 @@ function withDerivedOrigins(config: AppConfig, derived: string[]): AppConfig {
   if (!derived.length) return config
 
   const http = (config.http ?? {}) as Record<string, unknown>
-  const join = (declared: unknown): unknown => {
-    if (typeof declared === 'function') return (o: string) => derived.includes(o) || (declared as (o: string) => boolean)(o)
+  const join = (declared: unknown, adds: string[]): unknown => {
+    if (typeof declared === 'function') return (o: string) => originListed(adds, o) || (declared as (o: string) => boolean)(o)
     const have = Array.isArray(declared) ? declared as string[] : typeof declared === 'string' ? [declared] : []
     if (have.includes('*')) return declared
-    return [...new Set([...have, ...derived])]
+    return [...new Set([...have, ...adds])]
   }
 
   const cors = (http.cors ?? {}) as Record<string, unknown>
   const csrf = http.csrf
   const csrfOwn = typeof csrf === 'object' && csrf !== null && Array.isArray((csrf as Record<string, unknown>).origins)
+  // A scheme entry is a wildcard over every installed extension, which cors()
+  // refuses beside credentials; csrf and the upgrade still take it, from
+  // `derived` itself (`FJS-D2310`).
+  const corsAdds = cors.credentials ? derived.filter(o => !schemeEntry(o)) : derived
 
   return {
     ...config,
     http: {
       ...http,
-      cors: { ...cors, origins: join(cors.origins) },
-      ...(csrfOwn ? { csrf: { ...(csrf as object), origins: join((csrf as Record<string, unknown>).origins) } } : {}),
+      cors: { ...cors, origins: join(cors.origins, corsAdds) },
+      ...(csrfOwn ? { csrf: { ...(csrf as object), origins: join((csrf as Record<string, unknown>).origins, derived) } } : {}),
     },
   } as AppConfig
 }
@@ -2660,7 +2673,7 @@ function applyConfiguredMiddleware(app: App, written: AppConfig): void {
   // scaffold's cors '*' (`FJS-3921`). The Set drops the copies a list already has.
   const corsList = (http.cors as Record<string, unknown> | undefined)?.origins as string[] | ((o: string) => boolean) | undefined
   const corsOrigins = typeof corsList === 'function'
-    ? corsList
+    ? (derived.length ? (o: string) => originListed(derived, o) || corsList(o) : corsList)
     : corsList || derived.length ? [...new Set([...(corsList ?? []).filter(o => o !== '*'), ...derived])] : undefined
   const origins = (declared.origins as string[] | undefined) ?? corsOrigins
   const named = typeof origins === 'function' || !!origins?.length

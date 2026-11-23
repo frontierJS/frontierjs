@@ -771,6 +771,8 @@
  * it, and `tokens.spec.js` allows one file to mention a private name.
  */
 :host {
+  --color-accent:   initial;
+
   --space-3xs-base: initial;
   --space-2xs-base: initial;
   --space-xs-base:  initial;

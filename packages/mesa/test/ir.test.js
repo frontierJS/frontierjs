@@ -185,7 +185,7 @@ describe('lower()', () => {
 `, 'H.mesa')
     const [pre] = tree.children.filter((c) => c.kind === 'element')
     expect(pre.children).toEqual([
-      { kind: 'html', loc: 'H.mesa:4:6', value: expect.objectContaining({ raw: 'markup' }) },
+      { kind: 'html', start: 50, loc: 'H.mesa:4:6', value: expect.objectContaining({ raw: 'markup' }) },
     ])
     expect(pre.children[0].value.code).not.toBe('markup')
   })

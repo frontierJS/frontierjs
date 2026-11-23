@@ -57,7 +57,7 @@ prints, and a surface that exits or never reports (an older package, a custom
 script) lets the summary print without it after 15 seconds. `--verbose` starts
 the servers without the variable, so each prints the banner it always has. In a
 terminal, `o` opens the web surface, `s` opens it in surf where surf is
-installed, `r` restarts every surface, `v` restarts them in the other mode,
+installed, with the Web Inspector on Ctrl-Shift-O, `r` restarts every surface, `v` restarts them in the other mode,
 `q` quits.
 
 **An app the ports table does not name gets a slot of its own.** Every app
@@ -478,7 +478,8 @@ async function keyLoop({ tty }, run, footer, keys) {
     if (key === 'q' || key === null) break
     if (key === 'o' || key === 's') {
       const url = run.frontUrl()
-      if (url) key === 's' ? openUrlIn('surf', url) : openUrl(url)
+      // surf ships with its inspector off; -N lets Ctrl-Shift-O open it
+      if (url) key === 's' ? openUrlIn('surf', url, ['-N']) : openUrl(url)
     }
     if (key === 'r') await run.restart()
     if (key === 'v') await run.restart({ compact: !run.compact })
@@ -497,6 +498,13 @@ const { busyPorts, composedSurfaces } = await core('ports')
 const { runSurfaces } = await core('dev-run')
 const { missingPackages } = await core('install-preflight')
 const { encryptionKeyState, KEY } = await core('env-preflight')
+const { devCorsOrigins } = await core('shell-origins')
+// A desktop shell or an extension calls the API from an origin of its own,
+// and its socket is a silent 403 unless the API is told it (`FJS-4500`).
+const withShellOrigins = (root) => {
+  const origins = devCorsOrigins(root, process.env.FRONTIER_CORS_ORIGINS)
+  return origins ? { FRONTIER_CORS_ORIGINS: origins } : {}
+}
 
 const manifest = readManifest(root)
 const session = await claimSlot($, root, manifest)
@@ -539,6 +547,7 @@ const env = {
   ...(flag.host && { FRONTIER_HOST: '1' }),
   ...(tunnel && { FRONTIER_TRUST_PROXY: '1', FRONTIER_APP_URL: tunnel.url }),
   ...(generatedKey && { [KEY]: generatedKey }),
+  ...withShellOrigins(root),
 }
 
 let composed = composedSurfaces(manifest.scripts, session.rows)

@@ -27,6 +27,13 @@ export function chordOf(e?: any): {
     key: any;
 };
 /**
+ * The chords a WAI-ARIA `aria-keyshortcuts` value names, in this kit's
+ * spelling: `'Control+K Meta+K /'` is `['<C-k>', '<D-k>', '/']`, the string
+ * `formatChord(chordOf(e))` writes for each press. The attribute writes a
+ * letter in capitals; it is Shift only where `Shift` is named.
+ */
+export function parseKeyShortcuts(value?: any): any;
+/**
  * A table of bindings, built once: `{ gg: 'top', '<Mod-k>': 'palette',
  * f: { await: 'find' } }`. An action is a name or a function; `{ await }` is
  * an await-char, whose next printable key is its argument.

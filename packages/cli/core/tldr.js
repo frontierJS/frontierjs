@@ -1,6 +1,6 @@
 // ─── tldr.js — a question answered as a tldr page, for `fli tldr` ─────────────
 //
-// The prompt and the renderer; the session is `runAsk` in `ask-claude.js`, so
+// The prompt and the renderer; the session is `runAsk` in `@frontierjs/claude`, so
 // the read-only argv, hooks off and the budget are that file's and not
 // restated here. Claude answers in tldr-pages markdown — a title, a `>`
 // summary, then `- what:` / `` `how` `` pairs — because a fixed shape is what

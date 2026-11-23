@@ -799,9 +799,16 @@ export function buildHost(ctx, t) {
 
   // The string mode writes the parse `$$host.parsedHTML` makes of the markup; a
   // node target paints the text a browser's `innerText` reads from it,
-  // since a terminal has text and no markup.
+  // since a terminal has text and no markup. Under the flag the parse is
+  // bracketed, so the client's `setInnerHTML` can find the nodes it replaces.
   const emitHtml = (n, parent, ind) => {
+    hydrationSite(ctx, 'block', n.start)
     dep(n.value)
+    if (string && hyd) {
+      hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(n)})`)
+      hole(ind, `$$host.parsedHTML(${n.value.code})`)
+      return hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
+    }
     if (string) return hole(ind, `$$host.parsedHTML(${n.value.code})`)
     let value = `$$host.markupText((${n.value.code}), ${inPre > 0})`
     if (endsPre.has(n)) value += `.replace(${TRAILING_NEWLINE}, '')`
@@ -862,11 +869,14 @@ export function buildHost(ctx, t) {
   }
 
   const emitKey = (n, parent, ind) => {
+    hydrationSite(ctx, 'block', n.start)
     dep(n.key)
     if (string) {
+      if (hyd) hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(n)})`)
       line(ind, '{')
       emitChildren(n.children, '$$out', ind + 1)
       line(ind, '}')
+      if (hyd) hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(n)})`)
       return
     }
     const m = marker(parent, ind)

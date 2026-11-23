@@ -7,6 +7,7 @@
 //   const stub = new StubTransport(descriptor)
 //   stub.mock('/deploy', { deployed: true })
 //   stub.mock('DELETE /servers/42', null, { status: 204 })
+//   stub.mock('/tile/3/2/1', png, { headers: { 'content-type': 'image/png' } })
 //   stub.mockError('POST /reboot', 'timeout', { retryable: true })
 //   stub.mockStream('/logs', ['line-1', 'line-2'])
 //
@@ -34,6 +35,7 @@ type MockEntry = {
   kind:      'response' | 'error' | 'stream'
   data?:     unknown
   status?:   number
+  headers?:  Record<string, string>
   delay_ms?: number
 
   // kind: 'error'
@@ -47,6 +49,9 @@ type MockEntry = {
 
 export type MockOptions = {
   status?:   number
+  // Answered as `meta.headers`, lowercased as the http transport answers them:
+  // a binary body's `content-type` is read there and nowhere else.
+  headers?:  Record<string, string>
   delay_ms?: number
 }
 
@@ -85,8 +90,8 @@ export class StubTransport extends BaseTransport {
   // win, so GET /servers/42 and DELETE /servers/42 are distinguishable —
   // keying on path alone made them the same mock.
   mock(pattern: string, data: unknown, opts: number | MockOptions = {}): this {
-    const { status = 200, delay_ms } = typeof opts === 'number' ? { status: opts } : opts
-    this.mocks.set(normalize(pattern), { kind: 'response', data, status, delay_ms })
+    const { status = 200, delay_ms, headers } = typeof opts === 'number' ? { status: opts } : opts
+    this.mocks.set(normalize(pattern), { kind: 'response', data, status, delay_ms, headers: lowercased(headers) })
     return this
   }
 
@@ -116,8 +121,8 @@ export class StubTransport extends BaseTransport {
 
   // Set the fallback response returned when no mock matches.
   mockDefault(data: unknown, opts: number | MockOptions = {}): this {
-    const { status = 200, delay_ms } = typeof opts === 'number' ? { status: opts } : opts
-    this.defaultResponse = { kind: 'response', data, status, delay_ms }
+    const { status = 200, delay_ms, headers } = typeof opts === 'number' ? { status: opts } : opts
+    this.defaultResponse = { kind: 'response', data, status, delay_ms, headers: lowercased(headers) }
     return this
   }
 
@@ -167,7 +172,7 @@ export class StubTransport extends BaseTransport {
       })
     }
 
-    return this.ok<T>(entry.data as T, entry.status)
+    return this.ok<T>(entry.data as T, entry.status, entry.headers)
   }
 
   async *stream(req: ConduitRequest): AsyncIterable<ConduitChunk> {
@@ -217,6 +222,11 @@ function normalize(pattern: string): string {
   const space   = trimmed.indexOf(' ')
   if (space === -1) return trimmed
   return `${trimmed.slice(0, space).toUpperCase()} ${trimmed.slice(space + 1).trim()}`
+}
+
+function lowercased(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined
+  return Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
 }
 
 function sleep(ms: number, signal?: AbortSignal) {

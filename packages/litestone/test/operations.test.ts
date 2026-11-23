@@ -157,8 +157,8 @@ describe('rename — refused by name before a file is written', () => {
   })
 
   it('an operation litestone does not write', async () => {
-    const r = await refuse({ op: 'split', model: 'Post', from: 'title', to: 'heading' })
-    expect(r.message).toContain("'split' is not an operation litestone writes. It writes: rename, backfill")
+    const r = await refuse({ op: 'merge', model: 'Post', from: 'title', to: 'heading' })
+    expect(r.message).toContain("'merge' is not an operation litestone writes. It writes: rename, backfill, split")
   })
 
   it('a column named by two operations', () => {
@@ -183,7 +183,7 @@ describe('the flag and the document', () => {
   it('the document is { operations: [...] } and refuses an unknown op by position', () => {
     expect(readOperations({ operations: [RENAME] })).toEqual([RENAME])
     expect(() => readOperations([RENAME])).toThrow('{ "operations"')
-    expect(() => readOperations({ operations: [RENAME, { op: 'split' }] })).toThrow("operations[1]: 'split'")
+    expect(() => readOperations({ operations: [RENAME, { op: 'merge' }] })).toThrow("operations[1]: 'merge'")
   })
 })
 
@@ -507,5 +507,151 @@ describe('backfill — the rows already there take a value', () => {
   it('the document carries it, and --operations writes it', () => {
     const doc = { operations: [{ op: 'backfill', model: 'Job', field: 'companyId', first: 'Company' }] }
     expect(readOperations(doc)).toEqual(doc.operations)
+  })
+})
+
+describe('backfill create — one new parent row every existing row links to', () => {
+  const JOB = `model Job { id Int @id  title String }`
+  const COMPANY = `model Company { id Int @id  name String  note String? }`
+  const LINKED = `${COMPANY}\nmodel Job { id Int @id  title String  companyId Int  company Company @relation(fields: [companyId], references: [id]) }`
+  const CREATE = { op: 'backfill', model: 'Job', field: 'companyId', create: { Company: { name: 'Imported' } } }
+
+  async function jobs(src = JOB, rows = 3) {
+    const l = lab()
+    const db = new Database(':memory:')
+    create(db, parse(src), 'init', l.migrations)
+    await apply(db, l.migrations)
+    for (let i = 1; i <= rows; i++) db.run(`INSERT INTO job (title) VALUES ('j${i}')`)
+    return { ...l, db }
+  }
+
+  it('creates the parent the same migration adds, and links every row to it', async () => {
+    const p = await jobs()
+    const r = create(p.db, parse(LINKED), 'company', p.migrations, { operations: [CREATE] })
+    expect(r.created).toBe(true)
+    const sql = latest(p.migrations)
+    expect(sql).not.toContain('BLOCKED')
+    expect(sql).toContain('backfill Job.companyId ← a new Company row')
+    expect(sql).toContain(`INSERT INTO "company" ("name") SELECT 'Imported' WHERE EXISTS (SELECT 1 FROM "job");`)
+    expect((await apply(p.db, p.migrations)).applied.at(-1)!.ok).toBe(true)
+    expect(p.db.query('SELECT id, name FROM company').all()).toEqual([{ id: 1, name: 'Imported' }])
+    expect(p.db.query('SELECT DISTINCT companyId FROM job').all()).toEqual([{ companyId: 1 }])
+    expect(create(p.db, parse(LINKED), 'again', p.migrations).created).toBe(false)
+    p.cleanup()
+  })
+
+  it('links to the row it created, not the first one a parent already held', async () => {
+    const p = await jobs(`${COMPANY}\n${JOB}`)
+    p.db.run(`INSERT INTO company (name) VALUES ('Acme')`)
+    create(p.db, parse(LINKED), 'company', p.migrations, { operations: [CREATE] })
+    expect((await apply(p.db, p.migrations)).applied.at(-1)!.ok).toBe(true)
+    expect(p.db.query('SELECT id, name FROM company ORDER BY id').all()).toEqual([{ id: 1, name: 'Acme' }, { id: 2, name: 'Imported' }])
+    expect(p.db.query('SELECT DISTINCT companyId FROM job').all()).toEqual([{ companyId: 2 }])
+    p.cleanup()
+  })
+
+  it('a database with no rows to link creates no parent row', async () => {
+    const p = await jobs(JOB, 0)
+    create(p.db, parse(LINKED), 'company', p.migrations, { operations: [CREATE] })
+    expect((await apply(p.db, p.migrations)).applied.every((a: any) => a.ok)).toBe(true)
+    expect(p.db.query('SELECT count(*) AS n FROM company').get()).toEqual({ n: 0 })
+    p.cleanup()
+  })
+
+  it('is refused by name before a file is written', async () => {
+    const p = await jobs()
+    const msg = (op: any) => {
+      const r = create(p.db, parse(LINKED), 'x', p.migrations, { operations: [op] })
+      expect(r.created).toBeFalsy()
+      return r.message
+    }
+    const B = { op: 'backfill', model: 'Job', field: 'companyId' }
+    expect(msg({ ...B, first: 'Company', create: { Company: { name: 'x' } } })).toContain('states one source')
+    expect(msg({ ...B, create: { Company: {}, Job: {} } })).toContain('names one model')
+    expect(msg({ ...B, create: { Company: {} } })).toContain('Company.name is required')
+    expect(msg({ ...B, create: { Company: { name: 'x', ghost: 1 } } })).toContain('no stored field `ghost`')
+    expect(msg({ ...B, create: { Company: { name: null } } })).toContain('a string, a finite number or a boolean')
+    expect(msg({ ...B, create: { Job: { title: 'x' } } })).toContain('links to Company, not Job')
+    expect(listMigrationFiles(p.migrations)).toHaveLength(1)
+
+    // The read takes the newest parent row, so a second create would take both.
+    const TWO = `${COMPANY}\nmodel Job { id Int @id  title String  companyId Int  company Company @relation("hires", fields: [companyId], references: [id])  agencyId Int  agency Company @relation("places", fields: [agencyId], references: [id]) }`
+    const r = create(p.db, parse(TWO), 'x', p.migrations, { operations: [CREATE, { ...CREATE, field: 'agencyId' }] })
+    expect(r.message).toContain('two backfills each create a Company row')
+    p.cleanup()
+  })
+})
+
+describe('split — a column becomes one row per source in a new model', () => {
+  const PAGE_V1 = `model Page { id Int @id  title String  body String? }`
+  const PAGE_V2 = `model Page { id Int @id  title String }\nmodel Block { id Int @id  body String  pageId Int  page Page @relation(fields: [pageId], references: [id]) }`
+  const SPLIT = { op: 'split', model: 'Page', column: 'body', into: 'Block', field: 'body', link: 'pageId' }
+
+  async function pages() {
+    const l = lab()
+    const db = new Database(':memory:')
+    create(db, parse(PAGE_V1), 'init', l.migrations)
+    await apply(db, l.migrations)
+    db.run(`INSERT INTO page (title, body) VALUES ('a', 'first body'), ('b', NULL), ('c', 'third body')`)
+    return { ...l, db }
+  }
+
+  it('without it the edit deletes the bodies, and the box stops apply', async () => {
+    const p = await pages()
+    create(p.db, parse(PAGE_V2), 'blocks', p.migrations)
+    expect(latest(p.migrations)).toContain('DESTRUCTIVE')
+    expect((await apply(p.db, p.migrations)).refused).toBe(true)
+    p.cleanup()
+  })
+
+  it('copies each body into a Block linked to its page before the column is dropped', async () => {
+    const p = await pages()
+    const r = create(p.db, parse(PAGE_V2), 'blocks', p.migrations, { operations: [SPLIT] })
+    expect(r.created).toBe(true)
+    const sql = latest(p.migrations)
+    expect(sql).toContain('split Page.body → Block.body')
+    expect(sql).toContain(`INSERT INTO "block" ("pageId", "body") SELECT "id", "body" FROM "page" WHERE "body" IS NOT NULL;`)
+    expect(sql).not.toContain('DESTRUCTIVE')
+    expect(sql.indexOf('INSERT INTO "block"')).toBeGreaterThan(sql.indexOf('CREATE TABLE "block"'))
+    expect(sql.indexOf('INSERT INTO "block"')).toBeLessThan(sql.indexOf('DROP TABLE "page"'))
+
+    expect((await apply(p.db, p.migrations)).applied.at(-1)!.ok).toBe(true)
+    expect(p.db.query('SELECT pageId, body FROM block ORDER BY pageId').all()).toEqual([
+      { pageId: 1, body: 'first body' }, { pageId: 3, body: 'third body' },
+    ])
+    expect(p.db.query(`SELECT count(*) AS n FROM pragma_table_info('page') WHERE name = 'body'`).get()).toEqual({ n: 0 })
+    expect(create(p.db, parse(PAGE_V2), 'again', p.migrations).created).toBe(false)
+
+    const fresh = new Database(':memory:')
+    expect((await apply(fresh, p.migrations)).applied.every((a: any) => a.ok)).toBe(true)
+    p.cleanup()
+  })
+
+  it('is refused by name before a file is written', async () => {
+    const p = await pages()
+    const msg = (op: any, src = PAGE_V2) => {
+      const r = create(p.db, parse(src), 'x', p.migrations, { operations: [op] })
+      expect(r.created).toBeFalsy()
+      return r.message
+    }
+    expect(msg({ ...SPLIT, into: 'Nope' })).toContain('no model Nope')
+    expect(msg({ ...SPLIT, link: 'body' })).toContain('Block.body is not the key of a link to Page')
+    expect(msg({ ...SPLIT, field: 'ghost' })).toContain('no stored field `ghost`')
+    expect(msg({ ...SPLIT, column: 'ghost' })).toContain('has no column page.ghost')
+    expect(msg(SPLIT, PAGE_V2.replace('pageId Int ', 'pageId Int  kind String ')))
+      .toContain('Block.kind is required')
+    expect(msg({ ...SPLIT, column: 'body; DROP TABLE page' })).toContain('`column` is a name')
+    expect(listMigrationFiles(p.migrations)).toHaveLength(1)
+
+    const both = `model Page { id Int @id  title String }\nmodel Block { id Int @id  body String  pageId Int  page Page @relation(fields: [pageId], references: [id]) }`
+    const q = await pages()
+    create(q.db, parse(`${PAGE_V1}\nmodel Block { id Int @id  body String  pageId Int  page Page @relation(fields: [pageId], references: [id]) }`), 'block', q.migrations)
+    const r = create(q.db, parse(both), 'x', q.migrations, { operations: [SPLIT] })
+    expect(r.message).toContain('already builds block')
+    p.cleanup(); q.cleanup()
+  })
+
+  it('the document carries it', () => {
+    expect(readOperations({ operations: [SPLIT] })).toEqual([SPLIT])
   })
 })

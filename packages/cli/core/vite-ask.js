@@ -49,7 +49,9 @@ import { fileURLToPath } from 'node:url'
 import { locateText } from '@frontierjs/toolbelt/textedit'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
 
-import { ASK_EFFORT, EDIT_KINDS, EDIT_SCOPES, MAX_IMAGE, MAX_IMAGES, PANEL_EFFORTS, buildPlanPrompt, editEffort, editPrompt, readImages, resumeCommand, runAsk } from './ask-claude.js'
+import { ASK_EFFORT, MAX_IMAGE, MAX_IMAGES, readImages, resumeCommand, runAsk } from '@frontierjs/claude'
+import { EDIT_KINDS, EDIT_SCOPES, PANEL_EFFORTS, editEffort, editPrompt } from './edit-prompt.js'
+import { buildPlanPrompt } from './plan-prompt.js'
 import { askContext, findAppRoot, findGuides } from './ask-context.js'
 import { previewScope } from './preview.js'
 

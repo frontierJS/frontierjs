@@ -37,6 +37,33 @@ import { CREDENTIAL_HEADER } from '../core/ws-auth.ts'
  */
 export type OriginList = string | string[] | ((origin: string) => boolean)
 
+// A browser extension's origin carries an id no deploy can know — a store id
+// arrives after the first upload, and Firefox draws a uuid per install — so an
+// entry `chrome-extension://*` admits every origin of that scheme (`FJS-D2310`).
+// A web scheme is never one: `https://*` would be '*' under another spelling,
+// past every check that refuses '*' by name.
+const SCHEME_ENTRY = /^([a-z][a-z0-9+.-]*):\/\/\*$/i
+const WEB_SCHEMES  = new Set(['http', 'https', 'ws', 'wss'])
+
+/** The scheme an entry admits whole, or null for an entry naming one origin. */
+export function schemeEntry(entry: string): string | null {
+  const scheme = SCHEME_ENTRY.exec(entry)?.[1]?.toLowerCase()
+  return scheme && !WEB_SCHEMES.has(scheme) ? scheme : null
+}
+
+/**
+ * Whether a list admits `origin`: '*', the origin by name, or its scheme by a
+ * scheme entry. The one matcher cors, csrf and the WebSocket upgrade ask, since
+ * a rule only one of them knows is still a silent refusal at the others.
+ */
+export function originListed(list: readonly string[], origin: string): boolean {
+  if (list.includes('*') || list.includes(origin)) return true
+  const at = origin.indexOf('://')
+  if (at <= 0 || at + 3 === origin.length) return false
+  const scheme = origin.slice(0, at).toLowerCase()
+  return list.some(entry => schemeEntry(entry) === scheme)
+}
+
 // ─── combineOrigins ────────────────────────────────────────────────────────
 // Returns a `{ origins }` object that can be spread into both cors() and
 // csrf() options. Avoids repeating the origins list and keeps the two
@@ -133,9 +160,11 @@ export function cors(opts: CorsOptions) {
   // cookie-authenticated response (`FJS-689`). Refused at CONSTRUCTION rather
   // than per request: a guard that fires on the attacker's request and not on
   // the developer's is one nobody sees until it is being used.
-  if (credentials && (origins === '*' || (Array.isArray(origins) && origins.includes('*')))) {
+  // A scheme entry is a wildcard over every extension installed (`FJS-D2310`).
+  const wildcard = Array.isArray(origins) ? origins.find(o => o === '*' || schemeEntry(o)) : origins === '*' ? '*' : undefined
+  if (credentials && wildcard) {
     throw new TypeError(
-      `[Junction] cors(): origins '*' cannot be combined with credentials: true — ` +
+      `[Junction] cors(): origins '${wildcard}' cannot be combined with credentials: true — ` +
       `a credentialed response reflects the caller's own Origin back, so the ` +
       `wildcard grants every site read access to an authenticated response. ` +
       `List the origins that may hold a session, or drop credentials.`
@@ -162,8 +191,8 @@ export function cors(opts: CorsOptions) {
 
   function isAllowed(origin: string): boolean {
     if (origins === '*') return true
-    if (Array.isArray(origins)) return origins.includes('*') || origins.includes(origin)
-    if (typeof origins === 'string') return origins === origin
+    if (Array.isArray(origins)) return originListed(origins, origin)
+    if (typeof origins === 'string') return originListed([origins], origin)
     return origins(origin)
   }
 
@@ -584,7 +613,7 @@ export function originRefusal(
   const requestOrigin = originHeader || (referer ? `${referer.protocol}//${referer.host}` : null)
 
   const listed = requestOrigin !== null && !!origins && (Array.isArray(origins)
-    ? origins.includes(requestOrigin) || origins.includes('*')
+    ? originListed(origins, requestOrigin)
     : origins(requestOrigin))
 
   if (listed) return null

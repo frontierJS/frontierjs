@@ -1035,19 +1035,18 @@ knocks the other back on both screens and removes neither.
     from stays on until `/resign`.
 - [ ] 9.2 The framework quarter. A scene where each building is a package —
   the Litestone quarry, the Junction crossroads, the Mesa workshop, the
-  Caravan stables. Inside, a wall reads its `PROJECT_STATE.md`; a red CI run
-  is a storm over its roof and a release is a festival day in the square.
-  Walking the quarter is walking the repo. The state is baked in at deploy:
-  `PROJECT_STATE.md` headlines and the last CI result (`FJS-D996`).
+  Caravan stables. Inside, a wall reads its `PROJECT_STATE.md`, and a release
+  is a festival in the square until the next deploy (`FJS-D2334`); there is
+  no CI storm (`FJS-D2333`). Walking the quarter is walking the repo. The
+  state is baked in at deploy (`FJS-D996`).
   - 2026-11-21: the first half landed, the box stays open. `/quarter/` is a
     scene of four buildings (Litestone, Junction, Mesa, Caravan), reached by
     the square's FRAMEWORK door and a door back. Standing on a building's
     wall cell, `Wall.mesa` shows its sign, `packages/<pkg>/PROJECT_STATE.md`
     and the headline baked by `bun run quarter` into `quarter.data.json`;
     one step away it is gone. Proved by `scenes.test.js` and a walk-in on a
-    real pty in `verify:townhall`. Left: the CI storm and the release
-    festival (the live-signal half, owner's forks), the other packages'
-    buildings, and an interior per building.
+    real pty in `verify:townhall`. Left: the release festival (`FJS-D2334`),
+    the other packages' buildings, and an interior per building.
 - [ ] 9.3 Plots. A member claims an empty lot, places their house in 5.7's
   editor, and the house is a Room they own — a row of placements and a
   palette, never a stranger's glyphs (`FJS-D995` as `FJS-D997` amends it). Strangers drawing art is a
@@ -2137,8 +2136,8 @@ the fourth animals, each tagged with the mechanism it would add, cheapest first.
 
 - **CI as the square's weather.** Clear when `.cache/ci-last.txt` is green,
   rain when a phase failed, a storm when several did. 7.3 draws the overlay;
-  this picks it. Distinct from 9.2's roof storm, which is baked in at deploy
-  (`FJS-D996`) and is the framework's, not this machine's.
+  this picks it. 9.2 was ruled to carry no CI storm (`FJS-D2333`), so this is
+  the one place CI would show, and an idea, not a step.
 - **Ships at the docks.** A ship pulls in when a deploy lands, and one stuck at
   sea is a deploy that hung. Pairs with 8.3's crier, which announces the same
   landing.
@@ -2385,6 +2384,16 @@ every screen but the caller's, which has its own in the answer.
 
 ## Open questions
 
+- ~~**Q17 — Which CI result 9.2's roof storm bakes.**~~ **Answered 2026-11-23 (`FJS-D2333`): C — no storm (one level simpler): the quarter shows `PROJECT_STATE.md` and nothing about CI, and 9.2 drops the storm.** `FJS-D996` bakes "the last CI result" at deploy and names no CI. Two exist: GitHub's `ci.yml` run on main (red since 2026-11-20) and the local `fli ci` report in `.cache/ci-last.txt`, whose findings are already split by package.
+  - **A** — GitHub's last run on main, read by `gh run list` at bake; a storm over each building whose package the failing job names, the whole quarter when none is named.
+  - **B** — the deploying machine's `.cache/ci-last.txt`; per package, but only as fresh as that machine's last `fli ci`.
+  - **C** — no storm (one level simpler): the quarter shows `PROJECT_STATE.md` and nothing about CI, and 9.2 drops the storm.
+  - **Recommend A** — it is the CI everyone sees and it follows main.
+- ~~**Q18 — How long 9.2's release festival lasts.**~~ **Answered 2026-11-23 (`FJS-D2334`): C — until the next deploy: the bake compares the newest tag with the one the last bake saw, and a newer one is a festival in the square until the next bake.** Every package release already leaves a `@frontierjs/<pkg>@<version>` git tag, so the bake can read the newest tag of each quarter package.
+  - **A** — the release day: the bake writes each building's newest tag date, and the visitor's clock holds the festival for the 24 hours after it, so it ends without a deploy.
+  - **B** — the same, for a week.
+  - **C** — until the next deploy: the bake compares the newest tag with the one the last bake saw, and a newer one is a festival in the square until the next bake.
+  - **Recommend A** — a festival that ends on its own is still a day.
 - **Q16 — What a letter is in Haven's schema.** Asked in the pony-express paper as its Q1.
   - **A** — a `Message` with `toId` and no room: one model, but `roomId` goes
     optional, `body`'s 280 limit and `@@gate`'s locked delete both bend, and

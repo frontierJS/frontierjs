@@ -76,4 +76,23 @@ describe('leavesAt', () => {
     expect(leavesAt({ ...WINDOW, kind: 'day' }, { expiresAt: '2026-09-28' }))
       .toBe(Date.parse('2026-09-28T00:00:00Z'))
   })
+
+  // FJS-4548: a @zoned day ends at midnight in the row's own zone, the way the
+  // read that drops it does (FJS-2782); a zone that is absent or not one is UTC.
+  it('a zoned day edge is that day\'s first instant in the row\'s own zone', () => {
+    const day = { from: null, to: 'expiresOn', kind: 'day' as const, imposed: true }
+    const via = { ...day, zone: 'account.timeZone' }
+    expect(leavesAt(via, { expiresOn: '2026-10-04', account: { timeZone: 'Asia/Tokyo' } }))
+      .toBe(Date.parse('2026-10-03T15:00:00Z'))
+    expect(leavesAt(via, { expiresOn: '2026-10-04', account: { timeZone: 'America/Los_Angeles' } }))
+      .toBe(Date.parse('2026-10-04T07:00:00Z'))
+    expect(leavesAt({ ...day, zone: 'timeZone' }, { expiresOn: '2026-10-04', timeZone: 'Asia/Tokyo' }))
+      .toBe(Date.parse('2026-10-03T15:00:00Z'))
+    expect(leavesAt({ ...day, zone: 'offset' }, { expiresOn: '2026-10-04', offset: 540 }))
+      .toBe(Date.parse('2026-10-03T15:00:00Z'))
+    const utc = Date.parse('2026-10-04T00:00:00Z')
+    expect(leavesAt(via, { expiresOn: '2026-10-04', account: null })).toBe(utc)
+    expect(leavesAt(via, { expiresOn: '2026-10-04', account: { timeZone: null } })).toBe(utc)
+    expect(leavesAt(via, { expiresOn: '2026-10-04', account: { timeZone: 'Not/AZone' } })).toBe(utc)
+  })
 })

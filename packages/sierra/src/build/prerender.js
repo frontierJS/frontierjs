@@ -35,6 +35,7 @@
 import { resolve, dirname, join, relative, sep } from 'path'
 import { mkdir, writeFile } from 'fs/promises'
 import { existsSync, readFileSync } from 'fs'
+import { createHash } from 'crypto'
 import { fileURLToPath } from 'url'
 import { createRequire } from 'module'
 import { appSrcDir } from './app-alias-plugin.js'
@@ -314,8 +315,9 @@ export const hasSkipLink = (html) => /class="[^"]*\bskip-link\b[^"]*"/.test(html
  * layer named first here would become the package's lowest. It never matches a
  * focused link, so a keyboard user who tabs to it before the CSS sees it.
  */
-export const SKIP_LINK_GUARD =
-  '<style id="sierra-skip-link">@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}</style>'
+export const SKIP_LINK_GUARD_CSS =
+  '@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}'
+export const SKIP_LINK_GUARD = `<style id="sierra-skip-link">${SKIP_LINK_GUARD_CSS}</style>`
 
 /**
  * The `document` keys as HTML. One serializer for the prerendered page and for
@@ -366,19 +368,27 @@ function robotsMeta(node, headMeta) {
 }
 
 /**
+ * The build-output path a page's own CSS is written to, named by its content.
+ * The name has the `-XXXXXXXX.css` shape under `assets/` that `isHashedAsset`
+ * caches forever, and two pages with the same CSS name the same file.
+ */
+export function sheetFile(prefix, css) {
+  return `assets/${prefix}-${createHash('sha256').update(css).digest('base64url').slice(0, 8)}.css`
+}
+
+/**
  * Wrap rendered body HTML in a document.
  *
- * Mesa's wrapPage() takes `css` as an href, which would mean coordinating an
- * emitted asset name with Vite's hashing for what is usually a few hundred
- * bytes of scoped CSS. Inlining it keeps each page self-contained and costs one
- * fewer request — these pages ship no JS, so the style block is the only thing
- * standing between HTML and first paint.
+ * Every rule Sierra adds is LINKED, never inlined: a `<style>` element is
+ * refused by a policy of `style-src 'self'`, and the page then renders with no
+ * component CSS at all (`FJS-4585`). The CSS goes in `sheets` (path → text)
+ * for the caller to write beside the page, and the link names it under `base`.
  */
 export function wrapDocument(bodyHTML, {
   title, description, css, styles, lang = DEFAULT_LANG, stylesheets = [],
   bodyClass = '', htmlClass = '',
   meta = [], links = [], jsonLd = [], bodyAttrs = {}, head = '', bodyEnd = '',
-  hydrateJson = null,
+  hydrateJson = null, base = '/', sheets = new Map(),
 } = {}) {
   const parts = documentParts({ lang, htmlClass, meta, links, jsonLd, bodyClass, bodyAttrs, head, bodyEnd })
   // The guard rides with the link it hides: an app loading no `a11y.css` has
@@ -386,31 +396,35 @@ export function wrapDocument(bodyHTML, {
   // layer the lowest.
   const writesSkip = !hasSkipLink(bodyHTML)
   const skipLink = writesSkip ? `${SKIP_LINK}\n` : ''
-  const skipGuard = writesSkip ? `\n  ${SKIP_LINK_GUARD}` : ''
+  const link = (prefix, cssText, extra = '') => {
+    const file = sheetFile(prefix, cssText)
+    sheets.set(file, cssText)
+    return `<link rel="stylesheet" href="${esc(base.replace(/\/$/, '') + '/' + file)}"${extra}>`
+  }
+  // The hydrate root lays out as if it were not there, so a layout written for
+  // `body > main` keeps its box.
+  const shellCss = (writesSkip ? SKIP_LINK_GUARD_CSS : '') + (hydrateJson === null ? '' : HYDRATE_ROOT_CSS)
+  const shellLink = shellCss ? `\n  ${link('sierra-shell', shellCss)}` : ''
   // `hydrate()` adopts every child of its target as the server's, so the root
   // holds the render and nothing else: the skip link, the data and `bodyEnd`
   // sit outside it, where the client's tree never looks for them.
   const body = hydrateJson === null ? bodyHTML
     : `<div data-sierra-root>${bodyHTML}</div>\n<script type="application/json" data-sierra-data>${hydrateJson}</script>`
 
-  // One <style id="mHASH"> per component when the renderer supplies the split,
-  // rather than one anonymous blob.
+  // Every component's CSS in one sheet, its scope ids on the link. The id is
+  // the component's CSS scope hash, which Mesa derives from the style content,
+  // so it is the id the component's own `addStyles(id, …)` call uses when it
+  // mounts on the client; `addStyles` skips an id a `data-mesa-styles` link
+  // already carries, so an island's rules ship once, in the page's sheet,
+  // rather than again as an adopted copy that outranks every later link.
   //
-  // The id is the component's CSS scope hash, which Mesa derives from the style
-  // content — so it is the same id the component's own `addStyles(id, …)` call
-  // uses when it mounts on the client. `addStyles` skips a style whose id is
-  // already in the head, so an island's rules are shipped once, in the
-  // prerendered page, instead of again by its chunk under a second hash.
-  //
-  // Falls back to the concatenated blob when `styles` is absent, so an older
-  // renderer (or a caller passing only `css`) keeps working.
-  const styleTag = styles?.length
-    ? '\n' + styles
-        .filter((s) => s?.css?.trim())
-        .map((s) => `  <style id="${esc(s.id)}">${s.css.trim()}</style>`)
-        .join('\n')
-    : (css && css.trim() ? `\n  <style>${css.trim()}</style>` : '')
-  const rootStyle = hydrateJson === null ? '' : `\n  ${HYDRATE_ROOT_STYLE}`
+  // A caller passing only `css` has no ids, and its sheet carries none.
+  const own = styles?.length ? styles.filter((s) => s?.css?.trim()) : []
+  const pageCss = own.length ? own.map((s) => s.css.trim()).join('\n') : (css?.trim() ?? '')
+  const ids = own.map((s) => s.id).filter(Boolean)
+  const styleTag = pageCss
+    ? `\n  ${link('page', pageCss, ids.length ? ` data-mesa-styles="${esc(ids.join(' '))}"` : '')}`
+    : ''
 
   // The app's stylesheets come FIRST, so a component's own scoped rules — which
   // are the more specific statement — are not overridden by the design system.
@@ -430,10 +444,10 @@ export function wrapDocument(bodyHTML, {
 
   return `<!DOCTYPE html>
 <html${parts.htmlAttr}>
-<head>${skipGuard}
+<head>${shellLink}
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${rootStyle}${parts.head}
+  <title>${esc(title ?? '')}</title>${descTag}${parts.tags}${linkTags}${styleTag}${parts.head}
 </head>
 <body${parts.bodyAttr}>
 ${skipLink}${body}${parts.bodyEnd}
@@ -442,12 +456,8 @@ ${skipLink}${body}${parts.bodyEnd}
 `
 }
 
-/**
- * The hydrate root lays out as if it were not there, so a layout written for
- * `body > main` keeps its box. A rule, not a `style=` attribute, which a
- * strict CSP drops.
- */
-export const HYDRATE_ROOT_STYLE = '<style id="sierra-root">[data-sierra-root]{display:contents}</style>'
+/** A rule, not a `style=` attribute, which a strict CSP drops. */
+export const HYDRATE_ROOT_CSS = '[data-sierra-root]{display:contents}'
 
 /**
  * A page's hydrate props as the JSON a `<script type="application/json">` can
@@ -543,6 +553,8 @@ export async function prerenderRoutes(opts) {
     // (asset URLs from the main build) and the <body> class its index.html
     // carries. Both are per-BUILD, not per-route.
     stylesheets = [], bodyClass = '', htmlClass = '', lang = DEFAULT_LANG,
+    // The URL prefix the output is served under, for the sheets this run writes.
+    base = '/',
     // The app's own HTML for every page: `head` and `bodyEnd` verbatim, and
     // `bodyAttrs` (an object) beside the body class. `docMeta`, `docLinks`
     // and `docJsonLd` are head()'s keys for every page, escaped by the same
@@ -577,6 +589,8 @@ export async function prerenderRoutes(opts) {
     '@frontierjs/sierra/router': ROUTER_MODULE,
   }
   const written = []
+  // Sheets already on disk: pages with the same CSS share one file.
+  const sheetsWritten = new Set()
   // The URLs those files answer at. A dynamic route's pages exist only because
   // getStaticPaths() named them, so the route TABLE cannot list them — it
   // carries `/products/:slug/` and nothing else. Anything downstream that has
@@ -713,9 +727,9 @@ export async function prerenderRoutes(opts) {
           label:    urlPath,
           islands,
           ...(hydratable ? { hydratable: true } : {}),
-          // The document is assembled here from `rendered.styles`, one
-          // <style id> per component, so Mesa must not also prepend the whole
-          // lot as one anonymous blob — that is the same CSS twice on the page.
+          // The document links `rendered.styles` as one sheet, so Mesa must not
+          // also prepend the whole lot as an inline blob, which a strict
+          // policy refuses and which is the same CSS twice on the page.
           styleTag: false,
           alias,
           ...(transformSource ? { transformSource } : {}),
@@ -822,12 +836,21 @@ export async function prerenderRoutes(opts) {
     // Serialized here and not at render: only a page that passed the static
     // safety check (FJS-081) is written, and its data is exactly what that
     // check read, so embedding it publishes nothing the HTML did not.
+    const sheets = new Map()
     const doc = wrapDocument(html, {
       ...docOpts,
+      base,
+      sheets,
       ...(hydrate ? { hydrateJson: hydrateJson(hydrate.props, `${node.id} (${urlPath})`) } : {}),
     })
     if (hydrate) hydratePages.push({ rel, wrapper: hydrate.wrapper })
 
+    for (const [sheet, cssText] of sheets) {
+      if (sheetsWritten.has(sheet)) continue
+      sheetsWritten.add(sheet)
+      await mkdir(dirname(join(outDirAbs, sheet)), { recursive: true })
+      await writeFile(join(outDirAbs, sheet), cssText, 'utf8')
+    }
     await mkdir(dirname(file), { recursive: true })
     await writeFile(file, doc, 'utf8')
     written.push(rel)

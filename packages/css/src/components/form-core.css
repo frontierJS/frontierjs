@@ -191,7 +191,7 @@ input[type="file"]:disabled::file-selector-button {
  * either element.
  */
 .field-check {
-  --check-accent: var(--bg-mix, var(--color-primary));
+  --check-accent: var(--bg-mix, var(--color-accent, var(--color-primary)));
 }
 /*
  * `:not(.switch)` is load-bearing. This rule is (0,1,1) and `.switch`
@@ -282,13 +282,13 @@ input[type="file"]:disabled::file-selector-button {
 /*
  * The checked track reads the same three-step chain the checkbox does:
  * a tone on the switch itself, else the one the .field-check label
- * derived into --check-accent, else primary. Without the middle step a
+ * derived into --check-accent, else the theme's accent, else primary. Without the middle step a
  * tone on the label cannot cross to the input, because --bg-mix is
  * element-scoped; without the last step a switch outside a .field-check
  * would resolve to nothing and render untinted.
  */
 .switch:checked {
-  background-color:    var(--bg-mix, var(--check-accent, var(--color-primary)));
+  background-color:    var(--bg-mix, var(--check-accent, var(--color-accent, var(--color-primary))));
   background-position: calc(100% - calc(0.125 * var(--rem))) center;
 }
 /* Focus ring: focus.css. */

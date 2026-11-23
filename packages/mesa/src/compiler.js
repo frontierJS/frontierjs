@@ -493,7 +493,8 @@ export const isObject = (d) => d !== null && typeof d === 'object'
  *    by Mesa's renderer AND by Vite for its client chunk. Under two ids, the
  *    page carried two copies of the same rules under two hashes, and the markup
  *    swapped class on mount. Under one id, `addStyles` finds the prerendered
- *    `<style id=…>` already in the head and injects nothing.
+ *    `<style id=…>`, or a link naming the id in `data-mesa-styles`, already in
+ *    the head and injects nothing.
  * 3. **Debuggability.** A scope class that changes on every build is not
  *    something you can search for.
  *
@@ -6333,7 +6334,9 @@ export function buildBlock(data, option = {}) {
         binds.push(ctx.makeifBlock(n, ifAnchor))
       } else if (n.type === 'key') {
         if (isRoot) requireFragment = true
-        binds.push(ctx.makeKeyBlock(n, ownAnchor('key')))
+        const keyAnchor = ownAnchor('key')
+        hydrationVar(ctx, keyAnchor, n.start)
+        binds.push(ctx.makeKeyBlock(n, keyAnchor))
       } else if (n.type === 'await') {
         if (isRoot) requireFragment = true
         const awaitAnchor = ownAnchor('await')
@@ -6344,13 +6347,13 @@ export function buildBlock(data, option = {}) {
           if (isRoot) requireFragment = true
           binds.push(ctx.makeRenderTag(n, ownAnchor('render')))
         } else if (n.value.startsWith('@html ')) {
-          // {@html expr} — sets innerHTML of a placeholder text node's parent.
-          // We insert a comment anchor in the template and use setInnerHTML at runtime.
           if (isRoot) requireFragment = true
           const rawExpr = n.value.slice('@html '.length).trim()
           const exp = ctx.accessors ? rewriteExpr(rawExpr, ctx.accessors) : rawExpr
           ctx.detectDependency(rawExpr)
           const label = ownAnchor('html')
+          hydrationSite(ctx, 'block', n.start)
+          hydrationVar(ctx, label, n.start)
           binds.push(xNode('html-tag', { label, exp }, (w, nd) => {
             w.writeLine(`$$runtime.createEffect(() => { $$runtime.setInnerHTML(${nd.label.name}, ${nd.exp}); });`)
           }))
@@ -6621,6 +6624,7 @@ export function makeifBlock(data, label) {
 }
 
 export function makeKeyBlock(data, label) {
+  hydrationSite(this, 'block', data.start)
   const rx = data.value.match(/^#key\s+(.+)$/s)
   assert(rx, 'Wrong #key expression: ' + data.value)
   const rawExp = rx[1].trim()
@@ -10989,7 +10993,7 @@ function _domTraversal(code) {
 // undefined on that path, so the handle refuses it by name and the enclosing
 // block, or the page, renders afresh (FJS-D2260). The block calls become their
 // adopting forms, which hand an unflagged anchor straight to the block itself.
-const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
+const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['keyBlock', 'hydKey'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
 
 function _adoptRoots(code, ctx) {
   const byName = new Map()

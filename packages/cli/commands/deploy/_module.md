@@ -1630,7 +1630,9 @@ does not contain it, which is what a `sierra.config.js` that never reads the var
 produces. Sign-in with a Bearer token works across the two names with the scaffold's CORS
 default. A cookie session across them needs the web origin in the API's cors and csrf lists, which the
 deploy hands the container as `FRONTIER_CORS_ORIGINS`: `https://<web.domain>` under two origins, plus
-`tauri://localhost` and `http://tauri.localhost` when the app has a `desktop/` surface. The API
+`tauri://localhost` and `http://tauri.localhost` when the app has a `desktop/` surface, and
+`chrome-extension://*` and `moz-extension://*` (every origin of each scheme, `FJS-D2310`) when it
+has an `extension/` one. The API
 merges it into whatever `junction.config.js` declares; `cors.credentials` stays the app's to set.
 
 ### Splitting the API and the web onto different machines

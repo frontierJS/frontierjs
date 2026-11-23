@@ -54,6 +54,19 @@ export function normalizeOrderBy(sort: SortParam): OrderBy
 /** `'id,name'` or `['id', 'name']` → `{ id: true, name: true }`. */
 export function normalizeSelect(select: SelectParam): Record<string, boolean>
 
+/** A Litestone `include` tree: a relation is its whole row (`true`) or a node. */
+export type IncludeTree = { [relation: string]: boolean | IncludeNode }
+export type IncludeNode = { select?: Record<string, boolean | { where: Record<string, unknown> }>; include?: IncludeTree }
+
+/** `$populate`'s `'words.lemma:root'` grammar → Litestone's `include` tree; a middle hop nests as `include`. */
+export function parsePopulate(populate: string | string[]): IncludeTree
+
+/** A Litestone object-form select: a column is `true`, a relation `true` or `{ select }`. */
+export type SelectTree = { [field: string]: boolean | { select: SelectTree } }
+
+/** A `select` list → Litestone's object form (`FJS-D2332`); every hop nests as `select` and names are not checked. */
+export function parseSelectPaths(list: string[]): SelectTree
+
 /** One value against another, in SQLite's storage-class order. */
 export function compareValues(a: unknown, b: unknown, collation?: string): number
 

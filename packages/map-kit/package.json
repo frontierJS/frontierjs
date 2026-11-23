@@ -1,0 +1,29 @@
+{
+  "name": "@frontierjs/map-kit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A map FrontierJS draws itself: pure web-mercator projection, tiles and fit, then an SVG map rendered by Mesa",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    "./projection": "./src/projection.js",
+    "./draw": "./src/draw.js",
+    "./StaticMap.mesa": "./src/StaticMap.mesa",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "test": "node ../../scripts/tmp-run.mjs 'bun test test/ && node test/static-map.mjs'",
+    "drive": "node ../../scripts/tmp-run.mjs 'bun test/drive.mjs'",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/css": "^0.16.0",
+    "@frontierjs/mesa": "^0.1.0"
+  },
+  "devDependencies": {
+    "@frontierjs/css": "workspace:*",
+    "@frontierjs/mesa": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
+    "acorn": "^8.0.0"
+  }
+}

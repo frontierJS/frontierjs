@@ -464,6 +464,8 @@ export function hydBlock(fr?: any, fn?: any): (v: any, i: any) => any;
 export function hydRender(anchor?: any, run?: any): any;
 /** `ifBlock` under the flag: the server's branch is adopted when the client takes the same one. */
 export function hydIf(anchor?: any, condFn?: any, blocks?: any, noAnchor?: any): void;
+/** `keyBlock` under the flag: the first run adopts the server's content; a later key builds afresh. */
+export function hydKey(anchor?: any, keyFn?: any, makeBlock?: any, noAnchor?: any): void;
 /** `$$eachBlock` under the flag: each server row is adopted by its key. */
 export function hydEach(anchor?: any, mode?: any, getArray?: any, keyFn?: any, makeItem?: any, elseBlock?: any): void;
 /** `awaitBlock` under the flag: the server's settled branch stays on screen and is adopted when the client settles the same way. */

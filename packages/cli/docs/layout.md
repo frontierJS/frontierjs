@@ -188,26 +188,17 @@ core/
                 `bench.baseline.json`; boot figures are reported and never fail,
                 because a timing is one machine on one afternoon. Reads `dist/`
                 and never builds one
-  ask-claude.js the console's output handed to `claude -p` and the reply read
-                back, for `fli gui`'s `ask claude`. Read-only by construction
-                (`--tools` plus a Bash allow-list; a print session denies the
-                rest rather than prompting) and hooks OFF — this repo's Stop hook
-                would keep a one-question session chasing `fli done`, and it
-                records items as shown for the person's own session too. Not
-                `ask.js`, which resolves a question against the registers.
-                WORK mode is the other end — every permission, a budget, hooks
-                optional — for basecamp's workbench (`domain/workbench/workbench.ts` there),
-                which reads this file's argv and event reader by import. Its
-                REVIEWER is the read-only default with `reviewPrompt`, a fresh
-                session rather than the builder's resumed one. AGENT mode is
-                `:ask`: no built-in tool, one MCP server (`--mcp-config`, the
-                app at a declared standing) and `mcp__app` allowed, measured
-                on 2.1.308 as an init with `tools: []`. `contentPrompt`
-                is a site OWNER's ask, which basecamp runs with `runAsk` in
-                EDIT mode over a copy of a draft's `content/`, handing its own
-                `env` so its key reaches that child only. DRAW mode is
-                `project:diagram`: no tool at all and `--system-prompt` in place
-                of the default, so stdin is the whole of what it reads
+  ask-prompt.js what `fli ai` and the console say: the output panel's ask
+                (`askPrompt`, `gitContext`), `fli ask`'s `questionPrompt` and
+                the `:ask` agent's `agentPrompt`, with their rules. This and
+                the two below say WHAT; how `claude -p` is started and read is
+                `@frontierjs/claude`, which imports none of them
+  edit-prompt.js what the Vite ask panel and a site edit say: `editPrompt`,
+                `contentPrompt`, the kind and scope chips (`EDIT_KINDS`,
+                `EDIT_SCOPES`), `PANEL_EFFORTS` and `editEffort`
+  plan-prompt.js what a plan run says: `PLAN_SHAPE`, `buildPlanPrompt`,
+                `stepPrompt` and `nextHandoff`, written to the format
+                `plan.js` reads (a test parses a plan shaped by it)
   diagram.js    `fli project:diagram` — the digest of an app (state machines,
                 `belongsTo` refs, verbs beyond CRUD, raw routes, page counts,
                 `AGENTS.project.md`) from `buildProjectMap` and `readAppAtlas`,
@@ -223,7 +214,7 @@ core/
                 since Run, Call, Page and Move are terms and English both
   vite-ask.js   the browser's half: a dev-only Vite plugin serving the panel
                 (`vite-ask-client.js`) and `POST /__fjs/ask`, `/stop`, `/undo`,
-                which run `ask-claude.js` in EDIT mode scoped to the Vite root
+                which run `@frontierjs/claude`'s `runAsk` in EDIT mode scoped to the Vite root
                 (or the `root` it is handed: Haven's scene editor is served
                 from `editor/` and hands `web/src/`, with Mesa's `locRoot`
                 the same, so a pick's loc and the scope agree),
@@ -254,7 +245,7 @@ core/
                 import with their model's fields. A text scan; a file it
                 cannot read adds nothing. The panel's kind and scope chips
                 are keys, and their sentences are `EDIT_KINDS`/`EDIT_SCOPES`
-                in `ask-claude.js`, so a request cannot write prompt text
+                in `edit-prompt.js`, so a request cannot write prompt text
   preview.js    what a PREVIEW branch may hold — `previewScope`, the one answer
                 behind `fli check`'s `preview-ui-only` and the panel's Submit.
                 A preview is a worktree whose private git dir holds
@@ -285,7 +276,7 @@ core/
                 at the parser's own line so a fenced step is never ticked. The
                 three prompts a plan runs under — Build, Go (`stepPrompt`) and
                 Next (`nextHandoff`, which ends in `stepPrompt`) — are
-                `ask-claude.js`'s, beside `reviewPrompt`, and the test asserts
+                `plan-prompt.js`'s, and the test asserts
                 each guardrail sentence is still there
   decide.js     the ONE writer behind `register:decide` and the GUI panel: the
                 ruling, the struck question, and a put-back when

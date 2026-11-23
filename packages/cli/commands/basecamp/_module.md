@@ -10,7 +10,7 @@ description: Basecamp itself — make its box at a cloud, install it, point its 
 const { CLOUDS, cloudLabel, pickCloud, cloudsToRead, listBoxes, cloudOf, runProvision, provisionScript, markHost,
   cloudflareToken, hostRecord, withHosts, boxAddress, waitForSsh, publicKey, boxName, buyBox, machineLine, ageOf }
   = await import(new URL('file://' + global.fliRoot + '/core/cloud.js'))
-const { basecamp, basecampAll, pullHubArchive, basecampApi, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, scriptOnBox, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
+const { basecamp, basecampAll, pullHubArchive, basecampApi, pullRawBackup, apiCannotBackUp, backupsRoot, backupsOf, localBackups, filedKeys, keyDirOf, readBoxKey, keepKey, attestKeyCopy, KEY_COPIES, pickArchive, checkArchive, asRootOn, scriptOnBox, seedBoxKey, probeBox, putBoxKey, restartApi, probeUntil, stageOnBox, restoreFindings, domainOn, pickServer, slugOf, blueprintNamed, homeFor, installBlueprint, readPostures, readPosture, postureLine, postureDetail, failingBySeverity, SUDO } = await import(new URL('file://' + global.fliRoot + '/core/basecamp.js'))
 const { plural } = await import(new URL('file://' + global.fliRoot + '/core/text.js'))
 
 // Basecamp's own hostname, the one `pointHost` points at the box.
@@ -741,6 +741,10 @@ development) and a bare container App placed on a server — and writes
 Basecamp from then on. With `BASECAMP_APP_ID` already set it adds another
 target's environment and App to that project; `fli deploy` picks the App by the
 same target flags (`FJS-D1965`, `FJS-D1966`).
+
+`fli basecamp:blueprint <slug>` installs a catalog entry — Headscale, ntfy,
+Postgres — as an App: the entry copied into an App, placed on `--server`, given
+`--domain`, and a release queued, as the Blueprints page does (`FJS-D2343`).
 
 `fli basecamp:deploy --app <id>` builds an app's image here, loads it onto
 every machine Basecamp runs that app on, and asks Basecamp to release it. It

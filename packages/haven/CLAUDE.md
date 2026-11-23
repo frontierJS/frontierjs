@@ -72,7 +72,7 @@ manifest's `dependencies` by `bun run verify:fresh` (Docker, network).
 A change to `shared/band.js` is heard with `bun run band:wav <k> [--solo part]` and compared against `.wav/baseline/`; no suite pins the band. `bun run band:mix` is the band mixer on the editor's server (`editor/Mixer.mesa`): every knob is a key of `songOf`'s conductor, and a song no conductor names must stay byte-identical, so a new conductor key is applied after every generator has drawn. The band is stereo (`samples()` answers `[left, right]`), and a change to either `sound.js` is proved by `verify:browser` too.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
-ace.md agents.js agents.test.js answer.js App.mesa app.ts archery.js ask-claude.js Assembly.mesa 
+ace.md agents.js agents.test.js answer.js App.mesa app.ts archery.js Assembly.mesa 
 auth.ts band-wav.mjs band.js Band.mesa band.service.ts Barkeep.mesa barkeep.service.ts barkeep.ts Bar.mesa 
 bar.test.js basecamp-home.mjs basecamp-reports.mjs bell.js board.js bolt-service.test.ts 
 bolt.test.ts bolt.ts booth.js booth.mesa Booth.mesa booth.ts Brigade.mesa Bubbles.mesa campfire.js 

@@ -336,7 +336,7 @@ function pageHeader({ eyebrow, title, lead }) {
     <header class="sg-page-header">
       ${eyebrow ? `<div class="sg-eyebrow">${eyebrow}</div>` : ""}
       <h1 class="sg-h1">${title}</h1>
-      ${lead ? `<p class="sg-lead">${lead}</p>` : ""}
+      ${lead ? `<p class="lead sg-lead">${lead}</p>` : ""}
       <hr>
     </header>`;
 }

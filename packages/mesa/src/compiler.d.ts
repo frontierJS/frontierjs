@@ -108,7 +108,8 @@ export function trimEmptyNodes(nodes?: any): any;
  *    by Mesa's renderer AND by Vite for its client chunk. Under two ids, the
  *    page carried two copies of the same rules under two hashes, and the markup
  *    swapped class on mount. Under one id, `addStyles` finds the prerendered
- *    `<style id=…>` already in the head and injects nothing.
+ *    `<style id=…>`, or a link naming the id in `data-mesa-styles`, already in
+ *    the head and injects nothing.
  * 3. **Debuggability.** A scope class that changes on every build is not
  *    something you can search for.
  *

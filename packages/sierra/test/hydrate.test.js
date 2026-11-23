@@ -11,7 +11,7 @@ import { join } from 'path'
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs'
 
 import { createSierraViteConfig } from '../src/build/index.js'
-import { prerenderRoutes, wrapDocument, hydrateJson, HYDRATE_ROOT_STYLE } from '../src/build/prerender.js'
+import { prerenderRoutes, wrapDocument, hydrateJson, HYDRATE_ROOT_CSS } from '../src/build/prerender.js'
 import { hydrateEntrySource } from '../src/build/island-bundle.js'
 import { tmpDir } from './tmp.js'
 
@@ -53,7 +53,9 @@ describe('prerenderRoutes under the flag', () => {
 
     const html = readFileSync(join(root, 'dist/index.html'), 'utf8')
     expect(html).toContain('<div data-sierra-root><p>page</p></div>')
-    expect(html).toContain(HYDRATE_ROOT_STYLE)
+    const shell = html.match(/<link rel="stylesheet" href="\/(assets\/sierra-shell-[A-Za-z0-9_-]{8}\.css)">/)
+    expect(readFileSync(join(root, 'dist', shell[1]), 'utf8')).toContain(HYDRATE_ROOT_CSS)
+    expect(html).not.toContain('<style')
     const json = JSON.parse(html.match(/<script type="application\/json" data-sierra-data>(.*?)<\/script>/)[1])
     expect(json).toEqual({
       data: null,

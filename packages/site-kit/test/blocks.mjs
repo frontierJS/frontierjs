@@ -126,6 +126,10 @@ for (const [name, path] of files) {
   const search = await render('<Search />', 'Search')
   check('Search renders a labelled button and no palette until asked',
     /<button[^>]*class="[^"]*\bbtn\b[^"]*"[^>]*aria-label="Search this site"/.test(search) && !/role="dialog"|role="combobox"/.test(search), search)
+  // The island's keys are bound by code that loads late; sierra holds a key
+  // the prerendered button names until it does (FJS-4510, FJS-D2312).
+  check('Search\'s button names its keys in aria-keyshortcuts',
+    /<button[^>]*aria-keyshortcuts="Control\+K Meta\+K \/"/.test(search), search)
   check('Toc renders no outline before it has read the page and a scroll', !/<ol|<nav/.test(await render('<Toc />', 'Toc')))
 
   const pages = [

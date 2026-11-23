@@ -396,6 +396,21 @@ const FIELD = [
     }
   ),
   t(
+    'stale',
+    'field',
+    'relate',
+    '(on: [<relation>.<relation>[(where: <expression>)], …])',
+    "Marks a stored value the app computes as stale: a write to any listed source row sets this Boolean on every live row of this model that reaches it, by trigger, in the write's own statement. The app's job computes the value and clears the mark by writing the successor row with it false.",
+    'stale Boolean @default(false) @system @stale(on: [orders])',
+    {
+      context:
+        'model Order {\n  id        Int @id\n  exampleId Int\n  example   Example @relation(fields: [exampleId], references: [id])\n}',
+      extraFields: 'orders Order[]',
+      seeAlso: ['from', 'field:system'],
+      note: 'Each source is a relation path walked from this row; where: reads the source row bare and this row as this.col, as a @from does. A source nobody listed, and a row that does not exist yet, stay the job\'s to find.'
+    }
+  ),
+  t(
     'edge',
     'field',
     'relate',
@@ -1742,6 +1757,7 @@ export const DOCS = {
   // relate
   'field:relation': 'relations.md',
   'field:from': 'relations.md',
+  'field:stale': 'relations.md',
   'field:edge': 'edge-fields.md',
   'field:scoped': 'edge-fields.md',
 
@@ -1937,6 +1953,7 @@ export const TIERS = {
     'schema:type',
     // field attributes
     'field:from',
+    'field:stale',
     'field:computed',
     'field:transient',
     'field:keep',
@@ -2091,7 +2108,7 @@ export const AXES = {
     'schema:import', 'schema:database', 'schema:model', 'schema:view', 'schema:enum',
     'schema:valueset', 'schema:scope', 'schema:function', 'schema:trait', 'schema:extend',
     'schema:type', 'field:id', 'field:unique', 'field:map', 'field:default', 'field:sequence', 'field:rank',
-    'field:relation', 'field:from', 'field:edge', 'field:scoped', 'field:computed',
+    'field:relation', 'field:from', 'field:stale', 'field:edge', 'field:scoped', 'field:computed',
     'field:transient', 'field:derived', 'field:generated', 'field:check', 'field:big', 'field:collate',
     'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:trim',
     'field:lower', 'field:upper', 'field:slug', 'field:values', 'field:label', 'field:required',
@@ -2155,6 +2172,7 @@ export function axisFor(row) {
  */
 export const SYNONYMS = {
   'field:from':        ['aggregate', 'rollup', 'roll-up', 'denormalized'],
+  'field:stale':       ['dirty', 'needs recompute', 'invalidate'],
   'field:derived':     ['calculated', 'formula'],
   'field:computed':    ['virtual'],
   'field:sequence':    ['autoincrement', 'serial', 'nextval'],

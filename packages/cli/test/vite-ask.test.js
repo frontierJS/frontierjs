@@ -13,7 +13,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { ASK_EFFORT, EDIT_KINDS, editEffort, EDIT_MAX_HTML, PANEL_EFFORTS, EDIT_RULES, EDIT_SCOPES, askArgv, editPrompt, readImages, readAskEvent, resumeCommand, shareBudget } from '../core/ask-claude.js'
+import { ASK_EFFORT, askArgv, readImages, readAskEvent, resumeCommand } from '@frontierjs/claude'
+import { EDIT_KINDS, EDIT_RULES, EDIT_SCOPES, PANEL_EFFORTS } from '../core/edit-prompt.js'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
 import { markerPath } from '../core/preview.js'
@@ -61,114 +62,6 @@ describe('askArgv — edit', () => {
 
 })
 
-describe('editPrompt', () => {
-
-  const guides = [
-    { pkg: 'css',  file: '/r/css/AGENTS.md',  about: 'the styling language' },
-    { pkg: 'mesa', file: '/r/mesa/AGENTS.md', about: 'the .mesa language' },
-  ]
-
-  test('a first ask lists every guide; a kind names the ones to read first', () => {
-    const p = editPrompt({ instruction: 'x', guides, kind: 'style' })
-    expect(p).toContain('- /r/css/AGENTS.md — the styling language\n- /r/mesa/AGENTS.md — the .mesa language')
-    expect(p).toContain('Before this change, read: /r/css/AGENTS.md')
-    expect(p).not.toContain('read: /r/css/AGENTS.md, /r/mesa')
-    expect(editPrompt({ instruction: 'x', guides, kind: 'layout' })).toContain('Before this change, read: /r/css/AGENTS.md, /r/mesa/AGENTS.md')
-    expect(editPrompt({ instruction: 'x', guides, kind: 'text' })).not.toContain('Before this change')
-  })
-
-  test('a follow-up does not list the guides again, and still names a kind\'s', () => {
-    const p = editPrompt({ instruction: 'x', guides, kind: 'behavior', followUp: true })
-    expect(p).not.toContain('one guide per package')
-    expect(p).toContain('Before this change, read: /r/mesa/AGENTS.md')
-  })
-
-  test('a prompt for another agent lists the guides and leaves the panel\'s rules out', () => {
-    const p = editPrompt({ instruction: 'x', guides, kind: 'style', rules: false })
-    expect(p).not.toContain(EDIT_RULES)
-    expect(p).toContain('- /r/css/AGENTS.md — the styling language')
-    expect(p).toContain('Before this change, read: /r/css/AGENTS.md')
-  })
-
-  test('a kind runs at its own effort unless one is asked for, and every kind\'s is one the panel offers', () => {
-    expect(editEffort('style')).toBe('low')
-    expect(editEffort('behavior')).toBe('high')
-    expect(editEffort('style', 'max')).toBe('max')
-    expect(editEffort(null)).toBe(ASK_EFFORT)
-    expect(editEffort('toString')).toBe(ASK_EFFORT)
-    for (const k of Object.values(EDIT_KINDS)) expect(PANEL_EFFORTS).toContain(k.effort)
-  })
-
-  test('a first pick carries the rules, the change, the page, the source and the HTML', () => {
-    const p = editPrompt({ instruction: 'make it bold', picks: [{ loc: 'content/routes/index.mesa:4:3', html: '<h1>Hi</h1>' }], page: 'http://localhost:8690/' })
-    expect(p.startsWith(EDIT_RULES)).toBe(true)
-    expect(p).toContain('Change: make it bold')
-    expect(p).toContain('The page: http://localhost:8690/')
-    expect(p).toContain('The element:\n- source: content/routes/index.mesa:4:3')
-    expect(p).toContain('<h1>Hi</h1>')
-    expect(p).not.toContain(' of 1:')
-  })
-
-  test('several picks are numbered, each with its own source', () => {
-    const p = editPrompt({ instruction: 'x', picks: [
-      { loc: 'content/routes/index.mesa:2:3', html: '<h1>A</h1>' },
-      { loc: 'content/parts/Lede.mesa:1:1',   html: '<h2>B</h2>' },
-    ] })
-    expect(p).toContain('Element 1 of 2:\n- source: content/routes/index.mesa:2:3')
-    expect(p).toContain('Element 2 of 2:\n- source: content/parts/Lede.mesa:1:1')
-    expect(p.indexOf('<h1>A</h1>')).toBeLessThan(p.indexOf('<h2>B</h2>'))
-  })
-
-  test('a follow-up drops the rules, and a long outerHTML is cut and says so', () => {
-    const p = editPrompt({ instruction: 'x', picks: [{ html: 'a'.repeat(EDIT_MAX_HTML + 10) }], followUp: true })
-    expect(p).not.toContain(EDIT_RULES)
-    expect(p).toContain(`first ${EDIT_MAX_HTML} of ${EDIT_MAX_HTML + 10}`)
-  })
-
-  test('the page cut the HTML already: the whole size is still what it reports', () => {
-    const p = editPrompt({ instruction: 'x', picks: [{ html: 'a'.repeat(EDIT_MAX_HTML), size: 50_000 }] })
-    expect(p).toContain(`first ${EDIT_MAX_HTML} of 50000`)
-  })
-
-  test('the HTML budget is one for the whole prompt, however many picks', () => {
-    const picks = Array.from({ length: 10 }, () => ({ html: 'z'.repeat(EDIT_MAX_HTML) }))
-    const p = editPrompt({ instruction: 'x', picks, followUp: true })
-    expect((p.match(/z/g) || []).length).toBe(EDIT_MAX_HTML)
-  })
-
-  test('a chip is its sentence, and a key that is not one adds nothing', () => {
-    const p = editPrompt({ instruction: 'x', kind: 'style', scope: 'every', followUp: true })
-    expect(p).toContain(`What to change: ${EDIT_KINDS.style.says}`)
-    expect(p).toContain(`How far: ${EDIT_SCOPES.every}`)
-    const q = editPrompt({ instruction: 'x', kind: 'toString', scope: '__proto__', followUp: true })
-    expect(q).toBe('Change: x')
-  })
-
-  test('what the source said about a pick goes under it, and the resources once after all of them', () => {
-    const p = editPrompt({ instruction: 'x', followUp: true, data: ['`pins` from src/resources/Pin.mesa — model Pin at ../db/schema.lite:1: id, name'], picks: [{
-      loc: 'src/routes/_module.mesa:9:7', html: '<div></div>', repeats: 12,
-      loops: [{ head: 'pins as p (p.id)', at: 'src/routes/_module.mesa:4' }],
-      files: ['src/routes/workbench/index.mesa:30'],
-      inner: [{ head: 'p.files as f', at: 'src/routes/workbench/index.mesa:41' }],
-    }] })
-    expect(p).toContain([
-      '- source: src/routes/_module.mesa:9:7',
-      '- drawn 12 times on the page from that source',
-      '- inside: {#each pins as p (p.id)} at src/routes/_module.mesa:4',
-      '- written in, under it: src/routes/workbench/index.mesa:30',
-      '- loops under it: {#each p.files as f} at src/routes/workbench/index.mesa:41',
-    ].join('\n'))
-    expect(p.endsWith('the resources their files import:\n- `pins` from src/resources/Pin.mesa — model Pin at ../db/schema.lite:1: id, name')).toBe(true)
-  })
-
-  test('no instruction yet: no Change line, the picks still go', () => {
-    const p = editPrompt({ picks: [{ loc: '/app/site/a.mesa:3:1', html: '<h1>A</h1>' }], followUp: true })
-    expect(p).not.toContain('Change:')
-    expect(p).toContain('- source: /app/site/a.mesa:3:1')
-  })
-
-})
-
 describe('readImages', () => {
 
   test('none is none, and a good list comes back as type and data only', () => {
@@ -184,12 +77,6 @@ describe('readImages', () => {
     expect(readImages([{ type: 'image/png', data: 'A'.repeat(5 * 1024 * 1024 + 4) }]).error).toContain('over 5MB')
   })
 
-  test('the prompt says images follow, and says nothing when there are none', () => {
-    expect(editPrompt({ instruction: 'x', followUp: true, images: 2 })).toContain('I pasted 2 images with this; they come after this text.')
-    expect(editPrompt({ instruction: 'x', followUp: true, images: 1 })).toContain('I pasted an image with this; it comes after this text.')
-    expect(editPrompt({ instruction: 'x', followUp: true })).not.toContain('pasted')
-  })
-
 })
 
 describe('resumeCommand', () => {
@@ -202,20 +89,6 @@ describe('resumeCommand', () => {
     expect(resumeCommand("/a b/it's $HOME", SESSION)).toBe(`cd '/a b/it'\\''s $HOME' && claude --resume ${SESSION}`)
     expect(resumeCommand('/app', `${SESSION}; rm -rf ~`)).toBe(null)
     expect(resumeCommand('/app', null)).toBe(null)
-  })
-
-})
-
-describe('shareBudget', () => {
-
-  test('what a short pick leaves over goes to the long ones', () => {
-    expect(shareBudget([100, 5000, 5000], 4000)).toEqual([100, 1950, 1950])
-  })
-
-  test('nothing is cut when everything fits, and the total is never passed', () => {
-    expect(shareBudget([10, 20], 4000)).toEqual([10, 20])
-    const cut = shareBudget([3999, 3999, 3999], 4000)
-    expect(cut.reduce((a, b) => a + b)).toBeLessThanOrEqual(4000)
   })
 
 })
@@ -869,79 +742,4 @@ say({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.5 }
     }
   })
 
-})
-
-// ─── the plan prompts ─────────────────────────────────────────────────────────
-// Each guardrail is a sentence the prompt must keep: losing *do only this step*
-// runs the plan in one session, losing *commit nothing* commits for the owner.
-
-import { buildPlanPrompt, stepPrompt, nextHandoff, HANDOFF_MAX, PLAN_READ_APP, PLAN_READ_REPO } from '../core/ask-claude.js'
-
-describe('plan prompts', () => {
-  const step  = { id: '2.2', title: 'Rotate and flip', box: 'open', phase: '2' }
-  const phase = { n: '2', title: 'Writes to pixels', doneWhen: 'the drive is green' }
-
-  test('buildPlanPrompt names the one path, forbids building, and states the shape', () => {
-    const p = buildPlanPrompt({ goal: 'crop images', path: 'IDEAS/crop.md', today: '2026-10-13' })
-    expect(p).toContain('Write a plan at `IDEAS/crop.md`')
-    expect(p).toContain('Build nothing, edit no source file')
-    expect(p).toContain('counting from 0')
-    expect(p).toContain('`Done when:`')
-    expect(p).toContain('- **Recommend A** — why')
-    expect(p).toContain('Do not answer them')
-    expect(p).toContain('The goal:\n\ncrop images')
-    expect(p).toContain('dated:` today')
-    expect(p).not.toContain('one guide per package')
-    expect(p).not.toContain('Asked from the page')
-    expect(p).toContain(PLAN_READ_REPO)
-    expect(p).not.toContain(PLAN_READ_APP)
-  })
-
-  test('from the ask panel it carries the guides an app reads, and the page', () => {
-    const guides = [{ pkg: 'sierra', file: '/r/sierra/AGENTS.md', about: 'routes and resources' }]
-    const p = buildPlanPrompt({ goal: 'export', path: '/app/PLAN.md', page: 'http://localhost:8010/leads', guides })
-    expect(p).toContain('one guide per package')
-    expect(p).toContain('- /r/sierra/AGENTS.md — routes and resources')
-    expect(p).toContain('Asked from the page: http://localhost:8010/leads')
-    expect(p.indexOf('Asked from the page')).toBeLessThan(p.indexOf('The goal:'))
-    expect(p).toContain(PLAN_READ_APP)
-    expect(p).not.toContain('.claude/skills/')
-    expect(buildPlanPrompt({ goal: 'export', path: '/app/PLAN.md', guides: [] })).toContain(PLAN_READ_APP)
-  })
-
-  test('stepPrompt carries the step, its phase and every guardrail', () => {
-    const p = stepPrompt({ path: 'IDEAS/crop.md', step, phase, today: '2026-10-13' })
-    expect(p).toContain('Carry out step 2.2 of the plan at `IDEAS/crop.md`: Rotate and flip')
-    expect(p).toContain('Phase 2 — Writes to pixels, done when: the drive is green')
-    for (const rule of [
-      'Say the step\'s id and title before doing anything else',
-      'Do ONLY this step',
-      '`decision-rules`',
-      'undo your edits to source files',
-      'the session\'s job ends at the question',
-      'fli file --sev S3',
-      'Commit nothing',
-      'Run `fli done`',
-      'tick the box to `[x]`',
-      '`**Done <date>.**`',
-      '` — dropped: why`',
-      'The reply is handed to the next session',
-    ]) expect(p).toContain(rule)
-  })
-
-  test('nextHandoff reads the file first, carries the last reply capped, then the step', () => {
-    const long = 'x'.repeat(HANDOFF_MAX + 50)
-    const p = nextHandoff({ path: 'IDEAS/crop.md', step, phase, lastResult: long, today: '2026-10-13' })
-    expect(p.indexOf('Read it first')).toBeLessThan(p.indexOf('The last session\'s reply'))
-    expect(p).toContain('…' + 'x'.repeat(HANDOFF_MAX))
-    expect(p).not.toContain('x'.repeat(HANDOFF_MAX + 1))
-    expect(p.indexOf('The last session\'s reply')).toBeLessThan(p.indexOf('Carry out step 2.2'))
-    expect(p).toContain('Do ONLY this step')
-  })
-
-  test('nextHandoff with nothing to carry is the read line and the step', () => {
-    const p = nextHandoff({ path: 'PLAN.md', step, today: '2026-10-13' })
-    expect(p).not.toContain('last session')
-    expect(p).toContain('Carry out step 2.2 of the plan at `PLAN.md`')
-  })
 })

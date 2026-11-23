@@ -108,7 +108,7 @@ if (flag.dry) {
   return
 }
 
-const { runAsk } = await import(resolve(global.fliRoot, 'core/ask-claude.js'))
+const { runAsk } = await import('@frontierjs/claude')
 
 // An empty directory: no CLAUDE.md or project file joins the prompt.
 const cwd = mkdtempSync(resolve(tmpdir(), 'fli-diagram-'))

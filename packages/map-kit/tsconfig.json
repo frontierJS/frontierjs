@@ -1,0 +1,8 @@
+{
+  // Plain JS with JSDoc types, checked for real: the projection is pure
+  // arithmetic and a wrong argument shape is its commonest failure.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "checkJs": true, "noEmit": true },
+  "include": ["src/**/*.js", "test/**/*.js"],
+  "exclude": ["test/fixtures/*/dist"]
+}

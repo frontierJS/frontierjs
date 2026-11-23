@@ -14,6 +14,7 @@ import { homedir }               from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath }         from 'node:url'
 import { configDir, stateDir }   from '@frontierjs/cli/core/paths.js'
+import { runAsk } from '@frontierjs/claude'
 
 import { runningOf, readTick, type Entry, type Running, type Tick } from './autopilot-run.ts'
 
@@ -55,9 +56,6 @@ export type Asked = {
   id: string, file: string, line: number, question: string, body: string,
   options: Option[], recommend: Recommend | null, paper: { id: string, status: string } | null,
 }
-type AskEvent =
-  | { type: 'session', id: string } | { type: 'text', text: string } | { type: 'tool', text: string }
-  | { type: 'result', ok: boolean, stop: string | null, cost: number | null } | { type: 'error', text: string }
 
 export type Fli = {
   collectRegisterAtlas: (root: string) => Atlas
@@ -66,8 +64,6 @@ export type Fli = {
   decide: (o: { root: string, id: string, pick: string, why: string, section: string }) => Decided
   openDecisions:  (root: string) => { decidable: Asked[], open: Asked[] }
   rulingSections: (root: string) => string[]
-  runAsk: (o: { root: string, prompt: string, session?: string | null, bin?: string, onEvent: (e: AskEvent) => void }) =>
-    { error: string } | { child: unknown, done: Promise<number | null> }
   collect: (o: { root: string }) => unknown
   dataOf:  (model: unknown, o: { root: string }) => RingsData
   readLoopLog: (o: { logDir?: string, root: string, since?: number | string, until?: number | string }) => LoopLog
@@ -146,7 +142,6 @@ export const loadFli = () => fli ??= Promise.all([
   import('@frontierjs/cli/core/registers.js'),
   import('@frontierjs/cli/core/decide.js'),
   import('@frontierjs/cli/core/decisions.js'),
-  import('@frontierjs/cli/core/ask-claude.js'),
   import('@frontierjs/cli/core/loop-log.js'),
   import('@frontierjs/cli/core/plan.js'),
   import('@frontierjs/cli/core/autopilot.js'),
@@ -427,7 +422,7 @@ export async function readQueue(root: string): Promise<Queue> {
 
 // ─── Claude explains a question ───────────────────────────────────────────────
 //
-// fli's `runAsk`, the read-only ask: `claude -p` with Read, Grep, Glob and a
+// `@frontierjs/claude`'s `runAsk`, the read-only ask: `claude -p` with Read, Grep, Glob and a
 // Bash allow-list, hooks off, a $2 budget — the argv keeps it read-only, not
 // the prompt. Not the workbench: a send there joins the checkout's own chat,
 // queues behind whatever it is running, and answers on another screen.
@@ -493,7 +488,7 @@ export async function explain(root: string, q: Queued, input: { ask?: unknown, b
   const resume = held?.session ?? null
   const prompt = resume ? follow : follow ? `${explainPrompt(q)}\n\nAnd specifically: ${follow}` : explainPrompt(q)
 
-  const run = f.runAsk({ root, prompt, session: resume, bin: input.bin, onEvent: e => {
+  const run = runAsk({ root, prompt, session: resume, bin: input.bin, onEvent: e => {
     if (e.type === 'session') entry.session = e.id
     // Text before a tool call is narration ("let me read the paper"); the
     // last text block is the answer.

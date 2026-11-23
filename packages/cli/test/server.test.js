@@ -958,7 +958,7 @@ describe('GET /api/ci · POST /api/ci/run · POST /api/ci/stop', () => {
 describe('POST /api/ask-claude · POST /api/ask-claude/stop', () => {
 
   test('GET is the defaults the page offers to edit, read from the module that runs them', async () => {
-    const { ASK_DEFAULT_QUESTION, ASK_RULES } = await import('../core/ask-claude.js')
+    const { ASK_DEFAULT_QUESTION, ASK_RULES } = await import('../core/ask-prompt.js')
     const r = await fetch(`${base}/api/ask-claude`)
     expect(r.status).toBe(200)
     const d = await r.json()

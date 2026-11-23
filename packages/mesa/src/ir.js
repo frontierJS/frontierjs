@@ -353,7 +353,7 @@ function lowerIf(ctx, n) {
  *  value (`===`), the DOM path's rule. */
 function lowerKey(ctx, n) {
   const rx = n.value.match(/^#key\s+(.+)$/s)
-  return { kind: 'key', loc: ctx.posOf(n.start), key: read(ctx, rx?.[1]?.trim() ?? ''), children: lowerChildren(ctx, n.body) }
+  return { kind: 'key', start: n.start, loc: ctx.posOf(n.start), key: read(ctx, rx?.[1]?.trim() ?? ''), children: lowerChildren(ctx, n.body) }
 }
 
 /**
@@ -556,7 +556,7 @@ function lowerNode(ctx, n) {
       const tag = n.value.match(/^@([\w-]*)/)?.[1]
       if (tag === 'render') return lowerRender(ctx, n)
       if (tag === 'const') return lowerConst(ctx, n)
-      if (tag === 'html') return { kind: 'html', loc: ctx.posOf(n.start), value: read(ctx, n.value.slice('@html'.length).trim()) }
+      if (tag === 'html') return { kind: 'html', start: n.start, loc: ctx.posOf(n.start), value: read(ctx, n.value.slice('@html'.length).trim()) }
       return unlowered(ctx, SYSTAGS[tag] ?? 'systag', n)
     }
     case 'snippet':

@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "@frontierjs/caravan": "workspace:*",
+    "@frontierjs/claude": "workspace:*",
     "@frontierjs/conduit": "workspace:*",
     "@frontierjs/conduit-37signals": "workspace:*",
     "@frontierjs/conduit-digitalocean": "workspace:*",

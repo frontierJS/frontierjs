@@ -113,3 +113,48 @@ describe('derived origins beside a cors wildcard', () => {
     expect(await upgrade(app.http.port, 'tauri://localhost')).toBe('refused')
   })
 })
+
+// FJS-4500 / FJS-D2310 — an extension page's origin holds an id fli cannot know
+// for a deploy (a store id, a per-install Firefox uuid), so fli names the
+// scheme. A scheme entry admits that scheme's origins and nothing else, on the
+// socket as on csrf, and it never rides into a credentialed cors list.
+describe('a scheme entry for an extension surface', () => {
+  async function bootDerived(env: string, http: Record<string, unknown>) {
+    process.env.FRONTIER_CORS_ORIGINS = env
+    try { return await boot(http) } finally { delete process.env.FRONTIER_CORS_ORIGINS }
+  }
+  const EXTENSIONS = 'chrome-extension://*,moz-extension://*'
+
+  test('any id of each scheme opens a socket, and a web origin is still refused', async () => {
+    const app = await bootDerived(EXTENSIONS, { cors: { origins: ['*'] } })
+    expect(await upgrade(app.http.port, 'chrome-extension://abcdefghijklmnopabcdefghijklmnop')).toBe('connected')
+    expect(await upgrade(app.http.port, 'moz-extension://0b5e7c1a-2d3f-4e5a-8b9c-0d1e2f3a4b5c')).toBe('connected')
+    expect(await upgrade(app.http.port, 'https://evil.example')).toBe('refused')
+    expect(await upgrade(app.http.port, 'chrome-extensionx://abc')).toBe('refused')
+  })
+
+  test('beside a credentialed cors list the app still boots and the socket admits the extension', async () => {
+    const app = await bootDerived(EXTENSIONS, { cors: { origins: ['https://app.example'], credentials: true } })
+    expect(await upgrade(app.http.port, 'chrome-extension://abcdefghijklmnopabcdefghijklmnop')).toBe('connected')
+    expect(await upgrade(app.http.port, 'https://app.example')).toBe('connected')
+    expect(await upgrade(app.http.port, 'https://evil.example')).toBe('refused')
+    const res = await app.http.fetch(new Request('http://localhost/health', {
+      method: 'OPTIONS',
+      headers: { origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'access-control-request-method': 'GET' },
+    }))
+    expect(res.headers.get('access-control-allow-origin')).toBeNull()
+  })
+})
+
+describe('originListed', () => {
+  test('a scheme entry matches its scheme only; a web scheme is never a wildcard', async () => {
+    const { originListed, cors } = await import('../src/transport/middleware.ts')
+    expect(originListed(['chrome-extension://*'], 'chrome-extension://abc')).toBe(true)
+    expect(originListed(['chrome-extension://*'], 'moz-extension://abc')).toBe(false)
+    expect(originListed(['chrome-extension://*'], 'chrome-extension://')).toBe(false)
+    expect(originListed(['https://*'], 'https://evil.example')).toBe(false)
+    expect(originListed(['http://*'], 'http://evil.example')).toBe(false)
+    expect(originListed(['https://app.example'], 'https://app.example')).toBe(true)
+    expect(() => cors({ origins: ['moz-extension://*'], credentials: true })).toThrow(/credentials/)
+  })
+})

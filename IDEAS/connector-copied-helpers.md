@@ -9,8 +9,7 @@ dated: 2026-11-19
 **Status: PROPOSAL. Nothing here is built.** Left over from `FJS-2966`'s
 duplicate-name census: two families of connector code that the `ws:exports`
 ratchet lists as duplicated names (the phone-number pair; the signers sit below
-any package root, where it cannot see them). Each is copied in full, so a fix
-to one copy misses the others.
+any package root, where it cannot see them). Each is copied in full.
 
 ## Phone numbers — `toE164` and `keywordOf`
 
@@ -31,17 +30,14 @@ what asks for one.
 `conduit-google/src/fcm/jwt.ts` (RS256, a service-account assertion) each
 carry their own `b64url`, PKCS8 import and `signJwt`.
 
-**Candidate:** import them from `conduit-oidc/src/jwt.ts`, which already
-exports `signJwt(alg, key, header, payload)` for both algorithms, plus `b64url`
-and `importEs256Pkcs8`. **Waits on nothing:** the owner exists, so this is
-adoption, the way gmail takes `DEFAULT_CLOCK_SKEW_SECONDS` from it. An RS256
-PKCS8 import is the one thing it lacks. The `r || s` signature trap in apns's
-header comment moves with the code.
+**Kept as copies** (owner, 2026-11-23). `conduit-oidc` already exports
+`signJwt(alg, key, header, payload)` for both algorithms, but taking it would
+make two push connectors depend on the sign-in package, which costs more than
+the 60 small lines the move removes; gmail's dependency on it is different,
+because gmail verifies tokens there. **Revisit when** a third connector needs a
+signer, and then weigh a shared crypto helper rather than `conduit-oidc`.
 
 ## Next
 
-1. The signers: move apns and fcm onto `conduit-oidc`'s `signJwt`, and prove it with
-   each connector's drive. The `ws:exports` ratchet cannot see this pair, since
-   neither connector exports them from its root.
-2. Phone numbers: rule where an `sms` helper lives (`decision-rules`: a new
+1. Phone numbers: rule where an `sms` helper lives (`decision-rules`: a new
    noun) when the fourth asker arrives.

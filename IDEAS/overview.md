@@ -733,7 +733,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 ### proposed
 
 - `webkit-window.md` — Safari's engine in the drives through Playwright WebKit, test-only (D2305); Bun + `webview` window parked for logged-in use; desktop preview dropped in Phase 0; Q1–Q4 open, Phase 1 blocked on Q2
-- `connector-copied-helpers.md` — `toE164`/`keywordOf` copied across quo, twilio and telnyx (waits on an `sms` home); apns and fcm JWT signers copied though `conduit-oidc` already exports `signJwt` (adoption, ready now)
+- `connector-copied-helpers.md` — `toE164`/`keywordOf` copied across quo, twilio and telnyx (waits on an `sms` home); apns and fcm JWT signers kept as copies (owner, 2026-11-23)
 - `hydration.md` — whether Mesa hydrates, and the two things "server component" names (inert, derived; server-only, declared); fixes `FJS-4313`; Q1 recommend B (direction, amend RULE 20), Q2 whole page first keyed by reactive edge; 0.1 drive FJS-4313 next
 - `widget-loader.md` — one pasted `<script data-form=KEY>`: a loader asks the API what the key is and imports that widget's hashed bundle; Q1 recommend Sierra emits it; decide before ELA's cutover
 - `demo-box.md` — the demo box: one shared Basecamp + Outpost, a 24-hour demo Workspace per visitor, the site streams `fli basecamp:demo <name>`

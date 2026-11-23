@@ -223,3 +223,21 @@ test('type: every font-family reading --font-mono ends in monospace', function (
     assert.equal(style(box.querySelector(sel), 'font-family'), 'NoSuchFace, monospace', sel);
   });
 });
+
+/* ── Lead — the standfirst under a page or hero title (FJS-D2314) ── */
+
+test('type: .lead is the --text-xl rung in --ink-soft, capped at a measure', function () {
+  /*
+   * A hero's paragraph under its h1 had no word (FJS-4213), so it shipped as
+   * body copy or as a hand-assembled .text-xl, four copies drifting apart.
+   * Moving each token and watching the Lead follow is what proves it reads
+   * the rung rather than a literal that happens to agree today.
+   */
+  var box = el('<div style="--text-xl: 41px; --leading-relaxed: 2; --ink-soft: rgb(1, 2, 3)"><h1>t</h1><p class="lead">a</p></div>');
+  var lead = box.querySelector('.lead');
+
+  assert.equal(style(lead, 'font-size'), '41px', '.lead did not read --text-xl');
+  assert.equal(style(lead, 'line-height'), '82px', '.lead did not read --leading-relaxed');
+  assert.sameColor(style(lead, 'color'), 'rgb(1, 2, 3)', '.lead did not read --ink-soft');
+  assert.notEqual(style(lead, 'max-inline-size'), 'none', '.lead has no measure');
+});

@@ -7,7 +7,7 @@
  * parse as letters and bind a key nobody meant.
  */
 
-import { parseChord, parseKeys, formatChord, chordOf, keymap, step, flush, bindings, browserOwned, withOverrides } from '../../src/keys/keys.js'
+import { parseChord, parseKeys, formatChord, chordOf, parseKeyShortcuts, keymap, step, flush, bindings, browserOwned, withOverrides } from '../../src/keys/keys.js'
 
 const ctx = (active, over = {}) => ({ active, mac: false, text: false, ...over })
 
@@ -137,6 +137,18 @@ test('keys: event_normalization — chordOf reads e.key and the four flags, neve
   assert.deepEqual(chordOf({ key: 'K', code: 'k', ctrlKey: true, shiftKey: true, altKey: false }), { key: 'K', ctrl: true, shift: true })
   assert.equal(formatChord(chordOf({ key: 'w', metaKey: true, altKey: true })), '<A-D-w>')
   assert.throws(() => chordOf({ code: 'KeyJ' }), /an event is/)
+})
+
+test('keys: aria_keyshortcuts — a WAI-ARIA value reads as this spelling, one key per chord', function () {
+  assert.deepEqual(parseKeyShortcuts('Control+K Meta+K /'), ['<C-k>', '<D-k>', '/'])
+  assert.deepEqual(parseKeyShortcuts(' Shift+A  Alt+Shift+K '), ['A', '<A-S-k>'])
+  assert.deepEqual(parseKeyShortcuts('Shift+Space Escape ArrowDown Plus'), ['<S-Space>', '<Esc>', '<Down>', '+'])
+  assert.deepEqual(parseKeyShortcuts(''), [])
+  // What an event reports for the press is the same string.
+  assert.equal(formatChord(chordOf({ key: 'k', ctrlKey: true })), parseKeyShortcuts('Control+K')[0])
+  assert.throws(() => parseKeyShortcuts('Ctrl+K'), /'Ctrl' is no modifier/)
+  assert.throws(() => parseKeyShortcuts('Control+Dead'), /'Dead' is no key/)
+  assert.throws(() => parseKeyShortcuts(null), /aria-keyshortcuts value/)
 })
 
 test('keys: keymap — a binding is exact, and every strict prefix of one is pending', function () {

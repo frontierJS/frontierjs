@@ -49,7 +49,9 @@ Two things fall out of the table:
 
 ## The shape
 
-Three layers, each with one owner:
+Three layers, each with one owner. Layers 1 and 2 land in the local `claude`
+package of `IDEAS/claude-calls.md` (`FJS-D2321`), not `cli/core`, once its Phase 2
+moves `ask-claude.js`; Q4 below is its Phase 3.
 
 1. **Events** — `readAskEvent` (exists). Extended with what only #6 emits today:
    `prompt`, `joined`, `permission`, `answered`, `hook`, `error`, `end`.

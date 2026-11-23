@@ -63,7 +63,7 @@ describe('createMany select', () => {
 
   test('select: false is refused, since the bulk answer is { count } without it', async () => {
     const db = await client()
-    await expect(db.note.createMany({ data: [{ title: 'a', body: 'x' }], select: false as any })).rejects.toThrow(/must be an object naming columns/)
+    await expect(db.note.createMany({ data: [{ title: 'a', body: 'x' }], select: false as any })).rejects.toThrow(/must be an object or a list naming columns/)
   })
 
   test('an unknown column in select is refused by name before the write', async () => {

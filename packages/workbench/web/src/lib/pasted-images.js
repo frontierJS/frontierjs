@@ -1,8 +1,8 @@
 // web/src/lib/pasted-images.js
 // An image pasted into a message box, shrunk to what a Claude run takes.
 //
-// The API refuses a body over its cap and an image over 5MB (cli's
-// core/ask-claude.js readImages), and a phone-sized screenshot at full
+// The API refuses a body over its cap and an image over 5MB
+// (`readImages` in `@frontierjs/claude`), and a phone-sized screenshot at full
 // resolution is both. 1568px on the long edge is what the model sees anyway.
 // The sizes match the dev server's ask panel (cli's core/vite-ask-client.js).
 

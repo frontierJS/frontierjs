@@ -583,7 +583,7 @@ export function normalizeTriggerSql(sql) {
 // Trigger names litestone generates, and therefore owns: a trigger matching one
 // of these is ours to drop and recreate, anything else on the table is the
 // app's and is left alone.
-const OWNED_TRIGGER = /_(fts_insert|fts_delete|fts_update|fts_soft_delete|fts_restore|search_insert|search_delete|search_update|updatedAt)$/
+const OWNED_TRIGGER = /_(fts_insert|fts_delete|fts_update|fts_soft_delete|fts_restore|search_insert|search_delete|search_update|stale_insert|stale_update|stale_delete|updatedAt)$/
 const SEARCH_TRIGGER = /_search_(insert|delete|update)$/
 
 // ─── Pristine db ──────────────────────────────────────────────────────────────
@@ -1510,7 +1510,10 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 //
 // `backfills` are resolved backfill operations: each gives a column the diff
 // adds a value expression for the rows already there (`FJS-D683`).
-export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [], backfills = [] } = {}) {
+//
+// `carry` is statements that need the new tables and the old columns at once:
+// a split's copy and a backfill's created parent (`carryStatements`).
+export function generateMigrationSQL(diffResult, parseResult, { pluralize = false, first = [], backfills = [], carry = [] } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
           changedTriggers, droppedTriggers, changedFts, droppedFts,
           changedSearch, droppedSearch, searchBackfills, searchPurges } = diffResult
@@ -1571,6 +1574,12 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       lines.push(generateModelDDL(model, parseResult.schema, { pluralize }))
       lines.push(``)
     }
+  }
+
+  if (carry.length) {
+    lines.push(`-- ─── rows carried ${'─'.repeat(50)}`)
+    lines.push(...carry)
+    lines.push(``)
   }
 
   if (newMatViews?.length) {

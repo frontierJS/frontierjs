@@ -451,7 +451,10 @@ export function encodeQueryString(query) {
  *                     server compiles the result into SQL.
  *   normalizeSelect   a comma-joined string or a list of names → the map a
  *                     query builder takes.
- *   comparatorFor     that same list → a comparator over records, for a side
+ *   parsePopulate     `$populate`'s relation-path grammar → an include tree;
+ *   parseSelectPaths  the same grammar in a Litestone `select` list → a select
+ *                     tree. One reading of the grammar serves both.
+ *   comparatorFor    that same list → a comparator over records, for a side
  *                     that has to place a row in a list it cannot re-query: the
  *                     browser client's live list and `<Table>`'s own sort.
  *
@@ -543,6 +546,61 @@ export function normalizeSelect(select) {
     if (name) out[name] = true
   }
   return out
+}
+
+/**
+ * `$populate`'s value → Litestone's `include` tree. `'words.lemma:root'`: the
+ * dots before the colon are the relation path and `+` joins the leaf's fields,
+ * so `'words:text,words.lemma'` lands on one `words` node. A middle hop nests
+ * as `include`, so it brings its whole row along with the hop below it.
+ *
+ * @param {string | string[]} populate
+ * @returns {Record<string, any>}
+ */
+export function parsePopulate(populate) {
+  return pathTree(Array.isArray(populate) ? populate : String(populate).split(','), 'include')
+}
+
+/**
+ * A `select` LIST → the object tree Litestone's `select` takes (`FJS-D2332`).
+ * `'id'` is a column, `'member:name+email'` a relation's fields and
+ * `'tickets.ticketType.event:title'` a path, in `$populate`'s grammar — but
+ * every hop nests as `select`, so a middle hop answers only the path below it,
+ * and entries naming one node merge onto it. No name is checked here: the
+ * result is the object a caller could have written, and Litestone refuses an
+ * unknown one by name exactly as it refuses that object's.
+ *
+ * @param {string[]} list
+ * @returns {Record<string, any>}
+ */
+export function parseSelectPaths(list) {
+  return pathTree(list, 'select')
+}
+
+// The one reading of the path grammar both callers above share (Invariant 4).
+// `$populate` REPLACES a leaf's fields when the same relation is named twice and
+// a select list merges them: under `select` the leaf's fields and the hops
+// below it are one map, so replacing would drop a path named earlier.
+function pathTree(entries, hop) {
+  const result = {}
+  for (const entry of entries.map((e) => String(e).trim())) {
+    const colonIdx = entry.indexOf(':')
+    const path = (colonIdx === -1 ? entry : entry.slice(0, colonIdx)).split('.').map((s) => s.trim())
+    let level = result
+    path.forEach((name, i) => {
+      if (i === path.length - 1) {
+        if (colonIdx === -1) { level[name] ??= true; return }
+        const fields = normalizeSelect(entry.slice(colonIdx + 1).split('+'))
+        const node = typeof level[name] === 'object' ? level[name] : {}
+        level[name] = { ...node, select: hop === 'select' ? { ...node.select, ...fields } : fields }
+        return
+      }
+      let node = level[name]
+      if (typeof node !== 'object') node = level[name] = {}
+      level = node[hop] ??= {}
+    })
+  }
+  return result
 }
 
 const foldAscii = (s) => s.replace(/[A-Z]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 32))

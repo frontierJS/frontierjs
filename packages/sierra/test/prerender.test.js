@@ -199,12 +199,20 @@ describe('wrapDocument', () => {
     expect(out).toContain('<h1>hi</h1>')
   })
 
-  test('inlines scoped CSS', () => {
-    expect(wrapDocument('<p></p>', { css: '.a{color:red}' })).toContain('<style>.a{color:red}</style>')
+  // FJS-4585: an inline <style> is refused by style-src 'self', which left a
+  // prerendered page with no component CSS at all.
+  test('links scoped CSS as a content-hashed sheet, and inlines none', () => {
+    const sheets = new Map()
+    const out = wrapDocument('<p></p>', { css: '.a{color:red}', base: '/app/', sheets })
+    const href = out.match(/<link rel="stylesheet" href="\/app\/(assets\/page-[A-Za-z0-9_-]{8}\.css)">/)
+    expect(href).not.toBeNull()
+    expect(sheets.get(href[1])).toBe('.a{color:red}')
+    expect(out).not.toContain('<style')
+    expect(wrapDocument('<p></p>', { css: '.a{color:red}' })).toContain(href[1])
   })
 
-  test('omits the style block when there is no CSS', () => {
-    expect(wrapDocument('<p></p>', {})).not.toContain('<style>')
+  test('omits the page sheet when there is no CSS', () => {
+    expect(wrapDocument('<p></p>', {})).not.toMatch(/<style|assets\/page-/)
   })
 
   test('a description is emitted as a meta tag, escaped', () => {
@@ -256,7 +264,7 @@ describe('wrapDocument', () => {
       stylesheets: ['/assets/style-abc.css'],
       styles: [{ id: 'mhash', css: '.a{color:red}' }],
     })
-    expect(out.indexOf('style-abc.css')).toBeLessThan(out.indexOf('<style id="mhash">'))
+    expect(out.indexOf('style-abc.css')).toBeLessThan(out.indexOf('data-mesa-styles="mhash"'))
   })
 
   test('carries the configured body class', () => {
@@ -264,10 +272,10 @@ describe('wrapDocument', () => {
       .toContain('<body class="app theme-default">')
   })
 
-  test('a page with neither keeps a bare body and no link', () => {
+  test('a page with neither keeps a bare body and links only the shell sheet', () => {
     const out = wrapDocument('<p></p>', {})
     expect(out).toContain('<body>')
-    expect(out).not.toContain('<link')
+    expect(out.match(/<link[^>]*>/g)).toEqual([expect.stringMatching(/assets\/sierra-shell-/)])
   })
 
   // FJS-1539: the document held a title, a description and the stylesheets,
@@ -387,6 +395,30 @@ describe('prerenderRoutes — two pages, one file (FJS-822)', () => {
   // the site with a log line as the only evidence.
   test('the same slug twice is refused, rather than one page silently replacing the other', async () => {
     await expect(buildWith(['a', 'a'])).rejects.toThrow(/named '\/products\/a\/' twice/)
+  }, 30_000)
+
+  test('a styled page links one hashed sheet written beside it, shared by every page with that CSS (FJS-4585)', async () => {
+    const root = tmpDir('sierra-sheet-')
+    mkdirSync(resolve(root, 'src/routes/products/[slug]'), { recursive: true })
+    writeFileSync(resolve(root, 'src/routes/products/[slug]/index.mesa'),
+      `---\nrender: static\n---\n<script>export let data = null</script>\n<h1>{data?.slug ?? ''}</h1>\n<style>h1 { color: rgb(1, 2, 3) }</style>\n`)
+    writeFileSync(resolve(root, 'src/routes/products/[slug]/index.meta.js'),
+      `export async function getStaticPaths() { return [{ slug: 'a' }, { slug: 'b' }] }\n` +
+      `export async function load({ params }) { return { slug: params.slug } }\n`)
+    const { renderComponent } = await import('@frontierjs/mesa/render-component')
+    const { scan } = await import('../src/scanner/index.js')
+    const out = tmpDir('sierra-sheet-out-')
+    await prerenderRoutes({ tree: await scan('src/routes', { cwd: root }), root, outDir: out, renderComponent })
+
+    const pages = ['products/a/index.html', 'products/b/index.html'].map((f) => readFileSync(resolve(out, f), 'utf8'))
+    const sheetOf = (html) => html.match(/<link rel="stylesheet" href="\/(assets\/page-[A-Za-z0-9_-]{8}\.css)" data-mesa-styles="(m[^"]+)">/)
+    for (const html of pages) {
+      expect(html).not.toMatch(/<style/)
+      expect(html).toMatch(/<link rel="stylesheet" href="\/assets\/sierra-shell-[A-Za-z0-9_-]{8}\.css">/)
+    }
+    const [a, b] = pages.map(sheetOf)
+    expect(a[1]).toBe(b[1])
+    expect(readFileSync(resolve(out, a[1]), 'utf8')).toMatch(/color:\s*rgb\(1, 2, 3\)/)
   }, 30_000)
 
   test('two distinct slugs stay silent', async () => {

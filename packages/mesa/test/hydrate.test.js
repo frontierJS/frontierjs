@@ -149,6 +149,45 @@ lead <b>{on}</b>{#if on}<s>x</s>{/if}<section><Kid/></section>`, 'Late', { dev: 
     expect([...root.querySelectorAll('li')].slice(0, 2)).toEqual(lis)
   })
 
+  it('adopts the content of a {#key} block, and rebuilds it when the key changes (FJS-4515)', async () => {
+    const c = await build(`<script>\n  let id = 1\n  let n = 0\n</script>\n<button onclick={() => id++}>next</button>{#key id}<b onclick={() => n++}>{id} {n}</b>{/key}`, undefined, { dev: true })
+    const root = await served(c)
+    const b = root.querySelector('b')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    expect(root.querySelector('b')).toBe(b)
+    b.click()
+    flushSync()
+    expect(b.textContent).toBe('1 1')
+    root.querySelector('button').click()
+    flushSync()
+    expect(root.querySelectorAll('b').length).toBe(1)
+    expect(root.querySelector('b')).not.toBe(b)
+    expect(root.querySelector('b').textContent).toBe('2 1')
+  })
+
+  it('adopts the nodes an {@html} wrote, replaces them on the next write, and replaces markup the client parses differently (FJS-4515)', async () => {
+    const src = `<script>\n  export let m = '<i>one</i>'\n  let n = 0\n</script>\n<p>a{@html m}b</p><button onclick={() => { m = '<u>two</u>'; n++ }}>{n}</button>`
+    const c = await build(src, undefined, { dev: true })
+    const root = await served(c)
+    const i = root.querySelector('i'), p = root.querySelector('p')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    expect(root.querySelector('p')).toBe(p)
+    expect(root.querySelector('i')).toBe(i)
+    root.querySelector('button').click()
+    flushSync()
+    expect(p.innerHTML.replace(/<!--[^>]*-->/g, '')).toBe('a<u>two</u>b')
+
+    const other = await served(c)
+    hydrate(other, c.dom, { m: '<b>else</b>' })
+    expect(other.querySelector('p').innerHTML.replace(/<!--[^>]*-->/g, '')).toBe('a<b>else</b>b')
+  })
+
   it('adopts the settled branch of an {#await}', async () => {
     const c = await build(`<script>\n  let p = Promise.resolve(5)\n</script>\n<div>{#await p}{:then v}<i>got {v}</i>{/await}</div>`)
     const root = await served(c)

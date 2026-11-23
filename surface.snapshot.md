@@ -26,16 +26,16 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-27 package(s) · 4812 source file(s) read
+27 package(s) · 4810 source file(s) read
 369 entry point(s), 35 imported by nothing outside their package, 14 emitted
-1871 value export(s), 682 reached by nothing outside, 201 emitted
+1872 value export(s), 683 reached by nothing outside, 201 emitted
 476 type export(s), 347 reached by nothing outside
 ```
 
 | Package | Entries | Unimported | Values | Unreached | Emitted | Types | Unreached |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `litestone` | 41 | 5 | 281 | 135 | 42 | 1 | 1 |
-| `mesa` | 34 | 4 | 362 | 123 | 88 | 0 | 0 |
+| `mesa` | 34 | 4 | 363 | 124 | 88 | 0 | 0 |
 | `junction` | 28 | 3 | 287 | 123 | 14 | 278 | 213 |
 | `sierra` | 49 | 6 | 206 | 87 | 20 | 0 | 0 |
 | `toolbelt` | 92 | 1 | 347 | 45 | 16 | 0 | 0 |
@@ -208,7 +208,7 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · 34 entry point(s) · 362 value, 0 type export(s)
+`packages/mesa` · 34 entry point(s) · 363 value, 0 type export(s)
 
 **Entries imported by nothing outside (4):** `./render` `./css-inliner` `./vite/client` `./vite/hmr`
 
@@ -216,7 +216,7 @@ Every entry is imported and every name reached.
 
 **Entries not source (17, not graded):** `.` `./runtime` `./runtime/terminal` `./runtime/native` `./runtime/server` `./compiler` `./compiler-md` `./render` `./css-inliner` `./render-component` `./drive` `./browser` `./keys` `./vite` `./vite/client` `./vite/swap` `./vite/hmr`
 
-**Unreached values (123):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `collectState` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `hydAwait` `hydBlock` `hydBoundary` `hydEach` `hydIf` `hydrationSite` `hydrationVar` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `islandBind` `islandPush` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `REACHED_ELEMENT` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `renderToParts` `replaceKeyword` `resetAttributeWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `takeState` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
+**Unreached values (124):** `_registerDelegateRoot` `_registerStyleRoot` `addBlock` `analyzeScript` `applyAttachments` `applyEventModifiers` `attachBlock` `bindClassExp` `bindSetter` `blockSlotTarget` `boundaryWatchSet` `buildBlock` `buildHead` `buildRuntime` `captureContext` `checkRootName` `classSource` `collectState` `componentAttributes` `constDeclaration` `constScope` `cssHash` `declareSlotProps` `delegationRootOf` `detectExpressionType` `detectStatic` `EACH_LIFT` `eachFrame` `eachLiftFrame` `elementBindTarget` `emitScript` `emitTransforms` `eventAttribute` `extractKeywords` `extractStyles` `fieldRead` `hydAwait` `hydBlock` `hydBoundary` `hydEach` `hydIf` `hydKey` `hydrationSite` `hydrationVar` `ifBlockReadOnly` `inlineCSS` `insertAfter` `insertBlock` `inspectProp` `isAnchorComment` `isClient` `islandBind` `islandPush` `isSimpleName` `iterNodes` `LISTENER_OPTIONS` `localWatchProxy` `locateReported` `locateThrown` `locFileOf` `lowerSlots` `makeAwaitBlock` `makeBlockBound` `makeCallState` `makeEachBlock` `makeExternalProperty` `makeifBlock` `makeKeyBlock` `makeRenderTag` `makeSnippet` `makeVirtualEachBlock` `mergeAllEvents` `mesaDevtools` `mesaRollup` `mesaVite` `parseAttributes` `parseBinding` `parseEachHeader` `parseJS` `parseModifiers` `parseRenderTag` `PRESERVE_WHITESPACE` `processCSS` `REACHED_ELEMENT` `readSourceMarks` `refer` `removeElements` `renderAll` `renderFailure` `renderToParts` `replaceKeyword` `resetAttributeWarnings` `resetDestructureWarnings` `resetRenderer` `resolveCSSVars` `resolveDependencies` `REST_PROPS` `rewriteTextResult` `routeSlots` `scopeCSS` `settleAwaits` `shellDeliversBrowserChords` `slotProp` `snippetParam` `spliceEdits` `SPREAD_REFUSED` `stripSourceMarks` `styleSource` `svgElements` `takeState` `templateSource` `terminalSource` `trackOwners` `unspliceOffset` `unwrapExp` `use_context` `warnRefusedHandler` `warnRefusedMarkup` `warnRefusedName` `withAwaitParam` `withoutWatchedCalls` `writtenOnce` `xBuild` `xNode`
 
 **Emitted (88):** `__dev` `$$eachBlock` `$$virtualEach` `addEvent` `addGlobalEvent` `addHeadStyle` `addToHead` `ANCHOR_DATA` `asyncState` `awaitBlock` `bindAttribute` `bindClass` `bindClassPassthrough` `bindGroup` `bindingKey` `bindInput` `bindMask` `bindProp` `bindStyle` `bindText` `bindWindow` `blockClose` `blockOpen` `boundaryBlock` `boundaryWait` `captureRemount` `captureScope` `componentApi` `contentFallback` `createKeyedEquals` `createWritableSignal` `dynamicElement` `dynamicTag` `eachBlock` `eachDefaultKey` `eachItems` `get_context` `htmlToFragment` `htmlToFragmentClean` `hydAsync` `hydIsland` `hydRender` `ifBlock` `initRenderer` `ISLAND_CLOSE` `ISLAND_OPEN` `islandPayload` `islandThis` `keyBlock` `liveBinding` `LOC_ATTR` `makeAsyncState` `makeBlock` `makeEmitter` `makeRootEvent` `markupText` `mergeEvents` `mountedBlock` `mountStatic` `onMounted` `onWindow` `orderedGroup` `parsedHTML` `PLACED_PROP` `propDefault` `pushProps` `reducedMotion` `registerComponentAnchor` `registerExports` `renderToHTML` `restProps` `rewriteAssignments` `rewriteExpr` `set_style` `set_text` `setInnerHTML` `sleeper` `spreadAttributes` `stampAt` `stampFrom` `svgToFragment` `textMark` `toggle_class` `trackDerived` `trimEmptyNodes` `unclaimedContent` `virtualClock` `warnDestructuredAccessors`
 

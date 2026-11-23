@@ -1,5 +1,5 @@
 // db/blueprints.js
-// The starter catalog — nine third-party applications, as `Blueprint` rows.
+// The starter catalog — ten third-party applications, as `Blueprint` rows.
 //
 // The first eight were read out of the UI prototype's own `BLUEPRINTS` constant
 // rather than invented, and converted column for column: the mock's nested `app` block is
@@ -159,6 +159,57 @@ const ROWS = [
       NTFY_AUTH_TOKENS:         '${NTFY_SENDER}:${NTFY_SENDER_TOKEN}:frontier-post',
       NTFY_AUTH_DEFAULT_ACCESS: '${NTFY_AUTH_DEFAULT_ACCESS}',
       NTFY_UPSTREAM_BASE_URL:   '${NTFY_UPSTREAM_BASE_URL}',
+    },
+  },
+  {
+    // The control server for the overlay a fleet's machines and phones join
+    // (`FJS-D2331`, IDEAS/app-peering.md). A blueprint cannot write a config
+    // file, so the whole of it is `HEADSCALE_*` env, which the image reads with
+    // no config.yaml at all. The embedded DERP relay answers on the same
+    // listener behind Caddy, and no UDP port is published (`FJS-D2342`): the
+    // STUN listener the server insists on stays inside the container, so a
+    // client's probe of it times out and its traffic relays over HTTPS.
+    // `derp.urls` has no default without a config file, so no Tailscale map is
+    // fetched and a client's netmap lists only this region (read from a
+    // Tailscale client, v0.29.7). An absent ACL policy is allow-all, which is
+    // the ruling: trust never comes from the network.
+    slug: 'headscale', name: 'Headscale', category: 'Networking', icon: '🕸️', brandColor: null,
+    description: 'Self-hosted Tailscale control server with its own relay, for a private network of your machines and phones.',
+    version: 'v0.29.7', image: 'headscale/headscale:v0.29.7',
+    appKind: 'container', port: 8080,
+    command: ['serve'],
+    volumePath: '/var/lib/headscale', healthCheck: '/health',
+    cpuLimit: 0.25, memLimitMb: 256,
+    notes: 'Give it a Domain that answers over HTTPS and is not proxied by a CDN (the control protocol does not pass one). Its own DERP relay runs on that same hostname, with no UDP port published, so nodes reach each other directly where their networks allow and otherwise relay through this server. It is a single tailnet, and its ACL stays allow-all. Mint a key with `docker exec <container> headscale preauthkeys create --user <id>`, and join a node with `tailscale up --login-server <public url> --authkey <key>`. Its SQLite file and keys are in the volume; the node and user list lives only there.',
+    links: [{ label: 'Docs', url: 'https://headscale.net/stable/' },
+            { label: 'Docker Hub', url: 'https://hub.docker.com/r/headscale/headscale' }],
+    params: [
+      { key: 'HEADSCALE_SERVER_URL',      label: 'Public URL', isRequired: true, validRegex: '^https://[^/\\s]+$', hint: 'https://hs.acme.com — the address nodes log in to, and where the relay answers' },
+      { key: 'HEADSCALE_DNS_BASE_DOMAIN', label: 'Network domain', isRequired: true, defaultValue: 'tailnet.internal', hint: 'The suffix nodes get inside the network; it must not be the public URL\'s domain or a parent of it' },
+    ],
+    environment: {
+      HEADSCALE_SERVER_URL:      '${HEADSCALE_SERVER_URL}',
+      HEADSCALE_DNS_BASE_DOMAIN: '${HEADSCALE_DNS_BASE_DOMAIN}',
+      HEADSCALE_LISTEN_ADDR:     '0.0.0.0:8080',
+      // The socket is the CLI's door into the running server; outside the volume
+      // so a backup of the volume is not asked to copy a socket.
+      HEADSCALE_UNIX_SOCKET:     '/tmp/headscale.sock',
+      HEADSCALE_NOISE_PRIVATE_KEY_PATH: '/var/lib/headscale/noise_private.key',
+      HEADSCALE_DATABASE_TYPE:   'sqlite',
+      HEADSCALE_DATABASE_SQLITE_PATH: '/var/lib/headscale/db.sqlite',
+      HEADSCALE_PREFIXES_V4:     '100.64.0.0/10',
+      HEADSCALE_PREFIXES_V6:     'fd7a:115c:a1e0::/48',
+      // With no nameserver to hand it refuses override_local_dns, and nothing
+      // here sets one.
+      HEADSCALE_DNS_OVERRIDE_LOCAL_DNS: 'false',
+      HEADSCALE_DERP_SERVER_ENABLED:    'true',
+      HEADSCALE_DERP_SERVER_REGION_ID:   '999',
+      HEADSCALE_DERP_SERVER_REGION_CODE: 'frontier',
+      HEADSCALE_DERP_SERVER_REGION_NAME: 'Frontier DERP',
+      HEADSCALE_DERP_SERVER_PRIVATE_KEY_PATH: '/var/lib/headscale/derp_server_private.key',
+      // Required whenever the relay is on. Unpublished, so it is unreachable.
+      HEADSCALE_DERP_SERVER_STUN_LISTEN_ADDR: '0.0.0.0:3478',
+      HEADSCALE_DERP_SERVER_AUTOMATICALLY_ADD_EMBEDDED_DERP_REGION: 'true',
     },
   },
   {

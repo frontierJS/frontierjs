@@ -4,7 +4,7 @@
 // path and the last reply handed over, refused while a `Q` is unruled.
 //
 // The plan is read and the prompt written by the checkout's own `fli`
-// (`packages/cli/core/plan.js`, `ask-claude.js`), imported off the path, so
+// (`packages/cli/core/plan.js`, `plan-prompt.js`), imported off the path, so
 // the study says what the workbench says and Haven takes no dependency on
 // the CLI. A study outside a checkout has no `fli`, and refuses.
 //
@@ -27,7 +27,7 @@ export async function planLine(cwd, path, { next = false, lastResult = '' } = {}
   const rel = relative(cwd, file)
   const [{ parsePlan, phaseOf }, { stepPrompt, nextHandoff }] = await Promise.all([
     import(pathToFileURL(core(cwd, 'plan.js')).href),
-    import(pathToFileURL(core(cwd, 'ask-claude.js')).href),
+    import(pathToFileURL(core(cwd, 'plan-prompt.js')).href),
   ])
   const plan = parsePlan(readFileSync(file, 'utf8'), { file: rel })
   if (!plan.phases.length) return { refused: `${rel} holds no \`### Phase N\` heading — not a plan` }

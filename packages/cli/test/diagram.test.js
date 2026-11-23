@@ -1,6 +1,6 @@
 // ─── diagram.test.js — the digest `project:diagram` sends, and the page it keeps
 //
-// The run itself is `ask-claude.test.js`'s draw argv; what this module owns is
+// The run itself is `@frontierjs/claude`'s draw argv (its `test/transport.test.ts`); what this module owns is
 // what goes in (the heart, not the boilerplate) and which page comes back out.
 
 import { describe, test, expect, afterAll } from 'bun:test'

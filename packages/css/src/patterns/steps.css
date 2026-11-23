@@ -56,7 +56,7 @@
  */
 
 .steps {
-  --step-accent:      var(--bg-mix, var(--color-primary));
+  --step-accent:      var(--bg-mix, var(--color-accent, var(--color-primary)));
   --step-marker-size: calc(1.75 * var(--rem));
 
   display:     flex;

@@ -209,19 +209,34 @@ await db.order.create({ data: { amount: 100 }, select: false })
 await db.order.update({ where: { id: 1 }, data: { status: 'paid' }, select: false })
 ```
 
-An object is the only spelling, and `false` on a write is the one exception.
-Anything else is refused by name — a list projects no columns and would answer
-`{}` with no error, and the list is the WIRE form (`$select=id,title`), which
-the API boundary converts before a read.
+A list is the same object spelled shorter (`FJS-D2332`). A name is a column,
+and a relation path is `$populate`'s grammar — dots between the hops, `:` before
+the leaf's fields, `+` between them. Every hop nests as `select`, so a middle hop
+answers only the path below it, and entries naming one relation merge onto it.
+A path with no `:` answers the last relation's whole row.
+
+```js
+await db.post.findMany({ select: ['id', 'author:name+email', 'author.account.plan:name'] })
+// is
+await db.post.findMany({ select: {
+  id: true,
+  author: { select: { name: true, email: true, account: { select: { plan: { select: { name: true } } } } } },
+} })
+```
+
+A name the model does not have is refused by name at any depth, in either
+spelling, and so is a column written as a hop (`'title.x:y'`). `false` on a
+write is the one non-object, non-list value; anything else is refused, because
+it would project no columns and answer `{}` with no error.
 
 ```js throws
-await db.user.findMany({ select: ['id', 'email'] })
-// Refused: 'select' on User.findMany must be an object naming columns — got an array
+await db.user.findMany({ select: ['id', 'emial'] })
+// Refused: Unknown field 'emial' in select for User.findMany. Did you mean: email?
 ```
 
 ```js throws
 await db.user.findFirst({ select: false })
-// Refused: 'select' on User.findFirst must be an object naming columns — got boolean
+// Refused: 'select' on User.findFirst must be an object or a list naming columns — got boolean
 ```
 
 ## Cursor pagination

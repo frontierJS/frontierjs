@@ -969,8 +969,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // The window, as the Data boundary reads it. A tether needs it because a
   // row leaving an imposed window is a move of the CLOCK, which emits no frame,
   // so the store holding the row is the only thing that can drop it (`FJS-1274`).
+  // A `@zoned` day edge names its zone's path, or the store drops the row at
+  // UTC's midnight rather than the row's own (`FJS-D2311`).
   const win = buildEffectiveMap({ models: [model] })[model.name]
-  if (win) result['x-effective'] = win
+  if (win) {
+    const zone = win.kind === 'day' && model.fields.find(f => f.name === win.to)
+      ?.attributes.find(a => a.kind === 'zoned')?.path
+    result['x-effective'] = zone?.length ? { ...win, zone: zone.join('.') } : win
+  }
 
   // ── x-sync ─────────────────────────────────────────────────────────────────
   // May this model's rows be written with no server reachable, and under which

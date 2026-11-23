@@ -11,6 +11,7 @@ import {
 } from './query.js'
 import { ValidationError } from './validate.js'
 import { nearest } from '@frontierjs/toolbelt/typo'
+import { parseSelectPaths } from '@frontierjs/toolbelt/query'
 import { AccessDeniedError } from './plugin.js'
 import { compileFieldPredicate, buildPolicyFilter } from './policy.js'
 import { aggModelsOf } from './schema-maps.js'
@@ -325,21 +326,79 @@ function checkIncludeArgs(include, modelName, method, ctx, isWrite, depth = 0) {
     }])
     checkIncludeWindow(v, k, rel, name, method, relations)
 
-    if (v.select && typeof v.select === 'object' && !Array.isArray(v.select)) {
-      const selectable = new Set()
-      for (const f of target.fields) if (!transient.has(f.name)) selectable.add(f.name)
-      for (const d of Object.values(ctx.shapes[name].edges)) selectable.add(d.as)
-      for (const [sk, sv] of Object.entries(v.select)) {
-        if (!sv || selectable.has(sk)) continue
-        throw new ValidationError([{
-          path:    ['include', k, 'select', sk],
-          message: `Unknown field '${sk}' in select for ${name}.${method}` +
-                   (nearest(sk, selectable) ? `. Did you mean: ${nearest(sk, selectable)}?` : ''),
-        }])
-      }
-    }
+    if (v.select && typeof v.select === 'object' && !Array.isArray(v.select))
+      checkSelectTree(v.select, name, method, ctx, ['include', k, 'select'])
     checkIncludeArgs(v.include, name, method, ctx, isWrite, depth + 1)
   }
+}
+
+// A relation's own `select` names ITS model's fields, at every depth. Only the
+// top level was graded, so `select: { tickets: { select: { nope: true } } }`
+// answered `tickets: [{}]` — FJS-828's silent empty row one hop down, and the
+// same row a mistyped `'tickets:nope'` list entry normalizes to (FJS-D2332).
+/** @param {any} select @param {string} modelName @param {string} method @param {Ctx} ctx @param {string[]} path @param {number} [depth] */
+function checkSelectTree(select, modelName, method, ctx, path, depth = 0) {
+  const target = ctx.models?.[modelName]
+  if (!target || depth > 12) return
+  const { transient } = sortableKeysFor(target)
+  const selectable = new Set()
+  for (const f of target.fields) if (!transient.has(f.name)) selectable.add(f.name)
+  for (const d of Object.values(ctx.shapes[modelName].edges)) selectable.add(d.as)
+  for (const [sk, sv] of Object.entries(select)) {
+    if (!sv || selectable.has(sk)) continue
+    throw new ValidationError([{
+      path:    [...path, sk],
+      message: `Unknown field '${sk}' in select for ${modelName}.${method}` +
+               (nearest(sk, selectable) ? `. Did you mean: ${nearest(sk, selectable)}?` : ''),
+    }])
+  }
+  checkRelationSelects(select, modelName, method, ctx, path, depth)
+}
+
+/** @param {any} select @param {string} modelName @param {string} method @param {Ctx} ctx @param {string[]} path @param {number} [depth] */
+function checkRelationSelects(select, modelName, method, ctx, path, depth = 0) {
+  const rels = ctx.shapes[modelName].relations
+  for (const [k, v] of Object.entries(select)) {
+    if (!v || typeof v !== 'object' || !v.select || typeof v.select !== 'object' || Array.isArray(v.select)) continue
+    const rel = rels[k]
+    // A column named as a hop (`'title.x:y'`) answered the column and ignored
+    // the rest.
+    if (!rel) throw new ValidationError([{
+      path:    [...path, k, 'select'],
+      message: `'${k}' on ${modelName}.${method} is not a relation, so it has no fields to select through`,
+    }])
+    checkSelectTree(v.select, rel.targetModel, method, ctx, [...path, k, 'select'], depth + 1)
+  }
+}
+
+// A `select` LIST is the object a caller could have written, spelled shorter
+// (`FJS-D2332`): it becomes that object here, before any check, so every
+// refusal by name below is the object form's own. An element that is not a
+// string has no reading and is refused rather than dropped.
+/** @param {any} args @param {string} modelName @param {string} method @param {number} [depth] @returns {any} */
+function selectListsToObjects(args, modelName, method, depth = 0) {
+  if (!args || typeof args !== 'object' || depth > 12) return args
+  let out = args
+  if (Array.isArray(args.select)) {
+    const bad = args.select.find((/** @type {unknown} */ e) => typeof e !== 'string')
+    if (bad !== undefined) throw new ValidationError([{
+      path:    ['select'],
+      message: `A 'select' list on ${modelName}.${method} names columns and paths as strings ` +
+               `('id', 'member:name', 'tickets.ticketType:title') — got ${JSON.stringify(bad) ?? typeof bad}.`,
+    }])
+    out = { ...out, select: parseSelectPaths(args.select) }
+  }
+  if (args.include && typeof args.include === 'object' && !Array.isArray(args.include)) {
+    /** @type {Record<string, any> | null} */
+    let include = null
+    for (const [k, v] of Object.entries(args.include)) {
+      if (k === '_count') continue
+      const next = selectListsToObjects(v, modelName, method, depth + 1)
+      if (next !== v) (include ??= { ...args.include })[k] = next
+    }
+    if (include) out = { ...out, include }
+  }
+  return out
 }
 
 // `include.js` skips a `_count` entry naming no to-many relation, so a typo
@@ -1188,20 +1247,19 @@ export function withArgValidation(table, model, ctx) {
             (nearest(key, allowed) ? `. Did you mean: ${nearest(key, allowed)}?` : ''),
   }])
 
-  // The CONTAINER is checked before the keys. A `select` that is not an object
-  // projects no columns at all — `parseSelectArg` walks its entries, finds no
-  // field name among them and emits `"_no_cols_"` — so `select: ['id']` answers
-  // `{}` and reports success, which every downstream reader sees as a row that
-  // exists and is empty (FJS-828). The list IS the wire spelling; junction's
-  // `parseSelect` turns `$select=id,title` into the object before a read, and
-  // accepting one here as well would be a second owner of that translation.
+  // The CONTAINER is checked before the keys. A `select` that is neither an
+  // object nor a list projects no columns at all — `parseSelectArg` walks its
+  // entries, finds no field name among them and emits `"_no_cols_"` — so
+  // `select: 'id'` answered `{}` and reported success, which every downstream
+  // reader sees as a row that exists and is empty (FJS-828). A list is turned
+  // into the object by toolbelt's `parseSelectPaths` before this runs
+  // (`FJS-D2332`), the one reading of the path grammar `$populate` uses too.
   const selectContainerRefusal = (/** @type {unknown} */ sel, /** @type {string} */ method, /** @type {boolean} */ isWrite) => new ValidationError([{
     path:    ['select'],
-    message: `'select' on ${modelName}.${method} must be an object naming columns — got ` +
-             `${Array.isArray(sel) ? 'an array' : typeof sel}. Write ` +
-             `{ ${[...selectable][0] ?? 'id'}: true }` +
-             (isWrite ? `, or 'select: false' for do not hand me the row` : '') +
-             `. A list is the wire form — $select=a,b — and the API boundary converts it.`,
+    message: `'select' on ${modelName}.${method} must be an object or a list naming columns — got ` +
+             `${typeof sel}. Write ` +
+             `{ ${[...selectable][0] ?? 'id'}: true } or ['${[...selectable][0] ?? 'id'}']` +
+             (isWrite ? `, or 'select: false' for do not hand me the row` : '') + '.',
   }])
 
   // `distinct` is a boolean and SQLite is why. The clause it emits is
@@ -1264,6 +1322,7 @@ export function withArgValidation(table, model, ctx) {
         if (!v || selectable.has(k) || (win && Object.hasOwn(win, k))) continue
         throw selectRefusal('select', k, win ? [...selectable, ...Object.keys(win)] : selectable, method)
       }
+      checkRelationSelects(sel, modelName, method, ctx, ['select'])
     }
     if (args?.distinct != null && typeof args.distinct !== 'boolean')
       throw distinctShapeRefusal(args.distinct, method)
@@ -1318,6 +1377,7 @@ export function withArgValidation(table, model, ctx) {
   //
   // Answers the args, because the field-read narrowing REWRITES them.
   const guardArgs = (/** @type {any} */ args, /** @type {string} */ method, /** @type {boolean} */ isWrite) => {
+    args = selectListsToObjects(args, modelName, method)
     checkTakeSkip(args, method)
     checkArgNames(args, method)
     // Before the key checks: an unknown key on a read only warns, and a
@@ -1389,7 +1449,7 @@ export function withArgValidation(table, model, ctx) {
   if (typeof table.create === 'function') {
     const fn = table.create
     out.create = async (args = {}) => {
-      try { checkArgNames(args, 'create'); checkSelect(args, 'create', true) }
+      try { checkArgNames(args, 'create'); args = selectListsToObjects(args, modelName, 'create'); checkSelect(args, 'create', true) }
       catch (e) { throw await gateFirst(e, 'create') }
       return fn.call(table, args)
     }
@@ -1403,7 +1463,10 @@ export function withArgValidation(table, model, ctx) {
     const fn = table[method]
     if (typeof fn !== 'function') continue
     out[method] = async (args = {}) => {
-      try { checkArgNames(args, method); if (method === 'createMany') checkSelect(args, method, false) }
+      try {
+        checkArgNames(args, method)
+        if (method === 'createMany') { args = selectListsToObjects(args, modelName, method); checkSelect(args, method, false) }
+      }
       catch (e) { throw await gateFirst(e, method) }
       return fn.call(table, args)
     }

@@ -1917,6 +1917,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2316"></a>2026-11-23 · `FJS-D2316` — When a checkout names an address whose Customer is already linked to an account that is not the caller (a guest, or another signed-in account), does `carts.checkout` refuse it, mark the order with who placed it, or attach it as today — Refuse in `carts.checkout`, beside the account link: when `existing.userId` is set and is not `$.me?.id`, throw `bad('That address has an account — sign in to check out with it')`. No schema change, and guest checkout stays open for any address without an account. Cost: a signed-out returning shopper must sign in, and the refusal tells whoever typed an address that it has an account. That is little new, since the confirmation email already goes there, and WooCommerce uses the same wording.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Accept, but write who placed the order on `Order` (a `placedBy String? @system`) and narrow the read to `customer.userId == auth().id && (placedBy == auth().id || placedBy == null && createdAt < <link time>)`. Nothing is refused. Cost: this brings back a `userId`-style copy on `Order`, the kind `FJS-D1027`/`FJS-915` deleted two days ago, plus a link timestamp on `Customer` and a second read rule; and a real owner checking out signed-out no longer sees their own order), **C** (Accept as today (Shopify classic accounts attach orders by email): record that the stranger case is accepted along with late registration, and amend `FJS-4552` to a documented behavior. Zero code. Cost: a stranger can write into your order history, and nothing checks it).
+
+The paper's recommendation, taken as written: There is one owner (`customer.userId`), and it adds no noun. `Customer.email` is `@unique`, so the Magento/WooCommerce answer of leaving the guest order unlinked under a separate record is not available here, and refusing is the only option that keeps ownership true (`decision-rules` confidence 2; precedents from memory, not fetched).
+
 ### <a id="fjs-d2293"></a>2026-11-21 · `FJS-D2293` — Under `strategy row`, may one tenant's rows be kept out of, or sent elsewhere by, backup/replicate/export, or is residency a `strategy database` property — Rule it (one level simpler): residency is a property of a file, so a tenant that needs it is a `strategy database` tenant. The parse refusal gains a sentence naming `strategy database` and `place` as the answer. `data-hazards` § tenancy says it. The clinical stressor moves to strategy database or runs one fleet per region. Nothing else is built.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Filtered copies under row strategy. `litestone export --tenant <id>` writes one tenant's rows, and `backup`/`replicate` take an exclude list. This adds a second residency mechanism beside places. A filtered snapshot still means litestream ships the WAL of the whole file, so `replicate` cannot honor it), **C** (Placed rows: under strategy row, a tenant's `meta.place` routes its rows to a per-place `app.db`. That is strategy database with one shared schema file, so it is a second implementation of placement).
@@ -5432,6 +5438,28 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d2332"></a>2026-11-23 · `FJS-D2332` — Does litestone's object form accept a shorter `select` — Yes, both shorthands, through one owner. `select` takes a list as well as the object: a plain name (`'id'`) is a column, and a `$populate`-grammar path (`'tickets.ticketType.event:title'`, with dots for the relation hops and `:` before the leaf fields joined by `+`) is a relation projection. Both normalize to today's object tree in ONE pure function in `@frontierjs/toolbelt/query`, beside `normalizeSelect`. Junction's private `parsePopulate` moves there (Invariant 1: litestone cannot import junction), so junction's `$select`/`$populate` and litestone's argument share one parse (Invariant 4). An unknown name or path segment is still refused by name, so FJS-828's silent `{}` stays impossible. This reverses only FJS-828's "the list is not accepted as a second spelling" clause.
+
+Raised while reading grouppi's brace-heavy reads (`payments.ts` `exportYear`, `dues.ts` `remindUnpaid`). **Picked over** an Eloquent-style chain (a closure cannot cross the wire the object form crosses, and against raw SQL it adds only `.when()`), raw `asSystem().sql` (no gate, tenancy, decode or types), dotted paths alone (the `decision-rules` verdict, which kept FJS-828 whole; the measured pain is mostly long flat `{ a: true, … }` lists, and calling the existing owner is not a second owner), and neither (``where: { $raw: sql`…` }`` remains the SQL door either way). Open at build time: a middle hop in the populate grammar includes the whole row (`tickets` above), and whether a path may name only the leaf is unruled. Not built.
+
+### <a id="fjs-d2307"></a>2026-11-23 · `FJS-D2307` — What build shape does `FJS-D1301` C take — A `@system` Boolean on the aggregate's own model takes `@stale(on: [<source>.<path>, …])`, and each source carries its own relation path plus `@from`'s `where: this.userId` correlation. For each source, litestone's DDL emits an AFTER INSERT/UPDATE/DELETE trigger trio that sets the flag on the live parent row, in the same statement as the change. This is the `@@refreshOn` pattern (`ddl.js` ~1289) with a one-row UPDATE in place of a rebuild. The app's job "clears" the flag by inserting the successor row with it false. `stale: true` is then an ordinary `where`, and the catalog's `rollupSources` row is what `fli check` reads. Two cases stay silent: a source the author forgot to list, and a user with no aggregate row yet, whom the job must select itself.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the ruling's sketch read literally: one FK path, with the flag on the parent model (`GradeItem`), per item. The trigger cost is the same as A's, but one student's attempt marks the whole class's category stale, and the flag sits on a teacher-gated row), **C** (no write side: staleness is computed at read time as `max(child.computedAt) > own computedAt`, through `@from`/`@derived`, plus a catalog row. It misses deletes (a cascade leaves no newer child), and it misses edits to `weight` and to category settings. It also compares timestamps from different processes' clocks (data-hazards columns-and-clocks.md:6). It needs A's multi-hop path grammar anyway, paid as a correlated subquery on every read).
+
+As recommended: Prior art read 2026-11-22: Odoo @api.depends and django-computedfields depends both declare a list of relation paths (A's shape) but mark in app code, so raw and bulk writes miss it; triggers close that. Moodle's own grade_items.needsupdate is B's shape, and its pain is course-wide regrades and stuck flags. Owner took every source in this row, not a narrow first path.
+
+### <a id="fjs-d2308"></a>2026-11-23 · `FJS-D2308` — What does a `Localized` value read as, how does a patch reach one locale, and is an explicit null or empty string a missing translation — The document, both ways. A read returns the stored `{ en, pt }` object; only the three `FJS-D1303` read paths resolve a locale. A plain write `{ title: { pt: null } }` replaces the value like any Json column, so the default-locale `CHECK` refuses it; one locale is cleared with `{ title: { $merge: { pt: null } } }`, which deletes the key. A missing translation is a null OR an absent key: `json_extract` answers SQL NULL for both, so the ruled `COALESCE` falls back on both with no extra rule, and a write strips null keys so the stored document has one spelling for "untranslated". An empty string is a value and does not fall back. No reader locale crosses into litestone, and no new operator or directive.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the reader's string. A read projects `title` to the reader's locale with the default fallback (Contentful and Payload's default). This needs a new junction→litestone handoff carrying the locale, an all-locales escape for an edit form (a `$locales` directive: a new row in `@frontierjs/toolbelt/directives`, Invariant 10), and a rule for what a string written back means. A patch `{ pt: null }` merges into the stored value, which makes `Localized` the one Json type whose plain write merges rather than replaces), **C** (A's read and write, Contentful's fallback: only an absent key falls back, and an explicit null or `''` reads as written. Each of the three read paths then needs `CASE json_type(col, '$.pt') …` in place of the `COALESCE` `FJS-D1303` wrote, to tell apart two states that `$merge` cannot produce (its null deletes the key) and only a full write can).
+
+The paper's recommendation, taken as written: it matches the Json-column sibling on read and patch, so it adds no convention and moves no caller, and its fallback is the one `FJS-D1303`'s `COALESCE` already computes. The CMS default (B) is a delivery API's answer; litestone is the store, and a row read here round-trips through an edit form that needs every locale. Reopen as B's projection, opt-in as a `$locales` directive, once a surface needs the reader's string from the server and not from `@@label`. Edge to state in the ruling: `{ en: '' }` passes `CHECK (json_extract(col, '$.en') IS NOT NULL)`, so whether the default locale may be empty is the `CHECK`'s call (refuse `''` too, or not). Confidence 2. - **Prior art** (not re-fetched this run) — Contentful's Delivery API returns one locale's value with fallback by default and every locale with `locale=*`, falling back only on an absent field ([docs](https://www.contentful.com/developers/docs/tutorials/general/setting-locales/)). Payload returns the requested locale with `fallback-locale`, and every locale with `locale=all` ([docs](https://payloadcms.com/docs/configuration/localization)). Mobility reads the current locale's string, and its `presence` plugin turns `''` into nil so an empty string falls back ([README](https://github.com/shioyama/mobility)). All three are read APIs over a store that keeps the object; none merges a plain write.
+
+### <a id="fjs-d2306"></a>2026-11-23 · `FJS-D2306` — Under `tenancy { strategy database }`, does a tenant `$transaction` refuse a write to a `scope global` database, or enroll the shared global file as a second file it commits — Refuse by name: a tenant `$transaction` is atomic over the tenant's own file only, and a write to a `scope global` model inside one throws, naming the database and saying to write it outside the transaction. Outside a transaction the write runs on the global client's own manager. Same rule on every path, and nothing new owns a lock.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (state it: the global file joins every tenant transaction as a second file (`FJS-D35` order, main last, the `FJS-1459` partial-commit error). This needs a new process-wide lock above every per-client manager, so every tenant write transaction in the fleet waits on one lock, including the many that never touch global rows), **C** (enroll lazily: `BEGIN IMMEDIATE` on the global file only at a transaction's first global write. Whether a transaction serializes fleet-wide and can partly commit then depends on which branch ran).
+
+The paper's recommendation, taken as written: two files never commit as one act (`FJS-D232`), so B buys a fleet-wide lock and still no atomicity. A refusal fails loudly at the first run and costs one sequential rewrite. Reopen as B, with a process-wide lock owner, once a real app needs a global write and a tenant write to roll back together. Edge to state in the ruling: a global write's durable-effect (outbox) rows have no main to live in (`FJS-D35`), so they go in the global file itself.
 
 ### <a id="fjs-d2299"></a>2026-11-22 · `FJS-D2299` — Should a `loadRows` reject from a records source carry a line the caller supplies, or is its `row` index into the source the whole answer — Leave it. `row` is the 0-based position in the iterable the caller built, so the caller that knows lines maps it in one lookup. No new convention.
 
@@ -8979,6 +9007,12 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d2313"></a>2026-11-23 · `FJS-D2313` — What do `split` and a create-a-parent `backfill` look like in the operations document, and where in a created file do they run — Use D683's option A shapes as written. `{ op: 'split', model: 'Page', column: 'body', into: 'Block', field: 'body', link: 'pageId' }` is one `INSERT INTO Block (pageId, body) SELECT id, body FROM Page WHERE body IS NOT NULL`, placed after new tables and before rebuilds, where the target table and the source column both exist, with a `-- check` row count after it. `{ op: 'backfill', model, field, create: { Company: { name: 'Imported' } } }` is one INSERT in the same slot, which `backfillExpression` then reads as `first` does. Oracle's `was: 'Page.body'` becomes the split entry when the target entity is new and links to the source, and stays refused otherwise.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Build `split` only and leave `create` out. A person creates the parent row before the migration, and `first` carries it. One new slot, but the measured jazzhr/linear answers still refuse at apply, because their parents are new), **C** (Build neither. A move stays refused toward `risk: migration`, and the person does it as two migrations with an app script between them (`FJS-D518`: add `Block`, copy, then drop `Page.body`). No litestone change, and Notion's case stays a refusal rather than a carried move).
+
+The paper's recommendation, taken as written: Both measured losses need it. The split slot sits between two sections the generator already orders, and `create` reuses `first`'s read, so this is one more slot rather than a new mechanism.
+
 ### <a id="fjs-d1743"></a>2026-11-20 · `FJS-D1743` — How does a backup/replicate destination get declared for a placed tenant's files — Declared beside the place in the seed: `tenancy { place eu "data/eu" backup "backups/eu" }` (a local dir or a bucket name). The default backup/replicate skip the place; a place's own destination receives only its files, and `--zip` is refused across places. Invariant 6 (boundaries live in the schema) and the acceptance's word *declared*, at the price of one more keyword and a destination noun per place (`FJS-D1488` already names a BackupDestination).
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Skipped by default, opted in per run: `backup`, `replicate` and the default `restore` leave every `tenant-files-<place>` (and its trail, `FJS-D1727`) out; `backup --place eu <dest>` carries only that place to the `dest` the operator names, `replicate --place eu` to the target in that run's config. No schema keyword; the declaration is the operator's flag, so nothing stops `--place eu` from naming a US bucket. `export` and `studio` print the tenant's place), **C** (No enforcement: keep the copy paths as they are, document that a place is a directory, and have `backup`/`replicate`/`export`/`studio` print the place of every tenant they touch. Nothing to build beyond the notice; residency stays the operator's).
@@ -9489,6 +9523,24 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2329"></a>2026-11-23 · `FJS-D2329` — Q9 — What happens to `junction/ai` — Keep the `app.ai` slot (an app's named models), but each entry satisfies Q7's contract with `schema` optional, and `IAIModel` goes; orion's `ai` node calls `ask`, and Phase 4's two doors register there.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **C** was picked over **A** (remove it; orion declares the interface it calls), **B** (keep it as it is).
+
+The paper's recommendation, taken as written: one neutral contract, not two. A gives orion a third one of its own, and B leaves an app writing an adapter by hand (the file's own header sketches one) for a door Phase 4 already builds.
+
+### <a id="fjs-d2310"></a>2026-11-23 · `FJS-D2310` — How does an API admit an extension surface's WebSocket origin, when a store id is known only after upload and Firefox gives every install its own `moz-extension://` uuid — A, on two conditions.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, on two conditions*) over **B** (exact ids only: `jetty.config.js` declares `chrome.id` (from the store or a `key`), fli derives the unpacked dev id from the dist realpath as the drive does, and jetty's `--launch` profile pins the Firefox dev uuid (`extensions.webextensions.uuids`). Nothing is admitted that the app did not name, but a deployed Firefox user's socket stays refused, since their uuid is unknowable), **C** (skip the origin check for an upgrade whose credential is a bearer rather than a cookie. `FJS-D1207` already rejected this as its **B**, so it would reopen that ruling).
+
+A with both conditions as written: one matcher in middleware.ts owns the scheme rule and all three exact-match sites call it (cors isAllowed, originRefusal, withDerivedOrigins); a scheme entry counts as '*' at construction and stays out of a credentialed cors list.
+
+### <a id="fjs-d2317"></a>2026-11-23 · `FJS-D2317` — Where does an app start an OAuth grant flow (`FJS-D1313`) so the auth plugin owns its callback URI and state cookie: a new `app.oauth` taken with `app.own`, or a `beginGrant` on the `auth()` plugin's return value — The plugin takes `app.own('oauth', { beginGrant })`, typed by augmenting junction's `App` interface (Invariant 5), and any raw route reaches it as `app.oauth.beginGrant(...)`. This is the shape every API-realm plugin with a runtime API uses: webhooks, outbox, backfills, commitments, mail, ai, orion. Cost: it coins `app.oauth`. `app.auth` is not available because junction already owns it as the `SessionVerifier` (`packages/junction/src/core/app.ts:346`).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`auth()` returns, beside its `Plugin` fields, `beginGrant(ctx, provider, { grant, initiator, returnTo, extra })`. It calls `oauthBegin` with the plugin's own callback URI, sets the cookie on the callback path, and answers `authorizeUrl`. No noun is coined. Cost: the app keeps the plugin's return value and exports it to wherever its raw route lives. The one sibling that hands out extras that way is Litestone's `FileStorage`, which is in the Data realm).
+
+The paper's recommendation, taken as written: It matches how every API-realm plugin exposes a runtime API, and a route reaches it without importing `app.ts`. Exporting path helpers was weighed and refused: the app would still set the cookie and repeat `prefix`, which leaves two owners (`decision-rules` confidence 2).
 
 ### <a id="fjs-d2304"></a>2026-11-22 · `FJS-D2304` — When glowLine paints through the `/grammars` tokenizer, whose element vocabulary and whose bare-tag rule does glow's output follow — `glow` and `glowLine` paint through `tokenizeLine` wherever `grammarFor` finds a grammar, with `ELEMENT` as the one table from role to element. A run whose type has no element (emphasis, strong) goes out as bare text, and a STRUCTURE type keeps its element and drops its class, so glow's bare-tag rule stands and glow differs from `lineHTML` only by those classes. `glowLine`'s third argument and its `open` answer become the line's state (an opaque tokenizer state, or the regex engine's boolean), renamed `state`. sql, shell, transcripts and every language without a grammar keep the regex engine. The spec pins move to `ELEMENT`'s choices, and the docs are repainted once, graded by `packages/css` `bun run test code` and mesa's fence runs.
 
@@ -10691,7 +10743,7 @@ As recommended. Precedent: `FJS-D1426` and `FJS-D1427` put `:call` and `:data` i
 
 The nine, answered late (after the code, before this ruling): 1 origin — none added; `actAs` is `standingOf` and `asWhom` · 2 concept — no new noun · 3 complexity — one seam, one devtools branch, one argv mode · 4 predictability — `:ask` takes as whom as `:call` and `:data` do · 5 derived — the tools are the projection's own `tools/list` · 6 owner — `mcp()` answers; devtools only sets the principal · 7 boundary — the agent is handed a URL and nothing else · 8 failure — 403 in production, 404 naming `app.configure(mcp())` when absent, 404 for a person not found · 9 silence — what must stay true: *the agent is graded at the declared standing, never the developer's or the app's*; what fails when it stops: the console drive's `:ask` guest checks, red three times with nobody run as the app in `actAs`. § IV: *ergonomics vs. strictness*, as `FJS-D1426` named it, for the production refusal. Tier: Register.
 
-*Lives in:* `packages/junction/src/core/call-as.ts` (`actAs`), `packages/junction/src/plugins/devtools/`, `packages/mcp/src/plugin.ts`, `packages/cli/core/ask-claude.js`, `packages/cli/core/live-view.js`, `packages/cli/console/Ask.mesa`.
+*Lives in:* `packages/junction/src/core/call-as.ts` (`actAs`), `packages/junction/src/plugins/devtools/`, `packages/mcp/src/plugin.ts`, `packages/claude/src/argv.ts`, `packages/cli/core/live-view.js`, `packages/cli/console/Ask.mesa`.
 
 ### <a id="fjs-d1427"></a>2026-10-22 · `FJS-D1427` — Where `fli gui`'s `:data` reads rows as a principal — In the running app, at the Data boundary: devtools answers `GET /api/data` and `GET /api/data/<Model>` through `app.withDb` under the call's principal lookup, rows refused outside development.
 
@@ -14829,6 +14881,42 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2337"></a>2026-11-23 · `FJS-D2337` — Q9 — The first consumer — A, accepting a wait.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, accepting a wait*) over **B** (the property on the intake screen, for an existing property with a location (ELA 14.3)), **C** (a read-only tracker: the route as a line, the visits as markers (part of ELA 23.9)).
+
+Owner picked A on 2026-11-23, with Q3 and Q8 ruled the same day so the wait the recommendation accepted is over. This sets order only: Phase 4 depends on the Q8 proxy and Q3 imagery. The widget path already passes the strict-policy drive; FJS-4585 is the route path and does not block it.
+
+### <a id="fjs-d2336"></a>2026-11-23 · `FJS-D2336` — Q8 — How a keyed tile source reaches the page — A tile proxy route in the app's API: the key stays on the server, tiles can be cached, and the browser only ever asks the app's own origin.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **B** was picked over **A** (a key in the URL, restricted to the app's referrer. Whether Esri supports that is unverified), **C** (keyless raster tiles only, such as CARTO (terms unchecked). There is no imagery this way).
+
+As recommended: Owner picked B on 2026-11-23. The proxy is the one place the key meets the upstream, on junction's existing raw-route seam. z, x and y are parsed as integers and range-checked, and the upstream host and path are fixed in code, never built from the request (Invariant 8). The tile URL is tileUrl() with the proxy path as its template. Two risks are accepted and owed an answer in the build: the estimator widget is public, so the route is unauthenticated and spends the account's tile quota, which needs a cache or a rate limit; and whether Esri's terms allow caching tiles is unverified.
+
+### <a id="fjs-d2335"></a>2026-11-23 · `FJS-D2335` — Q3 — Tiles and imagery, and whose key — Esri World Imagery as an opt-in vendor keyed per account, about 30 cm, and NAIP as the free fallback where there is no key.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked over **B** (NAIP only: public domain and keyless, at 60 cm), **C** (Nearmap for ELA, about 5–7 cm, if ELA's subscription includes API access (unverified)).
+
+As recommended: Owner picked A on 2026-11-23. The key is credential state: it lives as a protected field behind a conduit target, never in config, rendered HTML, a widget bundle or a log. A missing key falls back to NAIP visibly, not silently. Nearmap arrives later as another basemap descriptor, not a new path. The kit still ships no default vendor or key (FJS-D153).
+
+### <a id="fjs-d2330"></a>2026-11-23 · `FJS-D2330` — Q1 — Where does the map live — A kit of its own, `@frontierjs/map-kit`, that draws the map itself and stays `private` while it is worked out.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **B** was picked over **A** (a rig: linked parts plus `.mesa` shells copied into the app, wrapping a vendor renderer), **C** (inside `@frontierjs/ui`, which `FJS-D327` refused).
+
+Against the recommendation (**A**): The owner ruled it in chat on 2026-11-22: the map is more than a rig, so it is its own kit, private while it is worked out. A rig would wrap a vendor renderer. B draws the map itself, and the vendor is only a basemap descriptor. FJS-D327 still stands for @frontierjs/ui, whose x-geo control stays. This settles where the map lives and nothing more: the interactive renderer (Q2) stays open. If probe 0.1 shows SVG attributes are blocked under style-src 'self', the static design changes and this ruling does not. The kit ships no default tile vendor or key (FJS-D153), and we accept maintaining the projection, the tile grid and, at Stage 2, the gestures.
+
+### <a id="fjs-d2312"></a>2026-11-23 · `FJS-D2312` — How does a window shortcut key that opens an unmounted island (site-kit Search's Cmd/Ctrl+K and `/`) reach it before the island mounts — The prerendered button carries `aria-keyshortcuts="Control+K Meta+K /"`, and while an island is unmounted the loader turns a keydown matching an element's `aria-keyshortcuts` in its range into the held click `FJS-4428` already replays: `preventDefault` at the press, `chordOf` and the text-field rule from `@frontierjs/toolbelt/keys` (`FJS-D1386`), a key already `defaultPrevented` left alone (the editor's Ctrl+K on a draft preview), and the listener removed at mount. Keys that activate no element (a game's arrows) stay lost and the islands guide says so. One constant in Search.mesa feeds both the attribute and `keydown()`, so they cannot drift.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Mesa records the keys a component's window keymap takes into the `ctx.islands` meta, and the loader holds a matching key, wakes the island and replays a `keydown` on window after mount. It needs a new declarative window-keymap spelling (Search tests `e.key` inside an ordinary function, so nothing names a key today) beside `keys()`/`hotkey()` (`FJS-D1388`)), **C** (the site-kit preset places Search `client:load`. Narrows the gap; `FJS-D2288` rejected this shape for clicks).
+
+The paper's recommendation, taken as written: it adds no noun (WAI-ARIA defines the attribute as keys that activate the element; GitHub's `@github/hotkey` `data-hotkey` is the same shape, quoted from memory) and reuses the one replay path FJS-4428 built. Confidence 2 of 3. Also open: `FJS-D2288`'s text says one document capture listener for pointerdown, click, keydown and focusin; `catchEarlyClicks` attaches pointerdown and click per range element, with no keydown or focusin. Whichever is picked, the ruling's text or the loader moves to match.
+
+### <a id="fjs-d2311"></a>2026-11-23 · `FJS-D2311` — How does a tether read a `@zoned` day window's zone when that zone is one relation away (`account.timeZone`) and its load did not include the relation — Sierra's tether load folds in the one-hop zone column, derived from `x-effective`'s zone path, so the record carries `account: { timeZone }` and the drop is exact. Cost: the loaded record changes shape, and a stub relation appears that nobody asked for.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`leavesAt` answers "can't say" for a row whose one-hop zone is not on the record. The tether counts that row in its existing `stale` set rather than dropping it on a guess, and a test pins this. No change to the record's shape, but such a row is graded only by the next load).
+
+As recommended: Owner's condition: the fold is driven by x-effective alone. The tether load adds the one-hop zone column only when x-effective names a zone path one relation away; a same-row zone, an offset column or no @zoned loads nothing extra.
+
 ### <a id="fjs-d2290"></a>2026-11-21 · `FJS-D2290` — A Date in a hydratable page's data travels as a Date — `hydrateJson` writes it as its ISO string and adds its key path (a list of keys) to a `datePaths` list beside `data`, `staticPage` and `state`, written only when the page holds one; the client entry turns each path back into a Date before the route runs. Every other value that does not round-trip through JSON (a Map, a Set, a function, a BigInt, a cycle) is still refused by key path.
 
 Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) step 2.5a, where the build refused a Date with the rest. The owner picked Dates only over refusing everything (Next's `getStaticProps`, where a Date fails the build) and over a full serializer (`devalue`, as SvelteKit uses). A string in place of a Date would render differently on the client than the server did, which is a mismatch; a Date is the one non-JSON value a `load()` commonly builds. Reopen toward the full serializer if a second type earns the same carry.
@@ -15097,7 +15185,7 @@ Picked by the owner over a remark-directive `:::checklist` spelling (the ecosyst
 
 ### <a id="fjs-d2126"></a>2026-11-13 · `FJS-D2126` — An ask carries the page it was typed on, and the prompt carries that page's files whole.
 The Ask panel sends `page: { path, files }`: the address, then the editable files its stamps name, the route file first (`pageOf` in `site-kit/src/editor/pick.js`). `drafts.ask` refuses a path `pathRefusal` refuses or one that is not markdown. The run puts each file's text, read off the draft it exported, never the editor's copy, into `contentPrompt` until `PAGE_MAX_CHARS`, and tells the model that "it" and "this" mean that page. Measured on kobami.com with "change it to 55+": 10.7s and five turns (search, read, search again, edit, reply) became 4.5–5s and two turns (edit, reply), at half the cost. Sending the file names without their text saved about 1.5s, because the model still searched first. Edit accepted a file it had only seen in the prompt.
-*Lives in:* `packages/site-kit/src/editor/Ask.mesa` · `packages/basecamp/api/src/domain/site/site-ask.ts` (`askPage`, `pageFiles`) · `packages/cli/core/ask-claude.js` (`contentPrompt`).
+*Lives in:* `packages/site-kit/src/editor/Ask.mesa` · `packages/basecamp/api/src/domain/site/site-ask.ts` (`askPage`, `pageFiles`) · `packages/cli/core/edit-prompt.js` (`contentPrompt`).
 
 ### <a id="fjs-d2121"></a>2026-11-13 · `FJS-D2121` — Q32 — How a preview shows a kept ask before it rebuilds (4.3, `FJS-4270`) — The ask's changed lines are swapped onto the page as `FJS-D1399` swaps a typed edit, and the panel polls `drafts.asked`, which carries the draft's preview status, until the preview has built past the head the ask read; then it says so, with Reload when anything could not be swapped.
 
@@ -17560,6 +17648,18 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d2315"></a>2026-11-23 · `FJS-D2315` — How does a theme make a second hue appear on untoned components — Coin `--color-accent`, a published knob read at named use sites as `var(--color-accent, var(--color-primary))` (check/switch, step marker, tab indicator, `.kicker`). One line in a theme moves all of them; a theme that does not set it is unchanged.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Route those untoned components straight to `var(--color-secondary)`. No new noun, but every shipped theme changes (default's secondary is slate `#0f172a`), so all 17 need re-grading), **C** (Treat a second hue as markup's job (`.secondary`, Invariant 13), and fix only reachability: move `--check-accent`, `--step-accent` (and any sibling declared on its component) to use-site fallbacks, so a theme or the Swatchbook compiler sets each one. No noun, no visual change).
+
+Against the recommendation (**C**): Owner's pick over C: one published knob a theme sets once, read at the named use sites (check/switch, step marker, tab indicator, .kicker) with --color-primary as the fallback, so a theme that does not set it is unchanged.
+
+### <a id="fjs-d2314"></a>2026-11-23 · `FJS-D2314` — Does `@frontierjs/css` coin a `.lead` class beside `.kicker`, replacing `FJS-D253`'s Lead half, or keep the lead paragraph as a combination of existing classes — Coin `.lead` in `packages/css/src/patterns/bars.css` beside `.kicker`, the pattern that already owns the text around a title. Every value reads an existing token (`--text-xl`, `--leading-relaxed`, `--ink-soft`); the only new value is a measure cap. Add the term to `vocabulary.json`, give the vocabulary spec a check both ways, and have the swatchbook preview use it. This replaces D253's Lead half and cites its own Kicker reasoning: two unnamed implementations of one idea produce drift, and there are now four.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Coin nothing, and name `.text-xl` as the lead spelling in the docs and the preview. To stay true to D253, the docs would also set the color to `--ink-soft` (not `text-muted`'s `--ink-mute`) and cap the measure by hand. No new term, but the four drifted copies stay and nothing reports the next one), **C** (Style the lead by position, with `.band h1 + p` and no class. This fails as soon as a badge or a second paragraph sits between the h1 and the lead, and it gives Band a second job, styling headings).
+
+The paper's recommendation, taken as written: D253's combination is not what anyone writes and does not exist at the hero position, and the drifted copies already spend the concept budget the refusal was protecting (`decision-rules` confidence 2).
+
 ### <a id="fjs-d1236"></a>2026-11-22 · `FJS-D1236` — What is a star rating in the kit: a css component over native radios, a Mesa component in ui, or nothing — `@frontierjs/css` grows `.rating` in `src/components/`: a `fieldset`/`div` of visually hidden radios and their labels, filled by `input:checked ~ label` over a reversed flex row, with `.rating.readonly` (or `[data-value]`) for the display and tone from the existing `tone` axis. Pure CSS, no script, named in `vocabulary.js`; the survey keeps native radios, so form posts and keyboard arrows work unchanged.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`@frontierjs/ui` grows `Rating.mesa` (props `value`, `max`, `readonly`, `name`) that renders the radios and carries its own scoped style. It is one file and the read-only display is the same component, but a style block in a kit package ships what Invariant 13 says the kit should state in `@frontierjs/css`, and a plain-HTML or email consumer gets nothing), **C** (Nothing in the kit: a star is a glyph an app draws, and ela's scoped block is the right owner. Close `FJS-2112` as declined and add the one sentence to the css `CLAUDE.md` so the next survey does not ask again).
@@ -18290,6 +18390,62 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2341"></a>2026-11-23 · `FJS-D2341` — Q11 — whose 37signals grant Workbench sends a to-do on — Workbench's own: one more authorization-code exchange through the OAuth app Intake uses, refreshed by `basecampTokenResolver`.
+
+Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open questions. **A** was picked over **B** (through Intake: a route on Intake's deployed `api/` makes the to-do on Intake's grant, and Workbench signs in to Intake), **C** (a copy of Intake's refresh token).
+
+The paper's recommendation, taken as written: if Basecamp rotates refresh tokens (unmeasured, `conduit-37signals` 4.1), two holders of one token log each other out, so C breaks the 37signals plan's 5.1 ruling (each app's grant is its own); B adds a cross-app route and fails whenever Intake is down.
+
+The grant is one app-level row and Jordan's, so every member's to-do is authored as Jordan. That holds for a one-owner tool; once Workbench has a second Basecamp user who must appear as the author, this reopens as a `per_caller` target (`FJS-D1182`, `conduit-37signals` 4.1).
+
+### <a id="fjs-d2334"></a>2026-11-23 · `FJS-D2334` — Q18 — How long 9.2's release festival lasts — Until the next deploy: the bake compares the newest tag with the one the last bake saw, and a newer one is a festival in the square until the next bake.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **C** was picked over **A** (the release day: the bake writes each building's newest tag date, and the visitor's clock holds the festival for the 24 hours after it, so it ends without a deploy), **B** (the same, for a week).
+
+Against the recommendation (**A**): the owner wants the simplest version: the bake keeps the newest tag it saw in quarter.data.json, and a newer tag at the next bake is a festival until the bake after.
+
+### <a id="fjs-d2333"></a>2026-11-23 · `FJS-D2333` — Q17 — Which CI result 9.2's roof storm bakes — No storm (one level simpler): the quarter shows `PROJECT_STATE.md` and nothing about CI, and 9.2 drops the storm.
+
+Asked in [`IDEAS/haven.md`](IDEAS/haven.md) § Open questions. **C** was picked over **A** (GitHub's last run on main, read by `gh run list` at bake; a storm over each building whose package the failing job names, the whole quarter when none is named), **B** (the deploying machine's `.cache/ci-last.txt`; per package, but only as fresh as that machine's last `fli ci`).
+
+Against the recommendation (**A**): the owner wants the easiest version, and removing the storm is easier still: the quarter shows PROJECT_STATE.md and nothing about CI, so FJS-D996's 'last CI result' half is dropped.
+
+### <a id="fjs-d2328"></a>2026-11-23 · `FJS-D2328` — Q8 — Is an agent inside an app part of this plan — No: its own paper in `IDEAS/`, with kos's companion as the prior art.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (yes, as a phase here).
+
+The paper's recommendation, taken as written: kos's loop (background tasks, approvals, history as rows) is a new framework feature, not a consolidation, and its tools already have an owner.
+
+### <a id="fjs-d2327"></a>2026-11-23 · `FJS-D2327` — Q7 — Where does the one-answer contract's type live — A vendor-neutral home both import (`@frontierjs/toolbelt`).
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **B** was picked over **A** (`conduit-anthropic` exports it; the local package imports the type), **C** (the local package exports it; `conduit-anthropic` imports the type).
+
+The paper's recommendation, taken as written: nothing in `ask({ prompt, schema })` is Claude's, and a third door (another vendor, a local model) should not import a Claude package to answer.
+
+### <a id="fjs-d2325"></a>2026-11-23 · `FJS-D2325` — Q5 — One package, or one for running and one for reading files — One.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (two: running (jobs A local, B, C) and files (job E)).
+
+The paper's recommendation, taken as written: both break together when Claude Code changes, and both have the one dependency.
+
+### <a id="fjs-d2324"></a>2026-11-23 · `FJS-D2324` — Q4 — What is the package called — `@frontierjs/claude`.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (`@frontierjs/claude-code`), **C** (a generic name (`agent-cli`, `local-model`)).
+
+The paper's recommendation, taken as written: named for the vendor's program as connectors are (`FJS-D153`); the flags, the control protocol and `~/.claude` are all Claude Code's, so a generic name promises a layer with one implementation. B reads like Anthropic's own package. The cost of A: it can read as covering the API, which stays in `conduit-anthropic`, so its README's first line says so.
+
+### <a id="fjs-d2322"></a>2026-11-23 · `FJS-D2322` — Q2 — TypeScript or plain JavaScript — TypeScript, added to House style's TypeScript list in `CLAUDE.md`.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (plain JavaScript, like `cli`).
+
+The paper's recommendation, taken as written: most of what moves in is TypeScript already (Workbench's readers, about 3,400 lines; Lathe's protocol); `ask-claude.js` (704) is the one JavaScript part. The stream-json union is the boundary a type pays for.
+
+### <a id="fjs-d2321"></a>2026-11-23 · `FJS-D2321` — Q1 — Does the local package live in this repo or its own — In the tree, `packages/<name>/` beside `cli` and `mcp`, as the connectors moved into `packages/conduits/`.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (its own repo, published as a general Claude Code library).
+
+The paper's recommendation, taken as written: every consumer is in the tree or a prototype that links it (kos and ELA only use the API), and some of the code assumes this repo: runs turn hooks off because the Stop hook runs `fli done`. Pulling it out later stays easy.
 
 ### <a id="fjs-d2300"></a>2026-11-21 · `FJS-D2300` — Which folders does Workbench's Disk › Build output scan for Rust `target/` folders: the pinned checkouts, the pins plus the prototypes catalog, or one configured code root — One code root, `CODE_DIR` (`api/src/core/env.ts`, absent `~/code`), walked by name: a `target/` beside a `Cargo.toml` is a build, `node_modules`, `.git` and dot-folders are skipped. The walk runs on a press of Scan, never with the Disk tab, because it takes about 20 s over the owner's tree. Clear is `clearBuild({ id })`, the id a path under the root that the module re-checks (inside the root by realpath, named `target`, not a symlink, a `Cargo.toml` beside it) and refuses while a `cargo` or `rustc` process works in that project. `node_modules` is not listed yet; a second kind is one more finder in `domain/laptop/builds.ts`.
 
@@ -19339,7 +19495,7 @@ Asked in `packages/basecamp/docs/vision.md` § The Domain Question (three candid
 
 Asked in [`IDEAS/workbench-package.md`](IDEAS/workbench-package.md) § Open questions. **A** was picked over **B** (A `web/` surface of `packages/cli`, since `atlas.ts` already imports fli's readers by path).
 
-The paper's recommendation, taken as written: `cli` ships to npm; a private app with a database inside it breaks publishing and severability. `cli/core/ask-claude.js` stays in cli and Workbench imports it, as `atlas.ts` does today.
+The paper's recommendation, taken as written: `cli` ships to npm; a private app with a database inside it breaks publishing and severability. `ask-claude.js` stays in cli and Workbench imports it, as `atlas.ts` does today (since moved to `packages/claude/`, `FJS-D2321`).
 
 ### <a id="fjs-d1787"></a>2026-11-03 · `FJS-D1787` — Q3 — The desktop shell — Both apps keep a shell.
 
@@ -23096,6 +23252,42 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2343"></a>2026-11-23 · `FJS-D2343` — Q18 — What the "one fli command" for Headscale is — A `headscale` Blueprint row plus a generic `fli basecamp:blueprint <slug>` that calls `fromBlueprint` (params as flags), then `place` on `--server` and `deployments.create`, as the Blueprints page does. Its `--domain` uses the Domain helper, which moves out of `deploy.md` into `core/basecamp.js`. One new verb, and every catalog entry gets it.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (the Blueprint row only, installed from the Blueprints page: no new command, but no fli path either), **C** (a bespoke `fli headscale:install`: Headscale-specific, and a second way to make an App beside `fromBlueprint`).
+
+The paper's recommendation, taken as written: the catalog stays the one place a third-party App is described, and the verb serves all ten entries. Reopen to C only if Headscale needs a step `fromBlueprint` cannot express, such as bootstrapping a key after first boot.
+
+### <a id="fjs-d2342"></a>2026-11-23 · `FJS-D2342` — Q17 — How an App publishes a UDP port — No column yet: Headscale takes Q16's fallback, Tailscale's public STUN with our DERP relay over HTTPS, until something else needs UDP.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **D** was picked over **A** (`udpPorts Int[] @default([])` on App: each published `N:N/udp` on every interface and always in the exposed set (the label becomes a list). `host-port.ts` refuses two Apps on one box with the same UDP port, and the posture grader counts each as declared. One column, holding only the ports Caddy cannot front), **B** (`extraPorts String[]` in docker's `-p` spelling (`3478/udp`, `9000:9000/tcp`): any protocol and any mapping, at the cost of a grammar to parse and a second TCP door beside `port` and Caddy), **C** (an `AppPort` model (`port`, `containerPort`, `protocol`, `exposed`), which would eventually absorb `port`, `containerPort` and `hasExposedPort`. The most general, at the cost of a new noun, a relation and a migration of every App).
+
+Against the recommendation (**A**): nothing but Headscale's STUN needs UDP yet, and Q16's fallback covers it; build A when a second consumer arrives.
+
+### <a id="fjs-d2338"></a>2026-11-23 · `FJS-D2338` — Q16 — Where the Headscale server runs, and in what form — A container App on yuma-test, deployed by its Basecamp with a Domain row for `hs.awe.dev` (DNS-only, since the control protocol does not pass Cloudflare's proxy), and its own DERP relay with STUN on UDP 3478, so no traffic relays through Tailscale's servers. Basecamp's deploy, logs and backups cover it like any App; prod moves later. If 3.3 finds an App cannot publish UDP, the relay falls back to Tailscale's public STUN with our DERP still over HTTPS. Only the relay source changes, so this ruling does not reopen.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (`fli overlay:install <box>` over ssh, the way `outpost:install` works: binary, systemd unit, Caddy route. Fastest to write, invisible to Basecamp), **C** (a dedicated small box bought by `fli server:create`: isolated, one more box to back up and patch), **D** (Tailscale's public DERP servers instead of our own: no UDP port, but relayed traffic crosses a vendor).
+
+The paper's recommendation, taken as written: the owner's picks of 2026-11-23: the same deploy path as every other App, and a test hub rather than prod. Its one unknown is whether an App publishes a UDP port (3.3).
+
+### <a id="fjs-d2331"></a>2026-11-23 · `FJS-D2331` — Q15 — Which overlay Outpost installs — Headscale: a self-hosted Tailscale control server, one Go binary on SQLite, BSD-3, a single tailnet for "personal use, or a small open-source organisation" (its README); boxes and phones run the official Tailscale clients. Conditions: Basecamp mints the pre-auth key at enrollment (`FJS-D557`) and the Headscale db is derived from the enrolled machines; its ACL stays allow-all, because trust never comes from the network; the overlay stays a severable Outpost option. Tailscale owns the protocol, which Headscale follows.
+
+Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (NetBird: one project owns client, server and protocol, with dashboard, REST API and policies; the server needs an OIDC provider and more components, and its server license is AGPL (unverified)), **C** (hosted Tailscale, a vendor's control plane (`FJS-D2248` took the vendor path for the tunnel)), **D** (Nebula: the smallest, a certificate authority and no coordination server, and no phone-grade clients).
+
+The paper's recommendation, taken as written: the fewest parts and a permissive license, an enrollment API Outpost can drive, and the best phone clients, which also serve the owner reaching a laptop from a phone. Reopen to B if the single-tailnet limit blocks a Phase 4 cross-owner pair.
+
+### <a id="fjs-d2326"></a>2026-11-23 · `FJS-D2326` — Q6 — When may an API call be sent twice — Once on a 429 or 529 only; a dropped connection is the caller's call.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **C** was picked over **A** (never: `conduit-anthropic`'s rule, a sent request may be billed), **B** (once on a 429, 529, 5xx or dropped connection before anything streamed: kos's rule).
+
+The paper's recommendation, taken as written: a 429 or 529 is a refusal the API did not bill; a dropped connection may have run, which is the case A exists for.
+
+### <a id="fjs-d2323"></a>2026-11-23 · `FJS-D2323` — Q3 — Does it publish to `packages.frontierjs.com` — Yes, released like `cli`, so prototypes depend on it directly.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (no; prototypes keep reaching it through `cli`).
+
+The paper's recommendation, taken as written: Lathe's desktop build bundles it into its sidecar, and B keeps the runtime-on-the-CLI dependency this plan exists to end.
 
 ### <a id="fjs-d2309"></a>2026-11-22 · `FJS-D2309` — Q2 — Where the WebKit launcher lives — One helper that opens a page in a Playwright engine, WebKit or Firefox, and returns problems and a screenshot; sierra's `openFirefoxCsp` moves onto it.
 

@@ -475,8 +475,8 @@ first bullet.
   server's nodes kept, and no console warning.
 
 **Built 2026-11-20.** Mesa's `bun run test` passed with 2828 tests and
-Sierra's with 2553. `FJS-4515` counts the corpus blocks that still re-render
-rather than adopt (a ratchet at 76), and `FJS-4516` is a layout gap found on
+Sierra's with 2553. `FJS-4573` counts the corpus blocks that still re-render
+rather than adopt (a ratchet at 20), and `FJS-4516` is a layout gap found on
 the way, not specific to hydration. A `client:*` directive inside a flagged
 tree is stripped and hydrates eagerly, which is Phase 4's to fix.
 

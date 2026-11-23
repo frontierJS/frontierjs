@@ -275,6 +275,10 @@ export const RULES = [
     title: 'every @frontierjs/conduit-* package holds a sink, a drive and a conduit peer' },
   { id: 'catch-names-its-error', scope: 'repo', severity: 'warn', invariant: 4,
     title: 'a catch on the request or Data path names what it caught or says why not (FJS-D2131)' },
+  { id: 'claude-package-isolated', scope: 'repo', severity: 'error', invariant: 1,
+    title: '@frontierjs/claude imports nothing from @frontierjs/cli, by name or by path' },
+  { id: 'claude-spawn-owned',   scope: 'repo', severity: 'error', invariant: 4,
+    title: 'only @frontierjs/claude starts the claude program, and the files still listed in scripts/claude-spawners.json are the ones that do' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))

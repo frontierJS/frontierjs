@@ -1454,6 +1454,27 @@ export function createResource(serviceName, opts = {}, ...extra) {
    */
   let _cachedAt = null
 
+  // A `@zoned` day window one relation away (`account.timeZone`) ends at the
+  // row's own midnight only if the record carries that zone, so a load asks for
+  // the one column (`FJS-D2311`). An include the caller made is kept whole or
+  // widened, never narrowed: `$populate=account` beside `account:timeZone` would
+  // read as the narrow one.
+  const zoneHop = modelDef?.['x-effective']?.imposed ? modelDef['x-effective'].zone?.split('.') : null
+  function withWindowZone(directives) {
+    if (zoneHop?.length !== 2) return directives
+    const [rel, column] = zoneHop
+    const raw  = directives?.populate
+    const list = (raw == null ? [] : Array.isArray(raw) ? raw : String(raw).split(',')).map(s => String(s).trim()).filter(Boolean)
+    const narrowed = list.findLastIndex(e => e.startsWith(`${rel}:`))
+    if (narrowed !== -1) {
+      const fields = list[narrowed].slice(rel.length + 1).split('+').map(f => f.trim())
+      if (fields.includes(column)) return directives
+      list[narrowed] = `${list[narrowed]}+${column}`
+    } else if (list.some(e => e === rel || e.startsWith(`${rel}.`))) return directives
+    else list.push(`${rel}:${column}`)
+    return { ...directives, populate: list.join(',') }
+  }
+
   // `load` and `more` over one tether. The resource's own pair is over the
   // tether every plain list shares; a list over a filter makes a pair of its
   // own, with the stamp that goes with it — two tethers answering one stamp
@@ -1469,7 +1490,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
       const key = syncMode ? listKey(serviceName, query ?? {}, directives ?? null) : null
       const since = readMark()
       try {
-        const rows = await live.load(query ?? {}, directives)
+        const rows = await live.load(query ?? {}, withWindowZone(directives))
         if (stamp === _loadIssued) {
           _rememberRows(rows)
           _cachedAt = null

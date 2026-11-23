@@ -36,7 +36,7 @@ export function buildLogEntry({ operation, model, field, transition, recordId, b
     attempted?: string | null;
     rowTenant?: string | null;
 }, ctx: Ctx, onLog: ((entry: Record<string, unknown>, ctx: Ctx) => Record<string, any> | null | void) | null | undefined): {
-    operation: "delete" | "update" | "read" | "create" | "denied";
+    operation: "read" | "delete" | "update" | "create" | "denied";
     model: string;
     field: string;
     transition: string;

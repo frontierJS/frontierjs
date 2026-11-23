@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-21 publishable package(s) · 0 problem(s)
+22 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -137,6 +137,15 @@ lists the pair, and a rename that removes one drops it on the next write.
 
 - peers — `@frontierjs/junction`: `^0.1.0`
 
+## `@frontierjs/claude`
+
+`packages/claude` · ships `LICENSE` `README.md` `index.ts` `package.json` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `index.ts` | yes |
+| main | `main` | `index.ts` | yes |
+
 ## `@frontierjs/cli`
 
 `packages/cli` · ships `LICENSE` `README.md` `bin/` `commands/` `console/` `core/` `db/` `native/` `package.json` `web/`
@@ -181,7 +190,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./foundation/*.css` | `src/foundation/*.css` | 6 files |
 | exports | `./themes/*.css` | `src/themes/*.css` | 17 files |
-| exports | `./components/*.css` | `src/components/*.css` | 20 files |
+| exports | `./components/*.css` | `src/components/*.css` | 21 files |
 | exports | `./patterns/*.css` | `src/patterns/*.css` | 12 files |
 | exports | `./a11y/*.css` | `src/a11y/*.css` | 2 files |
 | exports | `./bundle.css` | `dist/frontier.css` | yes |

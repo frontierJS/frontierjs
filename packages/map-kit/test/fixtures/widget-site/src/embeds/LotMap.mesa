@@ -1,0 +1,31 @@
+<script module>
+  export const widget = {}
+</script>
+
+<script>
+  // The kit's rules by relative path, as sierra's Kit widget does: the claim
+  // is about the shipped sheets. A shadow root sees none of the host page's
+  // CSS, so the tokens, the tone classes and .visually-hidden come in here.
+  import '../../../../../../css/src/foundation/tokens.css'
+  import '../../../../../../css/src/foundation/tones.css'
+  import '../../../../../../css/src/a11y/a11y.css'
+  import StaticMap from '../../../../../src/StaticMap.mesa'
+
+  // The host page names its tile server, as a customer's embed snippet would:
+  // data-tiles reaches this prop, and img-src must allow that origin.
+  export let tiles
+
+  // The numbers are test/drive.mjs's demo constants (demo/serve.js); the
+  // drive predicts this map from those, so the two must stay equal.
+  const basemap = { tiles, attribution: 'Fixture tiles', maxZoom: 19 }
+  const center = { lat: 40.7128, lng: -74.006 }
+  const lot = {
+    type: 'Polygon',
+    coordinates: [[[-74.0062, 40.7126], [-74.0058, 40.7126], [-74.0058, 40.713], [-74.0062, 40.713], [-74.0062, 40.7126]]],
+  }
+</script>
+
+<StaticMap
+  {basemap} {center} width={500} height={300} label="The lot at 14 Elm St"
+  shapes={[{ geojson: lot, tone: 'success', treatment: 'outlined' }]}
+  markers={[{ at: center, tone: 'info', label: '14 Elm St' }]} />

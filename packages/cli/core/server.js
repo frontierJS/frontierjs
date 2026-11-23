@@ -1364,7 +1364,8 @@ function handleReleaseStepStop(req, res) {
 let asking = null
 
 async function handleAskClaudeDefaults(req, res) {
-  const { ASK_BASH, ASK_BUDGET_USD, ASK_DEFAULT_QUESTION, ASK_EFFORT, ASK_RULES, ASK_TOOLS, EFFORTS } = await import('./ask-claude.js')
+  const { ASK_BASH, ASK_BUDGET_USD, ASK_EFFORT, ASK_TOOLS, EFFORTS } = await import('@frontierjs/claude')
+  const { ASK_DEFAULT_QUESTION, ASK_RULES }                         = await import('./ask-prompt.js')
   json(res, 200, {
     question: ASK_DEFAULT_QUESTION,
     rules:    ASK_RULES,
@@ -1394,7 +1395,8 @@ async function handleAskClaude(req, res) {
   try { body = await readBody(req) } catch { return json(res, 400, { error: 'Invalid JSON body' }) }
   if (asking) return json(res, 409, { error: 'Claude is still answering' })
 
-  const { askPrompt, gitContext, runAsk } = await import('./ask-claude.js')
+  const { runAsk }                = await import('@frontierjs/claude')
+  const { askPrompt, gitContext } = await import('./ask-prompt.js')
   const session = body?.session ? String(body.session) : null
   const context = body?.context && typeof body.context === 'object' ? { ...body.context } : {}
   if (context.command) context['command source'] = commandSource(context.command)
@@ -1429,7 +1431,8 @@ async function handleLiveAsk(req, res) {
   if (asking) return json(res, 409, { error: 'Claude is still answering' })
   if (!String(body?.question ?? '').trim()) return json(res, 400, { error: 'ask a question' })
 
-  const { agentPrompt, runAsk } = await import('./ask-claude.js')
+  const { runAsk }               = await import('@frontierjs/claude')
+  const { AGENT_SERVER, agentPrompt } = await import('./ask-prompt.js')
   const { agentUrl }            = await import('./live-view.js')
   const session = body?.session ? String(body.session) : null
   const who     = new URLSearchParams()
@@ -1438,7 +1441,7 @@ async function handleLiveAsk(req, res) {
   const prompt = agentPrompt({ question: body.question, as: who.get('as') ?? '', tenant: who.get('tenant') ?? '', followUp: !!session })
 
   const emit = (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)
-  const out  = runAsk({ root: global.projectRoot, prompt, session, agent: { url: agentUrl(who) }, effort: 'low', onEvent: emit })
+  const out  = runAsk({ root: global.projectRoot, prompt, session, agent: { url: agentUrl(who), server: AGENT_SERVER }, effort: 'low', onEvent: emit })
   if (out.error) return json(res, 400, { error: out.error })
 
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })

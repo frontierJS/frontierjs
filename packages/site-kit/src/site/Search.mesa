@@ -8,15 +8,23 @@
   // to the page, or to the heading's #id when the hit is under one.
   //
   // `/` is the visitor's key, so it is left alone in a field: a form on the
-  // page, and the palette's own box, take it as a character.
+  // page, and the palette's own box, take it as a character (FJS-D1386).
+  //
+  // The keys are the button's aria-keyshortcuts as well as this island's
+  // keymap: sierra presses the button for a key that names it while this
+  // chunk loads (FJS-D2312), so a key bound here alone is lost in that gap.
   //
   // On a draft's preview with its owner signed in, the editor's palette is the
   // one (FJS-D2191): Cmd/Ctrl+K is the editor's, and the button and `/` ask it
   // to open.
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
+  import { chordOf, keymap, parseKeyShortcuts, step } from '@frontierjs/toolbelt/keys'
   import { createSearch } from './search.js'
 
   export let label = 'Search this site'
+
+  const SHORTCUTS = 'Control+K Meta+K /'
+  const shortcuts = keymap(Object.fromEntries(parseKeyShortcuts(SHORTCUTS).map((k) => [k, 'toggle'])))
 
   const index = createSearch()
   let open  = false
@@ -38,21 +46,20 @@
   const typing = (el) => el?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el?.tagName ?? '')
 
   function keydown(e) {
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-      if (editing()) return
-      e.preventDefault()
-      if (open) open = false
-      else show()
-    } else if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey && !open && !typing(e.target)) {
-      e.preventDefault()
-      show()
-    }
+    if (typeof e.key !== 'string') return
+    const chord = chordOf(e)
+    const hit = step(null, chord, { active: [shortcuts], mac: false, text: typing(e.target) }).outcome
+    if (hit?.action !== 'toggle') return
+    if ((chord.ctrl || chord.meta) && editing()) return
+    e.preventDefault()
+    if (open) open = false
+    else show()
   }
 </script>
 
 <mesa:window onkeydown={keydown} />
 
-<button class="btn ghost search-open" {class} type="button" aria-label={label} aria-haspopup="dialog" onclick={show} {...$attributes}>
+<button class="btn ghost search-open" {class} type="button" aria-label={label} aria-haspopup="dialog" aria-keyshortcuts={SHORTCUTS} onclick={show} {...$attributes}>
   <svg viewBox="0 0 24 24" width="1.25em" height="1.25em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
     <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
   </svg>

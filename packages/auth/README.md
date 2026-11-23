@@ -477,14 +477,23 @@ of the app's (`FJS-D1313`): its tokens go to the app's `onGrant`, never to a
 ```
 
 It is absent from `GET /auth/oauth`, and `GET /auth/oauth/{provider}` refuses to
-start it, so it can never become a login. The app starts it from a service that
-has graded the caller against the row: `auth.oauthBegin(name, { redirectUri,
-grant: { model, id }, initiator, extra })`, with `redirectUri` the plugin's own
-callback (`<publicUrl><apiPrefix>/auth/oauth/<name>/callback`). The raw route in
-front of that service sets `OAUTH_STATE_COOKIE` to the returned `state` on that
-callback's path, as the begin route does, and answers `authorizeUrl` for the
-browser to navigate to. The callback is auth's, and it ends at `onGrant` and the
-flow's `returnTo`; a throw from `onGrant` lands on `oauth_error=exchange`.
+start it, so it can never become a login. The app starts it from its own raw
+route, once a service has graded the caller against the row (`FJS-D2317`):
+
+```ts fragment
+app.get('/integrations/{id}/connect', async (ctx) => {
+  await app.service('integrations').get(ctx.route.id)   // as the caller: refuses one the row's gate refuses
+  const { authorizeUrl } = await app.oauth.beginGrant(ctx, 'google-business', {
+    grant: { model: 'Integration', id: ctx.route.id }, initiator: ctx.user.id, returnTo: '/settings/',
+  })
+  return ctx.redirect(authorizeUrl)
+})
+```
+
+`beginGrant` gives the provider the plugin's own callback URI and sets the state
+cookie on that callback's path, wherever `apiPrefix` and `prefix` put it. The
+callback is auth's, and it ends at `onGrant` and the flow's `returnTo`; a throw
+from `onGrant` lands on `oauth_error=exchange`.
 
 A provider whose API answers no identity (Jobber, GraphQL only) is declared on
 the `oidc` preset with `authorizeUrl` and `tokenUrl` and no `userinfoUrl`: only

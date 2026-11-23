@@ -16,7 +16,7 @@ import { createServer, build } from 'vite'
 import { readFileSync } from 'fs'
 
 import { applyDocument } from '../src/build/document-shell.js'
-import { wrapDocument } from '../src/build/prerender.js'
+import { wrapDocument, SKIP_LINK_GUARD_CSS } from '../src/build/prerender.js'
 import { createSierraViteConfig } from '../src/build/index.js'
 
 const SHELL = `<!DOCTYPE html>
@@ -130,13 +130,17 @@ describe('the shell facts', () => {
   })
 
   // FJS-4523: an app that does not load css a11y showed the link as bare text.
-  test('the prerendered page carries the guard first in <head>, only with the link it writes', () => {
-    const out = wrapDocument('<main id="main">x</main>', { title: 'x', stylesheets: ['/a.css'], head: '<style>b{}</style>' })
-    expect(out).toMatch(/<head>\n {2}<style id="sierra-skip-link">@layer sierra-shell\{/)
-    expect(out.match(/sierra-skip-link/g)).toHaveLength(1)
-    expect(out.indexOf('sierra-skip-link')).toBeLessThan(out.indexOf('/a.css'))
+  // FJS-4585: linked, since style-src 'self' refuses an inline <style>.
+  test('the prerendered page links the guard first in <head>, only with the link it writes', () => {
+    const sheets = new Map()
+    const out = wrapDocument('<main id="main">x</main>', { title: 'x', stylesheets: ['/a.css'], sheets })
+    const href = out.match(/<head>\n {2}<link rel="stylesheet" href="\/(assets\/sierra-shell-[A-Za-z0-9_-]{8}\.css)">/)
+    expect(href).not.toBeNull()
+    expect(sheets.get(href[1])).toBe(SKIP_LINK_GUARD_CSS)
+    expect(out).not.toContain('<style')
+    expect(out.indexOf('sierra-shell-')).toBeLessThan(out.indexOf('/a.css'))
     const own = wrapDocument('<a class="skip-link" href="#top">Skip</a><main>x</main>', { title: 'x' })
-    expect(own).not.toContain('sierra-skip-link')
+    expect(own).not.toContain('sierra-shell-')
   })
 })
 

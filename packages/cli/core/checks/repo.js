@@ -29,6 +29,7 @@ import { packageMembers }  from '../workspace-members.js'
 import { packageTable }    from '../package-table.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
 import { catchFindings, CATCH_PATHS }                                                                                                                         from '../catches.js'
+import { claudeImportFindings, claudeSpawnFindings, CLAUDE_PACKAGE }                                                                                         from '../claude-boundary.js'
 
 export const CHECKS = {
 
@@ -641,6 +642,20 @@ export const CHECKS = {
 
   'home-path-literal':  ({ root }) => homePathLiteral({ root }),
   'home-dir-join':      ({ root }) => homeDirJoin({ root }),
+
+  'claude-package-isolated': ({ root }) => {
+    if (!existsSync(join(root, CLAUDE_PACKAGE))) return { skipped: 'no packages/claude' }
+    return { findings: claudeImportFindings(root).map(f => ({
+      file: f.file, ...(f.line ? { line: f.line } : {}),
+      message: `reaches the cli through \`${f.spec}\`. \`@frontierjs/cli\` depends on this package, so the import is a cycle (Invariant 1); ` +
+               'move what both need into the package, or leave it in the cli.',
+    })) }
+  },
+
+  'claude-spawn-owned': ({ root }) => {
+    if (!existsSync(join(root, CLAUDE_PACKAGE))) return { skipped: 'no packages/claude' }
+    return { findings: claudeSpawnFindings(root) }
+  },
 
   // A warning here and a per-package ceiling in CI (scripts/catch-baselines.json):
   // the sites are debt the ratchet holds, so the count is the gate, not each one.

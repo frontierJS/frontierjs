@@ -630,8 +630,7 @@ export class HttpTransport extends BaseTransport {
       // is destroyed, so it is handed over as the bytes (`FJS-D585`). An absent
       // content-type stays on the text path and meets the JSON parse below.
       const contentType = res.headers.get('content-type') ?? ''
-      if (contentType !== '' && !isJsonType(contentType) && !isTextType(contentType) && !isMarkupType(contentType))
-        return this.ok<T>(bytes as T, res.status, headers)
+      if (isBinaryType(contentType)) return this.ok<T>(bytes as T, res.status, headers)
 
       const text = decodeText(bytes, contentType)
 
@@ -1002,8 +1001,24 @@ function decodeText(bytes: Uint8Array, contentType: string): string {
   }
 }
 
+// An error's `raw`. A body that is not text is named rather than read: decoded,
+// a refused image tile is megabytes of U+FFFD in every log line and stored job
+// result `raw` reaches, and read, one past the cap turned a 404 into an
+// `invalid_response`.
 async function readBody(res: Response, limit: number): Promise<string> {
-  return decodeText(await readBytes(res, limit), res.headers.get('content-type') ?? '')
+  const contentType = res.headers.get('content-type') ?? ''
+  if (isBinaryType(contentType)) {
+    await res.body?.cancel().catch(() => {})
+    const length = res.headers.get('content-length')
+    return `[${contentType.split(';')[0].trim()} body${length ? `, ${length} bytes` : ''}]`
+  }
+  return decodeText(await readBytes(res, limit), contentType)
+}
+
+// Neither JSON, text/* nor markup. An absent content-type is not binary: it
+// stays on the text path and meets the JSON parse.
+function isBinaryType(contentType: string): boolean {
+  return contentType !== '' && !isJsonType(contentType) && !isTextType(contentType) && !isMarkupType(contentType)
 }
 
 function isTextType(contentType: string): boolean {

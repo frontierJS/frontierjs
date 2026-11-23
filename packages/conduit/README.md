@@ -488,7 +488,7 @@ if (result.error) {
   // result.error.retryable — whether it's worth retrying
   // result.data          — null
 } else {
-  // result.data          — parsed JSON response
+  // result.data          — the decoded body: parsed JSON, a string, or the bytes (below)
   // result.meta.status   — HTTP status code
   // result.meta.headers  — the response's headers, lowercased
   // result.meta.duration_ms
@@ -496,6 +496,24 @@ if (result.error) {
 ```
 
 `meta.headers` is where the answers a caller cannot get any other way live — RFC 5988 `Link` for the next page, `ETag`/`Last-Modified` for a conditional request, `X-Total-Count`. It is present on failures too (a 429's `Retry-After`, a 5xx's request id) and absent only when nothing was sent. `set-cookie` holds every line, joined by `\n` — a comma cannot separate them, since an `Expires` date carries one.
+
+**What `data` holds is decided by the response's `content-type`** (`FJS-D585`), and there is no request option for it, because one would be a second way to say what the response already says (`FJS-D934`). JSON is parsed, `text/*` is a string decoded with the charset it names, and any other type (an image, a PDF, `application/octet-stream`) is the body's bytes as a `Uint8Array`, its type at `meta.headers['content-type']`. A proxy route passes both on:
+
+```ts
+import { createTestConduit } from '@frontierjs/conduit/testing'
+
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+const { conduit, stubs } = await createTestConduit({ 'provider:imagery': {} })
+stubs['provider:imagery'].mock('GET /tile/3/2/1', png, { headers: { 'Content-Type': 'image/png' } })
+
+const tile = await conduit.send<Uint8Array>({ target: 'provider:imagery', method: 'GET', path: '/tile/3/2/1' })
+if (tile.error) throw new Error(tile.error.message)
+const response = new Response(tile.data, { headers: { 'content-type': tile.meta.headers!['content-type'] } })
+
+if (!(tile.data instanceof Uint8Array) || response.headers.get('content-type') !== 'image/png') throw new Error('not a tile')
+```
+
+The body is held to `max_response_bytes` like any other, and one past it is `invalid_response`. A non-2xx with a binary body maps to the same kinds, and its `raw` names the body (`'[image/png body, 48213 bytes]'`) rather than carrying it. A body too large to buffer is `stream()`'s.
 
 **A `304 Not Modified` is a success**, not an error: `data` is `null`, `meta.status` is 304, and the validator headers come back. Send `If-None-Match` off the previous response's `ETag` and serve your own copy when you get one.
 
@@ -990,6 +1008,8 @@ stubs['outpost:srv-abc'].reset()
 ```
 
 It is `await`ed because the store is async. Stubbed targets are registered in the store as well as intercepted, so `resolve()`, `list()` and `stats()` see them — code that calls `send()` alongside `resolve()` is testable in one place.
+
+A mock answers `meta.headers` when given them, so a stubbed binary answer carries its type: `stubs['provider:imagery'].mock('GET /tile/3/2/1', png, { headers: { 'content-type': 'image/png' } })`.
 
 ### Simulating failure
 

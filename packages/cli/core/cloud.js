@@ -198,6 +198,29 @@ export const withHosts = async (machines) => {
   })
 }
 
+// The Basecamps in basecamps.json whose box no listed cloud box is: one made
+// by hand at a host fli has no connector for, or at a cloud whose token is not
+// stored. Without these the list reads as if such a Basecamp had no box. Two
+// entries on one box are one row; an entry whose ssh alias resolves to no
+// address cannot be matched, so it is left out rather than guessed.
+export const unreachedBasecamps = async (machines) => {
+  const { readBasecamps } = await import('./basecamps.js')
+  const listed = new Set(machines.flatMap(m => [m.ip, m.reservedIp]).filter(Boolean))
+  const rows = new Map()
+  for (const [name, entry] of Object.entries(readBasecamps())) {
+    if (!entry.host) continue
+    const ip = await boxAddress(entry.host)
+    if (!ip || listed.has(ip) || rows.has(ip)) continue
+    rows.set(ip, { name, ip, url: entry.url, profile: entry.profile })
+  }
+  return [...rows.values()]
+}
+
+export const unreachedLine = (b, chalk) => {
+  const profile = b.profile ? chalk.dim(` · profile ${b.profile}`) : ''
+  return chalk`{bold ${b.name.padEnd(14)}}  {cyan ${b.ip.padEnd(15)}}  ⛺ {bold.green Basecamp host}{dim  · no cloud token reaches it}${profile}  {cyan ${b.url}}`
+}
+
 // ─── The box, over ssh ───────────────────────────────────────────────────────
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/
 
