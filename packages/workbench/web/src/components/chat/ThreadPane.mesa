@@ -70,6 +70,12 @@
 
   const toBottom = () => { if (el) el.scrollTop = el.scrollHeight }
   $: { replies; if (pinned) requestAnimationFrame(toBottom) }
+  // A reply's files, reactions and images land after its row does; follow them while pinned.
+  const stick = (body) => {
+    const ro = new ResizeObserver(() => { if (pinned) toBottom() })
+    ro.observe(body)
+    return () => ro.disconnect()
+  }
   const onScroll = () => { if (el) pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }
 
   // Esc closes the pane, unless something on top took the key first (a menu, an editor).
@@ -98,6 +104,7 @@
   </header>
 
   <div class="thread-posts" bind:this={el} onscroll|passive={onScroll} role="log" aria-live="polite" aria-label="Replies" data-thread-posts>
+    <div class="thread-body" {@attach stick}>
     {#if error}<div class="thread-note"><Alert tone="danger">{error}</Alert></div>{/if}
     {#if missing}
       <div class="thread-note"><Alert tone="warning">That thread is gone, or was never in this channel.</Alert></div>
@@ -110,6 +117,7 @@
     {:else}
       <p class="text-muted center thread-note">…</p>
     {/if}
+    </div>
   </div>
 
   {#if root && !missing}
@@ -122,7 +130,8 @@
   .thread { --chat-gutter: var(--space-md); display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; border-inline-start: var(--border-width) solid var(--rule); background: var(--surface); }
   .thread-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-sm); padding-inline: var(--space-md); padding-block: var(--space-sm); border-block-end: var(--border-width) solid var(--rule); }
   .thread-title { margin: 0; }
-  .thread-posts { flex: 1; min-block-size: 0; overflow-y: auto; padding-block: var(--space-md); padding-inline: var(--space-xs); display: flex; flex-direction: column; }
+  .thread-posts { flex: 1; min-block-size: 0; overflow-y: auto; padding-block: var(--space-md); padding-inline: var(--space-xs); }
+  .thread-body { display: flex; flex-direction: column; }
   .thread-posts .divider-label { margin: var(--space-sm) var(--space-md); }
   .thread-note { padding: var(--space-md); }
 </style>

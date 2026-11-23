@@ -85,17 +85,16 @@ export type ClaudeRun = { code: number, out: string, err: string }
  * Run `claude <args>` for a change Claude Code makes to its own files — a
  * plugin, a marketplace, an MCP server. Argv only, the binary `CLAUDE_BIN`, and
  * `CLAUDE_CONFIG_DIR` inherited, so the CLI writes the directory the scan reads.
- * `input` is written to its stdin. An install clones a repository, so the caller sets the timeout. `unreadable`
+ * An install clones a repository, so the caller sets the timeout. `unreadable`
  * only when it could not run; a non-zero exit is the caller's to word.
  */
-export async function runClaude(args: string[], opts: { cwd?: string, timeoutMs?: number, bin?: string, input?: string } = {}): Promise<Read<ClaudeRun>> {
+export async function runClaude(args: string[], opts: { cwd?: string, timeoutMs?: number, bin?: string } = {}): Promise<Read<ClaudeRun>> {
   const bin = opts.bin ?? env.CLAUDE_BIN
   const ms  = opts.timeoutMs ?? 30_000
   let proc: ReturnType<typeof Bun.spawn>
   try {
     proc = Bun.spawn([bin, ...args], {
-      // `input` rides stdin: a prompt in argv is readable by every process on the machine.
-      cwd: opts.cwd, stdin: opts.input === undefined ? 'ignore' : new TextEncoder().encode(opts.input), stdout: 'pipe', stderr: 'pipe',
+      cwd: opts.cwd, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe',
       env: childEnv(env),
     })
   } catch (e) { return unreadable(`could not start '${bin}': ${(e as Error).message}`) }

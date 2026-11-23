@@ -31,6 +31,7 @@ it re-resolved when it runs. Survives a restart.
 | `app-copy:dns` | `dns` | on dispatch | — | 5 | 10000, 60000 | 120000ms |
 | `app-copy:refresh` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
 | `app-drill:run` | `fleet` | on dispatch | — | 1 | default | 5580000ms |
+| `app:crashed` | `default` | on dispatch | — | 3 | default | 60000ms |
 | `backup-verify` | `default` | `0 4 * * 0` | — | 3 | default | 1800000ms |
 | `backup:run` | `fleet` | on dispatch | — | 2 | 30000 | 600000ms |
 | `dependency-check` | `sync` | `15 6 * * *` | — | 3 | 60000, 600000 | 300000ms |
@@ -61,7 +62,7 @@ it re-resolved when it runs. Survives a restart.
 | `site:publish` | `deployments` | on dispatch | — | 1 | default | 2130000ms |
 | `weekly-digest` | `default` | `0 9 * * 1` | — | 3 | default | **none** |
 
-36 handler(s), 13 of them on a clock.
+37 handler(s), 13 of them on a clock.
 
 **13 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a

@@ -38,7 +38,7 @@ const fs = require('fs')
 fs.writeFileSync(${JSON.stringify(FAKE_STDIN)}, fs.readFileSync(0, 'utf8'))
 fs.writeFileSync(${JSON.stringify(FAKE_ARGV)}, JSON.stringify(process.argv.slice(2)))
 fs.appendFileSync(${JSON.stringify(FAKE_CALLS)}, 'x\\n')
-process.stdout.write('STUB RECAP: they decided nothing.\\n')
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'STUB RECAP: they decided nothing.' }) + '\\n')
 `)
 chmodSync(FAKE_CLAUDE, 0o755)
 process.env.CLAUDE_BIN = FAKE_CLAUDE
@@ -224,6 +224,10 @@ try {
   await say(sink.tokens.bob, ids.open, 'its reply', root.id)
   await until(() => sys.post.findUnique({ where: { externalId: root.id } }))
   check(await until(async () => (await sys.post.findUnique({ where: { externalId: root.id } }))?.replyCount === 1), 'a reply on the server raises its root\'s replyCount in the mirror, though alice does not follow the thread yet (the server tells only followers)')
+  const { id: _rid, missingSince: _rgone, ...rootRow } = await sys.post.findUnique({ where: { externalId: root.id } }) as any
+  await applyFrame(env.app, String(ada.id), ids.alice, { id: `recount-${root.id}`, type: 'post_edited', payload: { post: { ...rootRow, replyCount: 0, lastReplyAt: null }, files: [] } } as any)
+  const recounted = await sys.post.findUnique({ where: { externalId: root.id } })
+  check(recounted?.replyCount === 1 && !!recounted?.lastReplyAt, 'a root landing again with no count (a since-read, a socket edit) keeps the count of its replies here', recounted)
   const threadKeyOf = `${ids.alice}:${root.id}`
   const followed = await call(ada, 'follow', { rootExternalId: root.id, following: true })
   const followedThere = (await sinkCall(`/users/${ids.alice}/teams/${ids.team}/threads/${root.id}`, sink.tokens.alice)).json

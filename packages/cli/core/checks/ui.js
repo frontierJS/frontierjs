@@ -1499,6 +1499,47 @@ export const CHECKS = {
     return { findings }
   },
 
+  // A sentence assembled from pieces can only ever be English: word order, plural
+  // categories and agreement differ by language, so `{n} {n === 1 ? 'item' :
+  // 'items'}` is three fragments a translator cannot reorder, and it compiles,
+  // renders and tests green until a catalog arrives a year of call sites later
+  // (FJS-D12 constraint 7, FJS-D254). The authority is the source itself — a `+`
+  // beside prose, or a word chosen on a count, is visible in the file before
+  // anything is marked.
+  //
+  // What it grades is only the unambiguous: a `+` chain of two prose pieces, a
+  // template literal or a text run picking a word on a COUNT, an `{#if}` around a
+  // bare word on a count. One parameter in one sentence is one unit and is left
+  // alone, and so is a choice between two whole messages. A word picked on
+  // anything but a count (`done ? 'Done' : 'Open'`), and prose split across
+  // sibling elements, are ambiguous and are not reported.
+  'prose-assembled': ({ root }) => {
+    const files = sources(root, ['.mesa'], ...CLIENT_SURFACES)
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const WHY = {
+      concat:   'joins prose to its parameters with `+`',
+      template: 'picks a word on a count inside a template literal',
+      plural:   'picks a word on a count beside other text',
+      block:    'wraps a word in an {#if} on a count, inside a sentence',
+    }
+    const findings = []
+    for (const file of files) {
+      const text = readFileSync(file, 'utf8')
+      for (const hit of proseAssembly(text)) {
+        if (!WHY[hit.kind]) continue
+        findings.push({
+          file, line: lineOf(text, hit.offset),
+          message: `\`${hit.excerpt}\` ${WHY[hit.kind]}, so the sentence is pieces a translator cannot ` +
+                   `reorder and a language with another plural cannot say. Write each sentence whole and ` +
+                   `choose between WHOLE sentences — \`{n === 1 ? 'You have 1 order' : \`You have \${n} orders\`}\` — ` +
+                   `or make the parameter the only moving part (FJS-D12 constraint 7, FJS-D254).`,
+        })
+      }
+    }
+    return { findings }
+  },
+
   'aria-owed': ({ root }) => {
     // `vocabulary.js` writes `<div role="toolbar">` and a screen writes
     // `<div class="toolbar">`: the class takes the kit's rules, the role stays
@@ -2039,3 +2080,289 @@ for (const file of JSON.parse(await Bun.stdin.text())) {
 }
 console.log(JSON.stringify(out))
 `
+
+// ─── prose-assembled: reading the sentences a .mesa file renders ──────────────
+//
+// The scanner knows the SHAPE of a markup file and nothing of Mesa's semantics:
+// a text run is the text and `{…}` between two tags, a quoted attribute value is
+// a run of its own, and `<script>` and `<style>` are not read. It answers
+// `{ kind, offset, excerpt }` with offsets into the text it was given, so the
+// caller owns the line number. Exported for the rule's tests and nothing else.
+
+// The attributes whose value a person reads. Any other (`class`, `href`, `id`,
+// `data-*`) is a machine's string, and a `+` in it is not prose.
+const PROSE_ATTRS = new Set([
+  'title', 'aria-label', 'aria-description', 'aria-placeholder', 'placeholder', 'alt',
+  'label', 'hint', 'description', 'caption', 'tooltip', 'heading', 'text', 'message',
+  'helper', 'legend', 'summary',
+])
+
+// A string a person could read: a word of two letters or more. `'r'`, `' / '`
+// and `''` are an id fragment, a separator and nothing.
+const hasWord = s => /[A-Za-z]{2,}/.test(s)
+
+// A plural suffix is one letter (`'s'`), so a pick is judged on any letter.
+const hasLetter = s => /[A-Za-z]/.test(s)
+
+const QUOTED = /^(['"])(?:(?!\1)[^\\])*\1$/
+
+// The index after the string or template literal opening at `i`.
+function skipLiteral(src, i) {
+  const q = src[i++]
+  while (i < src.length) {
+    if (src[i] === '\\') { i += 2; continue }
+    if (src[i] === q) return i + 1
+    if (q === '`' && src[i] === '$' && src[i + 1] === '{') { i = exprEnd(src, i + 2) + 1; continue }
+    i++
+  }
+  return src.length
+}
+
+// The index of the `}` closing a `{` already consumed; src.length when unbalanced.
+function exprEnd(src, i) {
+  let depth = 1
+  while (i < src.length) {
+    const c = src[i]
+    if (c === '"' || c === "'" || c === '`') { i = skipLiteral(src, i); continue }
+    if (c === '{') depth++
+    else if (c === '}' && --depth === 0) return i
+    i++
+  }
+  return src.length
+}
+
+// An expression's strings (whole) and its `+ ? : && || ??` operators, with the
+// bracket depth each sits at — what a rule needs to ask *is there a `+` beside a
+// literal* without a parser.
+function topLevel(expr) {
+  const out = []
+  let depth = 0
+  for (let i = 0; i < expr.length;) {
+    const c = expr[i]
+    if (c === '"' || c === "'" || c === '`') {
+      const end = skipLiteral(expr, i)
+      out.push({ at: 'str', text: expr.slice(i, end), depth, pos: i })
+      i = end
+      continue
+    }
+    if ('([{'.includes(c)) depth++
+    if (')]}'.includes(c)) depth--
+    const two = expr.slice(i, i + 2)
+    if (two === '&&' || two === '||' || two === '??' || two === '?.') { out.push({ at: 'op', text: two, depth, pos: i }); i += 2; continue }
+    if ('+?:'.includes(c)) out.push({ at: 'op', text: c, depth, pos: i })
+    i++
+  }
+  return out
+}
+
+const isOp = (t, s) => t?.at === 'op' && t.text === s
+
+// A word-pick: the expression chooses between literals, one of them a word —
+// `cond ? 'row' : 'rows'`, `cond && ' (optional)'`. Answers the condition's text,
+// or null. A branch that is a template, a call or a name is a computed value and
+// no pick: `cond ? 'Open' : label` is not judged.
+function wordPick(expr) {
+  const flat = topLevel(expr).filter(t => t.depth === 0)
+  const q = flat.find(t => isOp(t, '?'))
+  if (q) {
+    const colon = flat.find(t => t.pos > q.pos && isOp(t, ':'))
+    if (!colon) return null
+    const a = expr.slice(q.pos + 1, colon.pos).trim()
+    const b = expr.slice(colon.pos + 1).trim()
+    const empty = s => ['', "''", '""', 'null', 'undefined'].includes(s)
+    if (!(QUOTED.test(a) || empty(a)) || !(QUOTED.test(b) || empty(b))) return null
+    if (!hasLetter(a) && !hasLetter(b)) return null
+    return expr.slice(0, q.pos).trim()
+  }
+  const and = flat.filter(t => isOp(t, '&&')).pop()
+  if (and && !flat.some(t => isOp(t, '||') || isOp(t, '??'))) {
+    const right = expr.slice(and.pos + 2).trim()
+    if (QUOTED.test(right) && hasLetter(right)) return expr.slice(0, and.pos).trim()
+  }
+  return null
+}
+
+// The condition names a COUNT: a comparison against 0, 1 or 2, a length, a
+// plural. That is grammar the language owns (`Intl.PluralRules`), and the one
+// word-pick whose meaning no translator can reconstruct from the pieces.
+const COUNTED = /[=!]=+\s*[012]\b|\b[012]\s*[=!]=+|[<>]=?\s*[12]\b|\bplural/i
+
+// Whether a `+` chain assembles a sentence: prose literals and two or more other
+// pieces, or two or more prose literals. One literal and one parameter is one
+// unit written the long way (`'Clear ' + label`), and a choice between two
+// whole messages (`a ? x + ' from' : 'From'`) is judged a branch at a time.
+function plusProse(expr) {
+  const cuts = topLevel(expr).filter(t => t.depth === 0 && t.at === 'op' && ['?', ':', '&&', '||', '??'].includes(t.text))
+  const segments = []
+  let from = 0
+  for (const c of cuts) { segments.push(expr.slice(from, c.pos)); from = c.pos + c.text.length }
+  segments.push(expr.slice(from))
+  return segments.some(seg => {
+    const pluses = topLevel(seg).filter(t => t.depth === 0 && isOp(t, '+'))
+    if (!pluses.length) return false
+    const operands = []
+    let at = 0
+    for (const p of pluses) { operands.push(seg.slice(at, p.pos).trim()); at = p.pos + 1 }
+    operands.push(seg.slice(at).trim())
+    const live  = operands.filter(Boolean)
+    const prose = live.filter(o => QUOTED.test(o) && hasWord(o)).length
+    const other = live.filter(o => !QUOTED.test(o)).length
+    return prose >= 1 && (prose >= 2 || other >= 2)
+  })
+}
+
+// A template literal that picks a word inside itself, as the pick's condition:
+// `${n} item${n === 1 ? '' : 's'}`.
+function templatePick(expr) {
+  for (const t of topLevel(expr)) {
+    if (t.at !== 'str' || t.text[0] !== '`') continue
+    for (let i = 0; i < t.text.length; i++) {
+      if (t.text[i] !== '$' || t.text[i + 1] !== '{') continue
+      const end = exprEnd(t.text, i + 2)
+      const cond = wordPick(t.text.slice(i + 2, end))
+      if (cond !== null) return cond
+      i = end
+    }
+  }
+  return null
+}
+
+/**
+ * Where a `.mesa` source assembles a sentence from pieces.
+ *
+ * `kind` is `concat` (a `+` beside prose), `template` (a template literal that
+ * picks a word on a count inside itself), `plural` (a count-shaped word pick beside other
+ * text), `block` (an `{#if}` around a bare word beside other text, on a count),
+ * and `pick` — any other word pick beside prose, which is ambiguous and which
+ * the rule does not grade. A sentence with ONE parameter, a lone
+ * `{a ? 'whole' : 'other'}` and a choice between two whole messages are one unit
+ * each and are not reported.
+ */
+export function proseAssembly(src) {
+  const found = []
+  const runs  = []
+  let run = []
+
+  const flush = () => { if (run.length) runs.push(run); run = [] }
+  const note = (kind, offset, excerpt) =>
+    found.push({ kind, offset, excerpt: excerpt.replace(/\s+/g, ' ').trim().slice(0, 90) })
+  // An expression read on its own: the `+` and the template pick need no neighbours.
+  const lone = (expr, offset) => {
+    if (plusProse(expr)) { note('concat', offset, expr); return }
+    const cond = templatePick(expr)
+    if (cond !== null) note(COUNTED.test(cond) ? 'template' : 'pick', offset, expr)
+  }
+
+  let i = 0
+  while (i < src.length) {
+    if (src.startsWith('<!--', i)) { const e = src.indexOf('-->', i); i = e < 0 ? src.length : e + 3; continue }
+    const raw = /^<(script|style)\b/.exec(src.slice(i, i + 8))
+    if (raw) {
+      flush()
+      const e = src.indexOf(`</${raw[1]}`, i)
+      i = e < 0 ? src.length : e + raw[1].length + 3
+      continue
+    }
+    if (src[i] === '<' && /[A-Za-z/]/.test(src[i + 1] ?? '')) {
+      flush()
+      i = readTag(src, i, lone, note)
+      continue
+    }
+    if (src[i] === '{') {
+      const end  = exprEnd(src, i + 1)
+      const body = src.slice(i + 1, end)
+      run.push(/^[#:/@]/.test(body) ? { at: 'block', body: body.trim(), offset: i } : { at: 'expr', body, offset: i + 1 })
+      i = end + 1
+      continue
+    }
+    let j = i
+    while (j < src.length && src[j] !== '{' && !(src[j] === '<' && /[A-Za-z/!]/.test(src[j + 1] ?? ''))) j++
+    run.push({ at: 'text', body: src.slice(i, j), offset: i })
+    i = j
+  }
+  flush()
+
+  for (const r of runs) judgeRun(r, lone, note)
+  return found.sort((a, b) => a.offset - b.offset)
+}
+
+// One tag: its prose attributes are judged. Answers the index after the `>`.
+function readTag(src, start, lone, note) {
+  let i = start + 1 + /^[^\s>/{]*/.exec(src.slice(start + 1))[0].length
+  while (i < src.length && src[i] !== '>') {
+    if (/[\s/]/.test(src[i])) { i++; continue }
+    if (src[i] === '{') { i = exprEnd(src, i + 1) + 1; continue }
+    const name = /^[^\s=>/{]+/.exec(src.slice(i))?.[0] ?? ''
+    i += name.length || 1
+    if (!name || src[i] !== '=') continue
+    i++
+    const user = PROSE_ATTRS.has(name)
+    if (src[i] === '{') {
+      const end = exprEnd(src, i + 1)
+      if (user) lone(src.slice(i + 1, end), i + 1)
+      i = end + 1
+    } else if (src[i] === '"' || src[i] === "'") {
+      const q = src[i]
+      const parts = []
+      let j = i + 1
+      let from = j
+      while (j < src.length && src[j] !== q) {
+        if (src[j] !== '{') { j++; continue }
+        if (j > from) parts.push({ at: 'text', body: src.slice(from, j), offset: from })
+        const end = exprEnd(src, j + 1)
+        parts.push({ at: 'expr', body: src.slice(j + 1, end), offset: j + 1 })
+        j = from = end + 1
+      }
+      if (j > from) parts.push({ at: 'text', body: src.slice(from, j), offset: from })
+      if (user) judgeRun(parts, lone, note)
+      i = j + 1
+    } else {
+      while (i < src.length && !/[\s>]/.test(src[i])) i++
+    }
+  }
+  return i + 1
+}
+
+// A run of text and `{…}`: each expression on its own, then the word picks, which
+// are judged against what else the run says.
+function judgeRun(run, lone, note) {
+  for (const p of run) if (p.at === 'expr') lone(p.body, p.offset)
+
+  const reads = p => (p.at === 'text' && hasWord(p.body)) || p.at === 'expr'
+
+  for (const p of run) {
+    if (p.at !== 'expr') continue
+    const cond = wordPick(p.body)
+    if (cond === null || plusProse(p.body)) continue
+    // Alone, a pick is a whole message chosen between two others.
+    if (!run.some(o => o !== p && reads(o))) continue
+    note(COUNTED.test(cond) ? 'plural' : 'pick', p.offset, p.body)
+  }
+
+  // `{#if n !== 1}s{/if}`: the block holds a bare word, and text or a parameter
+  // outside every block completes the sentence the block does not own.
+  let depth = 0
+  let outside = false
+  for (const p of run) {
+    if (p.at === 'block') { depth += /^#/.test(p.body) ? 1 : /^\//.test(p.body) ? -1 : 0; continue }
+    if (depth === 0 && reads(p)) outside = true
+  }
+  if (!outside) return
+  for (let k = 0; k < run.length; k++) {
+    const p = run[k]
+    if (p.at !== 'block' || !/^#if\b/.test(p.body)) continue
+    const inner = []
+    let d = 1
+    for (let m = k + 1; m < run.length; m++) {
+      const q = run[m]
+      if (q.at === 'block') {
+        d += /^#/.test(q.body) ? 1 : /^\//.test(q.body) ? -1 : 0
+        if (d === 0) break
+        continue
+      }
+      inner.push(q)
+    }
+    if (!inner.length || inner.some(q => q.at !== 'text') || !inner.some(q => hasWord(q.body) || /\S/.test(q.body))) continue
+    note(COUNTED.test(p.body) ? 'block' : 'pick', p.offset, `{${p.body}} ${inner.map(q => q.body.trim()).join(' | ')}`)
+  }
+}

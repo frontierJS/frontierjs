@@ -49,6 +49,36 @@ export async function land(app: App, model: Landed, rows: ReadonlyArray<{ extern
     const { externalId, ...rest } = row
     await t.upsert({ where: { externalId }, create: row, update: { ...rest, missingSince: null } })
   }
+  if (model === 'Post') await recountReplies(app, rows as ReadonlyArray<PostRow>)
+}
+
+/**
+ * Each touched root's replyCount and lastReplyAt, from its live replies here. The server's
+ * count cannot be trusted to arrive: a post read through `since` or a socket edit carries
+ * none, and landing it as 0 hid the thread from Threads and its replies link from the room.
+ * A root landed in this call keeps the server's figure when it is the larger, since a room
+ * the reader is not in has its root here and none of its replies.
+ */
+async function recountReplies(app: App, rows: ReadonlyArray<PostRow>): Promise<void> {
+  const landed = new Map(rows.filter(r => !r.rootExternalId).map(r => [r.externalId, r]))
+  const roots = [...new Set(rows.map(r => r.rootExternalId || r.externalId))]
+  if (!roots.length) return
+  const t = table(app, 'Post')
+  const replies = await t.findMany({ where: { rootExternalId: { in: roots }, deletedAt: null }, select: { rootExternalId: true, createdAt: true } }) as Array<{ rootExternalId: string, createdAt: Date | string | null }>
+  const local = new Map<string, { count: number, last: number }>()
+  for (const r of replies) {
+    const s = local.get(r.rootExternalId) ?? { count: 0, last: 0 }
+    local.set(r.rootExternalId, { count: s.count + 1, last: Math.max(s.last, time(r.createdAt)) })
+  }
+  const stored = await t.findMany({ where: { externalId: { in: roots }, rootExternalId: null }, select: { externalId: true, replyCount: true, lastReplyAt: true } }) as Array<{ externalId: string, replyCount: number, lastReplyAt: Date | string | null }>
+  for (const root of stored) {
+    const here = local.get(root.externalId) ?? { count: 0, last: 0 }
+    const server = landed.get(root.externalId)
+    const count = Math.max(here.count, server?.replyCount ?? 0)
+    const last = Math.max(here.last, time(server?.lastReplyAt))
+    if (count === root.replyCount && last === time(root.lastReplyAt)) continue
+    await t.update({ where: { externalId: root.externalId }, data: { replyCount: count, lastReplyAt: last ? new Date(last) : null } })
+  }
 }
 
 /**
@@ -85,21 +115,6 @@ async function countPost(app: App, post: PostRow): Promise<boolean> {
     },
   }) as { count?: number } | undefined
   return (r?.count ?? 0) > 0
-}
-
-/**
- * A reply's arrival raises its root's reply count, once. The server tells only a
- * thread's followers (`thread_updated`, with the root), so a member who is not
- * following one would otherwise keep a root that says no replies. The reply's own
- * time is the guard: a root whose lastReplyAt has reached it has counted it, whether
- * this frame, another socket's or a `thread_updated` got there first.
- */
-async function countReply(app: App, post: PostRow): Promise<void> {
-  if (!post.rootExternalId || !post.createdAt) return
-  await table(app, 'Post').updateMany({
-    where: { externalId: post.rootExternalId, OR: [{ lastReplyAt: null }, { lastReplyAt: { lt: post.createdAt } }] },
-    data: { replyCount: { increment: 1 }, lastReplyAt: post.createdAt },
-  })
 }
 
 /** (member, post) pairs already counted as a mention here — a redelivered frame counts nothing twice. Bounded: a pair is only ever met within seconds. */
@@ -526,7 +541,6 @@ export async function applyFrame(app: App, memberId: string, profile: string, ev
     // the post when they land can attach them.
     case 'posted':
       await countPost(app, ev.payload.post)
-      await countReply(app, ev.payload.post)
       await countFor(app, profile, ev.payload.post, ev.payload.mentions)
       await land(app, 'Post', [ev.payload.post])
       await land(app, 'FileInfo', ev.payload.files ?? [])

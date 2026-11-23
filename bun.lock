@@ -170,10 +170,13 @@
       "name": "@frontierjs/conduit-anthropic",
       "version": "0.0.1",
       "devDependencies": {
+        "@frontierjs/conduit": "workspace:*",
+        "@frontierjs/toolbelt": "workspace:*",
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
         "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/toolbelt": "^0.1.15",
       },
     },
     "packages/conduits/conduit-apns": {

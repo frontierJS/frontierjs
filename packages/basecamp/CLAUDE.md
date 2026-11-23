@@ -139,7 +139,7 @@ fail differently.
 
 <!-- layout-named: the file names fli done grades a new module against, kept here because done.js reads this file by path. The map itself is docs/layout.md.
 access.snapshot.md account-mail.ts accounts.ts providers.md alert-evaluate.job.ts alerting.ts ApiKey.mesa api-paths.js
-App.mesa app.snapshot.md app-archive-import.ts app-archive-upload.ts app-source.ts app.ts automations.ts bearer-send.ts
+App.mesa app.snapshot.md app-archive-import.ts app-archive-upload.ts app-crash.ts app-source.ts app.ts automations.ts bearer-send.ts
 build.mjs capabilities.ts cli.config.js credentials.ts db.ts delivery.ts dependencies.ts dockerfile-template.ts
 domain-dns.job.ts executor.ts gate.ts generate.js hooks.ts host-record.ts index.ts job-run.job.ts job-schedule.ts kinds.ts
 litestone.config.js local-ssh.ts machine-stream.ts mailer.ts main.js monitor-sweep.job.ts NoRecord.mesa notices.js notify.ts

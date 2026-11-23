@@ -325,7 +325,11 @@ package:
 - **a user-facing sentence is not assembled from pieces** — **authorized**, as
   `FJS-D12` constraint 7. Gradeable against source today, since concatenation and
   interpolation into prose are both visible in the file and nothing has to be
-  marked first. Warn-tier, on `check-baseline.json`'s ratchet. **Not written yet**
+  marked first. Warn-tier, on `check-baseline.json`'s ratchet. **Built** as
+  `prose-assembled` (`core/checks/ui.js`): a `+` chain of prose and its
+  parameters, and a word picked on a count (`{n === 1 ? 'row' : 'rows'}`, a
+  template or an `{#if}` form), beside other text. A word picked on anything
+  but a count, and prose split across sibling elements, are not graded
 - ~~**a marked string carries a description**~~ — still waits on the syntax,
   which is V2. Nothing to enforce until a marking exists
 

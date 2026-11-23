@@ -147,6 +147,11 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           archive a person uploads, streamed, behind a link `appBackups.upload`
           signed; domain/backup/app-archive-import.ts checks it and puts it in
           the app's bucket as a `found` row (`FJS-D1732`).
+          plugins/app-crash.ts is `POST /hooks/crash/{appId}`: a deployed app's
+          crash report, answered 202 at once and fanned out by jobs/app-crashed.job.ts
+          to the people and the App's `AppChannel` picks. No credential (`FJS-D2358`):
+          release hands the app `BASECAMP_URL` and `BASECAMP_APP_ID`
+          (`basecampIdentity` in domain/release/variables.ts), and a per-App limit caps it.
           domain/workbench/workbench-preview.ts is the Basecamp half of a Workbench
           preview: an Environment (tier preview, slug wb-<slug>), a static inline App,
           its Domain and `/route`, written through each row's own service. `freeze`

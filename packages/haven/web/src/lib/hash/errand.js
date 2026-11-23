@@ -20,6 +20,7 @@ import { execFile, spawn } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { claudeDoor } from '@frontierjs/claude'
 import { DESK_PROMPT, SCHEMA, readAnswer } from '../home/answer.js'
 import { isSnoozed } from '../home/snooze.js'
 
@@ -144,12 +145,12 @@ export function homeBoard({ cmd = homeCommand(), now = Date.now() } = {}) {
 // ─── the desk ───────────────────────────────────────────────────────────────
 //
 // A question asked at a home's desk (`components/Desk.mesa`), answered by
-// `claude -p` on THIS machine under its own login and its own Basecamp. The
+// `claudeDoor` on THIS machine under its own login and its own Basecamp. The
 // desk asks only in the home this machine's board names, so the home board's
 // opt-in is this one's too. Bash is allowed for the `basecamp` reads in
 // `DESK_READS` and nothing else: a pattern with a `*` before the action would
 // also match `todos create "show me"`, so each read is spelled out. The answer
-// is `SCHEMA`'s shape, read from the print's `structured_output`.
+// is `SCHEMA`'s shape.
 //
 // A follow-up resumes the session the last answer came from, so the session is
 // kept on this machine under `DESK_DIR`'s project. The answer on the screen is
@@ -176,23 +177,8 @@ export const DESK_READS = [
 
 const DESK_DIR = join(homedir(), '.fli', 'haven', 'desk')
 const DESK_MS = 240_000
+/** Dollars one ask may spend. */
 const DESK_BUDGET_USD = 1
-
-/** The print session's flags: no hooks, settings or MCP; `resume` the session a follow-up continues. */
-export const deskArgv = ({ model = 'sonnet', resume } = {}) => [
-  '-p',
-  ...(resume ? ['--resume', resume] : []),
-  '--model',                  model,
-  '--output-format',          'json',
-  '--json-schema',            JSON.stringify(SCHEMA),
-  '--system-prompt',          DESK_PROMPT,
-  '--tools',                  'Bash',
-  '--allowedTools',           ...DESK_READS,
-  '--strict-mcp-config',
-  '--settings',               JSON.stringify({ disableAllHooks: true }),
-  '--setting-sources',        '',
-  '--max-budget-usd',         String(DESK_BUDGET_USD),
-]
 
 /** What the model is handed: the question, after the answer on screen when a thread starts on one. */
 export const deskQuestion = (question, shown) => shown
@@ -202,33 +188,20 @@ export const deskQuestion = (question, shown) => shown
 /**
  * The desk's answer to `question`: `{ answer, cost, ms, session }`, `answer` as
  * `readAnswer` reads it and `session` what the next follow-up resumes. Throws
- * with the reason the print gave, since a missing login and a spent budget
- * both end in an exit and nothing to draw.
- * Run in a directory of its own, so no repo's CLAUDE.md is read into it.
+ * with the door's words, since a missing login and a spent budget both end in
+ * no answer to draw; an aborted ask throws an `AbortError`, which the desk
+ * does not show. The session is always kept: the first question has to be
+ * resumable. Run in a directory of its own, so no repo's CLAUDE.md is read into it.
  */
-export function askDesk(question, { signal, bin = 'claude', model, resume, shown } = {}) {
+export async function askDesk(question, { signal, bin, model = 'sonnet', resume, shown } = {}) {
   mkdirSync(DESK_DIR, { recursive: true, mode: 0o700 })
-  return new Promise((resolve, reject) => {
-    const child = spawn(bin, deskArgv({ model, resume }), { cwd: DESK_DIR, signal, stdio: ['pipe', 'pipe', 'pipe'] })
-    let out = '', err = ''
-    child.stdout.setEncoding('utf8').on('data', (c) => { out += c })
-    child.stderr.setEncoding('utf8').on('data', (c) => { err += c })
-    child.stdin.on('error', () => {})
-    child.stdin.end(deskQuestion(question, resume ? null : shown))
-    const timer = setTimeout(() => child.kill('SIGTERM'), DESK_MS)
-    child.on('error', (e) => {
-      clearTimeout(timer)
-      reject(e.code === 'ENOENT' ? new Error(`${bin} is not installed or not on PATH`) : e)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      let r = null
-      try { r = JSON.parse(out) } catch {}
-      if (!r) return reject(new Error(code == null ? `no answer in ${DESK_MS / 1000}s` : (err.trim().split('\n').at(-1) || `${bin} exited ${code}`)))
-      if (r.is_error || !r.structured_output) return reject(new Error(r.subtype && r.subtype !== 'success' ? r.subtype.replaceAll('_', ' ') : String(r.result ?? 'no answer').slice(0, 120)))
-      resolve({ answer: readAnswer(r.structured_output), cost: Number(r.total_cost_usd) || 0, ms: Number(r.duration_ms) || 0, session: r.session_id ? String(r.session_id) : null })
-    })
-  })
+  const door = claudeDoor({ model, allow: DESK_READS, budget: DESK_BUDGET_USD, timeoutMs: DESK_MS, cwd: DESK_DIR, persist: true, resume, bin })
+  const r = await door({ prompt: deskQuestion(question, resume ? null : shown), system: DESK_PROMPT, schema: SCHEMA }, { signal })
+  if (!r.ok) {
+    const why = r.failure.reason === 'model_error' ? r.failure.detail?.trim().split('\n').at(-1)?.slice(0, 120) : ''
+    throw Object.assign(new Error(why || r.failure.message), r.failure.reason === 'aborted' ? { name: 'AbortError' } : {})
+  }
+  return { answer: readAnswer(r.answer), cost: r.costUsd ?? 0, ms: r.ms, session: r.run.session }
 }
 
 // ─── the desk's reports ─────────────────────────────────────────────────────

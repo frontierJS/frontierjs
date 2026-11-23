@@ -4,8 +4,10 @@
 // Channel's policies apply. Nothing here writes: marking a group read is `chat.view` and
 // `chat.readThread`, the doors the room screen uses.
 
+import { claudeDoor } from '@frontierjs/claude'
+import { childEnv } from '@frontierjs/junction'
+import { env } from '../../core/env.ts'
 import { WAITING_DAYS } from './waiting.ts'
-import { runClaude } from '../local/local-claude.ts'
 
 /** Posts a group lists, oldest first: a room unread for months is read in pages, not whole. */
 export const GROUP_POSTS_MAX = 100
@@ -17,7 +19,7 @@ export const RECAP_POSTS_MAX = 60
 export const RECAP_POST_CHARS = 1000
 export const RECAP_CHARS_MAX = 12_000
 const RECAP_TIMEOUT_MS = 90_000
-const RECAP_BUDGET_USD = '0.25'
+const RECAP_BUDGET_USD = 0.25
 
 const at = (v: unknown): number => { const t = Date.parse(String(v ?? '')); return Number.isFinite(t) ? t : NaN }
 
@@ -123,10 +125,10 @@ export function recapPrompt (label: string, lines: { at: string, author: string,
 }
 
 /**
- * One `claude -p` with no tool, over the group's unread posts since `since`: the answer is held
+ * One `claudeDoor` answer, no tool, over the group's unread posts since `since`: the answer is held
  * by nobody. The posts are read through the caller's own client, so a room they cannot read
- * recaps as empty. The binary is `CLAUDE_BIN` (`bin`), the prompt rides stdin, and hooks,
- * settings, MCP servers and every built-in tool are off, so the model can only answer.
+ * recaps as empty. The binary is `CLAUDE_BIN` (`bin`); the door runs it in a throwaway directory
+ * with hooks, settings, MCP servers and every built-in tool off, so the model can only answer.
  */
 export async function recap (db: any, me: string, scope: Scope & { since: string }, bin?: string): Promise<Recap | { empty: true }> {
   const since = new Date(at(scope.since)).toISOString()
@@ -142,12 +144,14 @@ export async function recap (db: any, me: string, scope: Scope & { since: string
   const label = room?.type === 'direct' || room?.type === 'group' ? 'a direct conversation' : `#${room?.displayName || room?.name || 'a room'}${scope.rootExternalId ? ' (one thread)' : ''}`
 
   const { prompt, kept } = recapPrompt(label, rows.map(p => ({ at: new Date(at(p.createdAt)).toISOString().slice(0, 16).replace('T', ' '), author: name.get(p.profileExternalId) ?? 'someone', text: String(p.message ?? '') })))
-  const ran = await runClaude(
-    ['-p', '--system-prompt', SYSTEM, '--settings', JSON.stringify({ disableAllHooks: true }), '--setting-sources', '', '--strict-mcp-config', '--tools', '', '--max-budget-usd', RECAP_BUDGET_USD],
-    { input: prompt, timeoutMs: RECAP_TIMEOUT_MS, bin, cwd: '/tmp' },
-  )
-  if (!ran.ok) throw Object.assign(new Error(`recap: ${ran.reason}`), { status: 502 })
-  const text = ran.value.out.trim()
-  if (ran.value.code !== 0 || !text) throw Object.assign(new Error(`recap: claude ${ran.value.code === 0 ? 'answered nothing' : `exited ${ran.value.code}`}${ran.value.err.trim() ? `: ${ran.value.err.trim().split('\n')[0].slice(0, 200)}` : ''}`), { status: 502 })
+  // `childEnv` keeps this server's secrets out of the program's environment; the door's own default is all of process.env.
+  const door = claudeDoor({ budget: RECAP_BUDGET_USD, timeoutMs: RECAP_TIMEOUT_MS, bin, env: childEnv(env) })
+  const ran = await door({ prompt, system: SYSTEM })
+  if (!ran.ok) {
+    const first = ran.failure.detail?.trim().split('\n')[0].slice(0, 200)
+    throw Object.assign(new Error(`recap: ${ran.failure.reason}${first ? `: ${first}` : ''}`), { status: 502 })
+  }
+  const text = String(ran.answer).trim()
+  if (!text) throw Object.assign(new Error('recap: claude answered nothing'), { status: 502 })
   return { text, posts: kept, omitted: Math.max(0, total - kept) }
 }

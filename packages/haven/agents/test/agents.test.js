@@ -12,7 +12,7 @@
 // built and listed on it, where the runner then finds it.
 
 import { test, expect, describe, beforeAll, beforeEach, afterEach } from 'bun:test'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -21,7 +21,7 @@ import { createTestEnv } from '@frontierjs/testing'
 import { buildHavenApp } from '../../api/src/app.ts'
 import { POST_KEY, signIn } from '../../api/test/sign-in.ts'
 import { machineKeys } from '../../web/src/lib/session/sign-in.js'
-import { AGENTS, benchSpot, checkPlan, claudeArgv, idsIn, names, oneLine, parseMods, PLANNER, promptFor, responders, rollOf, startAgents, taskOf } from '../agents.js'
+import { AGENTS, benchSpot, checkPlan, idsIn, names, oneLine, parseMods, PLANNER, promptFor, responders, rollOf, startAgents, taskOf } from '../agents.js'
 
 const SCHEMA = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const sleep  = (ms) => new Promise(r => setTimeout(r, ms))
@@ -76,13 +76,14 @@ console.log('\\n[fix-loop] ' + ids.length + ' closed · 0 waiting on a ruling ·
 import { appendFileSync, readFileSync } from 'node:fs'
 const argv   = process.argv.slice(2)
 const prompt = await Bun.stdin.text()
+const reply  = (text) => { console.log(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: text })); process.exit(0) }
 appendFileSync(${JSON.stringify(stubLog)}, JSON.stringify({ argv, prompt, cwd: process.cwd() }) + '\\n')
 const soul = argv[argv.indexOf('--system-prompt') + 1]
-if (soul.startsWith('You turn a task')) { console.log('Here: ' + readFileSync(${JSON.stringify(planFile)}, 'utf8')); process.exit(0) }
+if (soul.startsWith('You turn a task')) { reply('Here: ' + readFileSync(${JSON.stringify(planFile)}, 'utf8')) }
 const name = soul.match(/^You are (\\w+)/)?.[1] ?? '?'
 const line = prompt.split('\\n').find(l => / just (said|whispered to you): /.test(l))
 const other = name === 'Ace' ? 'charles' : 'ace'
-console.log(name + ': "heard ' + line + ' -- over to ' + other + '"')
+reply(name + ': "heard ' + line + ' -- over to ' + other + '"')
 `)
   chmodSync(stub, 0o755)
   for (const a of AGENTS) listed[a.nick] = (await machineKeys(join(dir, 'keys', a.nick, 'key.json'))).keys.publicKey
@@ -204,13 +205,21 @@ describe('who answers', () => {
     expect(checkPlan({ rows: 40 }, rows).refused).toBeTruthy()
   })
 
-  test('the model is handed the soul and no tool, and the prompt the lines heard', () => {
-    const argv = claudeArgv({ soul: 'You are Ace.' })
-    expect(argv[argv.indexOf('--system-prompt') + 1]).toBe('You are Ace.')
-    expect(argv[argv.indexOf('--tools') + 1]).toBe('')
+  test('the model is handed the soul and no tool, and the prompt the lines heard', async () => {
+    const a = await agents()
+    const j = await enter(jo, 28, 21)
+    await say(j, 'ace?')
+    expect(await until(() => asked().length === 1)).toBe(true)
+    const { argv, cwd } = asked()[0]
+    const flag = (f) => argv[argv.indexOf(f) + 1]
+    expect(flag('--system-prompt')).toStartWith('You are Ace')
+    expect(flag('--tools')).toBe('')
     expect(argv).toContain('--strict-mcp-config')
-    expect(argv[argv.indexOf('--model') + 1]).toBe('haiku')
-    expect(argv[argv.indexOf('--effort') + 1]).toBe('low')
+    expect(argv).toContain('--no-session-persistence')
+    expect(flag('--model')).toBe('haiku')
+    expect(flag('--effort')).toBe('low')
+    expect(flag('--max-budget-usd')).toBe('0.25')
+    expect(realpathSync(cwd)).toBe(realpathSync(a.ace.dir))
     const p = promptFor({ name: 'Ace', room: 'square', speaker: 'jo', line: { body: 'ace?' }, heard: [{ nick: 'sam', body: 'hello' }] })
     expect(p).toContain('sam: hello')
     expect(p).toContain('jo just said: ace?')

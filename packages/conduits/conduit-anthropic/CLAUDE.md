@@ -2,8 +2,10 @@
 
 The Messages API's dialect: `x-api-key`, a required version header, a billed
 POST that must not be replayed, SSE read through `conduit.stream()`.
-`src/index.ts` (target, calls, tool loop, the stream) · `src/errors.ts`
-(the one reader of `error.raw` and `meta.status`) · `src/types.ts` · `sink.ts` ·
+`src/index.ts` (target, calls, tool loop, the stream) · `src/door.ts`
+(`anthropicDoor`, the Messages API as `@frontierjs/toolbelt/ask`'s one-answer
+door) · `src/errors.ts` (the one reader of `error.raw` and `meta.status`) ·
+`src/types.ts` · `sink.ts` ·
 `test/anthropic.drive.ts`.
 
 ## What bites
@@ -12,6 +14,17 @@ POST that must not be replayed, SSE read through `conduit.stream()`.
   comes back after ONE attempt with `retryAfterMs` set; conduit never sleeps
   on it. Adding `replayable: true` makes the drive's rate-limit row wait seven
   seconds and bill twice.
+- **The door's one resend is the exception to "`createMessage` never retries"**
+  (`FJS-D2326`). `anthropicDoor` sends a second time on a 429 or a 529 and
+  nothing else: those are refused before the request ran, and a timeout, a
+  dropped connection or a 500 may have been billed. A `retryAfterMs` over 30 s
+  is not waited out, and the wait wakes on the caller's signal. Every other
+  reader of `createMessage` still gets the failure after one attempt.
+- **The door sends `question.schema` through `normalizeSchema`** (`FJS-D2356`):
+  the API 400s an open object or a bound it cannot enforce, and the 400 would
+  read as `refused`. The sink refuses the same schemas, so a door that skipped
+  it fails its row. A missing key is `auth_failed` with no status and reads
+  `not_set_up`; a 401 reads `signed_out`.
 - **`translate()` reopens `retryable` on a 529 and nowhere else.** Conduit's
   `declineReplay` marks every unkeyed 5xx indeterminate; the vendor says a 529
   was refused before running. A 500 keeps conduit's verdict.
@@ -35,4 +48,4 @@ POST that must not be replayed, SSE read through `conduit.stream()`.
 
 ## Proving a change
 
-`bun run drive`. Green means 22 rows; there is no fixture.
+`bun run drive`. Green means 42 rows (22 for the connector, 20 `door.*`); there is no fixture.

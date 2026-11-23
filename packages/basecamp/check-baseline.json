@@ -4,6 +4,8 @@
   "app-layout": 1,
   "//css-class-collision": "Adopted when CI first graded the rule (FJS-D1009), and each is a rename, not a defence: .topbar, .cluster and .sidebar in routes/_module.mesa. Each takes the kit's rules as well as its own, so a kit change restyles the shell. A ceiling that falls as they are renamed.",
   "css-class-collision": 3,
+  "//prose-assembled": "Adopted when the rule landed (FJS-D254): plural suffixes and `+` chains in markup, each a sentence a catalog could not translate. Each is a move to a whole-sentence pick, not a defence.",
+  "prose-assembled": 11,
   "//schema-runs": "Three, waiting on one ruling (FJS-3816): gate-over-own-standing on WorkspaceMember.role, Invitation.role and AppEditor.role, where the grant ladder is refuseGrantAboveOwn() in api/src/core/hooks.ts rather than a column @allow(write). The answered ones are under allow.",
   "schema-runs": 3,
   "allow": {

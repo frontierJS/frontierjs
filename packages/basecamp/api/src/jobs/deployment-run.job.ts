@@ -70,7 +70,7 @@ import { cloudflareFor } from '../domain/site/site-preview.ts'
 import { SITE_STEP, WEB_BUILD_STEP, WEB_RELEASE_STEP, INTERRUPTED, releaseStatus, pushRow } from '../domain/release/release-record.ts'
 import { frontsOf, type Front } from '../domain/release/fronting.ts'
 import { publishStatic, overPublishLimit, type PublishFile } from '../domain/release/static-publish.ts'
-import { releaseEnv, secretRefsOf } from '../domain/release/variables.ts'
+import { releaseEnv, secretRefsOf, basecampIdentity } from '../domain/release/variables.ts'
 import { runtimeFor, routedHosts, routedPaths, routedRedirects, routeRemovals, noindexHosts, markRunning, type Runtime } from '../domain/release/runtime.ts'
 import { takeAppBackup, destinationFor, releaseCopyOf, restoreSourceOf, VOLUME_RESTORE_TIMEOUT_MS } from './app-backup-run.job.ts'
 import { pushIngressCert } from './ingress-cert.job.ts'
@@ -446,6 +446,10 @@ function runner(app: App) {
           // naming another port is refused at the probe, and a contract release
           // leaves the app down (`FJS-4561`). After the Variables for the same reason.
           ...(runtime.containerPort != null ? { FRONTIER_PORT_BE: String(runtime.containerPort) } : {}),
+          // The app's identity to this hub, which its crash report is sent
+          // under (`FJS-D2358`). After the Variables, so a stored pair cannot
+          // point a crash at another app or another hub.
+          ...basecampIdentity(rel.appId),
         },
       },
       source:        config.source ?? service.source ?? {},

@@ -33,11 +33,17 @@
     end: (w) => { resizing = false; keepWidth(SIDE.key, w) },
     reset: () => { sideWidth = SIDE.initial; keepWidth(SIDE.key, null) },
   })
+
+  // The text size is the reader's, set from the sidebar and kept per browser: the screen is
+  // read from a desk one day and across the room the next.
+  const TEXT_SCALE = 'workbench.messages.textScale'
+  let textScale = (() => { try { const n = Number(localStorage.getItem(TEXT_SCALE)); return n >= 0.75 && n <= 2 ? n : 1 } catch { return 1 } })()
+  $: { try { localStorage.setItem(TEXT_SCALE, String(textScale)) } catch {} }
 </script>
 
 {#if lists}
-  <div class="chat" class:resizing={resizing} style:--chat-side={sideWidth + 'px'} class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse') || page.pathname.startsWith('/messages/drafts') || page.pathname.startsWith('/messages/saved') || page.pathname.startsWith('/messages/search') || page.pathname.startsWith('/messages/activity') || page.pathname.startsWith('/messages/waiting') || page.pathname.startsWith('/messages/scheduled') || page.pathname.startsWith('/messages/groups')} data-messages>
-    <ChatSidebar currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} onDrafts={page.pathname.startsWith('/messages/drafts')} onSaved={page.pathname.startsWith('/messages/saved')} onActivity={page.pathname.startsWith('/messages/activity')} onWaiting={page.pathname.startsWith('/messages/waiting')} onCatchUp={page.pathname.startsWith('/messages/catch-up')} onScheduled={page.pathname.startsWith('/messages/scheduled')} onGroups={page.pathname.startsWith('/messages/groups')} />
+  <div class="chat" class:resizing={resizing} style:--chat-side={sideWidth + 'px'} style:--chat-scale={textScale} class:has-room={!!page.params.id || page.pathname.startsWith('/messages/threads') || page.pathname.startsWith('/messages/browse') || page.pathname.startsWith('/messages/drafts') || page.pathname.startsWith('/messages/saved') || page.pathname.startsWith('/messages/search') || page.pathname.startsWith('/messages/activity') || page.pathname.startsWith('/messages/waiting') || page.pathname.startsWith('/messages/scheduled') || page.pathname.startsWith('/messages/groups')} data-messages>
+    <ChatSidebar bind:textScale currentId={page.params.id ?? null} onThreads={page.pathname.startsWith('/messages/threads')} onBrowse={page.pathname.startsWith('/messages/browse')} onDrafts={page.pathname.startsWith('/messages/drafts')} onSaved={page.pathname.startsWith('/messages/saved')} onActivity={page.pathname.startsWith('/messages/activity')} onWaiting={page.pathname.startsWith('/messages/waiting')} onCatchUp={page.pathname.startsWith('/messages/catch-up')} onScheduled={page.pathname.startsWith('/messages/scheduled')} onGroups={page.pathname.startsWith('/messages/groups')} />
     <div class="chat-resize" aria-label="Resize the channel list" title="Drag to resize, double-click to reset"
          data-chat-resize {@attach resizeHandle(sideEdge)}></div>
     <div class="chat-main">
@@ -59,6 +65,21 @@
   :global(.screen-body:has(.chat)) { max-inline-size: none; padding: 0; block-size: 100%; }
   .chat { position: relative; display: grid; grid-template-columns: var(--chat-side, 260px) minmax(0, 1fr); block-size: 100%; min-block-size: 0; }
   .chat.resizing { cursor: col-resize; user-select: none; }
+  /* The text scale: each rung read from the theme on .chat, then multiplied one level down. A rung
+     redeclared from itself on one element is a cycle and drops to nothing, and the inherited body
+     size is already a pixel figure, so the children restate it from the scaled body rung. */
+  .chat {
+    --chat-2xs: var(--text-2xs); --chat-xs: var(--text-xs); --chat-sm: var(--text-sm); --chat-md: var(--text-md); --chat-lg: var(--text-lg);
+    --chat-xl: var(--text-xl); --chat-2xl: var(--text-2xl); --chat-3xl: var(--text-3xl); --chat-4xl: var(--text-4xl);
+  }
+  .chat > :global(*) {
+    --text-2xs: calc(var(--chat-2xs) * var(--chat-scale, 1)); --text-xs: calc(var(--chat-xs) * var(--chat-scale, 1));
+    --text-sm:  calc(var(--chat-sm) * var(--chat-scale, 1));  --text-md: calc(var(--chat-md) * var(--chat-scale, 1));
+    --text-lg:  calc(var(--chat-lg) * var(--chat-scale, 1));  --text-xl: calc(var(--chat-xl) * var(--chat-scale, 1));
+    --text-2xl: calc(var(--chat-2xl) * var(--chat-scale, 1)); --text-3xl: calc(var(--chat-3xl) * var(--chat-scale, 1));
+    --text-4xl: calc(var(--chat-4xl) * var(--chat-scale, 1));
+    font-size: var(--text-md);
+  }
   /* Out of the grid flow so it adds no column: a strip straddling the sidebar's right edge. */
   .chat-resize { position: absolute; inset-block: 0; inset-inline-start: calc(var(--chat-side, 260px) - var(--space-xs) / 2); inline-size: var(--space-xs); cursor: col-resize; z-index: 2; touch-action: none; }
   .chat-resize:hover, .chat-resize:focus-visible, .chat.resizing .chat-resize { background: var(--ring-color); opacity: 0.6; outline: none; }

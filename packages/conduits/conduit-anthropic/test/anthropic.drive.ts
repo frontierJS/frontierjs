@@ -7,6 +7,10 @@
 // target with `headers` removed must be REFUSED by the sink naming
 // `anthropic-version`, or the rows about what is on the wire are about nothing.
 //
+// The door rows (`door.*`) run `anthropicDoor` over the same conduit and sink,
+// and every reply goes through `checkReply` so a row cannot pass on a reply
+// the contract would refuse.
+//
 // What only this drive asks: a billed POST is NOT replayed — a 429 and a 529
 // come back after one attempt with the wait attached — while the free count
 // IS replayed on a lost response; and a stream is read past the seam, with
@@ -15,7 +19,8 @@
 import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startAnthropicSink } from '../sink.ts'
-import { anthropicTarget, bindSend, bindStream, createMessage, countTokens, runToolLoop, streamMessage, assemble, type MessagesRequest, type StreamEvent } from '../src/index.ts'
+import { checkReply, type Question, type Reply } from '@frontierjs/toolbelt/ask'
+import { anthropicTarget, anthropicDoor, normalizeSchema, bindSend, bindStream, createMessage, countTokens, runToolLoop, streamMessage, assemble, type MessagesRequest, type StreamEvent } from '../src/index.ts'
 
 const { got, t } = results()
 const sink = startAnthropicSink()
@@ -32,6 +37,7 @@ await conduit.register({ ...target, id: 'provider:anthropic:forbidden', auth: { 
 await conduit.register({ ...target, id: 'provider:anthropic:wrong',     auth: { type: 'api_key', ref: 'WRONG_KEY',     header: 'x-api-key' } })
 const { headers: _h, ...bare } = target
 await conduit.register({ ...bare, id: 'provider:anthropic:noversion' })
+await conduit.register({ ...target, id: 'provider:anthropic:nokey', auth: { type: 'api_key', ref: 'UNSET_KEY', header: 'x-api-key' } })
 const send = bindSend(conduit)
 
 type Seen = { requests: { headers: Record<string, string>; body: string }[] }
@@ -137,6 +143,102 @@ try {
 
   const unknown = await runToolLoop(send, ask('Paris', { tools: [weather] }), {}, { maxTurns: 3 })
   t('toolLoop.unknownToolIsAnErrorResult', { turns: unknown.turns, ok: !unknown.error, secondTurnCarriesError: JSON.stringify(unknown.messages[2]?.content).includes('"is_error":true') })
+
+  // ── the door ───────────────────────────────────────────────────────────
+  const door = anthropicDoor({ send })
+  const sent = async () => (await seen()).requests
+  const bodyOf = async (i = 0) => JSON.parse((await sent())[i].body)
+  const view = async (r: Reply, question: Question, extra: Record<string, unknown> = {}) =>
+    ({ ok: r.ok, reason: r.ok ? null : r.failure.reason, retryable: r.ok ? null : r.failure.retryable, problems: checkReply(r, question), sends: await count(), ...extra })
+
+  const person = { type: 'object', properties: { name: { type: 'string', minLength: 1 }, age: { type: 'integer', minimum: 0 }, address: { type: 'object', properties: { city: { type: 'string', maxLength: 5 } } } }, required: ['name'] }
+  await ctl.reset()
+  const q1: Question = { prompt: 'who', schema: person }
+  const r1 = await door(q1)
+  t('door.schemaAnswer', await view(r1, q1, { answer: r1.ok ? r1.answer : null, door: r1.door, model: r1.model, costUsd: r1.ok ? r1.costUsd : 0, usageCounted: r1.ok && (r1.usage?.inputTokens ?? 0) > 0 && (r1.usage?.outputTokens ?? 0) > 0 }))
+  const wire = await bodyOf()
+  const schemaOnWire = wire.output_config?.format
+  t('door.schemaNormalizedOnTheWire', { type: schemaOnWire?.type, topClosed: schemaOnWire?.schema?.additionalProperties, nestedClosed: schemaOnWire?.schema?.properties?.address?.additionalProperties,
+    minLengthGone: !('minLength' in schemaOnWire.schema.properties.name), minimumGone: !('minimum' in schemaOnWire.schema.properties.age), maxLengthGone: !('maxLength' in schemaOnWire.schema.properties.address.properties.city),
+    callerSchemaUntouched: !('additionalProperties' in person) && 'minLength' in person.properties.name, effort: 'effort' in (wire.output_config ?? {}) })
+
+  await ctl.reset()
+  const q2: Question = { prompt: 'hello', system: 'Be terse.' }
+  const r2 = await door(q2)
+  const w2 = await bodyOf()
+  t('door.textAnswerWithSystem', await view(r2, q2, { answer: r2.ok ? r2.answer : null, system: w2.system, messages: w2.messages, maxTokens: w2.max_tokens, model: w2.model, outputConfig: 'output_config' in w2 }))
+
+  await ctl.reset()
+  const tuned = anthropicDoor({ send, model: 'claude-opus-4-1', maxTokens: 500, effort: 'low' })
+  const q3: Question = { prompt: 'hello' }
+  const r3 = await tuned(q3, { model: 'claude-haiku-4-5' })
+  const w3 = await bodyOf()
+  t('door.optionsAndModelOverride', await view(r3, q3, { model: r3.model, wireModel: w3.model, maxTokens: w3.max_tokens, outputConfig: w3.output_config }))
+
+  await ctl.reset(); await ctl.arm({ rateLimit: { retryAfter: 1 } })
+  const q4: Question = { prompt: 'again' }
+  const m0 = Date.now()
+  const r4 = await door(q4)
+  t('door.rateLimitedThenAnswered', await view(r4, q4, { waited: Date.now() - m0 >= 1000, answer: r4.ok ? r4.answer : null }))
+
+  await ctl.reset(); await ctl.arm({ rateLimit: { retryAfter: 1, times: 2 } })
+  const r5 = await door(q4)
+  t('door.rateLimitedTwice', await view(r5, q4, { message: r5.ok ? null : r5.failure.message.length > 0 }))
+
+  await ctl.reset(); await ctl.arm({ overloaded: true })
+  const m1 = Date.now()
+  const r6 = await door(q4)
+  t('door.overloadedThenAnswered', await view(r6, q4, { waitedTheDefault: Date.now() - m1 >= 1000 }))
+
+  await ctl.reset(); await ctl.arm({ rateLimit: { retryAfter: 31 } })
+  const m2 = Date.now()
+  const r7 = await door(q4)
+  t('door.retryAfterOverTheCapIsNotWaited', await view(r7, q4, { quick: Date.now() - m2 < 1000 }))
+
+  await ctl.reset(); await ctl.arm({ failNext: true })
+  t('door.serverErrorIsNotResent', await view(await door(q4), q4))
+
+  await ctl.reset()
+  t('door.badKeyIsSignedOut', await view(await anthropicDoor({ send: bindSend(conduit, 'provider:anthropic:wrong') })(q4), q4))
+  await ctl.reset()
+  t('door.forbiddenKeyIsForbidden', await view(await anthropicDoor({ send: bindSend(conduit, 'provider:anthropic:forbidden') })(q4), q4))
+  await ctl.reset()
+  const r10 = await anthropicDoor({ send: bindSend(conduit, 'provider:anthropic:nokey') })(q4)
+  t('door.noKeyIsNotSetUp', await view(r10, q4, { namesTheKey: !r10.ok && r10.failure.message.includes('ANTHROPIC_API_KEY') }))
+
+  await ctl.reset()
+  const r11 = await door(q4, { model: 'retired-claude-2' })
+  t('door.retiredModelIsModelGone', await view(r11, q4, { model: r11.model }))
+
+  await ctl.reset(); await ctl.arm({ reply: 'refusal' })
+  const r12 = await door(q4)
+  t('door.safeguardDeclineIsRefused', await view(r12, q4, { message: r12.ok ? null : r12.failure.message }))
+
+  await ctl.reset(); await ctl.arm({ reply: 'max_tokens' })
+  const q13: Question = { prompt: 'who', schema: person }
+  const r13 = await door(q13)
+  t('door.maxTokensIsCutOff', await view(r13, q13, { detail: r13.ok ? null : r13.failure.detail }))
+
+  await ctl.reset(); await ctl.arm({ reply: 'prose' })
+  t('door.proseWithASchemaIsNoAnswer', await view(await door(q13), q13))
+
+  await ctl.reset(); await ctl.arm({ rateLimit: { retryAfter: 5 } })
+  const ac = new AbortController(); setTimeout(() => ac.abort(), 150)
+  const m3 = Date.now()
+  t('door.abortWhileWaitingIsAborted', await view(await door(q4, { signal: ac.signal }), q4, { quick: Date.now() - m3 < 1000 }))
+
+  await ctl.reset()
+  const already = new AbortController(); already.abort()
+  t('door.alreadyAbortedSendsNothing', await view(await door(q4, { signal: already.signal }), q4))
+
+  const thrower = anthropicDoor({ send: (() => { throw new Error('send blew up') }) as never })
+  t('door.aThrowIsLost', await view(await thrower(q4), q4, { sends: 0 }))
+
+  const input = { type: 'object', properties: { minimum: { type: 'integer', minimum: 1 }, list: { type: 'array', minItems: 2, items: { type: 'object', properties: { a: { type: 'string', maxLength: 3 } } } }, one: { type: 'array', minItems: 1, maxItems: 4, items: { type: 'string' } }, pick: { anyOf: [{ type: 'object', properties: {} }, { type: 'string', minLength: 2 }] } }, $defs: { d: { type: 'object', properties: { n: { type: 'number', multipleOf: 2 } } } } }
+  const frozen = JSON.stringify(input)
+  const n = normalizeSchema(input) as any
+  t('door.normalizeSchema', { input: JSON.stringify(input) === frozen, propertyNamedMinimumKept: 'minimum' in n.properties && !('minimum' in n.properties.minimum), minItems2Gone: !('minItems' in n.properties.list), minItems1Kept: n.properties.one.minItems, maxItemsGone: !('maxItems' in n.properties.one),
+    itemsClosed: n.properties.list.items.additionalProperties, itemsBoundGone: !('maxLength' in n.properties.list.items.properties.a), anyOfClosed: n.properties.pick.anyOf[0].additionalProperties, anyOfBoundGone: !('minLength' in n.properties.pick.anyOf[1]), defsClosed: n.$defs.d.additionalProperties, defsBoundGone: !('multipleOf' in n.$defs.d.properties.n) })
 } catch (e) {
   console.error('\nThe drive threw:', (e as Error).stack)
   got.__threw = String((e as Error).message)
@@ -167,4 +269,24 @@ process.exit(report(got, {
   'toolLoop.runsTwoTurnsAndSumsUsage':     { turns: 2, requests: 2, toolCalledWith: [{ location: 'Paris' }], text: 'The weather is sunny, 21C.', inputIsSum: true, outputIsSum: true, secondTurnLonger: true, messages: ['user', 'assistant', 'user', 'assistant'] },
   'toolLoop.cappedAtMaxTurns':             { kind: 'turn_limit', turns: 1, requests: 1, usageKept: true, resumable: 3 },
   'toolLoop.unknownToolIsAnErrorResult':   { turns: 2, ok: true, secondTurnCarriesError: true },
+  'door.schemaAnswer':                     { ok: true, reason: null, retryable: null, problems: [], sends: 1, answer: { name: 'x', age: 1, address: { city: 'x' } }, door: 'anthropic', model: 'claude-sonnet-5-5', costUsd: null, usageCounted: true },
+  'door.schemaNormalizedOnTheWire':        { type: 'json_schema', topClosed: false, nestedClosed: false, minLengthGone: true, minimumGone: true, maxLengthGone: true, callerSchemaUntouched: true, effort: false },
+  'door.textAnswerWithSystem':             { ok: true, reason: null, retryable: null, problems: [], sends: 1, answer: 'You said: hello', system: 'Be terse.', messages: [{ role: 'user', content: 'hello' }], maxTokens: 16000, model: 'claude-sonnet-5-5', outputConfig: false },
+  'door.optionsAndModelOverride':          { ok: true, reason: null, retryable: null, problems: [], sends: 1, model: 'claude-haiku-4-5', wireModel: 'claude-haiku-4-5', maxTokens: 500, outputConfig: { effort: 'low' } },
+  'door.rateLimitedThenAnswered':          { ok: true, reason: null, retryable: null, problems: [], sends: 2, waited: true, answer: 'You said: again' },
+  'door.rateLimitedTwice':                 { ok: false, reason: 'rate_limited', retryable: true, problems: [], sends: 2, message: true },
+  'door.overloadedThenAnswered':           { ok: true, reason: null, retryable: null, problems: [], sends: 2, waitedTheDefault: true },
+  'door.retryAfterOverTheCapIsNotWaited':  { ok: false, reason: 'rate_limited', retryable: true, problems: [], sends: 1, quick: true },
+  'door.serverErrorIsNotResent':           { ok: false, reason: 'model_error', retryable: true, problems: [], sends: 1 },
+  'door.badKeyIsSignedOut':                { ok: false, reason: 'signed_out', retryable: false, problems: [], sends: 1 },
+  'door.forbiddenKeyIsForbidden':          { ok: false, reason: 'forbidden', retryable: false, problems: [], sends: 1 },
+  'door.noKeyIsNotSetUp':                  { ok: false, reason: 'not_set_up', retryable: false, problems: [], sends: 0, namesTheKey: true },
+  'door.retiredModelIsModelGone':          { ok: false, reason: 'model_gone', retryable: false, problems: [], sends: 1, model: 'retired-claude-2' },
+  'door.safeguardDeclineIsRefused':        { ok: false, reason: 'refused', retryable: false, problems: [], sends: 1, message: 'declined by safeguards' },
+  'door.maxTokensIsCutOff':                { ok: false, reason: 'cut_off', retryable: false, problems: [], sends: 1, detail: '{"name":' },
+  'door.proseWithASchemaIsNoAnswer':       { ok: false, reason: 'no_answer', retryable: true, problems: [], sends: 1 },
+  'door.abortWhileWaitingIsAborted':       { ok: false, reason: 'aborted', retryable: false, problems: [], sends: 1, quick: true },
+  'door.alreadyAbortedSendsNothing':       { ok: false, reason: 'aborted', retryable: false, problems: [], sends: 0 },
+  'door.aThrowIsLost':                     { ok: false, reason: 'lost', retryable: true, problems: [], sends: 0 },
+  'door.normalizeSchema':                  { input: true, propertyNamedMinimumKept: true, minItems2Gone: true, minItems1Kept: 1, maxItemsGone: true, itemsClosed: false, itemsBoundGone: true, anyOfClosed: false, anyOfBoundGone: true, defsClosed: false, defsBoundGone: true },
 }))

@@ -11,7 +11,12 @@
 // It owns the chaos (FJS-D890): `/_sink/arm` takes `{ lost }` for a request
 // that is applied and never answered, `{ rateLimit: { retryAfter } }` for one
 // 429, `{ overloaded }` for one 529, `{ failNext }` for one 500 and
-// `{ dieMidStream }` to close the socket after the first delta. `/_sink/seen`
+// `{ dieMidStream }` to close the socket after the first delta. `rateLimit`
+// takes `times` (default 1) and may omit `retryAfter`; `{ reply }` is 'refusal',
+// 'max_tokens' or 'prose' for the next answer only. A request carrying
+// `output_config.format` is answered with JSON built from its schema, and is
+// refused 400 where the real API refuses the schema (an open object, a bound).
+// `/_sink/seen`
 // is what arrived, `/_sink/reset` clears it and what is armed; the prompt
 // cache survives a reset because the drive's cache rows span two calls.
 //
@@ -38,6 +43,27 @@ const json   = (body: unknown, status = 200, headers: Record<string, string> = {
 const refuse = (type: string, message: string, status: number, headers: Record<string, string> = {}) =>
   json({ type: 'error', error: { type, message } }, status, headers)
 
+const BOUNDS = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'maxItems', 'uniqueItems']
+
+/** What the API refuses in a structured-output schema, in its words; null when it would accept it. */
+function badSchema(s: any): string | null {
+  if (!s || typeof s !== 'object') return null
+  for (const k of BOUNDS) if (k in s) return `For 'object' type, property '${k}' is not supported`
+  if (typeof s.minItems === 'number' && s.minItems > 1) return "minItems values other than 0 or 1 are not supported"
+  if ((s.type === 'object' || s.properties) && s.additionalProperties !== false) return 'additionalProperties must be set to false for objects'
+  const kids = [...Object.values(s.properties ?? {}), ...Object.values(s.$defs ?? {}), ...Object.values(s.definitions ?? {}), ...[].concat(s.items ?? [], s.anyOf ?? [], s.allOf ?? [])]
+  for (const k of kids) { const bad = badSchema(k); if (bad) return bad }
+  return null
+}
+
+/** A value that satisfies `s`, for the shapes a drive writes. */
+const sample = (s: any): unknown =>
+  s?.type === 'object' || s?.properties ? Object.fromEntries(Object.entries(s.properties ?? {}).map(([k, v]) => [k, sample(v)]))
+  : s?.type === 'integer' || s?.type === 'number' ? 1
+  : s?.type === 'boolean' ? true
+  : s?.type === 'array' ? []
+  : 'x'
+
 const textOf = (content: string | ContentBlock[]): string =>
   typeof content === 'string' ? content : content.map(b => b.type === 'text' ? b.text : b.type === 'tool_result' ? (typeof b.content === 'string' ? b.content : (b.content ?? []).map(t => t.text).join('')) : JSON.stringify(b.input)).join('')
 
@@ -60,12 +86,18 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
   const KEY       = opts.key ?? 'sk-ant-dev'
   const FORBIDDEN = opts.forbiddenKey ?? 'sk-ant-forbidden'
   const seen: { method: string; path: string; headers: Record<string, string>; body: string; at: number }[] = []
-  const armed = { lost: false, rateLimit: null as null | { retryAfter: number }, overloaded: false, failNext: false, dieMidStream: false }
+  const armed = { lost: false, rateLimit: null as null | { retryAfter?: number; times?: number }, overloaded: false, failNext: false, dieMidStream: false, reply: null as null | 'refusal' | 'max_tokens' | 'prose' }
   const cache = new Set<string>()
   const hanging: Array<() => void> = []
 
   /** The canned answer. Decides between a `tool_use` turn and the echo. */
-  function answer(req: MessagesRequest): { content: (TextBlock | ToolUseBlock)[]; stop_reason: MessagesResponse['stop_reason'] } {
+  function answer(req: MessagesRequest): { content: (TextBlock | ToolUseBlock)[]; stop_reason: MessagesResponse['stop_reason']; stop_details?: MessagesResponse['stop_details'] } {
+    const mode = armed.reply; armed.reply = null
+    if (mode === 'refusal')   return { stop_reason: 'refusal', content: [], stop_details: { type: 'refusal', category: 'cyber', explanation: 'declined by safeguards' } }
+    if (mode === 'max_tokens') return { stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"name":' }] }
+    if (mode === 'prose')     return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Sorry, I would rather answer in prose.' }] }
+    const wanted = req.output_config?.format?.schema
+    if (wanted) return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(sample(wanted)) }] }
     const last     = req.messages[req.messages.length - 1]
     const results  = req.messages.flatMap(m => typeof m.content === 'string' ? [] : m.content.filter(b => b.type === 'tool_result'))
     const weather  = req.tools?.find(t => t.name === 'get_weather')
@@ -127,7 +159,7 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
       const path = new URL(req.url).pathname
 
       if (path === '/_sink/seen')  return json({ requests: seen })
-      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, rateLimit: null, overloaded: false, failNext: false, dieMidStream: false }); return json({ ok: true }) }
+      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, rateLimit: null, overloaded: false, failNext: false, dieMidStream: false, reply: null }); return json({ ok: true }) }
       if (path === '/_sink/arm')   { Object.assign(armed, await req.json()); return json({ ok: true, armed }) }
 
       const text = req.method === 'POST' ? await req.text() : ''
@@ -140,7 +172,11 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
       if (!req.headers.get('anthropic-version')) return refuse('invalid_request_error', 'anthropic-version header is required', 400)
       if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) return refuse('request_too_large', `Request body is ${text.length} bytes, over the ${MAX_BODY_BYTES} byte limit`, 413)
 
-      if (armed.rateLimit)  { const { retryAfter } = armed.rateLimit; armed.rateLimit = null; return refuse('rate_limit_error', 'This request would exceed your rate limit', 429, { 'retry-after': String(retryAfter) }) }
+      if (armed.rateLimit)  {
+        const { retryAfter, times = 1 } = armed.rateLimit
+        armed.rateLimit = times > 1 ? { retryAfter, times: times - 1 } : null
+        return refuse('rate_limit_error', 'This request would exceed your rate limit', 429, retryAfter === undefined ? {} : { 'retry-after': String(retryAfter) })
+      }
       if (armed.overloaded) { armed.overloaded = false; return refuse('overloaded_error', 'Overloaded', 529) }
       if (armed.failNext)   { armed.failNext = false;   return refuse('api_error', 'An unexpected error has occurred internal to Anthropic’s systems.', 500) }
 
@@ -155,9 +191,11 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
         response = json({ input_tokens: tokens(promptText(body)) })
       } else if (path === '/v1/messages' && req.method === 'POST') {
         if (!Number.isInteger(body.max_tokens) || body.max_tokens < 1) return refuse('invalid_request_error', 'max_tokens: Field required', 400)
-        const { content, stop_reason } = answer(body)
+        const schemaProblem = badSchema(body.output_config?.format?.schema)
+        if (schemaProblem) return refuse('invalid_request_error', `output_config.format.schema: ${schemaProblem}`, 400)
+        const { content, stop_reason, stop_details } = answer(body)
         const message: MessagesResponse = {
-          id: id('msg'), type: 'message', role: 'assistant', model: body.model, content, stop_reason, stop_sequence: null,
+          id: id('msg'), type: 'message', role: 'assistant', model: body.model, content, stop_reason, stop_sequence: null, ...(stop_details ? { stop_details } : {}),
           usage: usageFor(body, content.map(b => b.type === 'text' ? b.text : JSON.stringify(b.input)).join('')),
         }
         if (body.stream) { const die = armed.dieMidStream; armed.dieMidStream = false; response = streamOf(message, die) }

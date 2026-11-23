@@ -1,7 +1,7 @@
 <script>
   // Desk.mesa — a question asked at a home's desk, answered over the room.
   // `/ask what is overdue?` within reach of the chair hands the question to
-  // `#errand`'s `askDesk`, a `claude -p` on this machine that may only read
+  // `#errand`'s `askDesk`, a `claudeDoor` on this machine that may only read
   // Basecamp, and draws what comes back: blocks the model chose from
   // `lib/home/answer.js`'s list, laid out as rows there. The pane is the
   // registry's `desk` mode, so the arrows and PageUp/PageDown scroll it and

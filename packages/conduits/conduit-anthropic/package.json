@@ -19,9 +19,12 @@
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/conduit": "^0.1.0"
+    "@frontierjs/conduit": "^0.1.0",
+    "@frontierjs/toolbelt": "^0.1.15"
   },
   "devDependencies": {
+    "@frontierjs/conduit": "workspace:*",
+    "@frontierjs/toolbelt": "workspace:*",
     "bun-types": "^1.3.14"
   }
 }

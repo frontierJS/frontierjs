@@ -1,8 +1,8 @@
 <script>
   // components/chat/ChatSidebar.mesa -- the reader at the top (their presence and custom
-  // status), then Threads, Drafts and Saved, then the rooms in the reader's own sections:
-  // favorites, custom ones, channels and direct messages, in the order the server keeps
-  // them. A reader with no section rows (never backfilled) gets Channels and Direct
+  // status) and search, then Favorites, then Activity through Groups, then the rest of the
+  // reader's own sections: custom ones, channels and direct messages, in the order the
+  // server keeps them. A reader with no section rows (never backfilled) gets Channels and Direct
   // messages. A channel with something unread is bold with a count pill, in `danger` when
   // it names the reader; a muted one is faded and only a mention puts a pill on it. The
   // counts are lib/chat.js's. A section folds; the fold is this browser's, kept in
@@ -37,6 +37,13 @@
   export let onCatchUp = false   // the Catch-up route is open
   export let onScheduled = false // the Scheduled route is open
   export let onGroups = false    // the Groups route is open
+  export let textScale = 1       // the Messages text size, bound to the frame that applies it
+
+  const SCALES = [0.875, 1, 1.125, 1.25, 1.5, 1.75, 2]
+  const nudge = (d) => {
+    const i = SCALES.indexOf(textScale)
+    textScale = SCALES[Math.min(SCALES.length - 1, Math.max(0, (i < 0 ? 1 : i) + d))]
+  }
 
   let dmOpen = false
   let roomOpen = false
@@ -78,6 +85,8 @@
   $: favIds = new Set(lists.mine.rows.filter(m => m.isFavorite).map(m => m.channelExternalId))
   // The leading reads are the subscription: the builders are local functions that reach these through their bodies.
   $: groups = (all, counts, currentId, favIds, people, self, mySections.length ? sectioned(mySections) : plain())
+  $: favorites = groups.filter(g => g.kind === 'favorites')
+  $: rest      = groups.filter(g => g.kind !== 'favorites')
 
   const keyOf = (r) => r.kind === 'direct' ? 'dms' : r.kind === 'custom' ? `custom-${r.externalId}` : r.kind
   function plain() {
@@ -151,21 +160,27 @@
 </script>
 
 <nav class="chat-sidebar stack gap-md" aria-label="Channels" data-chat-sidebar>
-  <DropdownMenu placement="bottom-start">
-    {#snippet trigger()}
-      <button type="button" class="navlink chat-me" data-me title={[STATUS[myStatus].label, statusLine(myProfile)].filter(Boolean).join(' · ')}>
-        <Presence status={myStatus} />
-        <span class="chat-room-name" data-me-name>{myName}</span>
-        {#if statusLine(myProfile)}<span class="text-xs text-muted chat-room-name" data-me-line>{statusLine(myProfile)}</span>{/if}
-      </button>
-    {/snippet}
-    {#each ['online', 'away', 'dnd', 'offline'] as s (s)}
-      <DropdownItem onclick={() => chooseStatus(s)}><span data-set-status={s}>{STATUS[s].label}</span></DropdownItem>
-    {/each}
-    <DropdownSeparator />
-    <DropdownItem onclick={() => statusOpen = true}><span data-set-custom>Set a custom status…</span></DropdownItem>
-    <DropdownItem onclick={() => quietOpen = true}><span data-set-quiet>Quiet hours…</span></DropdownItem>
-  </DropdownMenu>
+  <div class="cluster gap-2xs chat-top">
+    <DropdownMenu placement="bottom-start">
+      {#snippet trigger()}
+        <button type="button" class="navlink chat-me" data-me title={[STATUS[myStatus].label, statusLine(myProfile)].filter(Boolean).join(' · ')}>
+          <Presence status={myStatus} />
+          <span class="chat-room-name" data-me-name>{myName}</span>
+          {#if statusLine(myProfile)}<span class="text-xs text-muted chat-room-name" data-me-line>{statusLine(myProfile)}</span>{/if}
+        </button>
+      {/snippet}
+      {#each ['online', 'away', 'dnd', 'offline'] as s (s)}
+        <DropdownItem onclick={() => chooseStatus(s)}><span data-set-status={s}>{STATUS[s].label}</span></DropdownItem>
+      {/each}
+      <DropdownSeparator />
+      <DropdownItem onclick={() => statusOpen = true}><span data-set-custom>Set a custom status…</span></DropdownItem>
+      <DropdownItem onclick={() => quietOpen = true}><span data-set-quiet>Quiet hours…</span></DropdownItem>
+    </DropdownMenu>
+    <span class="cluster chat-text-size" role="group" aria-label="Text size">
+      <button type="button" class="btn ghost square xs" aria-label="Smaller text" title={`Smaller text (now ${Math.round(textScale * 100)}%)`} disabled={textScale <= SCALES[0]} onclick={() => nudge(-1)} data-text-smaller>A−</button>
+      <button type="button" class="btn ghost square xs chat-text-up" aria-label="Larger text" title={`Larger text (now ${Math.round(textScale * 100)}%), double-click to reset`} disabled={textScale >= SCALES[SCALES.length - 1]} onclick={() => nudge(1)} ondblclick={() => textScale = 1} data-text-larger>A+</button>
+    </span>
+  </div>
   {#if error}<p class="text-xs text-danger" role="alert" data-sidebar-error>{error}</p>{/if}
   <form role="search" onsubmit|preventDefault={search} data-chat-search>
     <label class="visually-hidden" for="chat-search">Search messages</label>
@@ -174,6 +189,7 @@
       <input id="chat-search" class="field" type="search" placeholder="Search messages" autocomplete="off" bind:value={words} data-chat-search-box />
     </div>
   </form>
+  {#each favorites as h (h.key)}{@render section(h)}{/each}
   <ul class="navlist">
     <li>
       <a class="navlink chat-room" href="/messages/activity/" aria-current={onActivity ? 'page' : null} data-activity-link>
@@ -220,76 +236,78 @@
       </a>
     </li>
   </ul>
-  {#each groups as h (h.key)}
-    <ul class="navlist" data-section={h.key}>
-      <li class="navlist-label cluster chat-section-head">
-        <button type="button" class="chat-fold" aria-expanded={!folded[h.key]} data-fold={h.key} onclick={() => fold(h.key)}>
-          <span class="chat-caret" class:open={!folded[h.key]}><Icon name="chevron" /></span> <span>{h.label}</span>
-        </button>
-        <span class="cluster gap-2xs">
-          {#if h.kind === 'custom'}
-            <DropdownMenu placement="bottom-end">
-              {#snippet trigger()}<button type="button" class="btn ghost square xs chat-add" aria-label={`${h.label} actions`} title="Section actions" data-section-menu={h.id}><Icon name="more" /></button>{/snippet}
-              <DropdownItem onclick={() => rename(h)}>Rename</DropdownItem>
-              <DropdownItem tone="danger" data-confirm="Delete this section? Its rooms move back to Channels." data-confirm-label="Delete" onclick={() => drop(h)}>Delete</DropdownItem>
-            </DropdownMenu>
-          {/if}
-          {#if h.add}
-            <button type="button" class="btn ghost square xs chat-add" aria-label={h.add} title={h.add} data-add={h.key} onclick={() => h.kind === 'direct' ? dmOpen = true : roomOpen = true}><Icon name="plus" /></button>
-          {/if}
-        </span>
-      </li>
-      {#if !folded[h.key]}
-        {#if h.kind === 'channels'}
-          <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
-        {/if}
-        {#each h.list as c (c.externalId)}
-          {@const n = counts[c.externalId]}
-          {@const unread = n?.unread ?? 0}
-          {@const named = n?.mentions ?? 0}
-          {@const peer = c.type === 'direct' ? peerOfRoom(c) : null}
-          <li class="chat-row">
-            <a class="navlink chat-room" class:not-joined={!n} class:muted-room={n?.muted} class:unread={unread > 0 || named > 0}
-               href={`/messages/${c.externalId}/`} aria-current={c.externalId === currentId ? 'page' : null}
-               title={label(c)} data-channel={c.externalId}>
-              {#if peer?.status}<Presence status={statusOf(peer)} />
-              {:else if c.type === 'direct' || c.type === 'group'}<Icon name="message" />
-              {:else if c.type === 'private'}<Icon name="lock" label="Private" />
-              {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
-              <span class="chat-room-name">{label(c).slice(2)}</span>
-              {#if peer && statusLine(peer)}<span class="chat-mood" title={statusLine(peer)} data-dm-mood>{statusLine(peer)}</span>{/if}
-              {#if draftRooms.has(c.externalId)}<span class="chat-quiet" title="You have a draft here" data-room-draft><Icon name="edit" label="Draft" /></span>{/if}
-              {#if n?.muted}<span class="chat-quiet"><Icon name="muted" label="Muted" /></span>{/if}
-              {#if named > 0}
-                <span class="badge danger chat-pill" data-pill="mention" title={`${named} mention${named === 1 ? '' : 's'}`}>{named}</span>
-              {:else if unread > 0}
-                <span class="badge primary chat-pill" data-pill="unread" title={`${unread} unread`}>{unread}</span>
-              {/if}
-            </a>
-            {#if n}
-              <span class="chat-row-menu">
-                <DropdownMenu placement="bottom-end">
-                  {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label={`${label(c).slice(2)} actions`} title="Room actions" data-room-actions={c.externalId}><Icon name="more" /></button>{/snippet}
-                  <DropdownItem onclick={() => act(() => setFavorite(c.externalId, !favIds.has(c.externalId)))}>{favIds.has(c.externalId) ? 'Remove from favorites' : 'Add to favorites'}</DropdownItem>
-                  <DropdownSubmenu heading="Move to…">
-                    {#each targets(c) as r (r.externalId)}
-                      <DropdownItem onclick={() => moveTo(c, r)}><span data-move-to={r.externalId}>{r.kind === 'favorites' ? 'Favorites' : r.kind === 'channels' ? 'Channels' : r.kind === 'direct' ? 'Direct messages' : r.name}</span></DropdownItem>
-                    {/each}
-                    <DropdownSeparator />
-                    <DropdownItem onclick={() => newSection(c)}><span data-move-new>New section…</span></DropdownItem>
-                  </DropdownSubmenu>
-                </DropdownMenu>
-              </span>
-            {/if}
-          </li>
-        {/each}
-      {/if}
-    </ul>
-  {/each}
+  {#each rest as h (h.key)}{@render section(h)}{/each}
   {#if mySections.length}
     <button type="button" class="btn ghost sm chat-new-section" data-new-section onclick={addSection}><Icon name="plus" /> New section</button>
   {/if}
 </nav>
+{#snippet section(h)}
+  <ul class="navlist" data-section={h.key}>
+    <li class="navlist-label cluster chat-section-head">
+      <button type="button" class="chat-fold" aria-expanded={!folded[h.key]} data-fold={h.key} onclick={() => fold(h.key)}>
+        <span class="chat-caret" class:open={!folded[h.key]}><Icon name="chevron" /></span> <span>{h.label}</span>
+      </button>
+      <span class="cluster gap-2xs">
+        {#if h.kind === 'custom'}
+          <DropdownMenu placement="bottom-end">
+            {#snippet trigger()}<button type="button" class="btn ghost square xs chat-add" aria-label={`${h.label} actions`} title="Section actions" data-section-menu={h.id}><Icon name="more" /></button>{/snippet}
+            <DropdownItem onclick={() => rename(h)}>Rename</DropdownItem>
+            <DropdownItem tone="danger" data-confirm="Delete this section? Its rooms move back to Channels." data-confirm-label="Delete" onclick={() => drop(h)}>Delete</DropdownItem>
+          </DropdownMenu>
+        {/if}
+        {#if h.add}
+          <button type="button" class="btn ghost square xs chat-add" aria-label={h.add} title={h.add} data-add={h.key} onclick={() => h.kind === 'direct' ? dmOpen = true : roomOpen = true}><Icon name="plus" /></button>
+        {/if}
+      </span>
+    </li>
+    {#if !folded[h.key]}
+      {#if h.kind === 'channels'}
+        <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
+      {/if}
+      {#each h.list as c (c.externalId)}
+        {@const n = counts[c.externalId]}
+        {@const unread = n?.unread ?? 0}
+        {@const named = n?.mentions ?? 0}
+        {@const peer = c.type === 'direct' ? peerOfRoom(c) : null}
+        <li class="chat-row">
+          <a class="navlink chat-room" class:not-joined={!n} class:muted-room={n?.muted} class:unread={unread > 0 || named > 0}
+             href={`/messages/${c.externalId}/`} aria-current={c.externalId === currentId ? 'page' : null}
+             title={label(c)} data-channel={c.externalId}>
+            {#if peer?.status}<Presence status={statusOf(peer)} />
+            {:else if c.type === 'direct' || c.type === 'group'}<Icon name="message" />
+            {:else if c.type === 'private'}<Icon name="lock" label="Private" />
+            {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
+            <span class="chat-room-name">{label(c).slice(2)}</span>
+            {#if peer && statusLine(peer)}<span class="chat-mood" title={statusLine(peer)} data-dm-mood>{statusLine(peer)}</span>{/if}
+            {#if draftRooms.has(c.externalId)}<span class="chat-quiet" title="You have a draft here" data-room-draft><Icon name="edit" label="Draft" /></span>{/if}
+            {#if n?.muted}<span class="chat-quiet"><Icon name="muted" label="Muted" /></span>{/if}
+            {#if named > 0}
+              <span class="badge danger chat-pill" data-pill="mention" title={`${named} mention${named === 1 ? '' : 's'}`}>{named}</span>
+            {:else if unread > 0}
+              <span class="badge primary chat-pill" data-pill="unread" title={`${unread} unread`}>{unread}</span>
+            {/if}
+          </a>
+          {#if n}
+            <span class="chat-row-menu">
+              <DropdownMenu placement="bottom-end">
+                {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label={`${label(c).slice(2)} actions`} title="Room actions" data-room-actions={c.externalId}><Icon name="more" /></button>{/snippet}
+                <DropdownItem onclick={() => act(() => setFavorite(c.externalId, !favIds.has(c.externalId)))}>{favIds.has(c.externalId) ? 'Remove from favorites' : 'Add to favorites'}</DropdownItem>
+                <DropdownSubmenu heading="Move to…">
+                  {#each targets(c) as r (r.externalId)}
+                    <DropdownItem onclick={() => moveTo(c, r)}><span data-move-to={r.externalId}>{r.kind === 'favorites' ? 'Favorites' : r.kind === 'channels' ? 'Channels' : r.kind === 'direct' ? 'Direct messages' : r.name}</span></DropdownItem>
+                  {/each}
+                  <DropdownSeparator />
+                  <DropdownItem onclick={() => newSection(c)}><span data-move-new>New section…</span></DropdownItem>
+                </DropdownSubmenu>
+              </DropdownMenu>
+            </span>
+          {/if}
+        </li>
+      {/each}
+    {/if}
+  </ul>
+{/snippet}
+
 <NewDmDialog bind:open={dmOpen} />
 <NewRoomDialog bind:open={roomOpen} />
 <SectionDialog bind:open={sectionOpen} title={sectionTitle} value={sectionValue} onsave={sectionSave} />
@@ -300,7 +318,7 @@
   .chat-sidebar { border-inline-end: var(--border-width) solid var(--rule); background: var(--surface-sunken); padding: var(--space-lg) var(--space-sm); overflow-y: auto; min-block-size: 0; }
   .chat-room { font-size: var(--text-sm); }
   .chat-room.not-joined, .chat-room.muted-room { opacity: 0.6; }
-  .chat-room.unread:not(.muted-room) { font-weight: var(--label-font-weight); }
+  .chat-room.unread:not(.muted-room) { font-weight: 700; color: var(--ink); }
   .chat-pill { margin-inline-start: auto; }
   .chat-room-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-hash { inline-size: var(--space-md); text-align: center; opacity: 0.6; }
@@ -308,6 +326,10 @@
   .chat-add { opacity: 0.7; }
   .chat-quiet { display: inline-flex; opacity: 0.7; }
   .chat-mood { font-size: var(--text-xs); opacity: 0.7; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-inline-size: 0; }
+  .chat-top { flex-wrap: nowrap; align-items: center; }
+  .chat-top > :first-child { flex: 1; min-inline-size: 0; }
+  .chat-text-size { flex-wrap: nowrap; gap: 0; opacity: 0.7; }
+  .chat-text-up { font-size: var(--text-md); }
   .chat-me { inline-size: 100%; text-align: start; background: none; border: 0; cursor: pointer; }
   .chat-fold { display: inline-flex; align-items: center; gap: var(--space-2xs); background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
   .chat-caret { display: inline-flex; transition: transform var(--duration-fast, 0.12s); }

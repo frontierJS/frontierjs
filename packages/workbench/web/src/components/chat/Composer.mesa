@@ -224,7 +224,19 @@
       const whole = e.key === 'Enter' && commands.items[commands.index].name === commands.prefix
       if (next !== undefined && !whole) { e.preventDefault(); e.stopPropagation(); if (next === 'pick') pickCommand(commands.items[commands.index]); else commands = next; return }
     }
+    if (e.key === 'ArrowUp' && !text && !files.length && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !e.isComposing) editLast(e)
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send() }
+  }
+  // Up on an empty box edits the reader's newest post beside it, as Mattermost does: the thread's
+  // in a reply box, the room's list otherwise (the thread pane open beside it is not the room's).
+  function editLast(e) {
+    const own = rootExternalId
+      ? box?.closest('[data-thread-pane]')?.querySelectorAll('[data-post-mine]')
+      : box?.closest('[data-channel-page]')?.querySelectorAll('[data-post-list] [data-post-mine]')
+    const last = own?.[own.length - 1]
+    if (!last) return
+    e.preventDefault()
+    last.dispatchEvent(new CustomEvent('editpost', { detail: { back: box } }))
   }
 </script>
 

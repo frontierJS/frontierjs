@@ -109,7 +109,7 @@ if (!process.argv.includes('--system-prompt')) process.exit(1)
 fs.writeFileSync(${JSON.stringify(FAKE_STDIN)}, fs.readFileSync(0, 'utf8'))
 fs.writeFileSync(${JSON.stringify(FAKE_ARGV)}, JSON.stringify(process.argv.slice(2)))
 fs.appendFileSync(${JSON.stringify(FAKE_CALLS)}, 'x\\n')
-process.stdout.write('STUB RECAP: the room agreed on nothing.\\n')
+process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'STUB RECAP: the room agreed on nothing.' }) + '\\n')
 `)
 chmodSync(FAKE_CLAUDE, 0o755)
 const recapCalls = () => existsSync(FAKE_CALLS) ? readFileSync(FAKE_CALLS, 'utf8').split('\n').filter(Boolean).length : 0
@@ -353,6 +353,13 @@ try {
   await click(`[data-chat-sidebar] [data-channel="${ids.open}"]`)
   await until(`location.pathname`, p => p === `/messages/${ids.open}/`, 'the sidebar never went back to general')
   await until(`!!document.querySelector('[data-post="${R}"]')`, v => v, 'general never redrew its posts', 15_000)
+  // A post's files, reactions and images grow it after its row lands; a tall block stands in for one.
+  const gap = `(() => { const l = document.querySelector('[data-post-list]'); return l.scrollHeight - l.scrollTop - l.clientHeight })()`
+  await until(gap, v => v < 2, 'switching back to general never landed at the newest post')
+  await evaluate(`document.querySelector('[data-post-list] .posts-body').insertAdjacentHTML('beforeend', '<div data-late style="block-size: 600px"></div>')`)
+  await until(gap, v => v < 2, 'content that grew after the list drew left the view short of the newest post')
+  await evaluate(`document.querySelector('[data-late]').remove()`)
+  ok('a room opens at its newest post and stays there while its posts grow')
 
   // ── Edit, delete, and what the menu offers another person's post ──
   console.log('\n  Posts: edit, delete')
@@ -371,6 +378,16 @@ try {
   await until(`document.querySelector('[data-post="${mineSink.id}"] [data-post-text]')?.textContent ?? ''`, t => t.includes('(edited)'), 'the edited text never drew', 15_000)
   await until(`!!document.querySelector('[data-post="${mineSink.id}"] [data-post-edited]')`, v => v, 'the post never said edited')
   check('the sink holds the edited message', (await sinkPostBy(edited))?.id === mineSink.id, await sinkPostBy(edited))
+  // Up in an empty composer edits the reader's newest post, and Esc hands the focus back.
+  await evaluate(`document.querySelector('[data-composer="post"] textarea').focus()`)
+  await until(`document.querySelector('[data-composer="post"] textarea').value`, v => v === '', 'the composer is not empty for Up')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'ArrowUp', code: 'ArrowUp', windowsVirtualKeyCode: 38 })
+  await until(`(() => { const own = document.querySelectorAll('[data-post-list] [data-post-mine]'); return !!own[own.length - 1]?.querySelector('[data-post-editor] textarea') && document.activeElement === own[own.length - 1].querySelector('[data-post-editor] textarea') })()`, v => v, 'Up in an empty composer never opened the newest own post\'s editor')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await until(`!document.querySelector('[data-post-editor]') && document.activeElement === document.querySelector('[data-composer="post"] textarea')`, v => v, 'Esc never closed the editor and refocused the composer')
+  ok('Up in an empty composer edits the newest own post, and Esc returns to the composer')
   const doomed = `to delete ${Date.now()}`
   await typeAndEnter('[data-composer="post"] textarea', doomed)
   await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].some(e => e.textContent.includes(${sel(doomed)}))`, v => v, 'the post to delete never drew')
@@ -711,6 +728,7 @@ try {
   await until(`document.querySelector('[data-room-star]').getAttribute('aria-pressed')`, v => v === 'true', 'the star never lit', 15_000)
   await until(`!!document.querySelector('[data-section="favorites"] [data-channel="${ids.open}"]')`, v => v, 'the room never moved under Favorites', 15_000)
   check('the star favorites it on the server and moves it under Favorites, off Channels', (await categories()).some(c => c.type === 'favorites' && c.channel_ids.includes(ids.open)) && !(await inSection('channels', ids.open)), (await categories()).map(c => [c.type, c.channel_ids.length]))
+  check('Favorites sits above Activity in the sidebar', await evaluate(`!!(document.querySelector('[data-section="favorites"]').compareDocumentPosition(document.querySelector('[data-activity-link]')) & Node.DOCUMENT_POSITION_FOLLOWING)`))
   await click('[data-room-star]')
   await until(`!!document.querySelector('[data-section="channels"] [data-channel="${ids.open}"]')`, v => v, 'unfavoriting never put the room back', 15_000)
   ok('and the star again puts it back under Channels')
@@ -741,6 +759,22 @@ try {
   check('a folded section stays folded after a reload (this browser\'s localStorage)', !(await exists(`[data-section="${designKey}"] [data-channel]`)) && (await evaluate(`localStorage.getItem('workbench_messages_folded')`))?.includes(designKey))
   await click(`[data-fold="${designKey}"]`)
   await until(`!!document.querySelector('[data-section="${designKey}"] [data-channel="${ids.open}"]')`, v => v, 'unfolding never showed the room')
+
+  // The text size scales every rung on the screen, both columns, and is kept per browser.
+  const sizeOf = (sel) => evaluate(`parseFloat(getComputedStyle(document.querySelector('${sel}')).fontSize)`)
+  const roomText = `[data-chat-sidebar] [data-channel="${ids.open}"]`
+  const before = { room: await sizeOf(roomText), body: await sizeOf('.chat-main') }
+  await click('[data-text-larger]')
+  await click('[data-text-larger]')
+  const grown = await until(`parseFloat(getComputedStyle(document.querySelector('${roomText}')).fontSize)`, v => v > before.room, 'A+ never grew the sidebar text')
+  check('A+ grows the text in the sidebar and in the room column by the same factor', Math.abs(grown / before.room - 1.25) < 0.01 && Math.abs((await sizeOf('.chat-main')) / before.body - 1.25) < 0.01, { before, grown, body: await sizeOf('.chat-main') })
+  await goto(`/messages/${ids.open}/`)
+  await until(`!!document.querySelector('${roomText}')`, v => v, 'the sidebar never drew after a reload', 20_000)
+  check('the text size stays after a reload (this browser\'s localStorage)', Math.abs((await sizeOf(roomText)) / before.room - 1.25) < 0.01)
+  await click('[data-text-smaller]')
+  await click('[data-text-smaller]')
+  await until(`parseFloat(getComputedStyle(document.querySelector('${roomText}')).fontSize)`, v => Math.abs(v - before.room) < 0.01, 'A− never put the text back')
+  check('A− steps it back down to where it started', true)
   await openMenu('[data-chat-sidebar]', `[data-room-actions="${ids.open}"]`)
   await clickText('[role=menuitem]', 'Move to')
   await until(`!!document.querySelector('[data-move-new]')`, v => v, 'Move to never offered New section the second time')

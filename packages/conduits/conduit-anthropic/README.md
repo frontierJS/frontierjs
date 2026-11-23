@@ -20,7 +20,8 @@ caller decides when to spend again. A count is free and is replayed by conduit.
 | payload types | `MessagesRequest`, `MessagesResponse`, `ContentBlock`, `Usage`, `StreamEvent`, `AnthropicErrorBody` |
 | error mapping | `translate(ConduitError, status) → AnthropicFailure` — the table below |
 | sink | `sink.ts`, `startAnthropicSink()` on `port: 0` |
-| drive | `bun run drive` — 22 rows, sink only |
+| door | `anthropicDoor({ send, model?, maxTokens?, effort? })` — one question, one `Reply` |
+| drive | `bun run drive` — 42 rows, sink only |
 
 `send` is `bindSend(conduit)`: the connector never holds an app.
 
@@ -42,6 +43,32 @@ The 403 and the 404 are read off the status, since conduit folds each into a
 neighbor. The 529 is the one place the connector reopens a `retryable` conduit
 closed: conduit answers an unkeyed POST's 5xx as indeterminate, and the vendor's
 own word for a 529 is that the request was not run.
+
+## The door
+
+`anthropicDoor({ send })` is the Messages API as `@frontierjs/toolbelt/ask`'s
+one-answer door: `door(question, { model, signal })` returns a `Reply` and never
+throws. It is the deployed half of what `@frontierjs/claude`'s `claudeDoor` does
+on a developer's machine, so an app moves between them without changing a line.
+
+```ts
+import { anthropicDoor, bindSend } from '@frontierjs/conduit-anthropic'
+
+const ask = anthropicDoor({ send: bindSend(conduit), effort: 'low' })
+const reply = await ask({ prompt: 'Who signed it?', schema: { type: 'object', properties: { name: { type: 'string' } } } })
+```
+
+The model is `opts.model`, else the door's, else `DEFAULT_MODEL`
+(`claude-sonnet-5-5`); `maxTokens` defaults to 16 000 and `effort`, absent, is
+left off the request. `question.schema` goes through `normalizeSchema` first:
+every object closed with `additionalProperties: false`, the bounds the API
+refuses dropped. A safeguard decline (`stop_reason: 'refusal'`) is `refused`,
+`max_tokens` is `cut_off`, and a schema answer that is not a JSON object is
+`no_answer`. `costUsd` is `null` until a price table exists.
+
+The door sends again once on a 429 or a 529, which are refused before anything
+ran, waiting `retry-after` (about a second when absent; over 30 s it gives up
+as `rate_limited`). A timeout, a dropped connection or a 500 is never resent.
 
 ## Streaming
 

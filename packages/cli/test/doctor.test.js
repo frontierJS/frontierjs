@@ -452,3 +452,53 @@ describe('identity', () => {
     } finally { m.cleanup() }
   })
 })
+
+describe('the install line', () => {
+
+  // A machine with only these names on PATH, so a binary the row names is
+  // missing and the manager the line is written for is the one listed.
+  const only = (...names) => n => names.includes(n)
+  const line = (m, name, has, platform) =>
+    diagnose({ ...m, has, platform, env: {}, fliRoot: m.root }).system.find(b => b.name === name)
+
+  test('is the package manager this machine has', () => {
+    // An apt line on a Fedora box or a Mac is a command that fails for the
+    // person who pasted it, and --install runs it.
+    const m = machine()
+    try {
+      expect(line(m, 'git', only('apt-get'), 'linux').install).toBe('sudo apt install git')
+      expect(line(m, 'ssh', only('dnf'), 'linux').install).toBe('sudo dnf install openssh-clients')
+      expect(line(m, 'gh', only('pacman'), 'linux').install).toBe('sudo pacman -S github-cli')
+      expect(line(m, 'sqlite3', only('brew'), 'darwin').install).toBe('brew install sqlite')
+    } finally { m.cleanup() }
+  })
+
+  test('a manager only counts on its own platform', () => {
+    const m = machine()
+    try {
+      expect(line(m, 'git', only('apt-get'), 'darwin').install).toBe('https://git-scm.com/downloads')
+    } finally { m.cleanup() }
+  })
+
+  test('with no manager, or none that packages it, the line is a URL and is not run', () => {
+    // A brew cask lands in /Applications and never on PATH, so offering one for
+    // a browser would leave this probe reporting it missing after it ran.
+    const m = machine()
+    try {
+      for (const b of [line(m, 'zip', NONE, 'linux'), line(m, 'gh', only('apt-get'), 'linux'), line(m, 'chromium', only('brew'), 'darwin')]) {
+        expect(b.install).toMatch(/^https:\/\//)
+        expect(b.runnable).toBe(false)
+      }
+      expect(line(m, 'zip', only('apt-get'), 'linux').runnable).toBe(true)
+    } finally { m.cleanup() }
+  })
+
+  test('a stale binary runs its upgrade', () => {
+    const m = machine()
+    try {
+      const bun = diagnose({ ...m, has: ALL, versionOf: () => '1.3.11', env: {}, fliRoot: m.root, platform: 'linux' }).system.find(b => b.name === 'bun')
+      expect(bun.install).toBe('bun upgrade')
+      expect(bun.runnable).toBe(true)
+    } finally { m.cleanup() }
+  })
+})

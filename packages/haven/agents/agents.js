@@ -15,7 +15,7 @@
 // started with, and the owner holds both. Earshot is the server's: a line the
 // socket was handed is a line the agent heard (`hearing.ts`).
 //
-// The model is `claude -p` (Haiku, low effort; `--model` names another) under
+// The model is `claudeDoor` (Haiku, low effort; `--model` names another) under
 // the owner's own Claude login: the soul as the system prompt, the lines heard
 // as the prompt, no tools, no hooks, no MCP, no session kept, run in the
 // agent's own directory so no repo CLAUDE.md is read into a character. `HAVEN_AGENTS_CLAUDE` names another binary, which is how a
@@ -35,12 +35,12 @@
 // to say each row's outcome. The model that plans has no tools either: a mod's
 // words reach the machine only as a plan `loopArgv` accepted.
 
-import { spawn } from 'node:child_process'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { parseArgs } from 'node:util'
 
+import { claudeDoor } from '@frontierjs/claude'
 import { machineKeys, signIn } from '../web/src/lib/session/sign-in.js'
 import { checkout, fileRow, LOCK_FILE, LOG_FILE, loopOutput, loopReport, MAX_ROWS, planName, readyRows, running, startLoop } from '../web/src/lib/hash/taskmaster.js'
 import { layoutWorkshop } from '../web/src/pieces/workshop.js'
@@ -100,7 +100,7 @@ export const TIMING = {
 /** How far from its spot an agent strays, in cells. */
 export const WANDER = 2
 
-/** Dollars one reply may spend, `--max-budget-usd`. */
+/** Dollars one reply may spend, the door's `budget`. */
 export const REPLY_BUDGET_USD = 0.25
 
 export const WORKSHOP = 'workshop'
@@ -301,35 +301,21 @@ export function promptFor ({ name, room, heard, speaker, line }) {
 // ─── the model ────────────────────────────────────────────────────────────────
 
 /**
- * `claude -p` for one reply. No tools and no MCP, because the reply is a line
- * of talk; hooks off, because this repo's Stop hook would keep a print session
- * chasing the tree's close-out; no session kept, because a reply resumes nothing.
- */
-export function claudeArgv ({ soul, model = 'haiku', effort = 'low' }) {
-  const argv = [
-    '-p',
-    '--output-format',          'text',
-    '--system-prompt',          soul,
-    '--tools',                  '',
-    '--strict-mcp-config',
-    '--settings',               JSON.stringify({ disableAllHooks: true }),
-    '--setting-sources',        '',
-    '--no-session-persistence',
-    '--max-budget-usd',         String(REPLY_BUDGET_USD),
-  ]
-  if (effort) argv.push('--effort', effort)
-  if (model)  argv.push('--model', model)
-  return argv
-}
-
-/**
- * One reply from the model, the prompt on stdin, or null on any failure — said
+ * One reply from the model through `claudeDoor`, or null on any failure — said
  * through `log`, since a missing login reads exactly like an agent with
- * nothing to say.
+ * nothing to say. The reply is a line of talk, so the door is the plain
+ * completion: no tools, no MCP, no hooks (this repo's Stop hook would keep a
+ * print session chasing the tree's close-out), no session kept, and
+ * `cwd` the agent's own directory so no repo CLAUDE.md is read into a
+ * character. `signal` is the runner's stop.
  */
-export async function askSoul ({ soul, model, ...rest }) {
-  const r = await runClaude({ argv: claudeArgv({ soul, model }), ...rest })
-  return r?.code === 0 ? r.out : null
+export async function askSoul ({ soul, prompt, model, bin, cwd, signal, timeoutMs = TIMING.modelMs, log = () => {} }) {
+  const door = claudeDoor({ model: model ?? 'haiku', effort: 'low', budget: REPLY_BUDGET_USD, cwd, timeoutMs, bin })
+  const r = await door({ prompt, system: soul }, { signal })
+  if (r.ok) return String(r.answer)
+  const first = r.failure.detail?.trim().split('\n').at(-1)
+  log(`${r.failure.message}${r.failure.reason === 'not_set_up' ? ` (${CLAUDE_ENV} names another)` : ''}${first ? ` -- ${first}` : ''}`)
+  return null
 }
 
 /** The plan a task's words make, `checkPlan`'s answer: a named id with no model asked, else the model's. */
@@ -338,38 +324,6 @@ export async function planFor ({ task, rows, model, ...rest }) {
   if (ids.length) return checkPlan({ ids }, rows)
   const out = await askSoul({ soul: PLANNER, prompt: planPrompt({ task, rows }), model, ...rest })
   return out == null ? { refused: 'my head is empty right now' } : checkPlan(planOf(out), rows)
-}
-
-/**
- * `bin` with `argv`, the prompt on stdin: `{ code, out }`, or null when it
- * never ran or was killed. A failed exit is said through `log`; what it
- * printed is the caller's to read, since a print session that stopped short
- * (its budget, an error) still prints the JSON result that says why.
- */
-export function runClaude ({ bin, argv, prompt, cwd, env, timeoutMs = TIMING.modelMs, log = () => {}, children }) {
-  return new Promise(resolve => {
-    let child
-    try {
-      child = spawn(bin, argv, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'] })
-    } catch (e) { log(`${bin}: ${e.message}`); return resolve(null) }
-    children?.add(child)
-    let out = '', err = ''
-    child.stdout.setEncoding('utf8').on('data', c => { out += c })
-    child.stderr.setEncoding('utf8').on('data', c => { err += c })
-    child.stdin.on('error', () => {})
-    child.stdin.end(prompt)
-    const timer = setTimeout(() => { log(`${bin} gave no answer in ${timeoutMs / 1000}s`); child.kill('SIGTERM') }, timeoutMs)
-    child.on('error', e => {
-      clearTimeout(timer); children?.delete(child)
-      log(e.code === 'ENOENT' ? `${bin} is not installed or not on PATH (${CLAUDE_ENV} names another)` : e.message)
-      resolve(null)
-    })
-    child.on('close', code => {
-      clearTimeout(timer); children?.delete(child)
-      if (code !== 0) log(`${bin} exited ${code}${err.trim() ? `: ${err.trim().split('\n').slice(-3).join(' / ')}` : ''}`)
-      resolve(code == null ? null : { code, out })
-    })
-  })
 }
 
 // ─── the runner ───────────────────────────────────────────────────────────────
@@ -419,7 +373,7 @@ export async function startAgents (opts) {
   const log      = opts.log ?? (line => console.log(line))
   const workRoot = opts.workRoot !== undefined ? opts.workRoot : checkout()
   const loopAt   = { file: opts.loopLock ?? LOCK_FILE, log: opts.loopLog ?? LOG_FILE }
-  const children = new Set()
+  const stopper  = new AbortController()
   const nicks    = new Map()
   const pending  = new Map()
   // A loop an agent has followed once, by pid: one it walked away from past
@@ -563,7 +517,7 @@ export async function startAgents (opts) {
     move(agent, agent.at, { thinking: true })
     try {
       const rows    = await readyRows({ root: workRoot })
-      const checked = await planFor({ bin, task, rows, model: opts.model, cwd: agent.dir, timeoutMs: timing.modelMs, children, log: m => log(`${agent.name}: ${m}`) })
+      const checked = await planFor({ bin, task, rows, model: opts.model, cwd: agent.dir, timeoutMs: timing.modelMs, signal: stopper.signal, log: m => log(`${agent.name}: ${m}`) })
       move(agent, agent.at)
       if (checked.refused) {
         log(`${agent.name}: ${speaker}'s task refused — ${checked.refused}`)
@@ -652,7 +606,7 @@ export async function startAgents (opts) {
       for (const h of agent.heard.filter(h => h.id !== line.id).slice(-CONTEXT_LINES))
         heard.push({ nick: await nickOf(agent, h.memberId) ?? '?', body: h.body, whisper: h.toId != null })
       const prompt = promptFor({ name: agent.name, room: agent.room, heard, speaker, line })
-      const text   = oneLine(await askSoul({ bin, soul: agent.soulText, prompt, model: opts.model, cwd: agent.dir, timeoutMs: timing.modelMs, children, log: m => log(`${agent.name}: ${m}`) }), agent.name)
+      const text   = oneLine(await askSoul({ bin, soul: agent.soulText, prompt, model: opts.model, cwd: agent.dir, timeoutMs: timing.modelMs, signal: stopper.signal, log: m => log(`${agent.name}: ${m}`) }), agent.name)
       if (!text || stopped) return
       await speak(agent, text, line, speaker)
     } catch (e) {
@@ -810,7 +764,7 @@ export async function startAgents (opts) {
         a.timers.clear()
         a.ws?.close()
       }
-      for (const c of children) c.kill('SIGTERM')
+      stopper.abort()
     },
   }
 }

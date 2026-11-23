@@ -30,6 +30,7 @@ import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
 import { machineStream }             from './plugins/machine-stream.ts'
 import { appArchiveUpload }          from './plugins/app-archive-upload.ts'
+import { appCrash }                  from './plugins/app-crash.ts'
 import { appArchivePull }            from './plugins/app-archive-pull.ts'
 import { bucketFromEnv, fetchHubArchive, listHubArchives, readBucket, receiveUpload, restoreStaged, restoreState, scratchTarball, stageHubArchive } from './domain/backup/hub-restore.ts'
 import { LEVELS }                                from '@frontierjs/litestone'
@@ -1026,6 +1027,10 @@ export async function buildBasecampApp(
   // An app archive a person uploads, behind a link `appBackups.upload` signed
   // (plugins/app-archive-upload.ts).
   app.configure(function appArchiveUploadRoute() { appArchiveUpload(app) })
+
+  // A deployed app's crash report, fanned out to the channels it picked
+  // (plugins/app-crash.ts).
+  app.configure(function appCrashRoute() { appCrash(app) })
 
   // A machine-kept app archive, pulled through the hub behind links
   // `appBackups.download` signed (plugins/app-archive-pull.ts).

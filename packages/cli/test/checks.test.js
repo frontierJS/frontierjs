@@ -15,6 +15,7 @@ import { spawnSync } from 'child_process'
 import { RULES, runChecks, findApps, applyFixes, verdictOf, blindSkips, formatFindings,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline, AUTH_SERVICES, workspaceChecks } from '../core/checks.js'
 import { API_SRC_KINDS, WEB_SRC_KINDS } from '../core/checks/app.js'
+import { proseAssembly } from '../core/checks/ui.js'
 import { scaffoldWidgetSurface } from '../core/widget-surface.js'
 import { scaffoldExtensionSurface } from '../core/extension-surface.js'
 
@@ -3447,6 +3448,92 @@ describe('money-rendered-raw', () => {
     const root = tree('mrr-none', screen('model Order {\n  id Int @id\n  total Int\n}\n',
       '<td>{order.total}</td>\n'))
     expect(only(root, 'money-rendered-raw').skipped).toBeTruthy()
+  })
+})
+
+describe('prose-assembled', () => {
+  // A sentence built from pieces can only be English, and it compiles, renders
+  // and tests green until a catalog arrives (FJS-D12 constraint 7, FJS-D254).
+  // The pairs below are what keep the rule from firing on every sentence with a
+  // parameter in it, which is the failure that gets a rule turned off.
+  const screen = (body) => ({ ...CLEAN, 'web/src/pages/x.mesa': body })
+  const run = (name, body) => only(tree(name, screen(body)), 'prose-assembled')
+  const kinds = (body) => proseAssembly(body).map(h => h.kind)
+
+  test('a word picked on a count beside other text is reported, in every spelling', () => {
+    for (const body of [
+      '<p>{n} {n === 1 ? \'item\' : \'items\'}</p>\n',
+      '<p>You have {n} order{n === 1 ? \'\' : \'s\'}</p>\n',
+      '<p>{n} order{n !== 1 && \'s\'}</p>\n',
+    ]) {
+      const { findings } = run('pa-plural', body)
+      expect(findings.length).toBeGreaterThan(0)
+      expect(findings[0].message).toMatch(/FJS-D254/)
+    }
+  })
+
+  test('the template-literal and attribute forms are reported', () => {
+    expect(kinds('<p>{`${n} ${n === 1 ? \'match\' : \'matches\'}`}</p>\n')).toEqual(['template'])
+    expect(kinds('<Callout title={`${n} rule${n === 1 ? \'\' : \'s\'} cannot fire`} />\n')).toEqual(['template'])
+    expect(kinds('<Button aria-label="Show {n} more {n === 1 ? \'row\' : \'rows\'}" />\n')).toEqual(['plural'])
+  })
+
+  test('an {#if} around a bare word on a count, inside a sentence, is reported', () => {
+    expect(kinds('<p>{n} item{#if n !== 1}s{/if} left</p>\n')).toEqual(['block'])
+  })
+
+  test('a + chain of prose and two or more pieces is reported', () => {
+    expect(kinds('<p>{order.ref + \' goes \' + from + \' to \' + to}</p>\n')).toEqual(['concat'])
+    expect(kinds('<p>{\'Orders over the last \' + days + \' days\'}</p>\n')).toEqual(['concat'])
+    expect(kinds('<Dialog title={\'Move \' + a + \' to \' + b} />\n')).toEqual(['concat'])
+  })
+
+  test('ONE parameter in one sentence is one unit, however it is written', () => {
+    for (const body of [
+      '<p>You have {n} orders</p>\n',
+      '<p>Hello, <b>{name}</b>! You have <a href="/o">{n} orders</a> pending.</p>\n',
+      '<p>{\'Invoice #\' + id}</p>\n',
+      '<Button aria-label={\'Clear \' + label} />\n',
+      '<p>{`You have ${n} orders`}</p>\n',
+      '<p>{`${a} of ${b} selected`}</p>\n',
+    ]) expect(kinds(body)).toEqual([])
+  })
+
+  test('a choice between WHOLE messages is not a word picked', () => {
+    for (const body of [
+      '<p>{n === 1 ? \'One order\' : `${n} orders`}</p>\n',
+      '<span>{open ? \'open\' : \'shut\'}</span>\n',
+      '<p>{n === 1 ? \'You have 1 order\' : `You have ${n} orders`}</p>\n',
+      '<button aria-label={collapsed ? \'Expand the sidebar\' : \'Collapse the sidebar\'} />\n',
+    ]) expect(kinds(body)).toEqual([])
+  })
+
+  test('a word picked on something that is not a count is ambiguous: kind pick, not graded', () => {
+    const body = '<p>Status: {done ? \'Done\' : \'Open\'}</p>\n'
+    expect(kinds(body)).toEqual(['pick'])
+    expect(run('pa-pick', body).findings).toEqual([])
+  })
+
+  test('only what a person reads is read: script, style, comments and machine attributes', () => {
+    for (const body of [
+      '<script>\n  const label = `${n} item${n === 1 ? \'\' : \'s\'}`\n</script>\n<p>x</p>\n',
+      '<!-- {n} {n === 1 ? \'item\' : \'items\'} -->\n<p>x</p>\n',
+      '<div class={\'card \' + tone + \' wide\'} id={\'row-\' + a + \'-\' + b}>x</div>\n',
+      '<style>p::after { content: "a" }</style>\n<p>x</p>\n',
+    ]) expect(kinds(body)).toEqual([])
+  })
+
+  test('a finding names the file, the line and the way out', () => {
+    const { findings } = run('pa-line', '<h1>Orders</h1>\n<p>{n} {n === 1 ? \'row\' : \'rows\'}</p>\n')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(2)
+    expect(findings[0].file).toMatch(/x\.mesa$/)
+    expect(findings[0].message).toMatch(/WHOLE sentences/)
+  })
+
+  test('a tree with no client surface skips rather than passing', () => {
+    const { skipped } = only(tree('pa-none', { 'db/schema.lite': SCHEMA }), 'prose-assembled')
+    expect(skipped).toBeTruthy()
   })
 })
 

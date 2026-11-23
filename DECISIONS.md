@@ -9530,6 +9530,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2358"></a>2026-11-23 · `FJS-D2358` — Q10 — What does a release hand an app so it can reach its Basecamp, and does the crash report carry a credential — No credential for now: release sets `BASECAMP_URL` (Outpost's name for *where I report to*) and `BASECAMP_APP_ID` (`App.id`), after the Variables so a stored one cannot override them; `notifications` posts to `${BASECAMP_URL}/hooks/crash/${BASECAMP_APP_ID}`, held to a per-app rate limit.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (a per-app token, `App.crashToken @encrypted @system`, minted by the first release that finds it empty and sent as `FRONTIER_CRASH_TOKEN` beside `FRONTIER_CRASH_URL`), **C** (one `FRONTIER_CRASH_URL`, no credential).
+
+The paper's recommendation, taken as written: the pair is the app's identity to its Basecamp, which the next feature (metrics, a health report) reuses, where C's URL serves one purpose. The id is not secret — it is in every `/apps/<id>/` link — so anyone who has seen one can page the app's channels; the per-app limit caps that, and B is the reopen path once a forged page happens or a channel costs money per page.
+
 ### <a id="fjs-d2353"></a>2026-11-23 · `FJS-D2353` — Q9 — Is a new App's crash alerting on or off — On: `App.isCrashAlerted Boolean @default(true)`; with no channel picked a crash still reaches people through the kind's defaults and the workspace push topic.
 
 Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (off until someone turns it on).
@@ -18434,6 +18440,24 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2357"></a>2026-11-23 · `FJS-D2357` — Q14 — Which model does the API door use when none is named — `claude-sonnet-5-5`.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (`claude-opus-5-5`), **C** (none: a model is required at build, against the contract's "absent, the door's own default").
+
+The paper's recommendation, taken as written: the 4.4 callers are short one-answer jobs at half Opus's price; a caller that wants Opus names it.
+
+### <a id="fjs-d2356"></a>2026-11-23 · `FJS-D2356` — Q13 — What does the API door do with a schema the API refuses — Normalize before sending: close every object and drop the refused keywords, as the vendor's SDK does; the dropped limits go unchecked.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (send it as written; the 400 comes back `refused`).
+
+The paper's recommendation, taken as written: one `Question` must work through both doors, which is the plan's goal.
+
+### <a id="fjs-d2355"></a>2026-11-23 · `FJS-D2355` — Q12 — Which reason does a safeguard decline carry — `refused`, its meaning widened to "malformed, or declined by the model's safeguards"; not retryable, and the local door maps a decline it recognizes the same way.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (`model_error`, what the local door gives today; retryable), **C** (a fourteenth reason, `declined`, reopening `FJS-D2350`'s closed set).
+
+The paper's recommendation, taken as written: asking again rarely changes a decline, so a retryable name invites a paid loop; thirteen reasons stay thirteen.
 
 ### <a id="fjs-d2351"></a>2026-11-23 · `FJS-D2351` — Q11 — Where is a door's model chosen — When the door is built, and `door(question, { model })` may override it for one question; `Reply.model` names what answered.
 

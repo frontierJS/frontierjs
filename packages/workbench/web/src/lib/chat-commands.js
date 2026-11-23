@@ -9,7 +9,7 @@
 // Nothing here is a permission boundary: each run is a call the server grades.
 
 import { goto } from '@frontierjs/sierra/router'
-import { EMOJI } from './emoji.js'
+import { isEmoji, glyphOf } from './emoji.js'
 import { leaveChannel, setCustomStatus, setMuted, setStatus, STATUS } from './chat.js'
 
 const ago = (n, unit) => new Date(Date.now() + n * (unit === 'h' ? 3_600_000 : 60_000))
@@ -31,12 +31,12 @@ export const COMMANDS = [
     async run(rest) {
       const words = rest.trim().split(/\s+/).filter(Boolean)
       const named = /^:([a-z0-9_+-]+):$/i.exec(words[0] ?? '')
-      if (named && !EMOJI[named[1]]) return { keep: true, tone: 'warning', text: `No emoji called :${named[1]}:.` }
+      if (named && !isEmoji(named[1])) return { keep: true, tone: 'warning', text: `No emoji called :${named[1]}:.` }
       const emoji = named ? named[1] : ''
       if (named) words.shift()
       const text = words.join(' ').slice(0, 100)
       await setCustomStatus({ emoji, text, expiresAt: null })
-      return { tone: 'success', text: emoji || text ? `Status set: ${[emoji ? EMOJI[emoji] : '', text].filter(Boolean).join(' ')}` : 'Status cleared.' }
+      return { tone: 'success', text: emoji || text ? `Status set: ${[emoji ? glyphOf(emoji) : '', text].filter(Boolean).join(' ')}` : 'Status cleared.' }
     },
   },
   {

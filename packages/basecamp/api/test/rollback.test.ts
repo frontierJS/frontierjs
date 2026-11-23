@@ -28,6 +28,7 @@ import { basecampGateLevel } from '../src/core/gate.ts'
 import { buildBasecampApp }  from '../src/app.ts'
 import { grantsFor }         from '../src/core/capabilities.ts'
 import deploymentRun         from '../src/jobs/deployment-run.job.ts'
+import { env as hubEnv }      from '../src/core/env.ts'
 import { snapshotVariables, releaseEnv, secretRefsOf } from '../src/domain/release/variables.ts'
 import { mintRelease, configurationHash } from '@frontierjs/outpost/release'
 import { configurationSet, mintRelease as cliMintRelease } from '../../../cli/core/release.js'
@@ -721,6 +722,17 @@ describe('how the machine swapped, on the row', () => {
 
     test('an App that states no container port leaves the image its own', async () => {
       expect((await startAgainst({}, { containerPort: null }, { containerPort: null })).env).not.toHaveProperty('FRONTIER_PORT_BE')
+    })
+  })
+
+  // FJS-D2358: the pair a crash report is addressed with. A stored Variable of
+  // either name would send the app's crash to another app's channels.
+  describe('the app\'s identity to its hub', () => {
+    test('a stored BASECAMP_URL or BASECAMP_APP_ID Variable names neither another hub nor another app', async () => {
+      const row = await startAgainst({}, {}, {}, undefined, {
+        configSnapshot: { env: { BASECAMP_URL: 'https://elsewhere.test', BASECAMP_APP_ID: 'not-me', KEPT: '1' }, runtime: {} } })
+      expect(row.env).toMatchObject({
+        BASECAMP_URL: hubEnv.FRONTIER_API_URL.replace(/\/$/, ''), BASECAMP_APP_ID: row.appId, KEPT: '1' })
     })
   })
 

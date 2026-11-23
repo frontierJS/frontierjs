@@ -2,9 +2,9 @@
   // components/chat/PostItem.mesa -- one post. Avatar, name and time on a first
   // post; a post within five minutes of the same author's last is a continuation
   // line. The body is Markdown with headings one size down and single newlines
-  // kept, a known @username drawn bold. A root's replies show as a link that
-  // opens its thread beside the room; in the pane itself (`inThread`) there is
-  // no count and no Reply.
+  // kept, a known @username drawn bold and a known :name: as its emoji. A root's
+  // replies show as a link that opens its thread beside the room; in the pane
+  // itself (`inThread`) there is no count and no Reply.
   //
   // The hover bar is react, reply and More. More holds what the server decides:
   // Edit and Delete (the author's; a refusal comes back as its own words, never
@@ -16,6 +16,7 @@
   import DropdownSeparator from '@frontierjs/ui/components/overlay/DropdownSeparator.mesa'
   import DropdownSubmenu from '@frontierjs/ui/components/overlay/DropdownSubmenu.mesa'
   import Icon from '../Icon.mesa'
+  import { emojify } from '../../lib/emoji.js'
   import { goto } from '@frontierjs/sierra/router'
   import { posts } from '../../resources/Post.mesa'
   import { ago } from '../../lib/datetime.js'
@@ -40,7 +41,7 @@
 
   const lists = getLists()
   $: author = personName(post.profileExternalId, people)
-  $: body   = linkMentions(post.message, people)
+  $: body   = emojify(linkMentions(post.message, people))
   $: time   = post.createdAt ? new Date(post.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   $: named  = mentionsMe(post, people)
   $: mine   = !!me() && post.profileExternalId === me()
@@ -53,6 +54,14 @@
   $: following = !!lists.threads.rows.find(t => t.rootExternalId === rootOf(post))?.isFollowing
 
   let editing = false
+  // The composer's Up on an empty box sends `editpost` to the reader's newest post; the focus goes back to that box after.
+  let back = null
+  const upToEdit = (node) => {
+    const open = (e) => { if (!mine) return; editing = true; back = e.detail?.back ?? null }
+    node.addEventListener('editpost', open)
+    return () => node.removeEventListener('editpost', open)
+  }
+  function doneEditing() { editing = false; back?.focus(); back = null }
   let error = null
   let reactions = null
   async function act(fn) { error = null; try { await fn() } catch (e) { error = e.message } }
@@ -92,7 +101,7 @@
   }
 </script>
 
-<article class="post" class:continuation class:selected class:marked class:pinned={post.isPinned} class:named data-post-named={named ? 'true' : null} id={`post-${post.externalId}`} data-post={post.externalId} onclick={onClick}>
+<article class="post" class:continuation class:selected class:marked class:pinned={post.isPinned} class:named data-post-named={named ? 'true' : null} id={`post-${post.externalId}`} data-post={post.externalId} data-post-mine={mine ? 'true' : null} onclick={onClick} {@attach upToEdit}>
   {#if post.isPinned}
     <p class="post-flag text-xs cluster gap-2xs" data-post-pinned><Icon name="pushpin" /> Pinned</p>
   {/if}
@@ -116,7 +125,7 @@
       </div>
     {/if}
     {#if editing}
-      <PostEditor {post} ondone={() => editing = false} />
+      <PostEditor {post} ondone={doneEditing} />
     {:else if body}
       <div class="post-text" data-post-text><Markdown text={body} headingBase={4} breaks />{#if continuation && post.editedAt} <EditedMark {post} {mine} />{/if}</div>
     {/if}

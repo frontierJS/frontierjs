@@ -9,6 +9,7 @@
 // shipped or refuse by name once it is revoked (FJS-D2182).
 
 import type { BasecampDb } from '../../core/db.ts'
+import { env as hubEnv }    from '../../core/env.ts'
 
 interface VariableRow { id: string; key: string; appId: string | null; isSecret: boolean; value: string | null; revision: number }
 
@@ -138,4 +139,15 @@ export async function releaseEnv(
     env[p.key] = value
   }
   return env
+}
+
+/**
+ * Where the app reports to and who it is there (`FJS-D2358`): the pair a
+ * crash report is addressed with, `${BASECAMP_URL}/hooks/crash/${BASECAMP_APP_ID}`.
+ * Outpost reads the same `BASECAMP_URL` for the same meaning. Only a release
+ * sends it: a copy or a drill of the app is not the app, and a crash there
+ * paging as the live one would send somebody to the wrong container.
+ */
+export function basecampIdentity(appId: string): { BASECAMP_URL: string; BASECAMP_APP_ID: string } {
+  return { BASECAMP_URL: hubEnv.FRONTIER_API_URL.replace(/\/$/, ''), BASECAMP_APP_ID: appId }
 }

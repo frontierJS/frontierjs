@@ -40,7 +40,7 @@ export const REASONS = Object.freeze({
   forbidden:    Object.freeze({ retryable: false, means: 'The account may not use this model.' }),
   model_gone:   Object.freeze({ retryable: false, means: 'That model does not exist, or no longer does.' }),
   too_long:     Object.freeze({ retryable: false, means: 'The question is too long for one request.' }),
-  refused:      Object.freeze({ retryable: false, means: 'The request was malformed and was refused.' }),
+  refused:      Object.freeze({ retryable: false, means: 'The request was malformed, or declined by the model\'s safeguards.' }),
   rate_limited: Object.freeze({ retryable: true,  means: 'The model is rate limited or over its usage limit right now.' }),
   timeout:      Object.freeze({ retryable: true,  means: 'The model did not answer in time. It may still have been billed.' }),
   lost:         Object.freeze({ retryable: true,  means: 'The answer never arrived. It may still have been billed.' }),

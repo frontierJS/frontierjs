@@ -24,6 +24,7 @@ import type { ContentBlock, CountTokensResponse, Message, MessagesRequest, Messa
 
 export * from './types.ts'
 export * from './errors.ts'
+export * from './door.ts'
 
 export const ANTHROPIC_TARGET  = 'provider:anthropic'
 export const ANTHROPIC_ADDRESS = 'https://api.anthropic.com'
@@ -112,10 +113,10 @@ const isCount = {
  * `retryAfterMs`, a 529 as `server_error` + `retryable`, and the caller
  * decides when to spend again.
  */
-export async function createMessage(send: Send, req: MessagesRequest): Promise<{ message?: MessagesResponse; error?: AnthropicFailure }> {
+export async function createMessage(send: Send, req: MessagesRequest, opts: { signal?: AbortSignal } = {}): Promise<{ message?: MessagesResponse; error?: AnthropicFailure }> {
   const bad = checkRequest(req)
   if (bad) return { error: bad }
-  const result = await send<MessagesResponse>({ method: 'POST', path: '/v1/messages', body: req, validate: isMessage })
+  const result = await send<MessagesResponse>({ method: 'POST', path: '/v1/messages', body: req, validate: isMessage, ...(opts.signal ? { signal: opts.signal } : {}) })
   if (result.error) return { error: translate(result.error, result.meta.status) }
   return { message: result.data }
 }

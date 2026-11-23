@@ -154,6 +154,33 @@ More facts the phases turn on:
   - **Recommend B** — the simplest shape, and `app.ai` is then named doors; an override
     can be added later without breaking a caller.
 
+- ~~**Q12 — Which reason does a safeguard decline carry?**~~ **Answered 2026-11-23 (`FJS-D2355`): A — `refused`, its meaning widened to "malformed, or declined by the model's safeguards"; not retryable, and the local door maps a decline it recognizes the same way.** The API answers HTTP 200 with
+  `stop_reason: "refusal"`; `refused` means a malformed request, and the local door
+  reads the same decline as `model_error`.
+  - **A** — `refused`, its meaning widened to "malformed, or declined by the model's
+    safeguards"; not retryable, and the local door maps a decline it recognizes the same way.
+  - **B** — `model_error`, what the local door gives today; retryable.
+  - **C** — a fourteenth reason, `declined`, reopening `FJS-D2350`'s closed set.
+  - **Recommend A** — asking again rarely changes a decline, so a retryable name invites
+    a paid loop; thirteen reasons stay thirteen.
+
+- ~~**Q13 — What does the API door do with a schema the API refuses?**~~ **Answered 2026-11-23 (`FJS-D2356`): A — normalize before sending: close every object and drop the refused keywords, as the vendor's SDK does; the dropped limits go unchecked.** Structured output
+  wants `additionalProperties: false` on every object and 400s on `minimum`,
+  `maxLength` and kin, which `claude --json-schema` accepts.
+  - **A** — normalize before sending: close every object and drop the refused
+    keywords, as the vendor's SDK does; the dropped limits go unchecked.
+  - **B** — send it as written; the 400 comes back `refused`.
+  - **Recommend A** — one `Question` must work through both doors, which is the plan's goal.
+
+- ~~**Q14 — Which model does the API door use when none is named?**~~ **Answered 2026-11-23 (`FJS-D2357`): A — `claude-sonnet-5-5`.** The local door
+  leaves it to the account; the API has no account default.
+  - **A** — `claude-sonnet-5-5`.
+  - **B** — `claude-opus-5-5`.
+  - **C** — none: a model is required at build, against the contract's "absent, the
+    door's own default".
+  - **Recommend A** — the 4.4 callers are short one-answer jobs at half Opus's price; a
+    caller that wants Opus names it.
+
 ## Phase 0 — Groundwork
 
 Goal: the package exists, empty, with the guard against vendor drift in place.
@@ -270,12 +297,23 @@ doors return the same failure names.
     MCP server with request headers (Charter's bearer token), added read directories and the
     `Skill` tool (serpgrid's draft), `--no-session-persistence`, a wall-clock timeout, and
     `permission_denials` on the result.
-- [ ] 4.3 The API door in `conduit-anthropic`, with the same failure names and the
-  retry rule Q6 rules.
-- [ ] 4.4 Move Chronicle, the mechanic generator, Intake, Charter's builder
+- [x] 4.3 The API door in `conduit-anthropic`, with the same failure names and the
+  retry rule Q6 rules. `anthropicDoor({ send, model, maxTokens, effort })` in
+  `src/door.ts` over `createMessage`; one resend on a 429 or 529 (`FJS-D2326`), a
+  safeguard decline is `refused` (`FJS-D2355`), the schema normalized (`FJS-D2356`),
+  `claude-sonnet-5-5` by default (`FJS-D2357`), `costUsd` null until 6.1. Driven
+  against the sink (20 `door.*` rows, every reply through `checkReply`); not yet
+  driven against the live API (no key on the build machine).
+- [x] 4.4 Move Chronicle, the mechanic generator, Intake, Charter's builder
   (`agent.ts`, `connect.ts`), serpgrid's draft (`providers/claude/index.ts`),
   Workbench's `chat/catchup.ts` and Haven's `agents.js` and `errand.js`; each
-  deletes its own door. Closes FJS-4171.
+  deletes its own door. Closes FJS-4171. Every old flag mapped to a door option
+  (serpgrid's deny list is redundant: the `answer` profile offers only `allow`'s
+  tools under `dontAsk`). Old budgets kept; serpgrid passes $5 against measured
+  drafts of $0.75 and $1.06. Owner rulings 2026-11-23: Chronicle keys a recording
+  on the schema as the API is sent it, both fakes too, the 12 review recordings
+  re-keyed; Intake links every `@frontierjs/*` from this tree, off
+  `fjs-chartered-deploy`. `runClaude` stays in Workbench for 5.2's subcommands.
 - [ ] 4.5 `junction/ai` per Q9: `IAIModel` goes, `app.ai` holds entries that satisfy
   4.1's contract with `schema` optional, and orion's `ai` node calls `ask`. Orion's
   `plugin.test.ts` passes on a stub door.

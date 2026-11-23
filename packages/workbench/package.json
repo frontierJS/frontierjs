@@ -15,6 +15,7 @@
     "web": "vite -c web/config/vite.config.js",
     "stop": "for p in $(pgrep -f 'bun.*api/inde[x].ts|vite.*web/config/vite.confi[g].js'); do [ \"$(lsof -a -p $p -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')\" = \"$(pwd -P)\" ] && kill $p; done; true",
     "start": "NODE_ENV=production bun api/index.ts",
+    "build": "fli desktop:run --release",
     "test": "node ../../scripts/tmp-run.mjs 'ENCRYPTION_KEY=1111111111111111111111111111111111111111111111111111111111111111 bun test'",
     "typecheck": "node ../../scripts/typecheck.mjs",
     "db:check": "cd db && bunx litestone migrate check && bunx litestone migrate lock --check",

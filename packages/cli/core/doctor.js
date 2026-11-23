@@ -54,22 +54,47 @@ export const MIN_BUN = '1.4.0'
 // what the binary is for, and `for` names the goals (`GOALS`) it serves, which
 // the terminal ignores and Workbench groups by. `any` is a list of names where
 // one program ships under several (Chromium is `chromium-browser` on Ubuntu).
+// `pkg` is the package each manager (`MANAGERS`) knows it by, and the row's own
+// `install` is what a machine with none of them is told. brew has no Chromium
+// or Firefox row: a cask puts an .app in /Applications, never a name on PATH,
+// so this probe would still read the browser as missing after it ran.
 export const BINARIES = [
   { name: 'bun',      required: true,  for: ['fli'],     install: 'https://bun.sh', why: 'runs every fli command', min: MIN_BUN, upgrade: 'bun upgrade' },
-  { name: 'git',      required: true,  for: ['fli'],     install: 'sudo apt install git', why: 'every project is a repository' },
+  { name: 'git',      required: true,  for: ['fli'],     pkg: { apt: 'git', dnf: 'git', pacman: 'git', brew: 'git' }, install: 'https://git-scm.com/downloads', why: 'every project is a repository' },
   { name: 'claude',   required: false, for: ['claude'],  install: 'npm install -g @anthropic-ai/claude-code', why: 'the Claude Code tab spawns it' },
-  { name: 'sqlite3',  required: false, for: ['build'],   install: 'sudo apt install sqlite3', why: 'needed for db: commands' },
-  { name: 'zip',      required: false, for: ['build'],   install: 'sudo apt install zip', why: 'needed for utils:pack' },
-  { name: 'chromium', required: false, for: ['build'],   any: ['chromium', 'chromium-browser', 'google-chrome'], install: 'sudo apt install chromium-browser', why: 'the browser drives run in it' },
-  { name: 'firefox',  required: false, for: ['build'],   install: 'sudo apt install firefox', why: 'the CSP drives need Firefox, which enforces what Chromium does not' },
+  { name: 'sqlite3',  required: false, for: ['build'],   pkg: { apt: 'sqlite3', dnf: 'sqlite', pacman: 'sqlite', brew: 'sqlite' }, install: 'https://sqlite.org/download.html', why: 'needed for db: commands' },
+  { name: 'zip',      required: false, for: ['build'],   pkg: { apt: 'zip', dnf: 'zip', pacman: 'zip', brew: 'zip' }, install: 'https://infozip.sourceforge.net/Zip.html', why: 'needed for utils:pack' },
+  { name: 'chromium', required: false, for: ['build'],   any: ['chromium', 'chromium-browser', 'google-chrome'], pkg: { apt: 'chromium-browser', dnf: 'chromium', pacman: 'chromium' }, install: 'https://www.google.com/chrome/', why: 'the browser drives run in it' },
+  { name: 'firefox',  required: false, for: ['build'],   pkg: { apt: 'firefox', dnf: 'firefox', pacman: 'firefox' }, install: 'https://www.mozilla.org/firefox/', why: 'the CSP drives need Firefox, which enforces what Chromium does not' },
   { name: 'cargo',    required: false, for: ['desktop'], install: 'https://rustup.rs', why: 'builds the desktop shells' },
   { name: 'capture',  required: false, for: ['desktop'], install: 'cargo install --path ~/code/FRONTIER/fjs-prototypes/capture/native --no-default-features', why: 'the screenshot tool Workbench\'s tray starts' },
-  { name: 'ssh',      required: false, for: ['deploy'],  install: 'sudo apt install openssh-client', why: 'reaches a Basecamp box' },
-  { name: 'rsync',    required: false, for: ['deploy'],  install: 'sudo apt install rsync', why: 'needed for deploy:' },
+  { name: 'ssh',      required: false, for: ['deploy'],  pkg: { apt: 'openssh-client', dnf: 'openssh-clients', pacman: 'openssh', brew: 'openssh' }, install: 'https://www.openssh.com/portable.html', why: 'reaches a Basecamp box' },
+  { name: 'rsync',    required: false, for: ['deploy'],  pkg: { apt: 'rsync', dnf: 'rsync', pacman: 'rsync', brew: 'rsync' }, install: 'https://rsync.samba.org/download.html', why: 'needed for deploy:' },
   { name: 'docker',   required: false, for: ['deploy'],  install: 'https://docs.docker.com/engine/install/', why: 'builds the image a release ships' },
-  { name: 'gh',       required: false, for: ['deploy'],  install: 'https://cli.github.com', why: 'publishes a workspace to GitHub' },
+  { name: 'gh',       required: false, for: ['deploy'],  pkg: { dnf: 'gh', pacman: 'github-cli', brew: 'gh' }, install: 'https://cli.github.com', why: 'publishes a workspace to GitHub' },
   { name: 'cf',       required: false, for: ['deploy'],  install: 'npm i -g cf', why: 'needed for :dns and cloudflare:', min: MIN_CF, upgrade: 'npm i -g cf@latest' },
 ]
+
+// The first manager this machine has, on the platform it belongs to: a Mac can
+// carry an apt-get on PATH and is still not a Debian box.
+const MANAGERS = [
+  { id: 'brew',   platform: 'darwin', bin: 'brew',    line: p => `brew install ${p}` },
+  { id: 'apt',    platform: 'linux',  bin: 'apt-get', line: p => `sudo apt install ${p}` },
+  { id: 'dnf',    platform: 'linux',  bin: 'dnf',     line: p => `sudo dnf install ${p}` },
+  { id: 'pacman', platform: 'linux',  bin: 'pacman',  line: p => `sudo pacman -S ${p}` },
+]
+
+/** The package manager this machine installs with, or null. */
+function packageManager({ has = onPath, platform = process.platform } = {}) {
+  return MANAGERS.find(m => m.platform === platform && has(m.bin)) ?? null
+}
+
+/** A row's install line on this machine: its manager's, else its own. */
+const installLine = (row, manager) =>
+  manager && row.pkg?.[manager.id] ? manager.line(row.pkg[manager.id]) : row.install
+
+// A URL is read by a person; anything else `fli doctor --install` may run.
+const runnable = install => !/^https?:\/\//.test(install)
 
 // What a person can do with a laptop, and the namespaces each goal claims. The
 // checklist reads *what does this stop* off a goal, and grading by kind (tools,
@@ -227,11 +252,15 @@ function basecampRows(home) {
  * @param {boolean}  o.probe      run each external login's probe (`gh auth status`, `npm whoami`); off by default, they shell out
  * @param {object}   o.profile    `loadFliEnv`'s answer — the profile in use and who named it
  * @param {Function} o.gitOf      `(key, cwd) => string`, a git config value; injected like `has`
+ * @param {string}   o.platform   `process.platform`, which picks the package manager an install line names
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false, profile = null, gitOf = gitValue } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home, probe = false, profile = null, gitOf = gitValue, platform = process.platform } = {}) {
   const globalEnv = globalEnvPath(home)
+  const manager   = packageManager({ has, platform })
 
-  const system = BINARIES.map(({ any, ...b }) => {
+  const system = BINARIES.map(({ any, pkg, ...row }) => {
+    const install = installLine({ ...row, pkg }, manager)
+    const b       = { ...row, install, runnable: runnable(install) }
     const present = (any ?? [b.name]).some(n => has(n))
     if (!present) return { ...b, ok: false, present, version: null, level: b.required ? 'error' : 'warn' }
     if (!b.min)   return { ...b, ok: true,  present, version: null, level: 'ok' }
@@ -243,12 +272,13 @@ export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf 
     const stale   = version !== null && compareVersions(version, b.min) < 0
     return {
       ...b,
-      ok:      !stale,
-      present, version,
-      level:   stale ? (b.required ? 'error' : 'warn') : 'ok',
-      install: stale ? (b.upgrade ?? b.install) : b.install,
-      why:     stale ? `${version} is below ${b.min}` : b.why,
-      status:  stale ? `found ${version}, needs >=${b.min}` : version ? `found ${version}` : 'found',
+      ok:       !stale,
+      present,  version,
+      level:    stale ? (b.required ? 'error' : 'warn') : 'ok',
+      install:  stale ? (b.upgrade ?? b.install) : b.install,
+      runnable: stale ? runnable(b.upgrade ?? b.install) : b.runnable,
+      why:      stale ? `${version} is below ${b.min}` : b.why,
+      status:   stale ? `found ${version}, needs >=${b.min}` : version ? `found ${version}` : 'found',
     }
   })
 

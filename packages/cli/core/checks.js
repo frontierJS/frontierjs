@@ -209,6 +209,8 @@ export const RULES = [
     title: 'a .mesa <style> names no class the kit already owns' },
   { id: 'kit-prop-unknown',    scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a kit component is passed only props it declares or attributes HTML has' },
+  { id: 'prose-assembled',     scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a user-facing sentence in a .mesa file is not assembled from pieces (FJS-D12 constraint 7)' },
   { id: 'aria-owed',           scope: 'app',  severity: 'warn',  invariant: null,
     title: 'an element written with a kit term\'s class carries the role and names the kit says it owes' },
   { id: 'preview-ui-only',      scope: 'app',  severity: 'error', invariant: null,

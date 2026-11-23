@@ -1,7 +1,7 @@
 <script>
   // components/chat/StatusDialog.mesa -- the reader's custom status: an emoji from the
   // table in lib/emoji.js, a line, and when it clears. Saving with both empty clears it.
-  import { EMOJI } from '../../lib/emoji.js'
+  import { EMOJI, isEmoji, glyphOf } from '../../lib/emoji.js'
   import { customOf, me, setCustomStatus, getLists } from '../../lib/chat.js'
   import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -9,7 +9,7 @@
   export let open = false
 
   const lists = getLists()
-  const NAMES = ['calendar', 'car', 'sick', 'palm_tree', 'house', 'headphones', 'coffee', 'pizza', 'memo', 'fire', 'rocket', 'eyes', 'smile', 'tada'].filter(n => EMOJI[n])
+  const NAMES = ['calendar', 'car', 'sick', 'palm_tree', 'house', 'headphones', 'coffee', 'pizza', 'memo', 'fire', 'rocket', 'eyes', 'smile', 'tada'].filter(isEmoji)
   // The table is the vocabulary; any name in it is offered after the favorites.
   const OFFER = [...new Set([...NAMES, ...Object.keys(EMOJI).filter(n => !/^[-+]?\d+$/.test(n))])].slice(0, 28)
   const CLEAR = [
@@ -57,7 +57,7 @@
 <Modal bind:open title="Your status" size="sm">
   <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-status-dialog>
     <div class="cluster gap-xs">
-      <span class="status-emoji" aria-hidden="true" data-status-emoji>{emoji ? (EMOJI[emoji] ?? '') : '🙂'}</span>
+      <span class="status-emoji" aria-hidden="true" data-status-emoji>{emoji ? glyphOf(emoji) : '🙂'}</span>
       <input class="field" aria-label="What's your status?" bind:value={text} maxlength="100" placeholder="What's your status?" data-status-text />
     </div>
     <div class="cluster gap-2xs" role="group" aria-label="Pick an emoji">

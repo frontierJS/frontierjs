@@ -34,6 +34,13 @@ export interface MessagesRequest {
   top_k?:          number
   stop_sequences?: string[]
   metadata?:       { user_id?: string }
+  /** Structured output and the effort the model spends; each absent means the account's default. */
+  output_config?:  OutputConfig
+}
+
+export interface OutputConfig {
+  format?: { type: 'json_schema'; schema: Record<string, unknown> }
+  effort?: string
 }
 
 export type StopReason = 'end_turn' | 'max_tokens' | 'stop_sequence' | 'tool_use' | 'pause_turn' | 'refusal'
@@ -53,6 +60,8 @@ export interface MessagesResponse {
   content:       (TextBlock | ToolUseBlock)[]
   stop_reason:   StopReason | null
   stop_sequence: string | null
+  /** Present on a safeguard decline (`stop_reason: 'refusal'`); `explanation` is the model's own words. */
+  stop_details?: { type?: string; category?: string | null; explanation?: string | null } | null
   usage:         Usage
 }
 
