@@ -727,6 +727,13 @@ export interface LitestoneClient {
    */
   $mirrorKey(accessor: string): string | null
   /**
+   * The relation fields from this model to the one carrying the tenant column
+   * under `tenancy { strategy row }` — `[]` when the model carries it, `null`
+   * under no row tenancy, for an unknown accessor, or when no path reaches one.
+   * A model scoped through its parent (`@@tenant(via:)`) answers its hops.
+   */
+  $tenantPath(accessor: string): string[] | null
+  /**
    * Whether the schema declares any access rule (`FJS-D1212`). `$levelOf`
    * answering is not this: a GatePlugin installed by hand on a plain schema
    * answers it and leaves the schema open.
@@ -749,9 +756,10 @@ export interface LitestoneClient {
    */
   $readColumns(accessor: string): Record<string, string[]>
   /**
-   * The model names an `@from` on this model is computed off — a write to one
-   * moves a value on a row the write never touched, so a holder of that row
-   * must ask again. Read off the schema; an unknown accessor answers `[]`.
+   * The model names a stored value on this model is computed off — each
+   * `@from`'s and each `@stale` source's. A write to one moves a value or a
+   * mark on a row the write never touched, so a holder of that row must ask
+   * again. Read off the schema; an unknown accessor answers `[]`.
    */
   $fromReach(accessor: string): string[]
   /**
@@ -759,7 +767,8 @@ export interface LitestoneClient {
    * key a child joins on, the aggregated column, the `where:` columns and the
    * soft-delete / template filters), by model name. A write to a listed model
    * that moves none of them leaves every value as it was; a reached model some
-   * value cannot narrow is absent. An unknown accessor answers `{}`.
+   * value cannot narrow, and every `@stale` source, is absent. An unknown
+   * accessor answers `{}`.
    */
   $fromColumns(accessor: string): Record<string, string[]>
   /**

@@ -167,3 +167,23 @@ describe('a string written to a File column under the default store', () => {
     expect(await sys.doc.count()).toBe(0)
   })
 })
+
+// A raw route serving a gated File field reads the row through a principal's
+// client and the bytes through that same client's store; when only the root
+// answered `$files`, the route had to reach past its principal for it.
+describe('every client flavor answers $files (FJS-4582)', () => {
+  test('$setAuth, $scopedBy and asSystem hand back the root store', async () => {
+    const { db, dir } = await client()
+    const root = join(dir, 'files')
+    const flavors = {
+      auth:      db.$setAuth({ id: 1 }),
+      scoped:    db.$scopedBy({}),
+      system:    db.asSystem(),
+      authSys:   db.$setAuth({ id: 1 }).asSystem(),
+    }
+    for (const [name, c] of Object.entries(flavors)) {
+      expect([name, '$files' in c]).toEqual([name, true])
+      expect([name, c.$files?.localRoot]).toEqual([name, root])
+    }
+  })
+})

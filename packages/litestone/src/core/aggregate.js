@@ -44,6 +44,7 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
     // statement. Pushed onto one array they bound in the wrong order: a
     // separator compared against the where's column and the where's value
     // joined the strings, so _stringAgg beside any where answered [].
+    /** @type {any[]} */
     const selectParams = []
 
     // The flags ride in `args`, not a hardcoded 'live'/'instances'. Both were
@@ -98,7 +99,7 @@ export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, 
       !['_count','_sum','_avg','_min','_max','_stringAgg'].includes(k)
     )
     for (const [key, spec] of namedAggs) {
-      selects.push(buildNamedAggExpr(key, spec, selectParams, (fn, target, filter) => {
+      selects.push(buildNamedAggExpr(key, spec, selectParams, (/** @type {string} */ fn, /** @type {any} */ target, /** @type {any} */ filter) => {
         const m = memberAggCols('aggregate', fn, target.column, target, `__nagg__${key}`, selectParams,
           { distinct: !!spec.distinct, filter, named: true })
         members.set(`__nagg__${key}`, [fn, m.key])

@@ -22,9 +22,15 @@
  * reads the app's `.mesa` sources for one instead (`FJS-3556`).
  */
 
-import { readdirSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { documentParts, DEFAULT_LANG, SKIP_LINK, SKIP_LINK_GUARD, hasSkipLink } from './prerender.js'
+import { readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { documentParts, DEFAULT_LANG, SKIP_LINK, SKIP_LINK_GUARD_CSS, hasSkipLink, sheetFile } from './prerender.js'
+
+// The guard is linked, never inlined: style-src 'self' refuses a <style>
+// element (FJS-4590). Named as prerender names its shell sheet, so a page and
+// the shell that both carry only the guard share one file.
+export const SKIP_LINK_GUARD_SHEET = sheetFile('sierra-shell', SKIP_LINK_GUARD_CSS)
+const guardHref = (base) => `${base.replace(/\/$/, '')}/${SKIP_LINK_GUARD_SHEET}`
 
 // The opening tag's attribute names. A value never matters: stating the
 // attribute at all is the second statement.
@@ -67,7 +73,8 @@ export function appWritesSkipLink(root) {
  * `doc` holds, `lang` on an `<html>` that has none and the skip link first in
  * a `<body>` that has none.
  */
-export function applyDocument(html, doc = {}, { appSkipLink = false } = {}) {
+export function applyDocument(html, doc = {}, { appSkipLink = false, base = '/' } = {}) {
+  const guard = `<link rel="stylesheet" href="${guardHref(base)}">`
   const htmlTag = html.match(/<html\b[^>]*>/i)?.[0] ?? '<html>'
   const htmlStated = [
     ...(doc.lang ? [['lang', 'lang']] : []),
@@ -92,10 +99,10 @@ export function applyDocument(html, doc = {}, { appSkipLink = false } = {}) {
   // the lowest; a shell with no <head> carries it just before the link.
   const writesSkip = !appSkipLink && !hasSkipLink(html)
   const hasHead = /<head\b[^>]*>/i.test(out)
-  if (writesSkip && hasHead) out = out.replace(/<head\b[^>]*>/i, (tag) => `${tag}\n  ${SKIP_LINK_GUARD}`)
+  if (writesSkip && hasHead) out = out.replace(/<head\b[^>]*>/i, (tag) => `${tag}\n  ${guard}`)
   out = out.replace(/<body\b[^>]*>/i, (tag) => {
     refuseRestated(tag, 'body', bodyStated)
-    const skip = !writesSkip ? '' : hasHead ? `\n  ${SKIP_LINK}` : `\n  ${SKIP_LINK_GUARD}\n  ${SKIP_LINK}`
+    const skip = !writesSkip ? '' : hasHead ? `\n  ${SKIP_LINK}` : `\n  ${guard}\n  ${SKIP_LINK}`
     return tag.replace(/>$/, `${parts.bodyAttr}>${skip}`)
   })
 
@@ -111,13 +118,36 @@ export function applyDocument(html, doc = {}, { appSkipLink = false } = {}) {
   return out
 }
 
+/**
+ * The shell's guard sheet is no module of the app's graph, so the plugin
+ * serves it in dev and writes it into the build itself: a link added after
+ * Vite's HTML pass is one Vite never resolves.
+ */
 export function documentShellPlugin(config, target) {
   let root = process.cwd()
+  let base = '/'
+  let linked = false
   return {
     name: 'sierra:document-shell',
-    configResolved(resolved) { root = resolved.root },
+    configResolved(resolved) { root = resolved.root; base = resolved.base ?? '/' },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = req.url?.split('?')[0]
+        if (path !== guardHref(base) && path !== `/${SKIP_LINK_GUARD_SHEET}`) return next()
+        res.setHeader('Content-Type', 'text/css; charset=utf-8')
+        res.end(SKIP_LINK_GUARD_CSS)
+      })
+    },
     transformIndexHtml(html) {
-      return applyDocument(html, target === 'static' ? config.document ?? {} : {}, { appSkipLink: appWritesSkipLink(root) })
+      const out = applyDocument(html, target === 'static' ? config.document ?? {} : {}, { appSkipLink: appWritesSkipLink(root), base })
+      if (out.includes(SKIP_LINK_GUARD_SHEET)) linked = true
+      return out
+    },
+    writeBundle(options) {
+      if (!linked || !options.dir) return
+      const file = join(options.dir, SKIP_LINK_GUARD_SHEET)
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, SKIP_LINK_GUARD_CSS)
     },
   }
 }

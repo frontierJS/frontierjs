@@ -374,7 +374,7 @@ Done when: the ELA port's drive for that screen passes with the map in it.
   **Ruled 2026-11-23:** the estimator widget (`FJS-D2337`), through a tile
   proxy route in the app's API (`FJS-D2336`), drawing Esri World Imagery with
   NAIP where there is no key (`FJS-D2335`).
-- [ ] 4.2 Wire it in; the app maps `latitude` and `longitude` to `{ lat, lng }`.
+- [x] 4.2 Wire it in; the app maps `latitude` and `longitude` to `{ lat, lng }`.
   The owner ruled the parts on 2026-11-23, and a survey of the port found the
   estimator has no map, no coordinates and no drive today:
   - [x] 4.2a **Conduit returns bytes.** It already did: a response whose
@@ -383,21 +383,85 @@ Done when: the ELA port's drive for that screen passes with the map in it.
     was added. Closed 2026-11-23: a binary body on a non-2xx is named in `raw`,
     not decoded into it; a stub mock can carry `headers`; and the README shows
     a tile through `send()` as a run example.
-  - [ ] 4.2b **An Esri imagery connector and a keyless NAIP target** on 4.2a,
-    shaped like `conduit-plausible`.
-  - [ ] 4.2c **The tile route in ELA's API.** Public, so it finds its account
-    by the form's public key, parses z/x/y as range-checked integers against a
-    fixed upstream, sets `cache-control`, and is rate limited. The Esri key is
-    an `Integration` row's `@encrypted` secret; with no row it serves NAIP.
-  - [ ] 4.2d **The estimator's address autocompletes.** The owner overruled
+  - [x] 4.2b **An Esri imagery connector and a keyless NAIP target** on 4.2a,
+    shaped like `conduit-plausible`. Built 2026-11-23 as
+    `packages/conduits/conduit-esri`, proven against its own sink; no keyed
+    call to Esri has been made. Two findings, both ruled by the owner the same
+    day:
+    - **NAIP's keyless tiles stop at zoom 16**, about 2.4 m a pixel, not the
+      60 cm `FJS-D2335` assumed. So the estimator draws no map for an account
+      with no Esri key; NAIP stays for wider views.
+    - **Esri's agreement (E204 § 3.1.d.2) bars serving many users from one
+      request.** So the route keeps no server cache, which `FJS-D2336` had
+      planned: it passes Esri's `cache-control` to the browser and is rate
+      limited.
+  - [x] 4.2c **The tile route in ELA's API** (built 2026-11-23:
+    `GET /api/map-tiles/{formKey}/{z}/{x}/{y}`, 120 tiles per 10 minutes per
+    address). Public, so it finds its account
+    by the form's public key, takes z/x/y as range-checked integers against a
+    fixed upstream, passes the vendor's `cache-control` through, keeps no
+    server cache, and is rate limited. The Esri key is an `Integration` row's
+    `@encrypted` secret; with no row the route answers 404 and the widget
+    draws no map.
+  - [x] 4.2d **The estimator's address autocompletes.** The owner overruled
     ELA ruling 51 for the widget; the port's precedent is Radar (ELA D91), and
     its result carries the coordinates the map needs.
-  - [ ] 4.2e **The map in the estimator's review step**, with map-kit linked
+  - [x] 4.2e **The map in the estimator's review step**, with map-kit linked
     from this tree (`link:`) until it publishes, before cutover. ELA's pinned
     mesa and sierra may be too old to compile `StaticMap.mesa`; raise them if so.
-  - [ ] 4.2f **A widget drive in ELA**, on a host page under the strict policy
+  - [x] 4.2f **A widget drive in ELA**, on a host page under the strict policy
     whose `img-src` names the API origin. Phase 4's done-when needs it.
 - [ ] 4.3 Grade it against the reference screen it replaces.
+  Waits on the owner's ArcGIS Location Platform key: everything through 4.2
+  is proven against stand-in tiles (ELA's `bun run verify:estimator-map`,
+  40 checks, Chromium and Firefox, 2026-11-23), and no keyed call to Esri has
+  been made. Not yet driven: a narrow viewport, and a mouse pick of a suggestion.
+- [ ] 4.4 Google imagery beside Esri (`FJS-D2347`, `FJS-D2348`, `FJS-D2349`).
+  - [x] 4.4a **map-kit gains a one-image basemap kind** beside the tiled one:
+    a descriptor that names an image URL for a center, zoom and size, so
+    `StaticMap` draws one SVG `<image>` and the same markers and shapes over it.
+    Probe first that Static API's Web Mercator framing at `scale=2` lands a
+    projected point on the pixel the pure half computes.
+    Built 2026-11-23: `{ image, maxSize, maxZoom, scale, attribution }`, one SVG
+    `<image>`; proven by `bun run test` (a parsed server render) and the drive's
+    stand-in image in both engines under the strict policy. **Owed: the framing
+    probe against a real Google image waits on the owner's key**; the pure half
+    assumes a 256-pixel world at zoom 0 and the same area at `scale=2`.
+  - [x] 4.4b **A Google target in `conduit-google`** for the Static API, with the
+    signing secret beside the key as protected fields (`FJS-D2335`); the sink
+    gets the same path, so the signature check is proven.
+    Built 2026-11-23 (`FJS-D2354`): conduit's `SignOutput.query`, and a
+    `signed`, `per_caller` target holding `{ key, secret? }`; the drive signs
+    through conduit and the sink verifies, wrong secret `bad_key`, no secret
+    unsigned. **Owed: a real keyed, signed call to Google.**
+  - [x] 4.4c **ELA's route serves both kinds**, choosing Google, then Esri,
+    then NAIP per account (`FJS-D2349`). The image route parses center, zoom
+    and size as range-checked numbers against a fixed upstream (Invariant 8),
+    is rate limited, and keeps no server cache until Google's terms on storing
+    images are read (`FJS-D2336`'s cache is still owed).
+    Built 2026-11-23: `GET /api/map-image/{form}?lat&lng&zoom&width&height&scale`
+    beside the tile route; the estimator's `widget` answer carries
+    `imagery: 'google' | 'esri' | null` (from the account's Integration rows),
+    each route answers only its own source, so an account with both keys cannot
+    reach Esri at all; per-account credential resolvers share one
+    `accountKey`. Proven by ELA's `api/test/map-tiles.test.ts` (22 pass, against
+    conduit-google's sink: signed call, Google over Esri, Esri only, neither,
+    range refusals, wrong signing secret and garbled credential answer a 404
+    body, no Esri request on a Google account). **Owed:** a real key and
+    signing secret; NAIP stays unused (the owner ruled no map without a key).
+    **Owner, 2026-11-23:** the Integration service is `google-maps` (`google`
+    is ELA's mailbox preset, not overloaded); ELA links `@frontierjs/conduit`
+    until a release carries `SignOutput.query`, then pins it before cutover.
+  - [x] 4.4d **The widget drive covers a Google account**, under the strict
+    policy. Grading against the reference waits on a real Google key, as 4.3
+    waits on Esri's.
+    Built 2026-11-23: `bun run verify:estimator-map` is 101/101 in Chromium and
+    Firefox. A Google account (a stand-in forwarding to conduit-google's sink,
+    which checks key and signature) draws one `<image>` from the image route,
+    painted, the marker on the center, no caption, no tile request; an account
+    with both keys draws Google and Esri's stand-in is never asked; the Esri,
+    no-key and edited-address rows stay green. **Owed:** a real Google image
+    (the framing probe of 4.4a) and the grade against the reference.
 
 Stages 2 and 3 are planned after Phase 4, from what Stage 1 taught.
 
@@ -465,6 +529,50 @@ Stages 2 and 3 are planned after Phase 4, from what Stage 1 taught.
     satellite image at zoom 19, so Phase 4 also waits on Q3 and Q8 for its
     imagery. B is a roadmap at zoom 12, which a keyless roadmap source could
     serve sooner, without the strict policy.
+- ~~**Q10 — When Google imagery is built.**~~ **Answered 2026-11-23 (`FJS-D2347`): A — now, beside Esri, as a second keyed source.** `FJS-D2335` left Google as a fallback
+  behind Nearmap if Esri grades soft at 4.3.
+  - **A** — now, beside Esri, as a second keyed source.
+  - **B** — only if Esri grades soft at 4.3 and Nearmap does not fit; make the
+    tile route vendor-neutral now.
+  - **Recommend B** — 4.3 says whether Google is needed at all, and Google
+    adds a billed vendor and its terms.
+- ~~**Q11 — Which Google product.**~~ **Answered 2026-11-23 (`FJS-D2348`): B — Maps Static API: one image per map, as the legacy `MapView-Elite.svelte` used. Google prints its logo and copyright into the image; 640×640 at most, 1280×1280 pixels with `scale=2`; signing is server side and strongly recommended, and unsigned requests get a lower quota ([start](https://developers.google.com/maps/documentation/maps-static/start), [signing](https://developers.google.com/maps/documentation/maps-static/digital-signature)). map-kit gains a one-image basemap beside the tiled one.**
+  - **A** — Map Tiles API: 2D satellite tiles map-kit draws, `scaleFactor2x`
+    for retina, usable by Stage 2's pan. Needs a session token per account
+    (about two weeks), the Google logo at 16–19dp, and a copyright string from
+    a per-viewport `viewport` call
+    ([policies](https://developers.google.com/maps/documentation/tile/policies),
+    [sessions](https://developers.google.com/maps/documentation/tile/session_tokens)).
+  - **B** — Maps Static API: one image per map, as the legacy
+    `MapView-Elite.svelte` used. Google prints its logo and copyright into the
+    image; 640×640 at most, 1280×1280 pixels with `scale=2`; signing is server
+    side and strongly recommended, and unsigned requests get a lower quota
+    ([start](https://developers.google.com/maps/documentation/maps-static/start),
+    [signing](https://developers.google.com/maps/documentation/maps-static/digital-signature)).
+    map-kit gains a one-image basemap beside the tiled one.
+  - **Recommend A** — it fits map-kit's tile model and Stage 2.
+- ~~**Q12 — Which imagery an account with both keys gets.**~~ **Answered 2026-11-23 (`FJS-D2349`): A — a fixed order: Google, then Esri, then no map.**
+  - **A** — a fixed order: Google, then Esri, then no map.
+  - **B** — a per-account setting.
+  - **C** — refuse a second active imagery `Integration`.
+  - **Recommend A** — it adds no setting.
+- ~~**Q13 — How a URL-signing vendor signs through conduit.**~~ **Answered 2026-11-23 (`FJS-D2354`): A — `SignOutput` gains URL parameters, which the transport sets and scrubs like an `api_key` query; the target is `signed`, `per_caller`, and its one stored value holds `{ key, secret }`; conduit-google's signer writes `key=`, signs, and appends `signature`.** Google's Static
+  API appends `&signature=`, an HMAC over a path and query that already hold
+  `key=`. A conduit signer returns only headers and a body (`SignOutput`), and
+  a target holds one credential ref; `FJS-D940` chose `query` on `api_key`
+  over a `query` slot on `SignOutput`, for a key alone, not a signature over
+  the URL. 4.4b's call is built and sends unsigned.
+  - **A** — `SignOutput` gains URL parameters, which the transport sets and
+    scrubs like an `api_key` query; the target is `signed`, `per_caller`, and
+    its one stored value holds `{ key, secret }`; conduit-google's signer
+    writes `key=`, signs, and appends `signature`.
+  - **B** — a target names a second credential beside `ref`, and conduit
+    signs, putting a vendor scheme inside conduit against `FJS-D891`.
+  - **C** — stay unsigned under Google's daily unsigned quota and drop the
+    secret, reversing part of `FJS-D2348`.
+  - **Recommend A** — one optional field, the scheme stays in a connector
+    signer (`FJS-D891`), and one credential per account matches an
+    `Integration` row.
 
 ## Research (2026-11-22)
 
@@ -562,6 +670,30 @@ markers make a working raster map on their own.
 
 - **Google** limits stored lat/lng to 30 days
   ([policies](https://developers.google.com/maps/documentation/geocoding/policies)).
+- **Google imagery, read 2026-11-23** from the
+  [Terms of Service](https://cloud.google.com/maps-platform/terms) § 3.2.3 and
+  the [Service Specific Terms](https://cloud.google.com/maps-platform/terms/maps-service-terms):
+  - **No server cache.** "Customer will not cache Google Maps Content except as
+    expressly permitted under the Maps Service Specific Terms" (3.2.3(b)); the
+    only exceptions there are Google IDs and Address Validation, none for
+    Static images. 4.4c's route stores nothing.
+  - **The proxy is neither named nor allowed.** 3.2.3(a) bars "pre-fetch,
+    index, store, reshare, or rehost Google Maps Content outside the
+    services", and 3.2.3(d) bars passing the services off as the customer's.
+    A pass-through that fetches one image for the visitor who asked, with
+    Google's logo printed in it, reads as neither (*inference*, not counsel).
+  - **One vendor per screen.** 3.2.3(e): no Google Maps Core Services "with or
+    near a non-Google Map". `FJS-D2349`'s per-account order already keeps
+    Esri and Google off one screen.
+  - **Stage 3 risk: tracing satellite imagery.** 3.2.3(c) bars creating
+    content from Google Maps Content, e.g. "(i) trace or digitize roadways,
+    building outlines, utility posts, or electrical lines from the Maps
+    JavaScript API Satellite base map type". Measuring a lawn by drawing on
+    Google imagery is close to that example; rule before Stage 3 draws on a
+    Google basemap.
+  - The Static API's own policies page was not found (404 at
+    `maps-static/policies`), so its attribution rules are taken from the
+    image itself, which carries Google's logo.
 - **Mapbox** "temporary" geocoding results cannot be stored
   ([docs](https://docs.mapbox.com/help/dive-deeper/understand-temporary-vs-permanent-geocoding/)).
 - **Esri** ([ArcGIS Location Platform](https://location.arcgis.com/pricing/)):
@@ -608,5 +740,6 @@ markers make a working raster map on their own.
 - leaving it to the community (Strapi: four plugins, four storage formats);
 - a CDN that breaks under a strict CSP (GeoDjango).
 
-**Not done.** Primary clause text for Mapbox, Google and Esri on storage and
-display; terra-draw's custom-adapter API stability; Nearmap's API terms.
+**Not done.** Primary clause text for Mapbox and Esri on storage and display
+(Google's is above); terra-draw's custom-adapter API stability; Nearmap's API
+terms.

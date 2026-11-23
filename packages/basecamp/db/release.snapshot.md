@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-78 model(s) · 61 enum(s) · 2 database(s) · 1 value set(s)
+79 model(s) · 61 enum(s) · 2 database(s) · 1 value set(s)
 audit → sqlite · main → sqlite
 ```
 
@@ -57,8 +57,8 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `MonitorStatus` | `down` · `paused` · `pending` · `up` |
 | `NetworkKind` | `mesh` · `vpc` |
 | `NetworkProvider` | `netbird` · `tailscale` · `wireguard` |
-| `NotificationContext` | `Alert` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
-| `NotificationKind` | `AlertFiring` · `AlertResolved` · `AppBackupFailed` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorCertExpiring` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
+| `NotificationContext` | `Alert` · `App` · `Deployment` · `JobRun` · `Monitor` · `Server` · `Workspace` |
+| `NotificationKind` | `AlertFiring` · `AlertResolved` · `AppBackupFailed` · `AppCrashed` · `DependencyVulnerable` · `DeployFailed` · `DeploySuccess` · `HubPostureFailed` · `JobFailed` · `MemberJoined` · `MonitorCertExpiring` · `MonitorDown` · `MonitorUp` · `PostureFailed` · `ReplicaFound` · `ServerUnreachable` · `WeeklyDigest` |
 | `ParamGenerator` | `ntfyToken` · `randomAlphanumeric` · `randomBase64` · `randomHex` · `uuid` |
 | `PlatformBuild` | `outpost` · `platform` |
 | `PlatformProvider` | `cloudflare` |
@@ -260,6 +260,7 @@ table `app` · db `main` · gate `2.4.4.4` · @@softDelete(cascade)
 | `command` | `String[]` | no | `'[]'` | — |
 | `containerPort` | `Int` | yes | — | — |
 | `cpuLimit` | `Float` | yes | — | — |
+| `crashChannels` | `AppChannel[]` | — | — | relation |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `deletedAt` | `DateTime` | yes | — | — |
 | `deployments` | `Deployment[]` | — | — | relation |
@@ -275,6 +276,7 @@ table `app` · db `main` · gate `2.4.4.4` · @@softDelete(cascade)
 | `healthTimeoutSeconds` | `Int` | yes | — | — |
 | `hub` | `HubConfig` | — | — | relation |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `isCrashAlerted` | `Boolean` | no | `1` | — |
 | `isDeployedOnPush` | `Boolean` | no | `0` | @system |
 | `isIngressNamePublished` | `Boolean` | no | `1` | — |
 | `jobs` | `Job[]` | — | — | relation |
@@ -369,6 +371,34 @@ table `app_backup` · db `main` · gate `5.8.8.8`
 @@deny(update, !check(deployment, tenancy))
 @@deny(update, !check(destination, tenancy))
 @@deny(update, !check(server, tenancy))
+```
+
+### `AppChannel`
+
+table `app_channel` · db `main` · gate `2.4`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `app` | `App` | — | — | relation |
+| `appId` | `String` | no | — | **required on write** |
+| `channel` | `NotificationChannel` | — | — | relation |
+| `channelId` | `String` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+
+```
+@@unique(appId, channelId)
+@@index(channelId)
+@@deny(create, !check(app, tenancy))
+@@deny(create, !check(channel, tenancy))
+@@deny(delete, !check(app, tenancy))
+@@deny(delete, !check(channel, tenancy))
+@@deny(postUpdate, !check(app, tenancy))
+@@deny(postUpdate, !check(channel, tenancy))
+@@deny(read, !check(app, tenancy))
+@@deny(read, !check(channel, tenancy))
+@@deny(update, !check(app, tenancy))
+@@deny(update, !check(channel, tenancy))
 ```
 
 ### `AppCopy`
@@ -1791,6 +1821,7 @@ table `notification_channel` · db `main` · gate `2.5` · @@softDelete
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `apps` | `AppChannel[]` | — | — | relation |
 | `config` | `Json` | no | `'{}'` | — |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `createdBy` | `String` | yes | — | — |

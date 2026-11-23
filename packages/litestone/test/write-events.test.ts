@@ -460,6 +460,20 @@ describe('a count names its tenants under row tenancy (FJS-1741)', () => {
     expect(got.map(e => (e as { tenants?: string[] }).tenants)).toEqual([['a2'], ['a1']])
   })
 
+  // The path a write routes by is the one a reader past policy asks for, so a
+  // job firing a Note in its tenant follows the same parent (FJS-4565).
+  test('$tenantPath names the relations to the tenant column, on every flavor', async () => {
+    const client = await createClient({ db: ':memory:', schema: TENANTED }) as any
+    for (const db of [client, client.asSystem(), client.$setAuth({ id: 'u', agencyId: 'a1' })]) {
+      expect(db.$tenantPath('note')).toEqual(['leg'])
+      expect(db.$tenantPath('leg')).toEqual([])
+      expect(db.$tenantPath('agency')).toBeNull()
+      expect(db.$tenantPath('nope')).toBeNull()
+    }
+    const plain = await createClient({ db: ':memory:', schema: 'model Leg { id String @id }' }) as any
+    expect(plain.$tenantPath('leg')).toBeNull()
+  })
+
   test('a row names its tenant too', async () => {
     const { sys, got } = await tenanted()
     await sys.leg.update({ where: { id: 'l3' }, data: { status: 'answered' } })

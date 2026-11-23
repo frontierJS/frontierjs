@@ -394,11 +394,14 @@ export async function createTestEnv(opts = {}) {
           .filter(a => a.kind !== 'fieldAllow' || a.operations.length)
     return parsed
   }
-  const ladderAt = async (n) => {
-    if (!hasFieldWrite) return env.atLevel(n)
+  // `claims` are what a create policy pins the row to (`_ownedBy`), held by
+  // the synthetic caller beside the capabilities `atLevel` gives it.
+  const ladderAt = async (n, claims = {}) => {
+    const principal = { id: LADDER_PRINCIPAL_ID, capabilities: [...capabilityNames(built.parsed.schema)], ...claims }
+    if (!hasFieldWrite) return env.atLevel(n, Object.keys(claims).length ? principal : null)
     const client = await clientAt(unpoliced, n, parseUnpoliced)
     if (n === 8) return client.asSystem()
-    return client.$setAuth({ id: LADDER_PRINCIPAL_ID, capabilities: [...capabilityNames(built.parsed.schema)] })
+    return client.$setAuth(principal)
   }
 
   const env = {
@@ -585,7 +588,7 @@ export async function createTestEnv(opts = {}) {
               // reaching the gate.
               const owned = row.level < 8
                 ? _ownedBy(schema, schema.models.find(x => x.name === modelName), { id: LADDER_PRINCIPAL_ID })
-                : { columns: {}, parents: {} }
+                : { columns: {}, parents: {}, claims: {} }
               const data  = factory.buildOne(await _freshParents(schema, row.model, chain, owned.parents))
               // The id comes out only where something else will make one. A key
               // with no `@default` is CALLER-supplied and required, so stripping
@@ -615,7 +618,8 @@ export async function createTestEnv(opts = {}) {
                 if (arc.kind !== 'arc' || !arc.fields.some(k => data[k] != null)) continue
                 for (const k of arc.fields) if (data[k] == null) data[k] = null
               }
-              run = () => client[acc].create({ data, ...named(data) })
+              const owner = Object.keys(owned.claims).length ? await ladderAt(row.level, owned.claims) : client
+              run = () => owner[acc].create({ data, ...named(data) })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as
               // SYSTEM so a gate refusing the principal cannot refuse the setup.
@@ -3527,45 +3531,71 @@ async function _refusedParentExists(sys, model, err) {
   return sys[modelToAccessor(err.target)].exists({ where })
 }
 
-// What a create `@@allow` pins to the caller (`userId == auth().id`), valued
-// from `who`: `columns` on the row, and `parents` by relation name for a path
-// one hop away (`playlist.ownerId == auth().id`), which the fresh parent is
-// built carrying. Only an allow made wholly of such equalities is used;
-// anything else answers nothing and the create stays ungraded rather than guessed.
+// What a create `@@allow` pins (`userId == auth().id`, `post.open == true`):
+// `columns` on the row, `parents` by relation name for a path one hop away
+// (`playlist.ownerId == auth().id`), which the fresh parent is built carrying,
+// and `claims` the synthetic caller must hold for the row to be its own — it
+// holds `id` alone, so `commenterId == auth().commenterId` refused every level.
+// An `||` takes the first branch that pins; an allow with no branch made wholly
+// of such equalities answers nothing and the create stays ungraded rather than guessed.
 function _ownedBy(schema, model, who) {
   const column = (m, name) => {
     const field = m?.fields.find(x => x.name === name)
     return field && !field.attributes?.some(x => x.kind === 'guarded' || x.kind === 'system') ? field : null
   }
-  const fitting = (field, value) => field.type?.name === 'String' ? typeof value === 'string'
-                                  : field.type?.name === 'Int'    ? Number.isInteger(value) : false
-  const pins = (e) => {
-    if (e?.type === 'and') { const l = pins(e.left), r = pins(e.right); return l && r && [...l, ...r] }
+  const fitting = (field, value) => field.type?.name === 'String'  ? typeof value === 'string'
+                                  : field.type?.name === 'Int'     ? Number.isInteger(value)
+                                  : field.type?.name === 'Float'   ? typeof value === 'number'
+                                  : field.type?.name === 'Boolean' ? typeof value === 'boolean'
+                                  : field.type?.kind === 'enum'
+                                    ? !!schema.enums?.find(x => x.name === field.type.name)?.values.some(v => v.name === value) : false
+  // A claim the caller lacks is given a value the column can hold. `capabilities`
+  // and `level` are read by the gate, so pinning one would grade a different caller.
+  const claimed = (name, field) => {
+    if (name in who) return who[name]
+    if (name === 'capabilities' || name === 'level' || !field) return undefined
+    return field.type?.name === 'String' ? `${LADDER_PRINCIPAL_ID}-${name}`
+         : field.type?.name === 'Int'    ? 4560 : undefined
+  }
+  const pins = (e, m) => {
+    if (e?.type === 'and') { const l = pins(e.left, m), r = pins(e.right, m); return l && r && [...l, ...r] }
+    if (e?.type === 'or') return pins(e.left, m) ?? pins(e.right, m)
     if (e?.type !== 'compare' || e.op !== '==') return null
     const [f, a] = e.left?.type === 'field' || e.left?.type === 'path' ? [e.left, e.right] : [e.right, e.left]
-    if (a?.type !== 'auth' || !a.field) return null
-    const value = who[a.field]
+    const isClaim = a?.type === 'auth' && a.field
+    if (!isClaim && a?.type !== 'literal') return null
+    const valueFor = (field) => isClaim ? claimed(a.field, field) : a.value
+    const claim    = (value) => isClaim && !(a.field in who) ? [{ claim: a.field, value }] : []
     if (f?.type === 'field') {
-      const field = column(model, f.name)
-      return field && fitting(field, value) ? [{ name: f.name, value }] : null
+      const field = column(m, f.name)
+      const value = field && valueFor(field)
+      return field && fitting(field, value) ? [{ name: f.name, value }, ...claim(value)] : null
     }
-    if (f?.type !== 'path' || f.via) return null
-    const rel    = model.fields.find(x => x.name === f.rel && x.type.kind === 'relation' && !x.type.array)
-    const parent = rel && schema.models.find(m => m.name === rel.type.name)
+    if (f?.type !== 'path' || f.via || m !== model) return null
+    const rel    = m.fields.find(x => x.name === f.rel && x.type.kind === 'relation' && !x.type.array)
+    const parent = rel && schema.models.find(x => x.name === rel.type.name)
     const field  = column(parent, f.name)
     // A parent column that is itself a foreign key names a row the fresh
     // parent cannot point at (`ownerId` of a User that does not exist).
     const isFk   = parent?.fields.some(x => x.attributes?.some(a => a.kind === 'relation' && a.fields?.includes(f.name)))
-    return field && !isFk && fitting(field, value) ? [{ rel: f.rel, name: f.name, value }] : null
+    const value  = field && valueFor(field)
+    if (!field || isFk || !fitting(field, value)) return null
+    // The path is read as the caller, so a fresh parent its read policy hides
+    // answers as a missing one (FJS-1712): a draft Post refused every comment.
+    const seen = (allowed(parent, 'read') ?? []).map(p => p.claim ? p : { ...p, rel: f.rel })
+    return [{ rel: f.rel, name: f.name, value }, ...claim(value), ...seen]
   }
-  const out = { columns: {}, parents: {} }
-  for (const a of model?.attributes ?? []) {
-    if (a.kind !== 'allow' || !a.operations?.includes('create')) continue
-    const p = pins(a.expr)
-    if (!p) continue
-    for (const { rel, name, value } of p) rel ? (out.parents[rel] ??= {})[name] = value : out.columns[name] = value
-    return out
+  const allowed = (m, op) => {
+    for (const a of m?.attributes ?? []) {
+      if (a.kind !== 'allow' || !a.operations?.includes(op)) continue
+      const p = pins(a.expr, m)
+      if (p) return p
+    }
+    return null
   }
+  const out = { columns: {}, parents: {}, claims: {} }
+  for (const { rel, name, value, claim } of allowed(model, 'create') ?? [])
+    claim ? out.claims[claim] = value : rel ? (out.parents[rel] ??= {})[name] = value : out.columns[name] = value
   return out
 }
 

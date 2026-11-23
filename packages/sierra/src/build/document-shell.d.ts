@@ -11,11 +11,20 @@ export function appWritesSkipLink(root?: any): any;
  * `doc` holds, `lang` on an `<html>` that has none and the skip link first in
  * a `<body>` that has none.
  */
-export function applyDocument(html?: any, doc?: {}, { appSkipLink }?: {
+export function applyDocument(html?: any, doc?: {}, { appSkipLink, base }?: {
     appSkipLink?: boolean;
+    base?: string;
 }): any;
+/**
+ * The shell's guard sheet is no module of the app's graph, so the plugin
+ * serves it in dev and writes it into the build itself: a link added after
+ * Vite's HTML pass is one Vite never resolves.
+ */
 export function documentShellPlugin(config?: any, target?: any): {
     name: string;
     configResolved(resolved: any): void;
+    configureServer(server: any): void;
     transformIndexHtml(html: any): any;
+    writeBundle(options: any): void;
 };
+export const SKIP_LINK_GUARD_SHEET: string;

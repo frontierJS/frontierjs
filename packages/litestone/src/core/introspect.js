@@ -1,6 +1,6 @@
 // introspect.js — the `$`-introspection surface every flavor of the client
 // answers identically: $checkWhere, $checkOrderBy, $protectedFields,
-// $primaryKey, $mirrorKey, $declaresAccessRules, $readAs, $inWindow,
+// $primaryKey, $mirrorKey, $tenantPath, $declaresAccessRules, $readAs, $inWindow,
 // $readGrading, $readReach, $readColumns, $fromReach, $fromColumns, $levelOf, $checkWrite,
 // $capabilitiesFor, $claimsFor, $scopes and $tenancy.
 //
@@ -19,7 +19,7 @@ import { levelPasses } from '../plugins/gate.js'
 import { requireCapability } from '../plugins/capability.js'
 import { capabilityNames } from './capabilities.js'
 import { policyExprToString, policyVerdict, withLiteralDefaults, readReach, readColumns, fromReach, fromColumns } from './policy.js'
-import { resolveTenancy } from './tenancy.js'
+import { resolveTenancy, tenantHops } from './tenancy.js'
 import { schemaDeclaresAccessRules, shapesRead, nowISO } from './schema-maps.js'
 import { sortableKeysFor } from './query.js'
 import { pointFieldsOf, liftNearOrders, sortHopFor, _guardedNames, _shownSet,
@@ -28,6 +28,7 @@ import { nearest } from '@frontierjs/toolbelt/typo'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { trailMarksOf, markOf, untrailed } from './trail-entries.js'
 import { zonedDayOf } from './zoned.js'
+import { staleSources } from './stale.js'
 
 // `readFor(modelName)` is the read connection that model's rows live on.
 export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSystem, readFor }) {
@@ -260,6 +261,23 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
     return modelForAccessor(accessor)?.attributes?.find(/** @type {any} */ (/** @type {any} */ a) => a.kind === 'mirror')?.key ?? null
   }
 
+  // ─── $tenantPath ────────────────────────────────────────────────────────
+  //
+  // $tenantPath(accessor) → the relation fields from this model to the one
+  // carrying the tenant column under strategy row: [] when the model carries it
+  // itself, null under no row tenancy, for an unknown accessor, or when no path
+  // reaches one. A sibling of $primaryKey on the same contract.
+  //
+  // A layer that reads rows past policy and acts in each row's tenant -- a
+  // job's row-bound schedules -- has no column to read for a model scoped
+  // through its parent (`@@tenant(via:)`), and must follow the parent the
+  // generated deny follows rather than guess one (`FJS-4565`).
+  function $tenantPath(/** @type {any} */ accessor) {
+    const model = modelForAccessor(accessor)
+    if (!model) return null
+    return tenantHops(schema, shapes, model.name)?.map(hop => hop.field) ?? null
+  }
+
   // ─── $declaresAccessRules ────────────────────────────────────────────
   //
   // $declaresAccessRules() → whether this schema declares any access rule, the
@@ -473,20 +491,26 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
     return model?.name ? readColumns(model.name, ctx) : {}
   }
 
-  // $fromReach(accessor) → the model names an `@from` on this one is computed
-  // off. A write to one moves a value on a row the write never touched, so a
-  // holder of that row asks again. An unknown accessor reaches nothing.
+  // $fromReach(accessor) → the models a stored value on this one is computed
+  // off: each `@from`'s and each `@stale` source's. A write to one moves a
+  // value or a mark on a row the write never touched and nobody announces, so
+  // a holder of that row asks again. An unknown accessor reaches nothing.
   function $fromReach(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
-    return model?.name ? fromReach(model.name, ctx) : []
+    if (!model?.name) return []
+    return [...new Set([...fromReach(model.name, ctx), ...staleSources(model, schema)])].sort()
   }
 
   // $fromColumns(accessor) → $fromReach with the columns of each reached model
   // the values read, as { Model: [column] }. A reached model absent from it
-  // moves a value on every write. An unknown accessor answers {}.
+  // moves a value on every write — a `@stale` source always, since its update
+  // trigger fires on every stored column. An unknown accessor answers {}.
   function $fromColumns(/** @type {any} */ accessor) {
     const model = modelForAccessor(accessor)
-    return model?.name ? fromColumns(model.name, ctx) : {}
+    if (!model?.name) return {}
+    const answer = fromColumns(model.name, ctx)
+    for (const m of staleSources(model, schema)) delete answer[m]
+    return answer
   }
 
   // ─── $levelOf ───────────────────────────────────────────────────────────
@@ -667,7 +691,7 @@ export function makeIntrospection(/** @type {any} */ ctx, { schemaFilePath, asSy
   }
 
   return {
-    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey,
+    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey, $tenantPath,
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
     $fromReach, $fromColumns, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     modelForAccessor, accessorIndex, tenancyInfo,

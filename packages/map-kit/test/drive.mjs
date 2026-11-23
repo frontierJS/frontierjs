@@ -42,7 +42,7 @@ import { scan } from '../../sierra/src/scanner/index.js'
 import { prerenderRoutes } from '../../sierra/src/build/prerender.js'
 import { serveWidgets } from '../../sierra/src/widget/serve.js'
 import { fit, tileUrl, view } from '../src/projection.js'
-import { CSP, basemap, center, lot, maps, startDemo, tileColor, tileSvg } from '../demo/serve.js'
+import { CSP, IMAGE_FILL, basemap, center, imageMaps, lot, maps, startDemo, tileColor, tileSvg } from '../demo/serve.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const SHOTS = join(ROOT, '.cache/drive')
@@ -236,6 +236,36 @@ async function checkTilesPainted(tag, shoot, got, pageMaps) {
   check(`${tag}: every sampled tile painted the tile it names`, false, last.join('\n    '))
 }
 
+// One image for the whole map: it covers the box, the center marker sits at
+// the box center, and the stand-in's fill shows in a screenshot. What Google
+// frames is not checked here; that probe needs a real key.
+async function checkImageMap(tag, shoot, got, m) {
+  const g = got.maps[m.id]
+  const s = g.svg.width / m.props.width
+  const im = g.images[0]
+  const href = im?.href ?? ''
+  check(`${tag} ${m.id}: one <image> covering the svg box`,
+    g.images.length === 1 && near(im.left, g.svg.left, 0.5) && near(im.top, g.svg.top, 0.5)
+    && near(im.width, g.svg.width, 0.5) && near(im.height, g.svg.height, 0.5), JSON.stringify({ images: g.images, svg: g.svg }))
+  check(`${tag} ${m.id}: its URL names the center, zoom, size and scale`,
+    href === '/static?center=40.7128,-74.006&zoom=19&size=500x300&scale=2', href)
+  const mk = g.markers[0]
+  check(`${tag} ${m.id}: the center marker's center is the box center`,
+    near(mk.left + mk.width / 2, g.svg.left + g.svg.width / 2, 1)
+    && near(mk.top + mk.height / 2, g.svg.top + g.svg.height / 2 + PIN_CENTER * s, 1), JSON.stringify({ mk, svg: g.svg }))
+  let have = null
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const png = decodePng(await shoot())
+    const dpr = png.width / got.innerWidth
+    have = png.at(Math.round((g.svg.left + 30 * s) * dpr), Math.round((g.svg.top + 30 * s) * dpr))
+    if (have.every((c, i) => Math.abs(c - IMAGE_FILL[i]) <= 10)) break
+    await new Promise((ok) => setTimeout(ok, 500))
+  }
+  check(`${tag} ${m.id}: the image painted`, have.every((c, i) => Math.abs(c - IMAGE_FILL[i]) <= 10), `got ${have}`)
+  const st = styleOf(g)
+  check(`${tag} ${m.id}: styled from 'self' sheets`, st.ground && st.pin && st.stroke, JSON.stringify(st.values))
+}
+
 // ─── The demo page ───────────────────────────────────────────────────────────
 
 const demoMaps = maps.map((m) => [m.id, m.props])
@@ -246,6 +276,7 @@ async function checkDemo(engine, url, { load, shoot }) {
   const got = await load(url)
   for (const m of maps) checkGeometry(`${tag} ${m.id}`, got.maps[m.id], m.props, m.frameWidth)
   await checkTilesPainted(tag, () => shoot(join(SHOTS, `${engine}-${policy ? 'csp' : 'open'}.png`)), got, demoMaps)
+  for (const m of imageMaps) await checkImageMap(tag, () => shoot(join(SHOTS, `${engine}-${policy ? 'csp' : 'open'}-image.png`)), got, m)
   check(`${tag}: the canary's style= is ${policy ? 'refused' : 'applied'}`,
     (got.canary === 'rgb(255, 0, 0)') === !policy, got.canary)
   for (const m of maps) {

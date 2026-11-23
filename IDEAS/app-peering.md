@@ -242,17 +242,24 @@ Done when: two Outposts on private addresses carry a peer call between them.
 - [x] 3.3 Hearing — whether an App publishes a UDP port: not yet (`FJS-D2342`).
   Headscale takes Q16's fallback, and `udpPorts` (Q17 A) is built when a second
   consumer needs UDP.
-- [ ] 3.4 One fli command makes the Headscale App (Q18): an App and a Domain row
-  in a named Basecamp, the official image, a config with the embedded DERP on over
-  HTTPS and STUN from Tailscale's public servers, then a deploy. Done when it
-  runs against a local Basecamp, `headscale nodes list` answers inside the
-  container, DERP answers through Caddy's reverse proxy, a Basecamp backup holds
-  the App's SQLite file, and the DERP map relays through no Tailscale region.
+- [x] 3.4 One fli command makes the Headscale App (`FJS-D2343`): the `headscale`
+  Blueprint row (`headscale/headscale:v0.29.7`, env only, relay-only per
+  `FJS-D2342` as amended) and `fli basecamp:blueprint <slug>`. Proved
+  2026-11-23: the pinned image booted from env alone in docker, `/health` and
+  `headscale nodes list` answered, a real Tailscale client joined and its DERP map
+  held only the `frontier` region. `basecamp-blueprint.test.js` passes 8/0. A
+  local Basecamp ran the command through the App, its placement and its Domain;
+  the release was refused there for want of an Outpost. The deploy-side checks
+  moved to 3.5 by the owner's call.
 - [ ] 3.5 Live on yuma-test (owner's go-ahead first, it changes a live box):
-  `hs.awe.dev` DNS-only in Cloudflare, the command run against yuma-test's
-  Basecamp. Done when `https://hs.awe.dev/health` answers and the DERP map
-  relays only through our region. `hs.awe.dev` is a role name, so a later move to prod repoints
-  DNS and no client rejoins.
+  yuma-test's Basecamp holds the `headscale` row (its code redeployed, or
+  `db:catalog-sync`; find which reaches a deployed hub), `hs.awe.dev` DNS-only
+  in Cloudflare, then `fli basecamp:blueprint headscale --domain hs.awe.dev`
+  against it. Done when `https://hs.awe.dev/health` answers through Caddy, a
+  node's DERP map relays only through our region and DERP answers through
+  Caddy, and a Basecamp backup of the App holds `db.sqlite` with its `-wal`
+  folded in or copied beside it. `hs.awe.dev` is a role name, so a later move to
+  prod repoints DNS and no client rejoins.
 - [ ] 3.6 The owner's phone joins: a key minted by hand with the headscale CLI,
   shown as a QR, entered in the Tailscale app as a custom control server. Done
   when `tailscale status` on a second node shows the phone, relayed through

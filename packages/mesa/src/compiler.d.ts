@@ -844,6 +844,7 @@ export function contentFallback(value?: any, snippet?: any): string;
 export function slotProp(name?: any): any;
 export function classSource(attr?: any, name?: any): any;
 export const REACHED_ELEMENT: Set<string>;
+export function dynamicElementBlock(start?: any): any;
 export const version: "2.0.0";
 export const MESA_ELEMENTS: string[];
 export const PRESERVE_WHITESPACE: Set<string>;

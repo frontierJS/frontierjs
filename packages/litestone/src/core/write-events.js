@@ -9,6 +9,7 @@
 
 import { checkAnnounce, defer } from './hooks.js'
 import { ident, keyIn, tuplesOf } from './query.js'
+import { tenantHops } from './tenancy.js'
 
 // The vocabulary an event is stated in, for readers that must list it (`litestone spec`).
 // `index.d.ts` `WriteEvent` types the same two sets by hand.
@@ -170,28 +171,12 @@ export function makeWriteEvents(/** @type {any} */ shape, /** @type {any} */ ctx
   // a parent follows the relation its generated tenancy deny follows, one
   // `SELECT DISTINCT` per hop, from the foreign keys on the rows -- which a
   // delete still has, since the parent outlives the child. Resolved on first
-  // use: the schema's tenancy is not settled when the table is built. The
-  // commitment sweep reads the same path to fire a row in its own tenant.
+  // use: the schema's tenancy is not settled when the table is built.
   /** @type {any} */
   let _tenantPath
   function tenantPath() {
-    if (_tenantPath !== undefined) return _tenantPath
-    const t = ctx.schema?.tenancy
-    if (t?.strategy !== 'row') return _tenantPath = null
-    const carries = (/** @type {any} */ m) => !!ctx.shapes[m]?.model.fields.some((/** @type {any} */ f) => f.name === t.column)
-    /** @type {(m: any, seen: Set<any>) => any} */
-    const walk = (m, seen) => {
-      if (carries(m)) return []
-      for (const a of ctx.shapes[m]?.model.attributes ?? []) {
-        const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
-        const rel = ref && ctx.shapes[m].relations?.[ref.field]
-        if (rel?.kind !== 'belongsTo' || seen.has(rel.targetModel)) continue
-        const rest = walk(rel.targetModel, new Set([...seen, rel.targetModel]))
-        if (rest) return [{ field: ref.field, fks: rel.foreignKeys, target: rel.targetModel, refs: rel.referencedKeys }, ...rest]
-      }
-      return null
-    }
-    return _tenantPath = walk(modelName, new Set([modelName]))
+    if (_tenantPath === undefined) _tenantPath = tenantHops(ctx.schema, ctx.shapes, modelName)
+    return _tenantPath
   }
 
   function tenantsOf(/** @type {any} */ rows) {

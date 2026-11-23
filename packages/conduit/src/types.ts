@@ -105,9 +105,16 @@ export interface SignInput {
 // by the CredentialResolver, whose `get()` is that mint: its expiry is the
 // resolver's TTL (`withCache`'s `ttl_ms`), and a 401 forgets it through
 // `invalidate` like any other. Conduit never holds a credential's lifetime.
+//
+// `query` is URL parameters for a scheme that signs the URL itself (Google's
+// `&signature=`, FJS-D2354). The transport sets them on the fetched URL and
+// nowhere a caller or observer is handed, and scrubs every value from what it
+// returns, as for an `api_key` query (FJS-D940): name only credential-bearing
+// parameters here, since each value is redacted wherever it appears.
 export interface SignOutput {
   headers?: Record<string, string>
   body?:    string | Uint8Array
+  query?:   Record<string, string>
 }
 
 // A non-2xx answer as a signer's `refused` reads it.

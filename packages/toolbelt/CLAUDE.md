@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/aria`, `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/grammars`,
+**One kit per subpath.** `/aria`, `/ask`, `/bearer`, `/cells`, `/cron`, `/datetime`, `/devline`, `/docfences`, `/env`, `/frontier`, `/frontmatter`, `/gate`, `/geo`, `/glow`, `/grammars`,
 `/fill`, `/ids`, `/inflect`, `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/keys`, `/mailbox`, `/markdown`, `/match`, `/mime`,
 `/predicate`, `/qr`, `/query`, `/rank`, `/redact`, `/seal`, `/search`, `/share`, `/signature`, `/sigv4`, `/sse`, `/sugar`, `/textbox`, `/textedit`, `/trace`, `/transforms`, `/tty`, `/typo` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.

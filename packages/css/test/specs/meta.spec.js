@@ -91,6 +91,25 @@ test('meta: themes.js names every shipped theme, and only those, with its color-
   });
 });
 
+test('meta: a theme\'s pair is a theme of the other scheme that pairs back', function () {
+  /*
+   * A light/dark switch reads `pair` to stay in the family the app chose. A
+   * pair naming no theme sends the switch nowhere; one in the same scheme
+   * switches light to light; one that does not name it back strands the
+   * switch on the far side.
+   */
+  var data = window.__FJS_THEMES__;
+  var wrong = [];
+  Object.keys(data).forEach(function (c) {
+    var p = data[c].pair;
+    if (p === undefined) return;
+    if (!data[p]) wrong.push(c + ' pairs with ' + p + ', which is not a theme');
+    else if (data[p].scheme === data[c].scheme) wrong.push(c + ' pairs with ' + p + ', also ' + data[c].scheme);
+    else if (data[p].pair !== c) wrong.push(c + ' pairs with ' + p + ', which pairs with ' + data[p].pair);
+  });
+  assert.equal(wrong.length, 0, wrong.join('; '));
+});
+
 test('meta: assertions fail when they should', function () {
   assert.throws(function () { assert.ok(false); }, 'assert.ok accepted false');
   assert.throws(function () { assert.equal(1, 2); }, 'assert.equal accepted a mismatch');

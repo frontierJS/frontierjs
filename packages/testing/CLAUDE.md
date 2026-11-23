@@ -52,7 +52,11 @@ It deliberately owns **no HTTP helper**. `env.http` IS `request(app)` from
 
 ## What bites here
 
-- **`_startForTest()` is called eagerly, not lazily.** Junction's `request()`
+- **The app runs nothing on its own clock** (`FJS-4584`): `_startOnce()`, so no
+  scheduler is armed and no plugin's `work()` runs — a real app's cron fired at
+  a wall-clock boundary inside a test. A test that wants the queue calls
+  `env.app.jobs.start()` itself.
+- **`_startOnce()` is called eagerly, not lazily.** Junction's `request()`
   calls it on the first request; an internal `env.as(u).service('x')` call would
   otherwise meet a pipeline that had not compiled and plugins that had not
   registered — so a plugin's guard refuses nothing and the test passes.

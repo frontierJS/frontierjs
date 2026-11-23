@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 214**.
+Graded: **13 of 217**.
 
-## data — 3 of 78
+## data — 3 of 79
 
 ### Schema and parse
 
@@ -115,6 +115,7 @@ Graded: **13 of 214**.
 | A `DateTime @zoned(date, time, zone)` is a stored column nobody but litestone writes | **none** |
 | A `File` column's stored object is its row's own, so the same bytes on two rows are two objects | **none** |
 | A folding `@@retention(…, into:)` writes its rollup in raw SQL, so the rollup's trail, write events and plugins never hear the fold | **none** |
+| A `@stale` flag is set by a trigger, so the mark is in no audit trail, stamps no clock, and climbs one level per write | **none** |
 
 ### The audit trail and the log
 
@@ -142,7 +143,7 @@ Graded: **13 of 214**.
 | ↳ A sort key carries WHERE ITS NULLS SIT, and a cursor compares against that | **none** |
 | ↳ `buildCursorWhere` never answers `''` when it was given a cursor. | **none** |
 
-## api — 6 of 77
+## api — 6 of 78
 
 ### `ctx` and the call
 
@@ -264,9 +265,10 @@ Graded: **13 of 214**.
 | A battery names a vendor in a comment and never in a call | **none** |
 | Nothing here mocks a module, and the reason is a design rule. | **none** |
 | A test may not name a port, and the reason is the runner. | `test-port-literal` |
+| `createTestEnv` starts no worker and arms no scheduler | **none** |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 59
+## ui — 4 of 60
 
 ### Routes, prerender and static
 
@@ -289,6 +291,7 @@ Graded: **13 of 214**.
 | A `@from` column moves when a CHILD row is written, and nothing announces the parent. | **none** |
 | A tether holds what its last `load(query)` asked for, so a patch can take a row OUT of it. | **none** |
 | A relative day filter is the days it meant at the list's last read, so midnight does not move it. | **none** |
+| A tether over a `@zoned` day window one relation away loads that zone column, so its rows carry a relation nobody asked for. | **none** |
 | `@version` is the revision a screen READ, and a push does not move it. | **none** |
 | A watched record empties itself on its own delete, before the handler's next line. | **none** |
 

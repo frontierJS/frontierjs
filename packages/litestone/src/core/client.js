@@ -6888,6 +6888,12 @@ export async function createClient({
     effectivePlugins = [...effectivePlugins, await defaultFileStorage()]
   }
 
+  // The plugin that stores File columns, or null — what junction serves a
+  // local store's directory from (`FJS-D1549`). Every flavor answers it: a raw
+  // route reads a gated File row as its principal, and that client is the one
+  // in hand when the bytes are next (`FJS-4582`).
+  const filesStore = () => effectivePlugins.find(p => p?.fieldType === 'File') ?? null
+
   // Plugin runner — orchestrates all installed plugins
   const pluginRunner = new PluginRunner(effectivePlugins)
 
@@ -7697,7 +7703,7 @@ export async function createClient({
   // The `$`-introspection surface — one build over the root ctx, handed to every
   // proxy below. `$levelOfAs`/`$checkWriteAs` take the flavor's own ctx there.
   const {
-    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey,
+    $checkWhere, $scopes, $checkOrderBy, $protectedFields, $trailMarks, $primaryKey, $mirrorKey, $tenantPath,
     $declaresAccessRules, $readAs, $inWindow, $readGrading, $readReach, $readColumns,
     $fromReach, $fromColumns, $levelOfAs, $checkWriteAs, $capabilitiesFor, $claimsFor,
     accessorIndex, tenancyInfo,
@@ -8375,7 +8381,7 @@ export async function createClient({
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$files', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -8397,6 +8403,7 @@ export async function createClient({
         if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$tenantPath') return $tenantPath
         if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
@@ -8419,6 +8426,7 @@ export async function createClient({
         if (prop === '$audit')  return (entry, opts) => auditWith(null, entry, opts)
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         if (prop === '$plugins') return pluginRunner.names
+        if (prop === '$files')   return filesStore()
         if (prop === '$tenancy') return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema.`)
       },
@@ -8517,7 +8525,7 @@ export async function createClient({
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$files', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -8536,6 +8544,7 @@ export async function createClient({
         if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$tenantPath') return $tenantPath
         if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
@@ -8557,6 +8566,7 @@ export async function createClient({
         if (prop === '$cacheSize')      return _cacheSize()
         if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         if (prop === '$plugins')        return pluginRunner.names
+        if (prop === '$files')          return filesStore()
         if (prop === '$tenancy')        return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(authTables).join(', ')}`)
       },
@@ -8698,7 +8708,7 @@ export async function createClient({
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$files', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -8726,6 +8736,7 @@ export async function createClient({
         if (prop === '$trailMarks') return $trailMarks
         if (prop === '$primaryKey') return $primaryKey
         if (prop === '$mirrorKey')  return $mirrorKey
+        if (prop === '$tenantPath') return $tenantPath
         if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
@@ -8746,6 +8757,7 @@ export async function createClient({
         if (prop === '$audit')  return (entry, opts) => auditWith(overrides.auth ?? null, entry, opts)
         if (prop === '$enums')  return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
         if (prop === '$plugins') return pluginRunner.names
+        if (prop === '$files')   return filesStore()
         if (prop === '$tenancy') return tenancyInfo()
         throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(tables).join(', ')}`)
       },
@@ -8938,7 +8950,7 @@ export async function createClient({
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -8973,6 +8985,7 @@ export async function createClient({
       if (prop === '$trailMarks') return $trailMarks
       if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$mirrorKey')      return $mirrorKey
+      if (prop === '$tenantPath')     return $tenantPath
       if (prop === '$declaresAccessRules') return $declaresAccessRules
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$claimsFor')       return $claimsFor
@@ -9063,9 +9076,7 @@ export async function createClient({
       if (prop === '$locks')          return lockPrimitive.$locks
       if (prop === '$enums')          return Object.fromEntries(schema.enums.map(e => [e.name, [...e.values.map(v => v.name)]]))
       if (prop === '$plugins')        return pluginRunner.names
-      // The plugin that stores File columns, or null — what junction serves a
-      // local store's directory from (`FJS-D1549`).
-      if (prop === '$files')          return effectivePlugins.find(p => p?.fieldType === 'File') ?? null
+      if (prop === '$files')          return filesStore()
       if (prop === '$tenancy')        return tenancyInfo()
       throw new Error(`"${prop}" is not a table in this schema. Tables: ${Object.keys(scopedTables).join(', ')}`)
     },

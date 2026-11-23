@@ -229,6 +229,8 @@ model Ticket {
     // the object one hop down was the same silent empty row, and is refused too
     expect(await refusal(() => db.ticket.findMany({ select: { member: { select: { nmae: true } } } })))
       .toContain(`Unknown field 'nmae' in select for Member`)
+    expect(await refusal(() => db.ticket.findMany({ select: { code: { select: { x: true } } } })))
+      .toContain(`'code' on Ticket.findMany is not a relation`)
     db.$close()
   })
 

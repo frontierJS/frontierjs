@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-185 definitions · 78 models · 1 view · 45 types · 61 enums · 0 other
+186 definitions · 79 models · 1 view · 45 types · 61 enums · 0 other
 ```
 
 ## Definitions
@@ -92,6 +92,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `MonitorUptimeDay` | model |
 | `MonitorEvent` | model |
 | `MonitorChannel` | model |
+| `AppChannel` | model |
 | `Dashboard` | model |
 | `DashboardTile` | model |
 | `AuditEvent` | model |
@@ -272,8 +273,8 @@ validates, and a select that silently drops an option.
 - `BackupKind` — `manual`, `scheduled`, `found`, `release`
 - `DrillKind` — `manual`, `scheduled`
 - `DependencyKind` — `dependency`, `dev`, `peer`, `optional`
-- `NotificationContext` — `Deployment`, `Alert`, `JobRun`, `Server`, `Workspace`, `Monitor`
-- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`, `MonitorCertExpiring`, `AppBackupFailed`
+- `NotificationContext` — `Deployment`, `Alert`, `JobRun`, `Server`, `Workspace`, `Monitor`, `App`
+- `NotificationKind` — `DeploySuccess`, `DeployFailed`, `AlertFiring`, `AlertResolved`, `ServerUnreachable`, `MonitorDown`, `MonitorUp`, `PostureFailed`, `HubPostureFailed`, `DependencyVulnerable`, `MemberJoined`, `JobFailed`, `WeeklyDigest`, `ReplicaFound`, `MonitorCertExpiring`, `AppBackupFailed`, `AppCrashed`
 - `VolumeKind` — `volume`, `bind`
 - `EditorRole` — `edit`, `publish`
 - `Capability` — `Environment.create`, `Environment.delete`, `Environment.update`, `Server.create`, `Server.delete`, `Server.destroy`, `Server.drain`, `Server.provision`, `Server.reboot`, `Server.undrain`, `Server.update`, `Variable.create`, `Variable.delete`, `Variable.update`
@@ -981,6 +982,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `domainRoutes` — hasMany `DomainRoute`
 - relation `variables` — hasMany `Variable`
 - relation `editors` — hasMany `AppEditor`
+- relation `crashChannels` — hasMany `AppChannel`
 - relation `hub` — hasMany `HubConfig` · optional
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -1006,6 +1008,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `hasExposedPort` | `boolean` = `false` | — | — | — | — |
 | `isIngressNamePublished` | `boolean` = `true` | — | — | — | — |
 | `swap` | `DeploySwap` = `"stopFirst"` | — | Swap order | — | — |
+| `isCrashAlerted` | `boolean` = `true` | — | — | — | — |
 | `isDeployedOnPush` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `pushSecret` | `string`? | — | — | `format: "password"` `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` `x-litestone-kind` | — |
 | `pushActorId` | `string`? | — | — | `x-litestone-kind` | — |
@@ -1516,6 +1519,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `workspace` — belongsTo `Workspace` via `workspaceId` · on delete Cascade
 - relation `rules` — hasMany `AlertRuleChannel`
 - relation `monitors` — hasMany `MonitorChannel`
+- relation `apps` — hasMany `AppChannel`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -1729,6 +1733,20 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `channelId` | `string` | yes | — | — | — |
 
 **On create**: required — `monitorId`, `channelId` · not accepted — `id`
+
+### `AppChannel`
+
+- gate `read:2 create:4 update:4 delete:4` · closed (`additionalProperties: false`)
+- relation `app` — belongsTo `App` via `appId` · on delete Cascade
+- relation `channel` — belongsTo `NotificationChannel` via `channelId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `appId` | `string` | yes | — | — | — |
+| `channelId` | `string` | yes | — | — | — |
+
+**On create**: required — `appId`, `channelId` · not accepted — `id`
 
 ### `Dashboard`
 

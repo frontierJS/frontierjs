@@ -234,6 +234,9 @@ export interface MemberCreate {
    * it names, since that would be a caller writing their own grade.
    */
   bannedAt?: string | Date | null
+  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'memberId'>, MessageUpdate>
+  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
+  votes?: __HasManyWrite<VoteWhere, Omit<VoteCreate, 'memberId'>, VoteUpdate>
 }
 
 export interface MemberUpdate {
@@ -242,6 +245,9 @@ export interface MemberUpdate {
   root?: string
   role?: string | null
   bannedAt?: string | Date | null
+  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'memberId'>, MessageUpdate>
+  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
+  votes?: __HasManyWrite<VoteWhere, Omit<VoteCreate, 'memberId'>, VoteUpdate>
 }
 
 export interface MemberSystem {
@@ -256,6 +262,9 @@ export interface MemberWhere extends WhereBase {
   role?: string | WhereOp<string> | null
   bannedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  messages?: { some?: MessageWhere; every?: MessageWhere; none?: MessageWhere }
+  sessions?: { some?: SessionWhere; every?: SessionWhere; none?: SessionWhere }
+  votes?: { some?: VoteWhere; every?: VoteWhere; none?: VoteWhere }
   AND?: MemberWhere[]
   OR?:  MemberWhere[]
   NOT?: MemberWhere
@@ -311,6 +320,7 @@ export interface RoomCreate {
    */
   pairLoId?: number | null
   pairHiId?: number | null
+  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'roomId'>, MessageUpdate>
 }
 
 export interface RoomUpdate {
@@ -319,6 +329,7 @@ export interface RoomUpdate {
   name?: string
   pairLoId?: number | null
   pairHiId?: number | null
+  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'roomId'>, MessageUpdate>
 }
 
 export interface RoomWhere extends WhereBase {
@@ -327,6 +338,8 @@ export interface RoomWhere extends WhereBase {
   name?: string | WhereOp<string> | null
   pairLoId?: number | WhereOp<number> | null
   pairHiId?: number | WhereOp<number> | null
+  messages?: { some?: MessageWhere; every?: MessageWhere; none?: MessageWhere }
+  game?: { is?: GameWhere; isNot?: GameWhere }
   AND?: RoomWhere[]
   OR?:  RoomWhere[]
   NOT?: RoomWhere
@@ -366,6 +379,8 @@ export interface Message {
 export interface MessageCreate {
   id?: number
   roomId: number
+  room?: __BelongsToWrite<RoomWhere, RoomCreate>
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   body: string
   /**
    * A whisper's listener (`/w <nick> <line>`). Null is a line said aloud. A
@@ -379,7 +394,9 @@ export interface MessageCreate {
 export interface MessageUpdate {
   id?: number
   roomId?: number
+  room?: __BelongsToWrite<RoomWhere, RoomCreate>
   memberId?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   body?: string
   toId?: number | null
 }
@@ -387,7 +404,9 @@ export interface MessageUpdate {
 export interface MessageWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   roomId?: number | WhereOp<number> | null
+  room?: { is?: RoomWhere; isNot?: RoomWhere }
   memberId?: number | WhereOp<number> | null
+  member?: { is?: MemberWhere; isNot?: MemberWhere }
   body?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   toId?: number | WhereOp<number> | null
@@ -440,6 +459,7 @@ export interface Game {
 export interface GameCreate {
   id?: number
   roomId: number
+  room?: __BelongsToWrite<RoomWhere, RoomCreate>
   /**
    * Red moves first and is the one who began the game; black is the other
    * member of the pair. Plain columns, as Room's pair is.
@@ -462,6 +482,7 @@ export interface GameCreate {
 export interface GameUpdate {
   id?: number
   roomId?: number
+  room?: __BelongsToWrite<RoomWhere, RoomCreate>
   redId?: number
   blackId?: number
   board?: string
@@ -473,6 +494,7 @@ export interface GameUpdate {
 export interface GameWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   roomId?: number | WhereOp<number> | null
+  room?: { is?: RoomWhere; isNot?: RoomWhere }
   redId?: number | WhereOp<number> | null
   blackId?: number | WhereOp<number> | null
   board?: string | WhereOp<string> | null
@@ -519,6 +541,7 @@ export interface Vote {
 
 export interface VoteCreate {
   id?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   /**
    * The idea's row number in the overview, `4.21a` -- kept while the row's
    * words change, which is why a vote names it and not its title.
@@ -530,6 +553,7 @@ export interface VoteCreate {
 export interface VoteUpdate {
   id?: number
   memberId?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   idea?: string
   isAye?: boolean
 }
@@ -537,6 +561,7 @@ export interface VoteUpdate {
 export interface VoteWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   memberId?: number | WhereOp<number> | null
+  member?: { is?: MemberWhere; isNot?: MemberWhere }
   idea?: string | WhereOp<string> | null
   isAye?: boolean | WhereOp<boolean> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -646,6 +671,7 @@ export interface SessionCreate {
   revokedAt?: string | Date | null
   id?: number
   memberId: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   /**
    * Required where the trait leaves it open: the key re-mints one in a
    * signature, so a session that never expires buys nothing and is a standing
@@ -658,6 +684,7 @@ export interface SessionUpdate {
   revokedAt?: string | Date | null
   id?: number
   memberId?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   expiresAt?: string | Date
 }
 
@@ -672,6 +699,7 @@ export interface SessionWhere extends WhereBase {
   lastUsedAt?: string | Date | WhereOp<string | Date> | null
   id?: number | WhereOp<number> | null
   memberId?: number | WhereOp<number> | null
+  member?: { is?: MemberWhere; isNot?: MemberWhere }
   createdAt?: string | Date | WhereOp<string | Date> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
   AND?: SessionWhere[]
@@ -741,6 +769,14 @@ export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean |
 // bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
 type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
 
+/** A nested write through a relation, each kind taking the operations the client runs for it. */
+type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
+type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
+/** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */
+type __SearchHit = { _rank?: number | null; _highlight?: string | null; _snippet?: string | null }
+type __FtsMarks = { field: string; open?: string; close?: string }
+
 /**
  * The row a read answers: the whole row, or only the columns `select` named, and
  * in either case the relations `include` (or `select`) named. A relation takes its
@@ -761,15 +797,15 @@ type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__Se
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
 export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {
-  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
-  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
-  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
-  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
+  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
   create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
   createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
@@ -782,7 +818,7 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove ex
   restore(args: { where: TWhere }): Promise<{ count: number }>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>
-  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>
+  search<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S> & __SearchHit)[]>
   optimizeFts(): Promise<{ optimized: boolean; table: string }>
 
   // Reads whose shape is not one row or a count. Emitted because an app

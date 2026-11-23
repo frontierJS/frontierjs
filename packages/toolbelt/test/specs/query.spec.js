@@ -386,10 +386,10 @@ test('query: parseSelectPaths merges entries naming one node, in either order', 
     { tickets: { select: { ticketType: { select: { title: true } }, id: true } } })
 })
 
-test('query: parsePopulate nests a middle hop as include and keeps the last leaf named', function () {
+test('query: parsePopulate nests a middle hop as include and merges a relation named twice', function () {
   assert.deepEqual(parsePopulate('words:text,words.lemma'),
     { words: { select: { text: true }, include: { lemma: true } } })
   assert.deepEqual(parsePopulate(['a.b.c:x+y']),
     { a: { include: { b: { include: { c: { select: { x: true, y: true } } } } } } })
-  assert.deepEqual(parsePopulate('author:name,author:email'), { author: { select: { email: true } } })
+  assert.deepEqual(parsePopulate('author:name,author:email'), { author: { select: { name: true, email: true } } })
 })

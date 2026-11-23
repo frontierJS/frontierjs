@@ -1,0 +1,15 @@
+<script>
+  // button.mesa -- a Button with an href still runs its onclick.
+  //
+  // onclick is a declared prop, so it never rides in $attributes; the <a>
+  // branch spread $attributes alone and a click on it called nothing
+  // (FJS-4586). The handler cancels the navigation the way a row link that
+  // opens a panel on a plain click does.
+  import Button from '../../../components/forms/Button.mesa'
+
+  let clicks = 0
+</script>
+
+<Button id="link" href="#elsewhere" onclick={(e) => { e.preventDefault(); clicks++ }}>Go</Button>
+<Button id="busy" href="#elsewhere" loading onclick={(e) => { e.preventDefault(); clicks += 10 }}>Busy</Button>
+<output id="clicks">{clicks}</output>

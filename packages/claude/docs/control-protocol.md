@@ -69,7 +69,7 @@ Envelope: `{"type":"control_request","request_id":"<host-chosen id>","request":{
 | `sonnet` | `claude-sonnet-5-5` | `Sonnet` | `low`, `medium`, `high`, `xhigh`, `max` |
 | `haiku` | `claude-haiku-5-5` | `Haiku` | `low`, `medium`, `high`, `xhigh`, `max` |
 
-`modelsOf` (`src/catalog.ts`) reads this list for a picker: `default` left out because a picker has its own, and one model per family, the first listed. Before any `initialize`, `FALLBACK_MODELS` is the aliases `opus`, `sonnet` and `haiku`.
+`modelsOf` (`src/catalog.ts`) reads this list for a picker: `default` left out because a picker has its own, and the rest whole in the order listed (the newest of each family first, then the pinned older versions); which a picker shows is the host's. Before any `initialize`, `FALLBACK_MODELS` is the aliases `opus`, `sonnet` and `haiku`.
 
 **There is no `set_effort`**: the CLI answered `{"subtype":"error","error":"Unsupported control request subtype: set_effort","error_code":"unsupported_request"}` (PROBED). Effort is `--effort` at spawn, or `apply_flag_settings` with `effortLevel` mid-session (the settings schema's enum stops at `xhigh`). The `models` list in the initialize response says which levels each model takes.
 
@@ -91,7 +91,7 @@ Initialize is sent first by the SDK and answered in about 0.6 s, before `system/
 
 Always send `updatedInput`, even unchanged. A suggestion seen: `{"type":"setMode","mode":"acceptEdits","destination":"session"}` for a Write and an Edit (PROBED). For Bash `echo hi >> bash.txt` (PROBED 2026-11-15): `[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"echo hi *"}],"behavior":"allow","destination":"localSettings"},{"type":"addDirectories","directories":["/abs/project"],"destination":"session"}]`, with `blocked_path` naming the redirect's file. Sending both back as `updatedPermissions` was accepted: the rule was written to the project's `.claude/settings.local.json` (`"allow":["Bash(echo hi *)"]`), and **the same command still asked again** in the same turn, so neither update covers a redirect's write in `default` mode.
 
-**A deny's `message` reaches the model verbatim** as `{"type":"tool_result","content":<message>,"is_error":true}` (PROBED 2026-11-15). Haiku read a bare note ("No. Do not edit anything. Reply with the word cherry and stop.") as a tool error that was not the person's decision and said so; say whose note it is in the message. A thrown error goes back as `{"subtype":"error","request_id":…,"error":"…"}` (SDK).
+**A deny's `message` reaches the model verbatim** as `{"type":"tool_result","content":<message>,"is_error":true}` (PROBED 2026-11-15). Haiku read a bare note ("No. Do not edit anything. Reply with the word cherry and stop.") as a tool error that was not the person's decision and said so; say whose note it is in the message. Told "touch t3 instead" there, Haiku declined to, since the words were not the owner's, so a host may pass its own wording (`Session`'s `deny`; Haven's says only to stop and wait) and take a reason as the person's next message. A thrown error goes back as `{"subtype":"error","request_id":…,"error":"…"}` (SDK).
 
 ## CLI → host (stdout)
 

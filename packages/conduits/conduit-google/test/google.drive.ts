@@ -14,15 +14,20 @@
 // The exchange is a send through its own target, so a token endpoint outage
 // is measured as the FCM send's retryable `auth_failed` with nothing sent to
 // FCM (FJS-2722).
+//
+// The `staticMap.` rows run a per-account conduit (`getFor`, one JSON value per
+// account) against the Static API path; the sink verifies each signature with
+// node:crypto, so a wrong secret is refused there and nowhere earlier.
 
 import { byRef, createConduit, createStaticResolver, withCache, type ConduitError } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
-import { startGoogleSink, KNOWN_PLACES } from '../sink.ts'
+import { startGoogleSink, KNOWN_PLACES, SIGNING_SECRET, STATIC_PNG } from '../sink.ts'
 import { maps as googleMaps, fcm as googleFcm } from '../src/index.ts'
 
 const {
   googleMapsTargets, bindGoogleMaps, geocodeLegacy, searchText, geocode, placeDetails, driveTime, cacheKey, normalizeAddress,
   GOOGLE_MAPS_PLACES_TARGET, GOOGLE_MAPS_ROUTES_TARGET, GEOCODE_FIELD_MASK, RATE_LIMIT_FALLBACK_MS,
+  googleStaticMapTarget, bindStaticMap, staticMap, signStaticMapUrl, staticMapCredential, staticMapSigners, GOOGLE_STATIC_MAP_TARGET,
 } = googleMaps
 
 const {
@@ -32,7 +37,7 @@ const {
 const { got, t } = results()
 const KEY = 'AIza-sink-dev'
 
-type Seen = { requests: { api: string; method: string; path: string; headers: Record<string, string>; body: string; fieldMask: string | null; sku: string; keyInQuery?: boolean }[] }
+type Seen = { requests: { api: string; method: string; path: string; headers: Record<string, string>; body: string; fieldMask: string | null; sku: string; keyInQuery?: boolean; query?: string; signed?: boolean | null }[] }
 
 const sink    = startGoogleSink({ key: KEY })
 const ctl     = control(sink.maps)
@@ -184,6 +189,92 @@ try {
   })
   t('geocode.maskIsEssentialsOnly', GEOCODE_FIELD_MASK)
 
+  // ═══ staticMap: one image, the account's own key and signing secret ═══
+  {
+    const observed: unknown[] = []
+    const WRONG_SECRET = 'd3Jvbmctc2VjcmV0LWZpeHR1cmU'
+    const stored: Record<string, string> = {
+      'acct-1': staticMapCredential(KEY, SIGNING_SECRET),
+      'acct-3': staticMapCredential(KEY),
+      'acct-4': staticMapCredential(KEY, WRONG_SECRET),
+      'acct-5': 'not json',
+    }
+    const sconduit = createConduit({
+      credentials: { ...createStaticResolver({}), get: async () => null,
+        getFor: async (ref: string, who) => ref === 'GOOGLE_STATIC_MAP_CREDENTIAL' ? stored[who.tenant ?? ''] ?? null : null },
+      signers: staticMapSigners,
+      observers: { onRequest: (r) => { observed.push(r) }, onResponse: (r, res) => { observed.push(r, res) }, onError: (r, e) => { observed.push(r, e) } },
+      ...DRIVE_RESILIENCE,
+    })
+    await sconduit.register(googleStaticMapTarget({ address: sink.url }))
+    const sm = bindStaticMap(sconduit)
+    const as = (tenant: string) => ({ who: { tenant, principal: null, grant: null } })
+    const HOME = { center: { lat: 39.799, lng: -89.644 }, zoom: 19, width: 640, height: 400, scale: 2 as const }
+    const same = (a?: Uint8Array) => !!a && a.length === STATIC_PNG.length && a.every((v, i) => v === STATIC_PNG[i])
+    const signatures = async () => (await seen()).requests.map(r => new URLSearchParams(r.query ?? '').get('signature')).filter((x): x is string => !!x)
+    const leaks = (v: unknown, extra: string[] = []) => { const j = JSON.stringify(v, (_k, x) => x instanceof Uint8Array ? undefined : x); return [KEY, SIGNING_SECRET, ...extra].some(x => j.includes(x) || j.includes(encodeURIComponent(x))) }
+    let wrong: ReturnType<typeof createConduit> | undefined
+
+    try {
+      const real = googleStaticMapTarget()
+      t('staticMap.target', { id: real.id, host: new URL(real.address).host, auth: real.auth })
+
+      await ctl.reset()
+      const img = await staticMap(sm, HOME, as('acct-1'))
+      const r0 = (await seen()).requests[0]
+      const q = new URLSearchParams(r0?.query ?? '')
+      t('staticMap.signedImageRoundTrips', {
+        same: same(img.image?.bytes), type: img.image?.contentType, cache: img.image?.cacheControl,
+        path: r0?.path, center: q.get('center'), zoom: q.get('zoom'), size: q.get('size'), scale: q.get('scale'), maptype: q.get('maptype'),
+        keyInQuery: r0?.keyInQuery, signatureLast: (r0?.query ?? '').split('&').pop()?.startsWith('signature='), sinkVerified: r0?.signed,
+      })
+
+      // Through conduit: the sink verifies with node:crypto, apart from the WebCrypto signer.
+      await ctl.reset()
+      const wrongSecret = await staticMap(sm, HOME, as('acct-4'))
+      const unsigned = await staticMap(sm, HOME, as('acct-3'))
+      const verdicts = (await seen()).requests.map(r => r.signed)
+      t('staticMap.signature', {
+        vector: await signStaticMapUrl('/maps/api/geocode/json?address=New+York&client=clientID', 'vNIXE0xscrmjlyV-12Nj_BvUPaw='),
+        wrongSecret: { kind: wrongSecret.error?.kind, status: wrongSecret.error?.status }, unsignedOk: same(unsigned.image?.bytes), sinkSaw: verdicts,
+      })
+      const sigs = [q.get('signature') ?? '', ...await signatures()].filter(Boolean)
+      t('staticMap.keyAndSignatureNeverObserved', { observed: observed.length > 0, leaked: leaks(observed, sigs), inResults: leaks([img, wrongSecret, unsigned], sigs), signaturesSeen: sigs.length })
+
+      await ctl.reset()
+      const none = await staticMap(sm, HOME, as('acct-2'))
+      const noWho = await staticMap(sm, HOME)
+      const malformed = await staticMap(sm, HOME, as('acct-5'))
+      t('staticMap.noKeySendsNothing', { kind: none.error?.kind, retryable: none.error?.retryable, noWho: noWho.error?.kind, malformed: malformed.error?.kind, malformedNamesShape: /\{ key, secret\? \}/.test(malformed.error?.message ?? ''), sent: await attempts() })
+
+      const refusals = await Promise.all([
+        { ...HOME, center: { lat: 90.1, lng: 0 } }, { ...HOME, center: { lat: 0, lng: -180.5 } }, { ...HOME, center: { lat: Number.NaN, lng: 0 } },
+        { ...HOME, zoom: 22 }, { ...HOME, zoom: 1.5 }, { ...HOME, width: 641 }, { ...HOME, height: 0 },
+        { ...HOME, scale: 3 as unknown as 2 }, { ...HOME, maptype: 'streetview' as unknown as 'satellite' },
+      ].map(r => staticMap(sm, r, as('acct-1'))))
+      t('staticMap.rangeRefusedBeforeSend', { kinds: [...new Set(refusals.map(r => r.error?.kind))], each: refusals.map(r => r.error?.message.split(' ')[0]), sent: await attempts() })
+
+      // Negative control: past the local check, the sink refuses the same size.
+      const raw = await sm<unknown>({ method: 'GET', path: '/maps/api/staticmap', query: { center: '0,0', zoom: '1', size: '641x641' }, who: as('acct-1').who })
+      t('staticMap.sinkRefusesOutOfRange', { kind: raw.error?.kind, status: raw.meta.status })
+
+      wrong = createConduit({ credentials: { ...createStaticResolver({}), getFor: async () => staticMapCredential('AIza-wrong', SIGNING_SECRET) }, signers: staticMapSigners, ...DRIVE_RESILIENCE })
+      await wrong.register(googleStaticMapTarget({ address: sink.url }))
+      await ctl.reset()
+      const bad = await staticMap(bindStaticMap(wrong), HOME, as('acct-1'))
+      t('staticMap.wrongKeyIsBadKey', { kind: bad.error?.kind, status: bad.error?.status, leaked: leaks(bad), sent: await attempts() })
+
+      await ctl.reset(); await ctl.arm({ markup200: true })
+      const mk = await staticMap(sm, HOME, as('acct-1'))
+      t('staticMap.markup200IsConduitsRefusal', { image: mk.image ?? null, kind: mk.error?.kind })
+      await ctl.reset(); await ctl.arm({ failNext: true })
+      const flaky = await staticMap(sm, HOME, as('acct-1'))
+      t('staticMap.unavailableIsReplayedSigned', { ok: same(flaky.image?.bytes), attempts: await attempts(), bothVerified: (await seen()).requests.every(r => r.signed === true) })
+    } finally {
+      await sconduit.destroy(); await wrong?.destroy()
+    }
+  }
+
   // ═══ fcm: the service-account module, same listener ═════════════════════
   {
     const fctl  = control(sink.fcm)
@@ -298,6 +389,16 @@ process.exit(report(got, {
   'geocoding.keyInQueryOnly':           { answer: 'found', location: DEPOT.location, keyInQuery: true, keyHeader: null, keyNotObserved: true, keyNotInResult: true },
   'geocoding.zeroResultsIsAnAnswer':    { answer: 'zero_results', error: null },
   'geocoding.requestDeniedIsAuthFailed': { kind: 'auth_failed', status: 'REQUEST_DENIED', retryable: false },
+  'staticMap.target':                   { id: GOOGLE_STATIC_MAP_TARGET, host: 'maps.googleapis.com', auth: { type: 'signed', ref: 'GOOGLE_STATIC_MAP_CREDENTIAL', signer: 'google-maps-url', per_caller: true } },
+  'staticMap.signedImageRoundTrips':    { same: true, type: 'image/png', cache: 'public, max-age=86400', path: '/maps/api/staticmap', center: '39.799000,-89.644000', zoom: '19', size: '640x400', scale: '2', maptype: 'satellite', keyInQuery: true, signatureLast: true, sinkVerified: true },
+  'staticMap.signature':                { vector: 'chaRF2hTJKOScPr-RQCEhZbSzIE=', wrongSecret: { kind: 'bad_key', status: 403 }, unsignedOk: true, sinkSaw: [false, null] },
+  'staticMap.keyAndSignatureNeverObserved': { observed: true, leaked: false, inResults: false, signaturesSeen: 2 },
+  'staticMap.noKeySendsNothing':        { kind: 'no_key', retryable: false, noWho: 'no_key', malformed: 'no_key', malformedNamesShape: true, sent: 0 },
+  'staticMap.rangeRefusedBeforeSend':   { kinds: ['refused'], each: ['center.lat', 'center.lng', 'center.lat', 'zoom', 'zoom', 'width', 'height', 'scale', 'maptype'], sent: 0 },
+  'staticMap.sinkRefusesOutOfRange':    { kind: 'client_error', status: 400 },
+  'staticMap.wrongKeyIsBadKey':         { kind: 'bad_key', status: 403, leaked: false, sent: 1 },
+  'staticMap.markup200IsConduitsRefusal': { image: null, kind: 'invalid_response' },
+  'staticMap.unavailableIsReplayedSigned': { ok: true, attempts: 2, bothVerified: true },
   'fcm.send.succeeds':                               { ok: true, hasId: true, exchangedFirst: true, grant: 'urn:ietf:params:oauth:grant-type:jwt-bearer', alg: 'RS256', iss: sink.serviceAccount.client_email, aud: sink.tokenUrl, scheme: 'Bearer ', bodyWrapsMessage: true },
   'fcm.token.isCachedAcrossSends':                   { ok: true, exchanges: 1, tokenCalls: 1 },
   'fcm.unregistered.isUnregistered':                 { kind: 'unregistered', code: 'UNREGISTERED', retryable: false },

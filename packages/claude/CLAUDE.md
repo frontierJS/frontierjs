@@ -9,11 +9,11 @@ read as covering it, so the README's first line says otherwise.
 
 `src/limits.ts` the fixed values, `src/argv.ts` the profiles (`askArgv`, `sessionArgv`),
 `src/events.ts` the stream reader and its typed events, `src/images.ts` pasted images,
-`src/run.ts` `runAsk`. The live chat: `src/protocol.ts` the control channel, `src/permission.ts`
+`src/run.ts` `runAsk`, `src/door.ts` `claudeDoor` (the `@frontierjs/toolbelt/ask` door over `runAsk`'s `answer` profile). The live chat: `src/protocol.ts` the control channel, `src/permission.ts`
 a prompt's card and answer, `src/catalog.ts` what init and `initialize` offer, `src/session.ts`
 the process (`Session`). The protocol's frames are `docs/control-protocol.md`. Every in-tree
-caller (cli, Workbench, Basecamp) and Lathe import it by name. The plan for the rest — Haven's
-study session, Claude Code's own files — is `IDEAS/claude-calls.md`; do not cite it as behavior.
+caller (cli, Workbench, Basecamp, Haven's study) and Lathe import it by name. The plan for the rest —
+Claude Code's own files — is `IDEAS/claude-calls.md`; do not cite it as behavior.
 
 ## Traps
 
@@ -23,8 +23,8 @@ study session, Claude Code's own files — is `IDEAS/claude-calls.md`; do not ci
   named like a rule, prompt, handoff, kind or scope.
 - **`src/limits.ts` and `src/catalog.ts` have no `node:` import**, so a value can be named without the runner.
 - **A product's words stay out of `Session`.** The host's name reaches a deny's note and the
-  refusal of a request it does not serve through `host`; a card's extra facts (Lathe's diff)
-  through `card`.
+  refusal of a request it does not serve through `host`, a deny's own wording through `deny`
+  (Haven's), and a card's extra facts (Lathe's diff, Haven's input) through `card`.
 - **Relative imports carry `.ts`.** Vite dev servers load `cli/core/vite-ask.js`
   under Node, which strips types but resolves no missing extension.
 

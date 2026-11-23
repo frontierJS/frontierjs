@@ -113,7 +113,7 @@ describe('the binding key', () => {
   })
 })
 
-const UNRESOLVED_TODAY = 20
+const UNRESOLVED_TODAY = 6
 
 describe('every corpus file', () => {
   // rg skips node_modules and gitignored build output, as scripts/corpus.mjs does.

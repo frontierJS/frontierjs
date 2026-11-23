@@ -187,6 +187,14 @@ src/bearer/          what a bearer secret looks like at rest — `fingerprint`
                      guest pays this per call, so the expense would buy nothing
                      and cost the hot path (`FJS-D339`). Ships a `.d.ts` —
                      junction's resolver is TypeScript
+src/ask/             one question to a model and the reply any DOOR gives —
+                     `Question`, `Reply`, `Door` in the `.d.ts`; `REASONS`, the
+                     closed set a question goes unanswered for, `retryable`
+                     read from it; `unanswered` and `checkReply`, which each
+                     door's tests run its replies through. The local door is
+                     `@frontierjs/claude`'s, the API door
+                     `conduit-anthropic`'s, `app.ai` holds named doors
+                     (`FJS-D2327`, `FJS-D2329`). Ships a `.d.ts`
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier.
                      Two forms of one scheme: a shared `secret` (`v1-sha256=`)

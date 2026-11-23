@@ -639,6 +639,9 @@ export class BasecampSeeder extends Seeder {
               .create(2, { workspaceId: ws.id, environmentId: environment.id })
             if (apps[0])
               await sys.variable.create({ data: { ...base, appId: apps[0].id, key: 'LOG_LEVEL', value: 'info' } })
+            // A production app whose crash pages a channel, so the App page has a pick to show.
+            if (apps[0] && channels[0] && environment.tier === 'production')
+              await sys.appChannel.create({ data: { appId: apps[0].id, channelId: channels[0].id } })
 
             for (const app of apps) {
               // Where it runs. A seeded app with no placement is an app whose
@@ -1249,7 +1252,7 @@ if (import.meta.main) {
   for (const model of ['user', 'workspace', 'project', 'environment', 'app',
                        'server', 'volume', 'deployment', 'deploymentStep', 'job', 'jobRun',
                        'secret', 'apiKey', 'alertRule', 'notificationChannel',
-                       'alertRuleChannel', 'dashboard', 'dashboardTile',
+                       'alertRuleChannel', 'appChannel', 'dashboard', 'dashboardTile',
                        'recipe', 'recipeRun', 'diskUsage', 'serverPosture', 'maintenanceRun',
                        'blueprint', 'blueprintParam', 'registryImage',
                        'dependency', 'dependencyUse', 'backupDestination', 'appBackup', 'hubConfig', 'notificationPreference',

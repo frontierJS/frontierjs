@@ -323,7 +323,7 @@ describe('generated migration', () => {
     expect(historyGap(r, dir, { dbName: 'audit' }).ok).toBe(true)
   })
 
-  test('applies to a fresh database — 74 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 76 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -373,8 +373,8 @@ describe('generated migration', () => {
     // 71 again with `Backup` merged into `AppBackup` (`FJS-D1606`). 72 with
     // `AppPlatform` (`FJS-D1630`). The three Claude tables went to
     // `packages/workbench`. 73 with `MonitorUptimeDay` (`FJS-D1800`). 74 with
-    // `AppCopy` (`FJS-D2001`). 75 with `VariableVersion` (`FJS-D2216`).
-    expect(tables.length).toBe(75)
+    // `AppCopy` (`FJS-D2001`). 75 with `VariableVersion` (`FJS-D2216`). 76 with `AppChannel` (`FJS-D2273`).
+    expect(tables.length).toBe(76)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {
@@ -2084,7 +2084,7 @@ describe('the hub tier — suspension, and who may grant it', () => {
     // Q2 (`FJS-D1587`): the failures only -- a once-a-day state or a recovery
     // is a morning email, not a 3am ring.
     expect(NOTIFICATION_KINDS.filter(k => k.push).map(k => k.kind).sort()).toEqual(
-      ['AlertFiring', 'DeployFailed', 'JobFailed', 'MonitorDown', 'PostureFailed', 'ServerUnreachable'])
+      ['AlertFiring', 'AppCrashed', 'DeployFailed', 'JobFailed', 'MonitorDown', 'PostureFailed', 'ServerUnreachable'])
   })
 
   test('a status outside the vocabulary is refused by the column', async () => {
@@ -2519,7 +2519,7 @@ describe('App runtime columns', () => {
     'id', 'workspaceId', 'environmentId', 'projectId', 'name', 'slug', 'kind', 'status', 'source', 'hasExposedPort', 'swap',
     'isDeployedOnPush', 'pushSecret', 'pushTokenHash', 'pushActorId', 'deployPublicKey', 'blueprintId',
     'backupCron', 'backupDestinationId', 'replicaDestinationId', 'drillCron', 'replicaFoundAt',
-    'replicaSyncedAt', 'isIngressNamePublished', 'createdAt', 'updatedAt', 'deletedAt',
+    'replicaSyncedAt', 'isIngressNamePublished', 'isCrashAlerted', 'createdAt', 'updatedAt', 'deletedAt',
   ]
   const models = parseFile(SCHEMA).schema.models
   const columns = (name: string) => models.find((m: any) => m.name === name)!.fields

@@ -9,7 +9,7 @@
   no DOM, no `window`, no I/O, so the server and the browser give one answer.
   Layer pixels are world pixels minus `view().origin`, and the tile range is
   derived from that same origin, so tiles and markers cannot disagree.
-- `src/draw.js` — `pathData` (GeoJSON to a path `d`), `resolveView` (fit or
+- `src/draw.js` — `imageFrame` (the one-image basemap's URL and placement), `pathData` (GeoJSON to a path `d`), `resolveView` (fit or
   center, exactly one) and `mapModel`, which validates the props and returns
   every number the component prints. Pure, so `bun test` covers every refusal.
 - `src/StaticMap.mesa` — markup and styles only; it calls `mapModel` once.
@@ -49,6 +49,9 @@
   tile painted: Firefox counts stroke in a box and Chromium fires no `load` for
   a parsed `<image>` (plan 0.1).
 - The attribution is text in Stage 1: an entity or a link in it is not rendered.
+- An image basemap's markers are projected from the exact box corner, not the
+  tiled view's rounded one, so a center marker is at width/2 height/2; compare
+  them within half a pixel, never to the pixel.
 - `fit` floors the zoom; Leaflet rounds up within 1%, which overflows the box.
 - `project` does not wrap longitude; only a tile's column wraps, and a row
   outside the world is skipped.

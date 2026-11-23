@@ -26,7 +26,7 @@ import {
   withCache,
 } from './src/credentials.ts'
 import { createTraceContext, parseTraceparent, traceIdFrom } from './src/trace.ts'
-import { ConduitStreamError, CONDUIT_ERROR_KINDS, errorBody } from './src/types.ts'
+import { ConduitStreamError, CONDUIT_ERROR_KINDS, errorBody, type Signer } from './src/types.ts'
 import { countsAsTargetFault } from './src/resilience.ts'
 import type {
   TargetDescriptor,
@@ -6660,6 +6660,68 @@ describe('an api_key target that puts its key in the URL (FJS-2727)', () => {
       [{ type: 'api_key', ref: 'K', query: '' }, {}, /exactly one of header or query/],
       [{ type: 'api_key', ref: 'K', query: 'key' }, { protocol: 'websocket', address: 'ws://127.0.0.1:1' }, /only an 'http' or 'unix' target/],
     ] as const) await expect(c.register(providerTarget({ auth: auth as unknown as TargetDescriptor['auth'], ...(extra as Partial<TargetDescriptor>) }))).rejects.toThrow(why)
+  })
+})
+
+// ─── FJS-D2354 · a signer that signs the URL itself ─
+//
+// Google's Static API signs the path and query, key included, and takes the
+// signature as `&signature=`. A signer that could write only headers and a
+// body had no way to put either on the URL.
+
+describe('a signer that sets URL parameters (FJS-D2354)', () => {
+  const SIG = 'sig_Zm9vYmFy-_='
+  const urlSigner: Signer = ({ secret, url }) => {
+    const u = new URL(url)
+    u.searchParams.set('key', secret)
+    return { query: { key: secret, signature: `${SIG}${u.pathname.length}` } }
+  }
+  const signedInUrl = (address: string): TargetDescriptor => providerTarget({
+    id: 'provider:static', address,
+    auth: { type: 'signed', ref: 'HETZNER_TOKEN', signer: 'url' },
+  })
+  const leaks = (v: unknown) => { const j = JSON.stringify(v); return j.includes('htz-token-abc') || j.includes(SIG) || j.includes(encodeURIComponent(SIG)) }
+
+  it('puts the parameters on the fetched URL, displacing a caller\'s of the same name, and in nothing an observer or the result is handed', async () => {
+    const s = recorder(() => Response.json({ echoed: 'ok' }))
+    try {
+      const seen: unknown[] = []
+      const c = createConduit({ credentials: secrets(), signers: { url: urlSigner }, targets: [signedInUrl(s.url)],
+        observers: { onRequest: (req) => { seen.push(req) }, onResponse: (req, res) => { seen.push(req, res) } } })
+      await c.init()
+      const r = await c.send({ target: 'provider:static', method: 'GET', path: '/maps/api/staticmap', query: { center: '1,2', signature: 'FORGED' } })
+      expect(r.error).toBeNull()
+      const url = new URL(s.seen[0].url)
+      expect(url.searchParams.get('center')).toBe('1,2')
+      expect(url.searchParams.getAll('key')).toEqual(['htz-token-abc'])
+      expect(url.searchParams.getAll('signature')).toEqual([`${SIG}${'/maps/api/staticmap'.length}`])
+      expect([...s.seen[0].headers.values()].join(' ')).not.toContain('htz-token-abc')
+      expect(seen.length).toBeGreaterThan(0)
+      expect(leaks(seen)).toBe(false)
+      expect(leaks(r)).toBe(false)
+    } finally { s.stop() }
+  })
+
+  it('scrubs every parameter from a connection failure and from a redirect that echoes the URL', async () => {
+    const probe = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } })
+    const port = probe.port
+    probe.stop(true)
+    const down = new HttpTransport(signedInUrl(`http://127.0.0.1:${port}`), secrets(), { retry_limit: 0 })
+    down.signers = { url: urlSigner }
+    const failed = await down.send({ target: 'provider:static', method: 'GET', path: '/a' })
+    expect(failed.error!.kind).toBe('connection_failed')
+    expect(leaks(failed)).toBe(false)
+
+    const s = recorder((req) => new Response(null, { status: 301, headers: { location: req.url.replace('http:', 'https:') } }))
+    try {
+      const c = createConduit({ credentials: secrets(), signers: { url: urlSigner }, targets: [signedInUrl(s.url)] })
+      await c.init()
+      const r = await c.send({ target: 'provider:static', method: 'GET', path: '/a' })
+      expect(r.error?.kind).toBe('redirected')
+      expect(new URL(s.seen[0].url).searchParams.get('key')).toBe('htz-token-abc')
+      expect(leaks(r)).toBe(false)
+      expect(r.meta.headers?.location).toContain('signature=[redacted]')
+    } finally { s.stop() }
   })
 })
 

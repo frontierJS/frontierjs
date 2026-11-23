@@ -5,10 +5,10 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { resolve, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { checksum } from '@frontierjs/litestone/migrate'
 import {
-  journalDisagreements, journalRefusal, journalProbeScript, parseProbe, checkJournal,
+  journalDisagreements, journalRefusal, journalProbeScript, parseProbe, checkJournal, journalFindings,
 } from '../core/migration-journal.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -170,5 +170,45 @@ describe('checkJournal', () => {
     const script = journalProbeScript('app_api')
     expect(script).toStartWith('docker exec app_api sh -c ')
     expect(script).toContain('readonly: true')
+  })
+})
+
+// FJS-4562: basecamp:deploy printed 0 errors for a release whose initial
+// migration had been edited since the volume applied it; the container then
+// refused to boot. Its preflight asks each placed machine's container now.
+describe('journalFindings: the Basecamp door', () => {
+  const find = (boxes) => journalFindings({
+    destinations:   boxes.map((machine, i) => ({ name: `box${i}`, machine })),
+    slugs:          { appId: 'abcd1234ffff', project: 'acme', environment: 'prod', appSlug: 'api' },
+    migrationsRoot: DIR,
+  })
+
+  test('the probe goes to the container Outpost runs the App as', () => {
+    const box = fakeBox({ probe: probeOf(journalOf(FILES)) })
+    find([box])
+    expect(box.commands.at(-1)).toStartWith('docker exec fjs--acme-prod-api-abcd1234 ')
+  })
+
+  test('an edited applied file is an error naming the machine and the file', () => {
+    writeFileSync(join(DIR, 'main/20260801000000_initial_schema.sql'), 'edited\n')
+    const found = find([fakeBox({ probe: probeOf(journalOf(FILES)) })])
+    expect(found).toHaveLength(1)
+    expect(found[0].level).toBe('error')
+    expect(found[0].title).toContain('box0')
+    expect(found[0].detail).toContain('main/20260801000000_initial_schema.sql')
+    expect(found[0].hint).toContain('migrate create')
+  })
+
+  test('agreeing journals and a first release find nothing', () => {
+    expect(find([fakeBox({ probe: probeOf(journalOf(FILES)) }), fakeBox({ running: false })])).toEqual([])
+  })
+
+  test('the command asks it before it builds', () => {
+    const cmd = readFileSync(new URL('../commands/basecamp/deploy.md', import.meta.url), 'utf8')
+    const call = cmd.indexOf('await journalOnMachines(')
+    expect(cmd).toContain('journalFindings(')
+    expect(call).toBeGreaterThan(-1)
+    expect(call).toBeLessThan(cmd.indexOf('| docker build'))
+    expect(call).toBeLessThan(cmd.indexOf('await preflight('))
   })
 })

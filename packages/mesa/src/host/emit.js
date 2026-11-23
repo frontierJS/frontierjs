@@ -35,7 +35,7 @@
  * come too late, which is why the DOM builder makes its own at build time.
  */
 
-import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce, liveBinding, bindingKey, hydrationSite, LOC_ATTR } from '../compiler.js'
+import { xNode, Q, PRESERVE_WHITESPACE, contentFallback, writtenOnce, liveBinding, bindingKey, hydrationSite, dynamicElementBlock, LOC_ATTR } from '../compiler.js'
 import { htmlEntitiesToText } from '../entities.js'
 import { eachNode } from '../ir.js'
 import { esc, attrs as attrString, VOID } from '../runtime-server.js'
@@ -487,12 +487,16 @@ export function buildHost(ctx, t) {
   // A changed tag is a different node, so the element is rebuilt under a
   // key, as the DOM path's keyBlock rebuilds it.
   const emitDynamicElement = (n, parent, ind) => {
+    const block = { start: dynamicElementBlock(n.start) }
+    hydrationSite(ctx, 'block', block.start)
     if (string) {
       dep(n.tag)
+      if (hyd) hole(ind, `$$host.blockOpen(${idVar}, ${keyOf36(block)})`)
       line(ind, '{')
       line(ind + 1, `const $$tag = $$host.dynamicTag(${n.tag.code});`)
       emitElementString(n, ind + 1, '$$tag')
       line(ind, '}')
+      if (hyd) hole(ind, `$$host.blockClose(${idVar}, ${keyOf36(block)})`)
       return
     }
     const m = marker(parent, ind)

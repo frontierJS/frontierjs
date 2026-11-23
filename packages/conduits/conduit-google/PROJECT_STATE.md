@@ -3,7 +3,7 @@
 Renamed from `conduit-google-maps` 2026-11-05 (FJS-D1916); Maps is the first module (`src/maps/`). `fcm` joined 2026-11-05 from `conduit-push` (FJS-D1918); sink split into `sink/maps.ts` and `sink/fcm.ts`, one port.
 
 
-**New, sink-only, drive green (32 rows: 22 maps, 10 fcm).**
+**New, sink-only, drive green (42 rows: 32 maps, 10 fcm).**
 
 - Drive green against: the sink, both hosts on one port. Fixture: none exists.
 - Real vendor: never called; no key in the environment. Google's error
@@ -13,6 +13,11 @@ Renamed from `conduit-google-maps` 2026-11-05 (FJS-D1916); Maps is the first mod
   closed); three `geocoding.*` rows. Nominatim named as the free fallback, not built.
 - Places, Routes and Geocoding are still three targets, one bundle; `origins` (`FJS-D939`) could fold
   them into one, and every call would then name its host. Not done.
+- Static Maps (map-kit 4.4b): `staticMap` over a `signed`, `per_caller` target
+  whose stored value is JSON `{ key, secret? }` (`FJS-D2354`), range-checked
+  before any send; ten `staticMap.` rows. Signed through conduit
+  (`SignOutput.query`), verified by the sink, a wrong secret `bad_key`, no secret
+  unsigned. A bad key's 403 is assumed. Never called against Google.
 - Amendments to `CONTRACT.md`: C1 (one builder, one descriptor per
   origin sharing a ref; now the bundle); C5 (a paid read is `replayable: true`, the cost
   stated).

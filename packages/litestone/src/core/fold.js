@@ -134,7 +134,7 @@ export function foldSpec(model, models, pluralize = false) {
     .map((/** @type {any} */ b) => ({ field: b.field, column: rawCol(b.field), rollupColumn: rollCol(b.field) }))
   const aggs = ret.aggs.map((/** @type {any} */ a) =>
     ({ fn: a.fn, from: a.fn === 'count' ? null : rawCol(a.field), to: rollCol(a.field), field: a.field }))
-  const named   = new Set([...keys.map(k => k.field), 'day', ...aggs.map(a => a.field)])
+  const named   = new Set([...keys.map((/** @type {any} */ k) => k.field), 'day', ...aggs.map((/** @type {any} */ a) => a.field)])
   const updated = rollup.fields.filter((/** @type {any} */ f) => isStoredField(f) && isUpdatedAtField(f) && !named.has(f.name))
   const created = rollup.fields.filter((/** @type {any} */ f) => isStoredField(f) && !named.has(f.name) && !isUpdatedAtField(f) &&
     f.attributes.some((/** @type {any} */ a) => a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'now' && !a.value.shift))
@@ -204,6 +204,7 @@ export function foldedDay(spec, db, params) {
 export function foldMoveClause(spec, row, ops) {
   const cols = [...spec.keys, spec.clock]
   if (!cols.some(c => c.field in row || ops.some(o => o.col === c.field))) return null
+  /** @type {any[]} */
   const params = []
   const exprs  = cols.map(c => {
     const op = ops.find(o => o.col === c.field)

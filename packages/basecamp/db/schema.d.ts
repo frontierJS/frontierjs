@@ -138,9 +138,9 @@ export type DrillKind = 'manual' | 'scheduled'
 
 export type DependencyKind = 'dependency' | 'dev' | 'peer' | 'optional'
 
-export type NotificationContext = 'Deployment' | 'Alert' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor'
+export type NotificationContext = 'Deployment' | 'Alert' | 'JobRun' | 'Server' | 'Workspace' | 'Monitor' | 'App'
 
-export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound' | 'MonitorCertExpiring' | 'AppBackupFailed'
+export type NotificationKind = 'DeploySuccess' | 'DeployFailed' | 'AlertFiring' | 'AlertResolved' | 'ServerUnreachable' | 'MonitorDown' | 'MonitorUp' | 'PostureFailed' | 'HubPostureFailed' | 'DependencyVulnerable' | 'MemberJoined' | 'JobFailed' | 'WeeklyDigest' | 'ReplicaFound' | 'MonitorCertExpiring' | 'AppBackupFailed' | 'AppCrashed'
 
 export type VolumeKind = 'volume' | 'bind'
 
@@ -615,6 +615,7 @@ export interface CredentialCreate {
    */
   clientId?: string | null
   redirectUri?: string | null
+  user?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface CredentialUpdate {
@@ -631,6 +632,7 @@ export interface CredentialUpdate {
   isLinked?: boolean | null
   clientId?: string | null
   redirectUri?: string | null
+  user?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface CredentialWhere extends WhereBase {
@@ -648,6 +650,7 @@ export interface CredentialWhere extends WhereBase {
   clientId?: string | WhereOp<string> | null
   redirectUri?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   AND?: CredentialWhere[]
   OR?:  CredentialWhere[]
   NOT?: CredentialWhere
@@ -787,6 +790,7 @@ export interface SessionCreate {
   refreshToken?: string | null
   previousRefreshToken?: string | null
   rotatedAt?: string | Date | null
+  user?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface SessionUpdate {
@@ -805,6 +809,7 @@ export interface SessionUpdate {
   refreshToken?: string | null
   previousRefreshToken?: string | null
   rotatedAt?: string | Date | null
+  user?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface SessionWhere extends WhereBase {
@@ -824,6 +829,7 @@ export interface SessionWhere extends WhereBase {
   refreshToken?: string | WhereOp<string> | null
   previousRefreshToken?: string | WhereOp<string> | null
   rotatedAt?: string | Date | WhereOp<string | Date> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   AND?: SessionWhere[]
   OR?:  SessionWhere[]
   NOT?: SessionWhere
@@ -1111,6 +1117,15 @@ export interface OauthFlow {
    * @guarded
    */
   invitation?: string | null
+  /**
+   * A grant flow's target, `{ model, id }`: the app row its tokens land on
+   * (FJS-D1313). Written only by `oauthBegin` from a service that graded the
+   * caller; the callback has no session and trusts nothing else to say it.
+   * @guarded
+   */
+  grant?: unknown | null
+  /** The user id that started a grant flow. */
+  initiator?: string | null
   expiresAt: string
   createdAt: string
 }
@@ -1141,6 +1156,14 @@ export interface OauthFlowCreate {
    * subject proves the identity, and neither proves the other (FJS-D611).
    */
   invitation?: string | null
+  /**
+   * A grant flow's target, `{ model, id }`: the app row its tokens land on
+   * (FJS-D1313). Written only by `oauthBegin` from a service that graded the
+   * caller; the callback has no session and trusts nothing else to say it.
+   */
+  grant?: unknown | null
+  /** The user id that started a grant flow. */
+  initiator?: string | null
   expiresAt: string | Date
 }
 
@@ -1151,6 +1174,8 @@ export interface OauthFlowUpdate {
   verifier?: string
   returnTo?: string | null
   invitation?: string | null
+  grant?: unknown | null
+  initiator?: string | null
   expiresAt?: string | Date
 }
 
@@ -1161,6 +1186,8 @@ export interface OauthFlowWhere extends WhereBase {
   verifier?: string | WhereOp<string> | null
   returnTo?: string | WhereOp<string> | null
   invitation?: string | WhereOp<string> | null
+  grant?: unknown | WhereOp<unknown> | null
+  initiator?: string | WhereOp<string> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   AND?: OauthFlowWhere[]
@@ -1196,6 +1223,8 @@ export interface MetricSeriesCreate {
   type?: MetricType
   unit?: string | null
   lastSeenAt?: string | Date
+  points?: __HasManyWrite<MetricPointWhere, Omit<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
+  hours?: __HasManyWrite<MetricHourWhere, Omit<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
 }
 
 export interface MetricSeriesUpdate {
@@ -1206,6 +1235,8 @@ export interface MetricSeriesUpdate {
   type?: MetricType
   unit?: string | null
   lastSeenAt?: string | Date
+  points?: __HasManyWrite<MetricPointWhere, Omit<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
+  hours?: __HasManyWrite<MetricHourWhere, Omit<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
 }
 
 export interface MetricSeriesWhere extends WhereBase {
@@ -1217,6 +1248,8 @@ export interface MetricSeriesWhere extends WhereBase {
   unit?: string | WhereOp<string> | null
   lastSeenAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  points?: { some?: MetricPointWhere; every?: MetricPointWhere; none?: MetricPointWhere }
+  hours?: { some?: MetricHourWhere; every?: MetricHourWhere; none?: MetricHourWhere }
   AND?: MetricSeriesWhere[]
   OR?:  MetricSeriesWhere[]
   NOT?: MetricSeriesWhere
@@ -1243,18 +1276,21 @@ export interface MetricPointCreate {
   seriesId?: string
   at?: number
   value: number
+  series?: __BelongsToWrite<MetricSeriesWhere, MetricSeriesCreate>
 }
 
 export interface MetricPointUpdate {
   seriesId?: string
   at?: number
   value?: number
+  series?: __BelongsToWrite<MetricSeriesWhere, MetricSeriesCreate>
 }
 
 export interface MetricPointWhere extends WhereBase {
   seriesId?: string | WhereOp<string> | null
   at?: number | WhereOp<number> | null
   value?: number | WhereOp<number> | null
+  series?: { is?: MetricSeriesWhere; isNot?: MetricSeriesWhere }
   AND?: MetricPointWhere[]
   OR?:  MetricPointWhere[]
   NOT?: MetricPointWhere
@@ -1288,6 +1324,7 @@ export interface MetricHourCreate {
   sum: number
   count: number
   increase?: number | null
+  series?: __BelongsToWrite<MetricSeriesWhere, MetricSeriesCreate>
 }
 
 export interface MetricHourUpdate {
@@ -1298,6 +1335,7 @@ export interface MetricHourUpdate {
   sum?: number
   count?: number
   increase?: number | null
+  series?: __BelongsToWrite<MetricSeriesWhere, MetricSeriesCreate>
 }
 
 export interface MetricHourWhere extends WhereBase {
@@ -1308,6 +1346,7 @@ export interface MetricHourWhere extends WhereBase {
   sum?: number | WhereOp<number> | null
   count?: number | WhereOp<number> | null
   increase?: number | WhereOp<number> | null
+  series?: { is?: MetricSeriesWhere; isNot?: MetricSeriesWhere }
   AND?: MetricHourWhere[]
   OR?:  MetricHourWhere[]
   NOT?: MetricHourWhere
@@ -1347,7 +1386,10 @@ export interface FlowCreate {
   ownerId?: string
   runsPerMinute?: number | null
   maxWrites?: number
+  versions?: __HasManyWrite<FlowVersionWhere, Omit<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
+  owner?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface FlowUpdate {
@@ -1359,7 +1401,10 @@ export interface FlowUpdate {
   ownerId?: string
   runsPerMinute?: number | null
   maxWrites?: number
+  versions?: __HasManyWrite<FlowVersionWhere, Omit<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
+  owner?: __BelongsToWrite<UserWhere, UserCreate>
 }
 
 export interface FlowWhere extends WhereBase {
@@ -1373,7 +1418,11 @@ export interface FlowWhere extends WhereBase {
   maxWrites?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  versions?: { some?: FlowVersionWhere; every?: FlowVersionWhere; none?: FlowVersionWhere }
+  layout?: { is?: FlowLayoutWhere; isNot?: FlowLayoutWhere }
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
+  owner?: { is?: UserWhere; isNot?: UserWhere }
   deletedAt?: string | Date | WhereOp<string | Date> | null
   AND?: FlowWhere[]
   OR?:  FlowWhere[]
@@ -1405,26 +1454,32 @@ export interface FlowVersion {
 export interface FlowVersionCreate {
   id?: string
   flowId: string
+  flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   version: number
   definition: unknown
   authorId?: string | null
+  runs?: __HasManyWrite<RunWhere, Omit<RunCreate, 'flowVersionId'>, RunUpdate>
 }
 
 export interface FlowVersionUpdate {
   id?: string
   flowId?: string
+  flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   version?: number
   definition?: unknown
   authorId?: string | null
+  runs?: __HasManyWrite<RunWhere, Omit<RunCreate, 'flowVersionId'>, RunUpdate>
 }
 
 export interface FlowVersionWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   flowId?: string | WhereOp<string> | null
+  flow?: { is?: FlowWhere; isNot?: FlowWhere }
   version?: number | WhereOp<number> | null
   definition?: unknown | WhereOp<unknown> | null
   authorId?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
+  runs?: { some?: RunWhere; every?: RunWhere; none?: RunWhere }
   AND?: FlowVersionWhere[]
   OR?:  FlowVersionWhere[]
   NOT?: FlowVersionWhere
@@ -1451,18 +1506,21 @@ export interface FlowLayout {
 export interface FlowLayoutCreate {
   id?: string
   flowId: string
+  flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   layout?: unknown
 }
 
 export interface FlowLayoutUpdate {
   id?: string
   flowId?: string
+  flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   layout?: unknown
 }
 
 export interface FlowLayoutWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   flowId?: string | WhereOp<string> | null
+  flow?: { is?: FlowWhere; isNot?: FlowWhere }
   layout?: unknown | WhereOp<unknown> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   AND?: FlowLayoutWhere[]
@@ -1499,6 +1557,7 @@ export interface Run {
 export interface RunCreate {
   id?: string
   flowVersionId: string
+  flowVersion?: __BelongsToWrite<FlowVersionWhere, FlowVersionCreate>
   status?: FlowRunStatus
   trigger?: unknown | null
   context?: unknown | null
@@ -1508,11 +1567,14 @@ export interface RunCreate {
   endedAt?: string | Date | null
   error?: string | null
   heartbeatAt?: string | Date | null
+  steps?: __HasManyWrite<RunStepWhere, Omit<RunStepCreate, 'runId'>, RunStepUpdate>
+  waits?: __HasManyWrite<WaitWhere, Omit<WaitCreate, 'runId'>, WaitUpdate>
 }
 
 export interface RunUpdate {
   id?: string
   flowVersionId?: string
+  flowVersion?: __BelongsToWrite<FlowVersionWhere, FlowVersionCreate>
   status?: FlowRunStatus
   trigger?: unknown | null
   context?: unknown | null
@@ -1522,11 +1584,14 @@ export interface RunUpdate {
   endedAt?: string | Date | null
   error?: string | null
   heartbeatAt?: string | Date | null
+  steps?: __HasManyWrite<RunStepWhere, Omit<RunStepCreate, 'runId'>, RunStepUpdate>
+  waits?: __HasManyWrite<WaitWhere, Omit<WaitCreate, 'runId'>, WaitUpdate>
 }
 
 export interface RunWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   flowVersionId?: string | WhereOp<string> | null
+  flowVersion?: { is?: FlowVersionWhere; isNot?: FlowVersionWhere }
   status?: FlowRunStatus | WhereOp<FlowRunStatus> | null
   trigger?: unknown | WhereOp<unknown> | null
   context?: unknown | WhereOp<unknown> | null
@@ -1537,6 +1602,8 @@ export interface RunWhere extends WhereBase {
   error?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   heartbeatAt?: string | Date | WhereOp<string | Date> | null
+  steps?: { some?: RunStepWhere; every?: RunStepWhere; none?: RunStepWhere }
+  waits?: { some?: WaitWhere; every?: WaitWhere; none?: WaitWhere }
   AND?: RunWhere[]
   OR?:  RunWhere[]
   NOT?: RunWhere
@@ -1571,6 +1638,7 @@ export interface RunStep {
 export interface RunStepCreate {
   id?: string
   runId: string
+  run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId: string
   status: FlowStepStatus
   attempts?: number
@@ -1585,6 +1653,7 @@ export interface RunStepCreate {
 export interface RunStepUpdate {
   id?: string
   runId?: string
+  run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId?: string
   status?: FlowStepStatus
   attempts?: number
@@ -1599,6 +1668,7 @@ export interface RunStepUpdate {
 export interface RunStepWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   runId?: string | WhereOp<string> | null
+  run?: { is?: RunWhere; isNot?: RunWhere }
   nodeId?: string | WhereOp<string> | null
   status?: FlowStepStatus | WhereOp<FlowStepStatus> | null
   attempts?: number | WhereOp<number> | null
@@ -1636,6 +1706,7 @@ export interface WaitCreate {
   id?: string
   resumeKey: string
   runId: string
+  run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId: string
   timeoutAt?: string | Date | null
 }
@@ -1644,6 +1715,7 @@ export interface WaitUpdate {
   id?: string
   resumeKey?: string
   runId?: string
+  run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId?: string
   timeoutAt?: string | Date | null
 }
@@ -1652,6 +1724,7 @@ export interface WaitWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   resumeKey?: string | WhereOp<string> | null
   runId?: string | WhereOp<string> | null
+  run?: { is?: RunWhere; isNot?: RunWhere }
   nodeId?: string | WhereOp<string> | null
   timeoutAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -1695,6 +1768,7 @@ export interface FlowCredentialCreate {
   encoding?: string | null
   secret?: string | null
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
 }
 
 export interface FlowCredentialUpdate {
@@ -1707,6 +1781,7 @@ export interface FlowCredentialUpdate {
   encoding?: string | null
   secret?: string | null
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
 }
 
 export interface FlowCredentialWhere extends WhereBase {
@@ -1721,6 +1796,7 @@ export interface FlowCredentialWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   AND?: FlowCredentialWhere[]
   OR?:  FlowCredentialWhere[]
   NOT?: FlowCredentialWhere
@@ -1753,6 +1829,7 @@ export interface KvEntryCreate {
   value: unknown
   expiresAt?: string | Date | null
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
 }
 
 export interface KvEntryUpdate {
@@ -1762,6 +1839,7 @@ export interface KvEntryUpdate {
   value?: unknown
   expiresAt?: string | Date | null
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
 }
 
 export interface KvEntryWhere extends WhereBase {
@@ -1772,6 +1850,7 @@ export interface KvEntryWhere extends WhereBase {
   expiresAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   AND?: KvEntryWhere[]
   OR?:  KvEntryWhere[]
   NOT?: KvEntryWhere
@@ -1954,11 +2033,16 @@ export interface UserCreate {
   name?: string | null
   isEmailVerified?: boolean
   accountId?: string | null
+  account?: __BelongsToWrite<AccountWhere, AccountCreate>
   status?: UserStatus
   username?: string | null
   nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
+  memberships?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
+  appEditors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'userId'>, AppEditorUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
 }
 
 export interface UserUpdate {
@@ -1967,11 +2051,16 @@ export interface UserUpdate {
   name?: string | null
   isEmailVerified?: boolean
   accountId?: string | null
+  account?: __BelongsToWrite<AccountWhere, AccountCreate>
   status?: UserStatus
   username?: string | null
   nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
+  memberships?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
+  appEditors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'userId'>, AppEditorUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
 }
 
 export interface UserSystem {
@@ -1984,6 +2073,7 @@ export interface UserWhere extends WhereBase {
   name?: string | WhereOp<string> | null
   isEmailVerified?: boolean | WhereOp<boolean> | null
   accountId?: string | WhereOp<string> | null
+  account?: { is?: AccountWhere; isNot?: AccountWhere }
   kind?: UserKind | WhereOp<UserKind> | null
   status?: UserStatus | WhereOp<UserStatus> | null
   username?: string | WhereOp<string> | null
@@ -1993,6 +2083,10 @@ export interface UserWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  memberships?: { some?: WorkspaceMemberWhere; every?: WorkspaceMemberWhere; none?: WorkspaceMemberWhere }
+  appEditors?: { some?: AppEditorWhere; every?: AppEditorWhere; none?: AppEditorWhere }
+  deployments?: { some?: DeploymentWhere; every?: DeploymentWhere; none?: DeploymentWhere }
+  apiKeys?: { some?: ApiKeyWhere; every?: ApiKeyWhere; none?: ApiKeyWhere }
   AND?: UserWhere[]
   OR?:  UserWhere[]
   NOT?: UserWhere
@@ -2031,6 +2125,8 @@ export interface AccountCreate {
   slug: string
   displayName: string
   avatarUrl?: string | null
+  users?: __HasManyWrite<UserWhere, Omit<UserCreate, 'accountId'>, UserUpdate>
+  workspaces?: __HasManyWrite<WorkspaceWhere, Omit<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
 }
 
 export interface AccountUpdate {
@@ -2040,6 +2136,8 @@ export interface AccountUpdate {
   slug?: string
   displayName?: string
   avatarUrl?: string | null
+  users?: __HasManyWrite<UserWhere, Omit<UserCreate, 'accountId'>, UserUpdate>
+  workspaces?: __HasManyWrite<WorkspaceWhere, Omit<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
 }
 
 export interface AccountWhere extends WhereBase {
@@ -2052,6 +2150,8 @@ export interface AccountWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  users?: { some?: UserWhere; every?: UserWhere; none?: UserWhere }
+  workspaces?: { some?: WorkspaceWhere; every?: WorkspaceWhere; none?: WorkspaceWhere }
   AND?: AccountWhere[]
   OR?:  AccountWhere[]
   NOT?: AccountWhere
@@ -2094,6 +2194,7 @@ export interface Workspace {
 export interface WorkspaceCreate {
   id?: string
   accountId: string
+  account?: __BelongsToWrite<AccountWhere, AccountCreate>
   name: string
   slug: string
   kind?: WorkspaceKind
@@ -2102,11 +2203,26 @@ export interface WorkspaceCreate {
   ingressSecretId?: string | null
   ingressZoneId?: string | null
   pushTopic?: string | null
+  members?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
+  invitations?: __HasManyWrite<InvitationWhere, Omit<InvitationCreate, 'workspaceId'>, InvitationUpdate>
+  projects?: __HasManyWrite<ProjectWhere, Omit<ProjectCreate, 'workspaceId'>, ProjectUpdate>
+  servers?: __HasManyWrite<ServerWhere, Omit<ServerCreate, 'workspaceId'>, ServerUpdate>
+  secrets?: __HasManyWrite<SecretWhere, Omit<SecretCreate, 'workspaceId'>, SecretUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
+  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'workspaceId'>, JobUpdate>
+  alertRules?: __HasManyWrite<AlertRuleWhere, Omit<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
+  monitors?: __HasManyWrite<MonitorWhere, Omit<MonitorCreate, 'workspaceId'>, MonitorUpdate>
+  channels?: __HasManyWrite<NotificationChannelWhere, Omit<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
+  backupDestinations?: __HasManyWrite<BackupDestinationWhere, Omit<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
+  flags?: __HasManyWrite<FlagWhere, Omit<FlagCreate, 'workspaceId'>, FlagUpdate>
+  auditEvents?: __HasManyWrite<AuditEventWhere, Omit<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
+  flows?: __HasManyWrite<FlowWhere, Omit<FlowCreate, 'workspaceId'>, FlowUpdate>
 }
 
 export interface WorkspaceUpdate {
   id?: string
   accountId?: string
+  account?: __BelongsToWrite<AccountWhere, AccountCreate>
   name?: string
   slug?: string
   kind?: WorkspaceKind
@@ -2116,6 +2232,20 @@ export interface WorkspaceUpdate {
   ingressZoneId?: string | null
   pushTopic?: string | null
   version: number
+  members?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
+  invitations?: __HasManyWrite<InvitationWhere, Omit<InvitationCreate, 'workspaceId'>, InvitationUpdate>
+  projects?: __HasManyWrite<ProjectWhere, Omit<ProjectCreate, 'workspaceId'>, ProjectUpdate>
+  servers?: __HasManyWrite<ServerWhere, Omit<ServerCreate, 'workspaceId'>, ServerUpdate>
+  secrets?: __HasManyWrite<SecretWhere, Omit<SecretCreate, 'workspaceId'>, SecretUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
+  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'workspaceId'>, JobUpdate>
+  alertRules?: __HasManyWrite<AlertRuleWhere, Omit<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
+  monitors?: __HasManyWrite<MonitorWhere, Omit<MonitorCreate, 'workspaceId'>, MonitorUpdate>
+  channels?: __HasManyWrite<NotificationChannelWhere, Omit<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
+  backupDestinations?: __HasManyWrite<BackupDestinationWhere, Omit<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
+  flags?: __HasManyWrite<FlagWhere, Omit<FlagCreate, 'workspaceId'>, FlagUpdate>
+  auditEvents?: __HasManyWrite<AuditEventWhere, Omit<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
+  flows?: __HasManyWrite<FlowWhere, Omit<FlowCreate, 'workspaceId'>, FlowUpdate>
 }
 
 export interface WorkspaceSystem {
@@ -2128,6 +2258,7 @@ export interface WorkspaceSystem {
 export interface WorkspaceWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   accountId?: string | WhereOp<string> | null
+  account?: { is?: AccountWhere; isNot?: AccountWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   kind?: WorkspaceKind | WhereOp<WorkspaceKind> | null
@@ -2144,6 +2275,20 @@ export interface WorkspaceWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  members?: { some?: WorkspaceMemberWhere; every?: WorkspaceMemberWhere; none?: WorkspaceMemberWhere }
+  invitations?: { some?: InvitationWhere; every?: InvitationWhere; none?: InvitationWhere }
+  projects?: { some?: ProjectWhere; every?: ProjectWhere; none?: ProjectWhere }
+  servers?: { some?: ServerWhere; every?: ServerWhere; none?: ServerWhere }
+  secrets?: { some?: SecretWhere; every?: SecretWhere; none?: SecretWhere }
+  apiKeys?: { some?: ApiKeyWhere; every?: ApiKeyWhere; none?: ApiKeyWhere }
+  jobs?: { some?: JobWhere; every?: JobWhere; none?: JobWhere }
+  alertRules?: { some?: AlertRuleWhere; every?: AlertRuleWhere; none?: AlertRuleWhere }
+  monitors?: { some?: MonitorWhere; every?: MonitorWhere; none?: MonitorWhere }
+  channels?: { some?: NotificationChannelWhere; every?: NotificationChannelWhere; none?: NotificationChannelWhere }
+  backupDestinations?: { some?: BackupDestinationWhere; every?: BackupDestinationWhere; none?: BackupDestinationWhere }
+  flags?: { some?: FlagWhere; every?: FlagWhere; none?: FlagWhere }
+  auditEvents?: { some?: AuditEventWhere; every?: AuditEventWhere; none?: AuditEventWhere }
+  flows?: { some?: FlowWhere; every?: FlowWhere; none?: FlowWhere }
   AND?: WorkspaceWhere[]
   OR?:  WorkspaceWhere[]
   NOT?: WorkspaceWhere
@@ -2201,6 +2346,8 @@ export interface WorkspaceMember {
 export interface WorkspaceMemberCreate {
   id?: string
   workspaceId: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   /** This caller's authority in this workspace. Nobody may change their own. */
   role?: WorkspaceRole
   /**
@@ -2223,6 +2370,8 @@ export interface WorkspaceMemberCreate {
 export interface WorkspaceMemberUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   role?: WorkspaceRole
   capabilities?: Capability[]
   invitedBy?: string | null
@@ -2237,7 +2386,9 @@ export interface WorkspaceMemberSystem {
 export interface WorkspaceMemberWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   userId?: string | WhereOp<string> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   role?: WorkspaceRole | WhereOp<WorkspaceRole> | null
   capabilities?: Capability[] | WhereOp<Capability[]> | null
   invitedBy?: string | WhereOp<string> | null
@@ -2275,6 +2426,7 @@ export interface Invitation {
 export interface InvitationCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   email: string
   role?: WorkspaceRole
   token: string
@@ -2285,6 +2437,7 @@ export interface InvitationCreate {
 export interface InvitationUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   email?: string
   role?: WorkspaceRole
   token?: string
@@ -2295,6 +2448,7 @@ export interface InvitationUpdate {
 export interface InvitationWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   email?: string | WhereOp<string> | null
   role?: WorkspaceRole | WhereOp<WorkspaceRole> | null
   token?: string | WhereOp<string> | null
@@ -2359,6 +2513,7 @@ export interface Secret {
 export interface SecretCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   /**
    * A label people pick a secret from, never an environment variable key: a
    * secret is referenced by id (`secret:<id>#field`), and the env key, if one
@@ -2390,6 +2545,7 @@ export interface SecretCreate {
 export interface SecretUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   kind?: SecretKind
   data?: string
@@ -2406,6 +2562,7 @@ export interface SecretSystem {
 export interface SecretWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   kind?: SecretKind | WhereOp<SecretKind> | null
   data?: string | WhereOp<string> | null
@@ -2455,7 +2612,9 @@ export interface ApiKey {
 export interface ApiKeyCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   userId?: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   name: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2465,7 +2624,9 @@ export interface ApiKeyCreate {
 export interface ApiKeyUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   userId?: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   name?: string
   scopes?: string[]
   expiresAt?: string | Date | null
@@ -2486,7 +2647,9 @@ export interface ApiKeySystem {
 export interface ApiKeyWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   userId?: string | WhereOp<string> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   credentialId?: string | WhereOp<string> | null
   publicKey?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
@@ -2602,6 +2765,7 @@ export interface Server {
 export interface ServerCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   slug: string
   status?: ServerStatus
@@ -2644,11 +2808,16 @@ export interface ServerCreate {
   replication?: unknown | null
   runtime?: unknown | null
   labels?: unknown
+  events?: __HasManyWrite<ServerEventWhere, Omit<ServerEventCreate, 'serverId'>, ServerEventUpdate>
+  volumes?: __HasManyWrite<VolumeWhere, Omit<VolumeCreate, 'serverId'>, VolumeUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'serverId'>, AppServerUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
 }
 
 export interface ServerUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   slug?: string
   status?: ServerStatus
@@ -2670,6 +2839,10 @@ export interface ServerUpdate {
   replication?: unknown | null
   runtime?: unknown | null
   labels?: unknown
+  events?: __HasManyWrite<ServerEventWhere, Omit<ServerEventCreate, 'serverId'>, ServerEventUpdate>
+  volumes?: __HasManyWrite<VolumeWhere, Omit<VolumeCreate, 'serverId'>, VolumeUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'serverId'>, AppServerUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
 }
 
 export interface ServerSystem {
@@ -2686,6 +2859,7 @@ export interface ServerSystem {
 export interface ServerWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   status?: ServerStatus | WhereOp<ServerStatus> | null
@@ -2718,6 +2892,10 @@ export interface ServerWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  events?: { some?: ServerEventWhere; every?: ServerEventWhere; none?: ServerEventWhere }
+  volumes?: { some?: VolumeWhere; every?: VolumeWhere; none?: VolumeWhere }
+  appServers?: { some?: AppServerWhere; every?: AppServerWhere; none?: AppServerWhere }
+  serverNetworks?: { some?: ServerNetworkWhere; every?: ServerNetworkWhere; none?: ServerNetworkWhere }
   AND?: ServerWhere[]
   OR?:  ServerWhere[]
   NOT?: ServerWhere
@@ -2750,6 +2928,7 @@ export interface ServerEvent {
 export interface ServerEventCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind: ServerEventKind
   message: string
   metadata?: unknown
@@ -2758,6 +2937,7 @@ export interface ServerEventCreate {
 export interface ServerEventUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind?: ServerEventKind
   message?: string
   metadata?: unknown
@@ -2770,6 +2950,7 @@ export interface ServerEventSystem {
 export interface ServerEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   kind?: ServerEventKind | WhereOp<ServerEventKind> | null
   message?: string | WhereOp<string> | null
   metadata?: unknown | WhereOp<unknown> | null
@@ -2944,6 +3125,7 @@ export interface Volume {
 export interface VolumeCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   name: string
   kind?: VolumeKind
   driver?: string
@@ -2959,6 +3141,7 @@ export interface VolumeCreate {
 export interface VolumeUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   name?: string
   kind?: VolumeKind
   driver?: string
@@ -2974,6 +3157,7 @@ export interface VolumeUpdate {
 export interface VolumeWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   name?: string | WhereOp<string> | null
   kind?: VolumeKind | WhereOp<VolumeKind> | null
   driver?: string | WhereOp<string> | null
@@ -3024,6 +3208,8 @@ export interface NetworkCreate {
   cidr?: string
   providerKind?: NetworkProvider
   config?: unknown
+  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
 }
 
 export interface NetworkUpdate {
@@ -3036,6 +3222,8 @@ export interface NetworkUpdate {
   providerKind?: NetworkProvider
   config?: unknown
   version: number
+  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
 }
 
 export interface NetworkWhere extends WhereBase {
@@ -3051,6 +3239,8 @@ export interface NetworkWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  appNetworks?: { some?: AppNetworkWhere; every?: AppNetworkWhere; none?: AppNetworkWhere }
+  serverNetworks?: { some?: ServerNetworkWhere; every?: ServerNetworkWhere; none?: ServerNetworkWhere }
   AND?: NetworkWhere[]
   OR?:  NetworkWhere[]
   NOT?: NetworkWhere
@@ -3078,7 +3268,9 @@ export interface ServerNetwork {
 export interface ServerNetworkCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   networkId: string
+  network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   joinedAt?: string | Date
 }
@@ -3086,7 +3278,9 @@ export interface ServerNetworkCreate {
 export interface ServerNetworkUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   networkId?: string
+  network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   joinedAt?: string | Date
 }
@@ -3094,7 +3288,9 @@ export interface ServerNetworkUpdate {
 export interface ServerNetworkWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   networkId?: string | WhereOp<string> | null
+  network?: { is?: NetworkWhere; isNot?: NetworkWhere }
   ipAddress?: string | WhereOp<string> | null
   joinedAt?: string | Date | WhereOp<string | Date> | null
   AND?: ServerNetworkWhere[]
@@ -3132,17 +3328,22 @@ export interface Project {
 export interface ProjectCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   slug: string
   description?: string | null
   status?: ProjectStatus
   tags?: string[]
   metadata?: unknown
+  environments?: __HasManyWrite<EnvironmentWhere, Omit<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'projectId'>, AppUpdate>
+  dependencyUses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
 }
 
 export interface ProjectUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   slug?: string
   description?: string | null
@@ -3150,11 +3351,15 @@ export interface ProjectUpdate {
   tags?: string[]
   metadata?: unknown
   version: number
+  environments?: __HasManyWrite<EnvironmentWhere, Omit<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'projectId'>, AppUpdate>
+  dependencyUses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
 }
 
 export interface ProjectWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
@@ -3165,6 +3370,9 @@ export interface ProjectWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  environments?: { some?: EnvironmentWhere; every?: EnvironmentWhere; none?: EnvironmentWhere }
+  apps?: { some?: AppWhere; every?: AppWhere; none?: AppWhere }
+  dependencyUses?: { some?: DependencyUseWhere; every?: DependencyUseWhere; none?: DependencyUseWhere }
   AND?: ProjectWhere[]
   OR?:  ProjectWhere[]
   NOT?: ProjectWhere
@@ -3201,27 +3409,36 @@ export interface Environment {
 export interface EnvironmentCreate {
   id?: string
   projectId: string
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   workspaceId?: string
   name: string
   slug: string
   tier?: EnvironmentTier
   isProtected?: boolean
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'environmentId'>, AppUpdate>
+  flagOverrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
+  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'environmentId'>, VariableUpdate>
 }
 
 export interface EnvironmentUpdate {
   id?: string
   projectId?: string
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   workspaceId?: string
   name?: string
   slug?: string
   tier?: EnvironmentTier
   isProtected?: boolean
   version: number
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'environmentId'>, AppUpdate>
+  flagOverrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
+  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'environmentId'>, VariableUpdate>
 }
 
 export interface EnvironmentWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   projectId?: string | WhereOp<string> | null
+  project?: { is?: ProjectWhere; isNot?: ProjectWhere }
   workspaceId?: string | WhereOp<string> | null
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
@@ -3231,6 +3448,9 @@ export interface EnvironmentWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  apps?: { some?: AppWhere; every?: AppWhere; none?: AppWhere }
+  flagOverrides?: { some?: FlagOverrideWhere; every?: FlagOverrideWhere; none?: FlagOverrideWhere }
+  variables?: { some?: VariableWhere; every?: VariableWhere; none?: VariableWhere }
   AND?: EnvironmentWhere[]
   OR?:  EnvironmentWhere[]
   NOT?: EnvironmentWhere
@@ -3271,6 +3491,7 @@ export interface App {
   hasExposedPort: boolean
   isIngressNamePublished: boolean
   swap: DeploySwap
+  isCrashAlerted: boolean
   isDeployedOnPush: boolean
   /** @encrypted */
   pushSecret?: string | null
@@ -3294,6 +3515,8 @@ export interface AppCreate {
   id?: string
   workspaceId?: string
   environmentId: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   name: string
   slug: string
   kind?: AppKind
@@ -3310,16 +3533,34 @@ export interface AppCreate {
   hasExposedPort?: boolean
   isIngressNamePublished?: boolean
   swap?: DeploySwap
+  isCrashAlerted?: boolean
+  blueprint?: __BelongsToWrite<BlueprintWhere, BlueprintCreate>
   backupCron?: string | null
   backupDestinationId?: string | null
+  backupDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   replicaDestinationId?: string | null
+  replicaDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   drillCron?: string | null
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'appId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'appId'>, AppDrillUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'appId'>, DeploymentUpdate>
+  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'appId'>, JobUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'appId'>, AppServerUpdate>
+  appPlatforms?: __HasManyWrite<AppPlatformWhere, Omit<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
+  domains?: __HasManyWrite<DomainWhere, Omit<DomainCreate, 'appId'>, DomainUpdate>
+  domainRoutes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
+  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'appId'>, VariableUpdate>
+  editors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'appId'>, AppEditorUpdate>
+  crashChannels?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'appId'>, AppChannelUpdate>
 }
 
 export interface AppUpdate {
   id?: string
   workspaceId?: string
   environmentId?: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   name?: string
   slug?: string
   kind?: AppKind
@@ -3336,10 +3577,26 @@ export interface AppUpdate {
   hasExposedPort?: boolean
   isIngressNamePublished?: boolean
   swap?: DeploySwap
+  isCrashAlerted?: boolean
+  blueprint?: __BelongsToWrite<BlueprintWhere, BlueprintCreate>
   backupCron?: string | null
   backupDestinationId?: string | null
+  backupDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   replicaDestinationId?: string | null
+  replicaDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   drillCron?: string | null
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'appId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'appId'>, AppDrillUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'appId'>, DeploymentUpdate>
+  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'appId'>, JobUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'appId'>, AppServerUpdate>
+  appPlatforms?: __HasManyWrite<AppPlatformWhere, Omit<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
+  domains?: __HasManyWrite<DomainWhere, Omit<DomainCreate, 'appId'>, DomainUpdate>
+  domainRoutes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
+  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'appId'>, VariableUpdate>
+  editors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'appId'>, AppEditorUpdate>
+  crashChannels?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'appId'>, AppChannelUpdate>
 }
 
 export interface AppSystem {
@@ -3359,7 +3616,9 @@ export interface AppWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   environmentId?: string | WhereOp<string> | null
+  environment?: { is?: EnvironmentWhere; isNot?: EnvironmentWhere }
   projectId?: string | WhereOp<string> | null
+  project?: { is?: ProjectWhere; isNot?: ProjectWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   kind?: AppKind | WhereOp<AppKind> | null
@@ -3377,21 +3636,38 @@ export interface AppWhere extends WhereBase {
   hasExposedPort?: boolean | WhereOp<boolean> | null
   isIngressNamePublished?: boolean | WhereOp<boolean> | null
   swap?: DeploySwap | WhereOp<DeploySwap> | null
+  isCrashAlerted?: boolean | WhereOp<boolean> | null
   isDeployedOnPush?: boolean | WhereOp<boolean> | null
   pushSecret?: string | WhereOp<string> | null
   pushTokenHash?: string | WhereOp<string> | null
   pushActorId?: string | WhereOp<string> | null
   deployPublicKey?: string | WhereOp<string> | null
   blueprintId?: string | WhereOp<string> | null
+  blueprint?: { is?: BlueprintWhere; isNot?: BlueprintWhere }
   backupCron?: string | WhereOp<string> | null
   backupDestinationId?: string | WhereOp<string> | null
+  backupDestination?: { is?: BackupDestinationWhere; isNot?: BackupDestinationWhere }
   replicaDestinationId?: string | WhereOp<string> | null
+  replicaDestination?: { is?: BackupDestinationWhere; isNot?: BackupDestinationWhere }
   drillCron?: string | WhereOp<string> | null
   replicaFoundAt?: string | Date | WhereOp<string | Date> | null
   replicaSyncedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  appBackups?: { some?: AppBackupWhere; every?: AppBackupWhere; none?: AppBackupWhere }
+  appDrills?: { some?: AppDrillWhere; every?: AppDrillWhere; none?: AppDrillWhere }
+  deployments?: { some?: DeploymentWhere; every?: DeploymentWhere; none?: DeploymentWhere }
+  jobs?: { some?: JobWhere; every?: JobWhere; none?: JobWhere }
+  appServers?: { some?: AppServerWhere; every?: AppServerWhere; none?: AppServerWhere }
+  appPlatforms?: { some?: AppPlatformWhere; every?: AppPlatformWhere; none?: AppPlatformWhere }
+  appNetworks?: { some?: AppNetworkWhere; every?: AppNetworkWhere; none?: AppNetworkWhere }
+  domains?: { some?: DomainWhere; every?: DomainWhere; none?: DomainWhere }
+  domainRoutes?: { some?: DomainRouteWhere; every?: DomainRouteWhere; none?: DomainRouteWhere }
+  variables?: { some?: VariableWhere; every?: VariableWhere; none?: VariableWhere }
+  editors?: { some?: AppEditorWhere; every?: AppEditorWhere; none?: AppEditorWhere }
+  crashChannels?: { some?: AppChannelWhere; every?: AppChannelWhere; none?: AppChannelWhere }
+  hub?: { is?: HubConfigWhere; isNot?: HubConfigWhere }
   AND?: AppWhere[]
   OR?:  AppWhere[]
   NOT?: AppWhere
@@ -3418,6 +3694,7 @@ export interface AppRelations {
   domainRoutes: DomainRoute[]
   variables: Variable[]
   editors: AppEditor[]
+  crashChannels: AppChannel[]
   hub: HubConfig | null
 }
 
@@ -3445,22 +3722,28 @@ export interface VariableCreate {
   id?: string
   workspaceId?: string
   environmentId?: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   key: string
   isSecret?: boolean
   value?: string | null
   secretValue?: string | null
+  versions?: __HasManyWrite<VariableVersionWhere, Omit<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
 }
 
 export interface VariableUpdate {
   id?: string
   workspaceId?: string
   environmentId?: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   key?: string
   isSecret?: boolean
   value?: string | null
   secretValue?: string | null
+  versions?: __HasManyWrite<VariableVersionWhere, Omit<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
   version: number
 }
 
@@ -3472,12 +3755,15 @@ export interface VariableWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   environmentId?: string | WhereOp<string> | null
+  environment?: { is?: EnvironmentWhere; isNot?: EnvironmentWhere }
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   key?: string | WhereOp<string> | null
   isSecret?: boolean | WhereOp<boolean> | null
   value?: string | WhereOp<string> | null
   secretValue?: string | WhereOp<string> | null
   revision?: number | WhereOp<number> | null
+  versions?: { some?: VariableVersionWhere; every?: VariableVersionWhere; none?: VariableVersionWhere }
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3514,6 +3800,7 @@ export interface VariableVersionCreate {
   id?: string
   workspaceId?: string
   variableId: string
+  variable?: __BelongsToWrite<VariableWhere, VariableCreate>
   revision: number
   secretValue: string
   revokedAt?: string | Date | null
@@ -3523,6 +3810,7 @@ export interface VariableVersionUpdate {
   id?: string
   workspaceId?: string
   variableId?: string
+  variable?: __BelongsToWrite<VariableWhere, VariableCreate>
   revision?: number
   secretValue?: string
   revokedAt?: string | Date | null
@@ -3532,6 +3820,7 @@ export interface VariableVersionWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   variableId?: string | WhereOp<string> | null
+  variable?: { is?: VariableWhere; isNot?: VariableWhere }
   revision?: number | WhereOp<number> | null
   secretValue?: string | WhereOp<string> | null
   revokedAt?: string | Date | WhereOp<string | Date> | null
@@ -3578,6 +3867,8 @@ export interface DomainCreate {
   id?: string
   workspaceId?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
+  routes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
   hostname: string
   isPrimary?: boolean
   redirectTo?: string | null
@@ -3590,6 +3881,8 @@ export interface DomainUpdate {
   id?: string
   workspaceId?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
+  routes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
   hostname?: string
   isPrimary?: boolean
   redirectTo?: string | null
@@ -3612,6 +3905,8 @@ export interface DomainWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
+  routes?: { some?: DomainRouteWhere; every?: DomainRouteWhere; none?: DomainRouteWhere }
   hostname?: string | WhereOp<string> | null
   isPrimary?: boolean | WhereOp<boolean> | null
   redirectTo?: string | WhereOp<string> | null
@@ -3659,7 +3954,9 @@ export interface DomainRouteCreate {
   id?: string
   workspaceId?: string
   domainId: string
+  domain?: __BelongsToWrite<DomainWhere, DomainCreate>
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   pathPrefix: string
 }
 
@@ -3667,7 +3964,9 @@ export interface DomainRouteUpdate {
   id?: string
   workspaceId?: string
   domainId?: string
+  domain?: __BelongsToWrite<DomainWhere, DomainCreate>
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   pathPrefix?: string
 }
 
@@ -3675,7 +3974,9 @@ export interface DomainRouteWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   domainId?: string | WhereOp<string> | null
+  domain?: { is?: DomainWhere; isNot?: DomainWhere }
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   pathPrefix?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3708,21 +4009,27 @@ export interface AppEditor {
 export interface AppEditorCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   userId: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   role?: EditorRole
 }
 
 export interface AppEditorUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   userId?: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   role?: EditorRole
 }
 
 export interface AppEditorWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   userId?: string | WhereOp<string> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   role?: EditorRole | WhereOp<EditorRole> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
@@ -3757,7 +4064,9 @@ export interface AppServer {
 export interface AppServerCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   replicaIndex?: number
   status?: AppStatus
   containerId?: string | null
@@ -3769,7 +4078,9 @@ export interface AppServerCreate {
 export interface AppServerUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   replicaIndex?: number
   status?: AppStatus
   containerId?: string | null
@@ -3781,7 +4092,9 @@ export interface AppServerUpdate {
 export interface AppServerWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   replicaIndex?: number | WhereOp<number> | null
   status?: AppStatus | WhereOp<AppStatus> | null
   containerId?: string | WhereOp<string> | null
@@ -3829,6 +4142,7 @@ export interface AppPlatformCreate {
   id?: string
   workspaceId?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   providerSecretId: string
   providerKind: PlatformProvider
   providerAccountId: string
@@ -3842,6 +4156,7 @@ export interface AppPlatformUpdate {
   id?: string
   workspaceId?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   providerSecretId?: string
   providerKind?: PlatformProvider
   providerAccountId?: string
@@ -3862,6 +4177,7 @@ export interface AppPlatformWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   providerSecretId?: string | WhereOp<string> | null
   providerKind?: PlatformProvider | WhereOp<PlatformProvider> | null
   providerAccountId?: string | WhereOp<string> | null
@@ -3913,10 +4229,14 @@ export interface AppBackup {
 export interface AppBackupCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string | null
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   destinationId?: string | null
+  destination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   kind?: BackupKind
   deploymentId?: string | null
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   status?: RunStatus
   sizeBytes?: number | null
   fileCount?: number | null
@@ -3932,10 +4252,14 @@ export interface AppBackupCreate {
 export interface AppBackupUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string | null
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   destinationId?: string | null
+  destination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   kind?: BackupKind
   deploymentId?: string | null
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   status?: RunStatus
   sizeBytes?: number | null
   fileCount?: number | null
@@ -3951,10 +4275,14 @@ export interface AppBackupUpdate {
 export interface AppBackupWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   destinationId?: string | WhereOp<string> | null
+  destination?: { is?: BackupDestinationWhere; isNot?: BackupDestinationWhere }
   kind?: BackupKind | WhereOp<BackupKind> | null
   deploymentId?: string | WhereOp<string> | null
+  deployment?: { is?: DeploymentWhere; isNot?: DeploymentWhere }
   status?: RunStatus | WhereOp<RunStatus> | null
   sizeBytes?: number | WhereOp<number> | null
   fileCount?: number | WhereOp<number> | null
@@ -4005,8 +4333,11 @@ export interface AppDrill {
 export interface AppDrillCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   deploymentId?: string | null
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   kind?: DrillKind
   status?: RunStatus
   at?: string | Date | null
@@ -4022,8 +4353,11 @@ export interface AppDrillCreate {
 export interface AppDrillUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   deploymentId?: string | null
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   kind?: DrillKind
   status?: RunStatus
   at?: string | Date | null
@@ -4039,8 +4373,11 @@ export interface AppDrillUpdate {
 export interface AppDrillWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   deploymentId?: string | WhereOp<string> | null
+  deployment?: { is?: DeploymentWhere; isNot?: DeploymentWhere }
   kind?: DrillKind | WhereOp<DrillKind> | null
   status?: RunStatus | WhereOp<RunStatus> | null
   at?: string | Date | WhereOp<string | Date> | null
@@ -4089,7 +4426,9 @@ export interface AppCopy {
 export interface AppCopyCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   cron: string
   isServingMainAddress?: boolean
   requestedBy?: string | null
@@ -4098,7 +4437,9 @@ export interface AppCopyCreate {
 export interface AppCopyUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   cron?: string
   isServingMainAddress?: boolean
   requestedBy?: string | null
@@ -4116,7 +4457,9 @@ export interface AppCopySystem {
 export interface AppCopyWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   cron?: string | WhereOp<string> | null
   status?: RunStatus | WhereOp<RunStatus> | null
   asOf?: string | Date | WhereOp<string | Date> | null
@@ -4156,7 +4499,9 @@ export interface AppNetwork {
 export interface AppNetworkCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   networkId: string
+  network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   dnsName?: string | null
   joinedAt?: string | Date
@@ -4165,7 +4510,9 @@ export interface AppNetworkCreate {
 export interface AppNetworkUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   networkId?: string
+  network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   dnsName?: string | null
   joinedAt?: string | Date
@@ -4174,7 +4521,9 @@ export interface AppNetworkUpdate {
 export interface AppNetworkWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   networkId?: string | WhereOp<string> | null
+  network?: { is?: NetworkWhere; isNot?: NetworkWhere }
   ipAddress?: string | WhereOp<string> | null
   dnsName?: string | WhereOp<string> | null
   joinedAt?: string | Date | WhereOp<string | Date> | null
@@ -4228,6 +4577,7 @@ export interface Deployment {
 export interface DeploymentCreate {
   id?: string
   appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   workspaceId?: string
   status?: DeployStatus
   trigger?: DeployTrigger
@@ -4237,12 +4587,17 @@ export interface DeploymentCreate {
   commitAuthor?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
+  triggeredByUser?: __BelongsToWrite<UserWhere, UserCreate>
   queuedAt?: string | Date
+  steps?: __HasManyWrite<DeploymentStepWhere, Omit<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
 }
 
 export interface DeploymentUpdate {
   id?: string
   appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   workspaceId?: string
   status?: DeployStatus
   trigger?: DeployTrigger
@@ -4252,7 +4607,11 @@ export interface DeploymentUpdate {
   commitAuthor?: string | null
   configSnapshot?: unknown
   triggeredBy?: string | null
+  triggeredByUser?: __BelongsToWrite<UserWhere, UserCreate>
   queuedAt?: string | Date
+  steps?: __HasManyWrite<DeploymentStepWhere, Omit<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
 }
 
 export interface DeploymentSystem {
@@ -4275,6 +4634,7 @@ export interface DeploymentSystem {
 export interface DeploymentWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   workspaceId?: string | WhereOp<string> | null
   status?: DeployStatus | WhereOp<DeployStatus> | null
   trigger?: DeployTrigger | WhereOp<DeployTrigger> | null
@@ -4295,12 +4655,16 @@ export interface DeploymentWhere extends WhereBase {
   previousDeploymentId?: string | WhereOp<string> | null
   configSnapshot?: unknown | WhereOp<unknown> | null
   triggeredBy?: string | WhereOp<string> | null
+  triggeredByUser?: { is?: UserWhere; isNot?: UserWhere }
   queuedAt?: string | Date | WhereOp<string | Date> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
   finishedAt?: string | Date | WhereOp<string | Date> | null
   durationMs?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  steps?: { some?: DeploymentStepWhere; every?: DeploymentStepWhere; none?: DeploymentStepWhere }
+  appBackups?: { some?: AppBackupWhere; every?: AppBackupWhere; none?: AppBackupWhere }
+  appDrills?: { some?: AppDrillWhere; every?: AppDrillWhere; none?: AppDrillWhere }
   AND?: DeploymentWhere[]
   OR?:  DeploymentWhere[]
   NOT?: DeploymentWhere
@@ -4335,6 +4699,7 @@ export interface DeploymentStep {
 export interface DeploymentStepCreate {
   id?: string
   deploymentId: string
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   position?: number
   name: string
   status?: StepStatus
@@ -4347,6 +4712,7 @@ export interface DeploymentStepCreate {
 export interface DeploymentStepUpdate {
   id?: string
   deploymentId?: string
+  deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   position?: number
   name?: string
   status?: StepStatus
@@ -4359,6 +4725,7 @@ export interface DeploymentStepUpdate {
 export interface DeploymentStepWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   deploymentId?: string | WhereOp<string> | null
+  deployment?: { is?: DeploymentWhere; isNot?: DeploymentWhere }
   position?: number | WhereOp<number> | null
   name?: string | WhereOp<string> | null
   status?: StepStatus | WhereOp<StepStatus> | null
@@ -4403,7 +4770,9 @@ export interface Job {
 export interface JobCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   name: string
   kind?: JobKind
   status?: JobStatus
@@ -4411,12 +4780,15 @@ export interface JobCreate {
   cronExpression?: string | null
   timeoutSeconds?: number
   retryLimit?: number
+  runs?: __HasManyWrite<JobRunWhere, Omit<JobRunCreate, 'jobId'>, JobRunUpdate>
 }
 
 export interface JobUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   name?: string
   kind?: JobKind
   status?: JobStatus
@@ -4424,6 +4796,7 @@ export interface JobUpdate {
   cronExpression?: string | null
   timeoutSeconds?: number
   retryLimit?: number
+  runs?: __HasManyWrite<JobRunWhere, Omit<JobRunCreate, 'jobId'>, JobRunUpdate>
 }
 
 export interface JobSystem {
@@ -4435,7 +4808,9 @@ export interface JobSystem {
 export interface JobWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   name?: string | WhereOp<string> | null
   kind?: JobKind | WhereOp<JobKind> | null
   status?: JobStatus | WhereOp<JobStatus> | null
@@ -4449,6 +4824,7 @@ export interface JobWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  runs?: { some?: JobRunWhere; every?: JobRunWhere; none?: JobRunWhere }
   AND?: JobWhere[]
   OR?:  JobWhere[]
   NOT?: JobWhere
@@ -4483,6 +4859,7 @@ export interface JobRun {
 export interface JobRunCreate {
   id?: string
   jobId: string
+  job?: __BelongsToWrite<JobWhere, JobCreate>
   status?: RunStatus
   trigger?: string
   startedAt?: string | Date
@@ -4496,6 +4873,7 @@ export interface JobRunCreate {
 export interface JobRunUpdate {
   id?: string
   jobId?: string
+  job?: __BelongsToWrite<JobWhere, JobCreate>
   status?: RunStatus
   trigger?: string
   startedAt?: string | Date
@@ -4509,6 +4887,7 @@ export interface JobRunUpdate {
 export interface JobRunWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   jobId?: string | WhereOp<string> | null
+  job?: { is?: JobWhere; isNot?: JobWhere }
   status?: RunStatus | WhereOp<RunStatus> | null
   trigger?: string | WhereOp<string> | null
   startedAt?: string | Date | WhereOp<string | Date> | null
@@ -4552,23 +4931,27 @@ export interface Recipe {
 export interface RecipeCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   slug: string
   description?: string | null
   script: string
   timeoutSeconds?: number
   createdBy?: string | null
+  runs?: __HasManyWrite<RecipeRunWhere, Omit<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
 }
 
 export interface RecipeUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   slug?: string
   description?: string | null
   script?: string
   timeoutSeconds?: number
   createdBy?: string | null
+  runs?: __HasManyWrite<RecipeRunWhere, Omit<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
 }
 
 export interface RecipeSystem {
@@ -4579,6 +4962,7 @@ export interface RecipeSystem {
 export interface RecipeWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
@@ -4590,6 +4974,7 @@ export interface RecipeWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  runs?: { some?: RecipeRunWhere; every?: RecipeRunWhere; none?: RecipeRunWhere }
   AND?: RecipeWhere[]
   OR?:  RecipeWhere[]
   NOT?: RecipeWhere
@@ -4626,7 +5011,9 @@ export interface RecipeRun {
 export interface RecipeRunCreate {
   id?: string
   recipeId: string
+  recipe?: __BelongsToWrite<RecipeWhere, RecipeCreate>
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   status?: RunStatus
   script: string
   requestedBy?: string | null
@@ -4642,7 +5029,9 @@ export interface RecipeRunCreate {
 export interface RecipeRunUpdate {
   id?: string
   recipeId?: string
+  recipe?: __BelongsToWrite<RecipeWhere, RecipeCreate>
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   status?: RunStatus
   script?: string
   requestedBy?: string | null
@@ -4658,7 +5047,9 @@ export interface RecipeRunUpdate {
 export interface RecipeRunWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   recipeId?: string | WhereOp<string> | null
+  recipe?: { is?: RecipeWhere; isNot?: RecipeWhere }
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   status?: RunStatus | WhereOp<RunStatus> | null
   script?: string | WhereOp<string> | null
   requestedBy?: string | WhereOp<string> | null
@@ -4705,6 +5096,7 @@ export interface DiskUsage {
 export interface DiskUsageCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   imagesTotal?: number
   imagesUnused?: number
   imagesDangling?: number
@@ -4721,6 +5113,7 @@ export interface DiskUsageCreate {
 export interface DiskUsageUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   imagesTotal?: number
   imagesUnused?: number
   imagesDangling?: number
@@ -4737,6 +5130,7 @@ export interface DiskUsageUpdate {
 export interface DiskUsageWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   imagesTotal?: number | WhereOp<number> | null
   imagesUnused?: number | WhereOp<number> | null
   imagesDangling?: number | WhereOp<number> | null
@@ -4777,6 +5171,7 @@ export interface ServerPosture {
 export interface ServerPostureCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   at: string | Date
   readings?: unknown
   controls?: unknown
@@ -4787,6 +5182,7 @@ export interface ServerPostureCreate {
 export interface ServerPostureUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   at?: string | Date
   readings?: unknown
   controls?: unknown
@@ -4797,6 +5193,7 @@ export interface ServerPostureUpdate {
 export interface ServerPostureWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   at?: string | Date | WhereOp<string | Date> | null
   readings?: unknown | WhereOp<unknown> | null
   controls?: unknown | WhereOp<unknown> | null
@@ -4839,6 +5236,7 @@ export interface MaintenanceRun {
 export interface MaintenanceRunCreate {
   id?: string
   serverId: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind: MaintenanceKind
   status?: RunStatus
   targets?: string[]
@@ -4856,6 +5254,7 @@ export interface MaintenanceRunCreate {
 export interface MaintenanceRunUpdate {
   id?: string
   serverId?: string
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind?: MaintenanceKind
   status?: RunStatus
   targets?: string[]
@@ -4873,6 +5272,7 @@ export interface MaintenanceRunUpdate {
 export interface MaintenanceRunWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   kind?: MaintenanceKind | WhereOp<MaintenanceKind> | null
   status?: RunStatus | WhereOp<RunStatus> | null
   targets?: string[] | WhereOp<string[]> | null
@@ -4922,6 +5322,7 @@ export interface Flag {
 export interface FlagCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   key: string
   description?: string | null
   type?: FlagType
@@ -4930,11 +5331,13 @@ export interface FlagCreate {
   isEnabled?: boolean
   rollout?: number
   createdBy?: string | null
+  overrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
 }
 
 export interface FlagUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   key?: string
   description?: string | null
   type?: FlagType
@@ -4944,11 +5347,13 @@ export interface FlagUpdate {
   rollout?: number
   createdBy?: string | null
   version: number
+  overrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
 }
 
 export interface FlagWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   key?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
   type?: FlagType | WhereOp<FlagType> | null
@@ -4961,6 +5366,7 @@ export interface FlagWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  overrides?: { some?: FlagOverrideWhere; every?: FlagOverrideWhere; none?: FlagOverrideWhere }
   AND?: FlagWhere[]
   OR?:  FlagWhere[]
   NOT?: FlagWhere
@@ -4991,7 +5397,9 @@ export interface FlagOverride {
 export interface FlagOverrideCreate {
   id?: string
   flagId: string
+  flag?: __BelongsToWrite<FlagWhere, FlagCreate>
   environmentId: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   isEnabled?: boolean
   rollout?: number
   variantKey?: string | null
@@ -5000,7 +5408,9 @@ export interface FlagOverrideCreate {
 export interface FlagOverrideUpdate {
   id?: string
   flagId?: string
+  flag?: __BelongsToWrite<FlagWhere, FlagCreate>
   environmentId?: string
+  environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   isEnabled?: boolean
   rollout?: number
   variantKey?: string | null
@@ -5009,7 +5419,9 @@ export interface FlagOverrideUpdate {
 export interface FlagOverrideWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   flagId?: string | WhereOp<string> | null
+  flag?: { is?: FlagWhere; isNot?: FlagWhere }
   environmentId?: string | WhereOp<string> | null
+  environment?: { is?: EnvironmentWhere; isNot?: EnvironmentWhere }
   isEnabled?: boolean | WhereOp<boolean> | null
   rollout?: number | WhereOp<number> | null
   variantKey?: string | WhereOp<string> | null
@@ -5055,6 +5467,7 @@ export interface NotificationChannel {
 export interface NotificationChannelCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   kind: ChannelKind
   config?: unknown
@@ -5062,11 +5475,15 @@ export interface NotificationChannelCreate {
   isActive?: boolean
   isPagedForFleet?: boolean
   createdBy?: string | null
+  rules?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
+  monitors?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
+  apps?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'channelId'>, AppChannelUpdate>
 }
 
 export interface NotificationChannelUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   kind?: ChannelKind
   config?: unknown
@@ -5075,6 +5492,9 @@ export interface NotificationChannelUpdate {
   isPagedForFleet?: boolean
   createdBy?: string | null
   version: number
+  rules?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
+  monitors?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
+  apps?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'channelId'>, AppChannelUpdate>
 }
 
 export interface NotificationChannelSystem {
@@ -5088,6 +5508,7 @@ export interface NotificationChannelSystem {
 export interface NotificationChannelWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   kind?: ChannelKind | WhereOp<ChannelKind> | null
   config?: unknown | WhereOp<unknown> | null
@@ -5103,6 +5524,9 @@ export interface NotificationChannelWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  rules?: { some?: AlertRuleChannelWhere; every?: AlertRuleChannelWhere; none?: AlertRuleChannelWhere }
+  monitors?: { some?: MonitorChannelWhere; every?: MonitorChannelWhere; none?: MonitorChannelWhere }
+  apps?: { some?: AppChannelWhere; every?: AppChannelWhere; none?: AppChannelWhere }
   AND?: NotificationChannelWhere[]
   OR?:  NotificationChannelWhere[]
   NOT?: NotificationChannelWhere
@@ -5116,6 +5540,7 @@ export interface NotificationChannelRelations {
   workspace: Workspace | null
   rules: AlertRuleChannel[]
   monitors: MonitorChannel[]
+  apps: AppChannel[]
 }
 
 // ─── BackupDestination ───────────────────────────────────────────
@@ -5143,6 +5568,7 @@ export interface BackupDestination {
 export interface BackupDestinationCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   endpoint: string
   region: string
@@ -5150,11 +5576,14 @@ export interface BackupDestinationCreate {
   prefix?: string
   secret?: string | null
   createdBy?: string | null
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
 }
 
 export interface BackupDestinationUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   endpoint?: string
   region?: string
@@ -5163,6 +5592,8 @@ export interface BackupDestinationUpdate {
   secret?: string | null
   createdBy?: string | null
   version: number
+  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
 }
 
 export interface BackupDestinationSystem {
@@ -5175,6 +5606,7 @@ export interface BackupDestinationSystem {
 export interface BackupDestinationWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   endpoint?: string | WhereOp<string> | null
   region?: string | WhereOp<string> | null
@@ -5189,6 +5621,9 @@ export interface BackupDestinationWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  appBackups?: { some?: AppBackupWhere; every?: AppBackupWhere; none?: AppBackupWhere }
+  apps?: { some?: AppWhere; every?: AppWhere; none?: AppWhere }
+  replicaApp?: { is?: AppWhere; isNot?: AppWhere }
   AND?: BackupDestinationWhere[]
   OR?:  BackupDestinationWhere[]
   NOT?: BackupDestinationWhere
@@ -5230,6 +5665,7 @@ export interface AlertRule {
 export interface AlertRuleCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   description?: string | null
   severity?: AlertSeverity
@@ -5240,11 +5676,14 @@ export interface AlertRuleCreate {
   clearForMinutes?: number
   refireAfterMinutes?: number
   isActive?: boolean
+  alerts?: __HasManyWrite<AlertWhere, Omit<AlertCreate, 'ruleId'>, AlertUpdate>
+  channels?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
 }
 
 export interface AlertRuleUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   description?: string | null
   severity?: AlertSeverity
@@ -5256,6 +5695,8 @@ export interface AlertRuleUpdate {
   refireAfterMinutes?: number
   isActive?: boolean
   version: number
+  alerts?: __HasManyWrite<AlertWhere, Omit<AlertCreate, 'ruleId'>, AlertUpdate>
+  channels?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
 }
 
 export interface AlertRuleSystem {
@@ -5265,6 +5706,7 @@ export interface AlertRuleSystem {
 export interface AlertRuleWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
   severity?: AlertSeverity | WhereOp<AlertSeverity> | null
@@ -5279,6 +5721,8 @@ export interface AlertRuleWhere extends WhereBase {
   version?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  alerts?: { some?: AlertWhere; every?: AlertWhere; none?: AlertWhere }
+  channels?: { some?: AlertRuleChannelWhere; every?: AlertRuleChannelWhere; none?: AlertRuleChannelWhere }
   AND?: AlertRuleWhere[]
   OR?:  AlertRuleWhere[]
   NOT?: AlertRuleWhere
@@ -5306,19 +5750,25 @@ export interface AlertRuleChannel {
 export interface AlertRuleChannelCreate {
   id?: string
   ruleId: string
+  rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
   channelId: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
 }
 
 export interface AlertRuleChannelUpdate {
   id?: string
   ruleId?: string
+  rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
   channelId?: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
 }
 
 export interface AlertRuleChannelWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   ruleId?: string | WhereOp<string> | null
+  rule?: { is?: AlertRuleWhere; isNot?: AlertRuleWhere }
   channelId?: string | WhereOp<string> | null
+  channel?: { is?: NotificationChannelWhere; isNot?: NotificationChannelWhere }
   createdAt?: string | Date | WhereOp<string | Date> | null
   AND?: AlertRuleChannelWhere[]
   OR?:  AlertRuleChannelWhere[]
@@ -5354,6 +5804,7 @@ export interface Alert {
 export interface AlertCreate {
   id?: string
   ruleId: string
+  rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
   status?: AlertStatus
   severity: AlertSeverity
   subjectType: AlertSubject
@@ -5369,6 +5820,7 @@ export interface AlertCreate {
 export interface AlertUpdate {
   id?: string
   ruleId?: string
+  rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
   status?: AlertStatus
   severity?: AlertSeverity
   subjectType?: AlertSubject
@@ -5384,6 +5836,7 @@ export interface AlertUpdate {
 export interface AlertWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   ruleId?: string | WhereOp<string> | null
+  rule?: { is?: AlertRuleWhere; isNot?: AlertRuleWhere }
   status?: AlertStatus | WhereOp<AlertStatus> | null
   severity?: AlertSeverity | WhereOp<AlertSeverity> | null
   subjectType?: AlertSubject | WhereOp<AlertSubject> | null
@@ -5443,6 +5896,7 @@ export interface Monitor {
 export interface MonitorCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   appId?: string | null
   url: string
@@ -5460,11 +5914,16 @@ export interface MonitorCreate {
   resendEvery?: number
   tags?: string[]
   status?: MonitorStatus
+  checks?: __HasManyWrite<MonitorCheckWhere, Omit<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
+  events?: __HasManyWrite<MonitorEventWhere, Omit<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
+  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, Omit<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
+  channels?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
 }
 
 export interface MonitorUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   appId?: string | null
   url?: string
@@ -5482,6 +5941,10 @@ export interface MonitorUpdate {
   resendEvery?: number
   tags?: string[]
   status?: MonitorStatus
+  checks?: __HasManyWrite<MonitorCheckWhere, Omit<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
+  events?: __HasManyWrite<MonitorEventWhere, Omit<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
+  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, Omit<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
+  channels?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
 }
 
 export interface MonitorSystem {
@@ -5497,6 +5960,7 @@ export interface MonitorSystem {
 export interface MonitorWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
   isManaged?: boolean | WhereOp<boolean> | null
@@ -5523,6 +5987,10 @@ export interface MonitorWhere extends WhereBase {
   certWarnedDays?: number | WhereOp<number> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  checks?: { some?: MonitorCheckWhere; every?: MonitorCheckWhere; none?: MonitorCheckWhere }
+  events?: { some?: MonitorEventWhere; every?: MonitorEventWhere; none?: MonitorEventWhere }
+  uptimeDays?: { some?: MonitorUptimeDayWhere; every?: MonitorUptimeDayWhere; none?: MonitorUptimeDayWhere }
+  channels?: { some?: MonitorChannelWhere; every?: MonitorChannelWhere; none?: MonitorChannelWhere }
   AND?: MonitorWhere[]
   OR?:  MonitorWhere[]
   NOT?: MonitorWhere
@@ -5555,6 +6023,7 @@ export interface MonitorCheck {
 export interface MonitorCheckCreate {
   id?: string
   monitorId: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   isOk: boolean
   statusCode?: number | null
@@ -5565,6 +6034,7 @@ export interface MonitorCheckCreate {
 export interface MonitorCheckUpdate {
   id?: string
   monitorId?: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   isOk?: boolean
   statusCode?: number | null
@@ -5575,6 +6045,7 @@ export interface MonitorCheckUpdate {
 export interface MonitorCheckWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
+  monitor?: { is?: MonitorWhere; isNot?: MonitorWhere }
   at?: string | Date | WhereOp<string | Date> | null
   isOk?: boolean | WhereOp<boolean> | null
   statusCode?: number | WhereOp<number> | null
@@ -5608,6 +6079,7 @@ export interface MonitorUptimeDay {
 export interface MonitorUptimeDayCreate {
   id?: string
   monitorId: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   day: string | Date
   checks: number
   okChecks: number
@@ -5618,6 +6090,7 @@ export interface MonitorUptimeDayCreate {
 export interface MonitorUptimeDayUpdate {
   id?: string
   monitorId?: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   day?: string | Date
   checks?: number
   okChecks?: number
@@ -5628,6 +6101,7 @@ export interface MonitorUptimeDayUpdate {
 export interface MonitorUptimeDayWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
+  monitor?: { is?: MonitorWhere; isNot?: MonitorWhere }
   day?: string | Date | WhereOp<string | Date> | null
   checks?: number | WhereOp<number> | null
   okChecks?: number | WhereOp<number> | null
@@ -5661,6 +6135,7 @@ export interface MonitorEvent {
 export interface MonitorEventCreate {
   id?: string
   monitorId: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   fromStatus: MonitorStatus
   toStatus: MonitorStatus
@@ -5670,6 +6145,7 @@ export interface MonitorEventCreate {
 export interface MonitorEventUpdate {
   id?: string
   monitorId?: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   fromStatus?: MonitorStatus
   toStatus?: MonitorStatus
@@ -5683,6 +6159,7 @@ export interface MonitorEventSystem {
 export interface MonitorEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
+  monitor?: { is?: MonitorWhere; isNot?: MonitorWhere }
   at?: string | Date | WhereOp<string | Date> | null
   fromStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
   toStatus?: MonitorStatus | WhereOp<MonitorStatus> | null
@@ -5713,19 +6190,25 @@ export interface MonitorChannel {
 export interface MonitorChannelCreate {
   id?: string
   monitorId: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   channelId: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
 }
 
 export interface MonitorChannelUpdate {
   id?: string
   monitorId?: string
+  monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   channelId?: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
 }
 
 export interface MonitorChannelWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   monitorId?: string | WhereOp<string> | null
+  monitor?: { is?: MonitorWhere; isNot?: MonitorWhere }
   channelId?: string | WhereOp<string> | null
+  channel?: { is?: NotificationChannelWhere; isNot?: NotificationChannelWhere }
   createdAt?: string | Date | WhereOp<string | Date> | null
   AND?: MonitorChannelWhere[]
   OR?:  MonitorChannelWhere[]
@@ -5738,6 +6221,52 @@ export type MonitorChannelOrderBy =
 
 export interface MonitorChannelRelations {
   monitor: Monitor | null
+  channel: NotificationChannel | null
+}
+
+// ─── AppChannel ──────────────────────────────────────────────────
+
+export interface AppChannel {
+  id: string
+  appId: string
+  channelId: string
+  createdAt: string
+}
+
+export interface AppChannelCreate {
+  id?: string
+  appId: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
+  channelId: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
+}
+
+export interface AppChannelUpdate {
+  id?: string
+  appId?: string
+  app?: __BelongsToWrite<AppWhere, AppCreate>
+  channelId?: string
+  channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
+}
+
+export interface AppChannelWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
+  channelId?: string | WhereOp<string> | null
+  channel?: { is?: NotificationChannelWhere; isNot?: NotificationChannelWhere }
+  createdAt?: string | Date | WhereOp<string | Date> | null
+  AND?: AppChannelWhere[]
+  OR?:  AppChannelWhere[]
+  NOT?: AppChannelWhere
+}
+
+export type AppChannelOrderBy =
+  | { [K in keyof Omit<AppChannel, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<AppChannel, never>]?: OrderDir }>
+
+export interface AppChannelRelations {
+  app: App | null
   channel: NotificationChannel | null
 }
 
@@ -5762,17 +6291,20 @@ export interface Dashboard {
 export interface DashboardCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
   slug: string
   description?: string | null
   icon?: string | null
   isPinned?: boolean
   createdBy?: string | null
+  tiles?: __HasManyWrite<DashboardTileWhere, Omit<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
 }
 
 export interface DashboardUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
   slug?: string
   description?: string | null
@@ -5780,11 +6312,13 @@ export interface DashboardUpdate {
   isPinned?: boolean
   createdBy?: string | null
   version: number
+  tiles?: __HasManyWrite<DashboardTileWhere, Omit<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
 }
 
 export interface DashboardWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   slug?: string | WhereOp<string> | null
   description?: string | WhereOp<string> | null
@@ -5795,6 +6329,7 @@ export interface DashboardWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  tiles?: { some?: DashboardTileWhere; every?: DashboardTileWhere; none?: DashboardTileWhere }
   AND?: DashboardWhere[]
   OR?:  DashboardWhere[]
   NOT?: DashboardWhere
@@ -5827,9 +6362,12 @@ export interface DashboardTile {
 export interface DashboardTileCreate {
   id?: string
   dashboardId: string
+  dashboard?: __BelongsToWrite<DashboardWhere, DashboardCreate>
   kind: TileKind
   serverId?: string | null
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   config?: unknown
   cols?: number
   position?: number
@@ -5838,9 +6376,12 @@ export interface DashboardTileCreate {
 export interface DashboardTileUpdate {
   id?: string
   dashboardId?: string
+  dashboard?: __BelongsToWrite<DashboardWhere, DashboardCreate>
   kind?: TileKind
   serverId?: string | null
+  server?: __BelongsToWrite<ServerWhere, ServerCreate>
   appId?: string | null
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   config?: unknown
   cols?: number
   position?: number
@@ -5849,9 +6390,12 @@ export interface DashboardTileUpdate {
 export interface DashboardTileWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   dashboardId?: string | WhereOp<string> | null
+  dashboard?: { is?: DashboardWhere; isNot?: DashboardWhere }
   kind?: TileKind | WhereOp<TileKind> | null
   serverId?: string | WhereOp<string> | null
+  server?: { is?: ServerWhere; isNot?: ServerWhere }
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   config?: unknown | WhereOp<unknown> | null
   cols?: number | WhereOp<number> | null
   position?: number | WhereOp<number> | null
@@ -5901,6 +6445,7 @@ export interface AuditEvent {
 export interface AuditEventCreate {
   id?: string
   workspaceId?: string | null
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   actorId?: string | null
   actorType?: ActorKind
   /**
@@ -5924,6 +6469,7 @@ export interface AuditEventCreate {
 export interface AuditEventUpdate {
   id?: string
   workspaceId?: string | null
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   actorId?: string | null
   actorType?: ActorKind
   onBehalfOfId?: string | null
@@ -5936,6 +6482,7 @@ export interface AuditEventUpdate {
 export interface AuditEventWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   actorId?: string | WhereOp<string> | null
   actorType?: ActorKind | WhereOp<ActorKind> | null
   onBehalfOfId?: string | WhereOp<string> | null
@@ -6007,6 +6554,8 @@ export interface BlueprintCreate {
   links?: unknown
   environment?: unknown
   deprecatedAt?: string | Date | null
+  params?: __HasManyWrite<BlueprintParamWhere, Omit<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'blueprintId'>, AppUpdate>
 }
 
 export interface BlueprintUpdate {
@@ -6031,6 +6580,8 @@ export interface BlueprintUpdate {
   environment?: unknown
   deprecatedAt?: string | Date | null
   revision: number
+  params?: __HasManyWrite<BlueprintParamWhere, Omit<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
+  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'blueprintId'>, AppUpdate>
 }
 
 export interface BlueprintWhere extends WhereBase {
@@ -6057,6 +6608,8 @@ export interface BlueprintWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   revision?: number | WhereOp<number> | null
+  params?: { some?: BlueprintParamWhere; every?: BlueprintParamWhere; none?: BlueprintParamWhere }
+  apps?: { some?: AppWhere; every?: AppWhere; none?: AppWhere }
   AND?: BlueprintWhere[]
   OR?:  BlueprintWhere[]
   NOT?: BlueprintWhere
@@ -6091,6 +6644,7 @@ export interface BlueprintParam {
 export interface BlueprintParamCreate {
   id?: string
   blueprintId: string
+  blueprint?: __BelongsToWrite<BlueprintWhere, BlueprintCreate>
   key: string
   label: string
   hint?: string | null
@@ -6106,6 +6660,7 @@ export interface BlueprintParamCreate {
 export interface BlueprintParamUpdate {
   id?: string
   blueprintId?: string
+  blueprint?: __BelongsToWrite<BlueprintWhere, BlueprintCreate>
   key?: string
   label?: string
   hint?: string | null
@@ -6121,6 +6676,7 @@ export interface BlueprintParamUpdate {
 export interface BlueprintParamWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   blueprintId?: string | WhereOp<string> | null
+  blueprint?: { is?: BlueprintWhere; isNot?: BlueprintWhere }
   key?: string | WhereOp<string> | null
   label?: string | WhereOp<string> | null
   hint?: string | WhereOp<string> | null
@@ -6162,6 +6718,7 @@ export interface RegistryImage {
 export interface RegistryImageCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   repository: string
   tag: string
   digest: string
@@ -6175,6 +6732,7 @@ export interface RegistryImageCreate {
 export interface RegistryImageUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   repository?: string
   tag?: string
   digest?: string
@@ -6188,6 +6746,7 @@ export interface RegistryImageUpdate {
 export interface RegistryImageWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   repository?: string | WhereOp<string> | null
   tag?: string | WhereOp<string> | null
   digest?: string | WhereOp<string> | null
@@ -6227,13 +6786,17 @@ export interface Dependency {
 export interface DependencyCreate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
+  uses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
 }
 
 export interface DependencyUpdate {
   id?: string
   workspaceId?: string
+  workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
+  uses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
 }
 
 export interface DependencySystem {
@@ -6247,6 +6810,7 @@ export interface DependencySystem {
 export interface DependencyWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
+  workspace?: { is?: WorkspaceWhere; isNot?: WorkspaceWhere }
   name?: string | WhereOp<string> | null
   latest?: string | WhereOp<string> | null
   deprecation?: string | WhereOp<string> | null
@@ -6255,6 +6819,7 @@ export interface DependencyWhere extends WhereBase {
   checkError?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  uses?: { some?: DependencyUseWhere; every?: DependencyUseWhere; none?: DependencyUseWhere }
   AND?: DependencyWhere[]
   OR?:  DependencyWhere[]
   NOT?: DependencyWhere
@@ -6289,7 +6854,9 @@ export interface DependencyUseCreate {
   id?: string
   workspaceId?: string
   projectId: string
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   dependencyId: string
+  dependency?: __BelongsToWrite<DependencyWhere, DependencyCreate>
   member: string
   memberPath?: string
   isPublished?: boolean
@@ -6303,7 +6870,9 @@ export interface DependencyUseUpdate {
   id?: string
   workspaceId?: string
   projectId?: string
+  project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   dependencyId?: string
+  dependency?: __BelongsToWrite<DependencyWhere, DependencyCreate>
   member?: string
   memberPath?: string
   isPublished?: boolean
@@ -6317,7 +6886,9 @@ export interface DependencyUseWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   workspaceId?: string | WhereOp<string> | null
   projectId?: string | WhereOp<string> | null
+  project?: { is?: ProjectWhere; isNot?: ProjectWhere }
   dependencyId?: string | WhereOp<string> | null
+  dependency?: { is?: DependencyWhere; isNot?: DependencyWhere }
   member?: string | WhereOp<string> | null
   memberPath?: string | WhereOp<string> | null
   isPublished?: boolean | WhereOp<boolean> | null
@@ -6380,6 +6951,7 @@ export interface HubConfigCreate {
   retentionEventDays?: number
   retentionAlertDays?: number
   retentionNotificationDays?: number
+  app?: __BelongsToWrite<AppWhere, AppCreate>
 }
 
 export interface HubConfigUpdate {
@@ -6397,6 +6969,7 @@ export interface HubConfigUpdate {
   retentionEventDays?: number
   retentionAlertDays?: number
   retentionNotificationDays?: number
+  app?: __BelongsToWrite<AppWhere, AppCreate>
   version: number
 }
 
@@ -6426,6 +6999,7 @@ export interface HubConfigWhere extends WhereBase {
   encryptionKeyEscrowedAt?: string | Date | WhereOp<string | Date> | null
   encryptionKeyFingerprint?: string | WhereOp<string> | null
   appId?: string | WhereOp<string> | null
+  app?: { is?: AppWhere; isNot?: AppWhere }
   updatedAt?: string | Date | WhereOp<string | Date> | null
   version?: number | WhereOp<number> | null
   AND?: HubConfigWhere[]
@@ -6458,6 +7032,7 @@ export interface Notification {
 export interface NotificationCreate {
   id?: string
   userId: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   type: string
   data: unknown
   subjectType?: NotificationContext | null
@@ -6469,6 +7044,7 @@ export interface NotificationCreate {
 export interface NotificationUpdate {
   id?: string
   userId?: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   type?: string
   data?: unknown
   subjectType?: NotificationContext | null
@@ -6480,6 +7056,7 @@ export interface NotificationUpdate {
 export interface NotificationWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   userId?: string | WhereOp<string> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   type?: string | WhereOp<string> | null
   data?: unknown | WhereOp<unknown> | null
   subjectType?: NotificationContext | WhereOp<NotificationContext> | null
@@ -6514,6 +7091,7 @@ export interface NotificationPreference {
 export interface NotificationPreferenceCreate {
   id?: string
   userId: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   kind: NotificationKind
   email?: boolean
   inApp?: boolean
@@ -6522,6 +7100,7 @@ export interface NotificationPreferenceCreate {
 export interface NotificationPreferenceUpdate {
   id?: string
   userId?: string
+  user?: __BelongsToWrite<UserWhere, UserCreate>
   kind?: NotificationKind
   email?: boolean
   inApp?: boolean
@@ -6530,6 +7109,7 @@ export interface NotificationPreferenceUpdate {
 export interface NotificationPreferenceWhere extends WhereBase {
   id?: string | WhereOp<string> | null
   userId?: string | WhereOp<string> | null
+  user?: { is?: UserWhere; isNot?: UserWhere }
   kind?: NotificationKind | WhereOp<NotificationKind> | null
   email?: boolean | WhereOp<boolean> | null
   inApp?: boolean | WhereOp<boolean> | null
@@ -6669,6 +7249,7 @@ export interface ServiceTypes {
   monitorUptimeDays: MonitorUptimeDay
   monitorEvents: MonitorEvent
   monitorChannels: MonitorChannel
+  appChannels: AppChannel
   dashboards: Dashboard
   dashboardTiles: DashboardTile
   auditEvents: AuditEvent
@@ -6762,64 +7343,181 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
 /** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`_TSudoCreate`, a phantom only `infer` reads). */
-type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q, infer N> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q, N> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
-/** What `select` may name: a column or a relation, `true` or an options object. */
-export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions }
+/** What `select` may name: a column or a relation, `true` or an options object — or a list of names and paths (FJS-D2332). */
+export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions } | readonly string[]
 // A nested `select` is typed as booleans so an inferred `false` stays `false`, which a
 // bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
-type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
+type __RelOptions = { select?: { [field: string]: boolean | __RelOptions }; [option: string]: unknown }
+
+/** Each model's relations by name, and the model each one reaches: what a nested select and a select path hop through. */
+export interface __Models {
+  Credential: { rel: CredentialRelations; hop: { user: 'User' } }
+  Session: { rel: SessionRelations; hop: { user: 'User' } }
+  Verification: { rel: VerificationRelations; hop: {  } }
+  LoginChallenge: { rel: LoginChallengeRelations; hop: {  } }
+  OauthFlow: { rel: OauthFlowRelations; hop: {  } }
+  MetricSeries: { rel: MetricSeriesRelations; hop: { points: 'MetricPoint'; hours: 'MetricHour' } }
+  MetricPoint: { rel: MetricPointRelations; hop: { series: 'MetricSeries' } }
+  MetricHour: { rel: MetricHourRelations; hop: { series: 'MetricSeries' } }
+  Flow: { rel: FlowRelations; hop: { versions: 'FlowVersion'; layout: 'FlowLayout'; workspace: 'Workspace'; owner: 'User' } }
+  FlowVersion: { rel: FlowVersionRelations; hop: { flow: 'Flow'; runs: 'Run' } }
+  FlowLayout: { rel: FlowLayoutRelations; hop: { flow: 'Flow' } }
+  Run: { rel: RunRelations; hop: { flowVersion: 'FlowVersion'; steps: 'RunStep'; waits: 'Wait' } }
+  RunStep: { rel: RunStepRelations; hop: { run: 'Run' } }
+  Wait: { rel: WaitRelations; hop: { run: 'Run' } }
+  FlowCredential: { rel: FlowCredentialRelations; hop: { workspace: 'Workspace' } }
+  KvEntry: { rel: KvEntryRelations; hop: { workspace: 'Workspace' } }
+  AuditTrail: { rel: AuditTrailRelations; hop: {  } }
+  User: { rel: UserRelations; hop: { account: 'Account'; memberships: 'WorkspaceMember'; appEditors: 'AppEditor'; deployments: 'Deployment'; apiKeys: 'ApiKey' } }
+  Account: { rel: AccountRelations; hop: { users: 'User'; workspaces: 'Workspace' } }
+  Workspace: { rel: WorkspaceRelations; hop: { account: 'Account'; members: 'WorkspaceMember'; invitations: 'Invitation'; projects: 'Project'; servers: 'Server'; secrets: 'Secret'; apiKeys: 'ApiKey'; jobs: 'Job'; alertRules: 'AlertRule'; monitors: 'Monitor'; channels: 'NotificationChannel'; backupDestinations: 'BackupDestination'; flags: 'Flag'; auditEvents: 'AuditEvent'; flows: 'Flow' } }
+  WorkspaceMember: { rel: WorkspaceMemberRelations; hop: { workspace: 'Workspace'; user: 'User' } }
+  Invitation: { rel: InvitationRelations; hop: { workspace: 'Workspace' } }
+  Secret: { rel: SecretRelations; hop: { workspace: 'Workspace' } }
+  ApiKey: { rel: ApiKeyRelations; hop: { workspace: 'Workspace'; user: 'User' } }
+  Server: { rel: ServerRelations; hop: { workspace: 'Workspace'; events: 'ServerEvent'; volumes: 'Volume'; appServers: 'AppServer'; serverNetworks: 'ServerNetwork' } }
+  ServerEvent: { rel: ServerEventRelations; hop: { server: 'Server' } }
+  OutpostNonce: { rel: OutpostNonceRelations; hop: {  } }
+  Conduit_targets: { rel: Conduit_targetsRelations; hop: {  } }
+  Conduit_receipts: { rel: Conduit_receiptsRelations; hop: {  } }
+  Volume: { rel: VolumeRelations; hop: { server: 'Server' } }
+  Network: { rel: NetworkRelations; hop: { appNetworks: 'AppNetwork'; serverNetworks: 'ServerNetwork' } }
+  ServerNetwork: { rel: ServerNetworkRelations; hop: { server: 'Server'; network: 'Network' } }
+  Project: { rel: ProjectRelations; hop: { workspace: 'Workspace'; environments: 'Environment'; apps: 'App'; dependencyUses: 'DependencyUse' } }
+  Environment: { rel: EnvironmentRelations; hop: { project: 'Project'; apps: 'App'; flagOverrides: 'FlagOverride'; variables: 'Variable' } }
+  App: { rel: AppRelations; hop: { environment: 'Environment'; project: 'Project'; blueprint: 'Blueprint'; backupDestination: 'BackupDestination'; replicaDestination: 'BackupDestination'; appBackups: 'AppBackup'; appDrills: 'AppDrill'; deployments: 'Deployment'; jobs: 'Job'; appServers: 'AppServer'; appPlatforms: 'AppPlatform'; appNetworks: 'AppNetwork'; domains: 'Domain'; domainRoutes: 'DomainRoute'; variables: 'Variable'; editors: 'AppEditor'; crashChannels: 'AppChannel'; hub: 'HubConfig' } }
+  Variable: { rel: VariableRelations; hop: { environment: 'Environment'; app: 'App'; versions: 'VariableVersion' } }
+  VariableVersion: { rel: VariableVersionRelations; hop: { variable: 'Variable' } }
+  Domain: { rel: DomainRelations; hop: { app: 'App'; routes: 'DomainRoute' } }
+  DomainRoute: { rel: DomainRouteRelations; hop: { domain: 'Domain'; app: 'App' } }
+  AppEditor: { rel: AppEditorRelations; hop: { app: 'App'; user: 'User' } }
+  AppServer: { rel: AppServerRelations; hop: { app: 'App'; server: 'Server' } }
+  AppPlatform: { rel: AppPlatformRelations; hop: { app: 'App' } }
+  AppBackup: { rel: AppBackupRelations; hop: { app: 'App'; server: 'Server'; destination: 'BackupDestination'; deployment: 'Deployment' } }
+  AppDrill: { rel: AppDrillRelations; hop: { app: 'App'; server: 'Server'; deployment: 'Deployment' } }
+  AppCopy: { rel: AppCopyRelations; hop: { app: 'App'; server: 'Server' } }
+  AppNetwork: { rel: AppNetworkRelations; hop: { app: 'App'; network: 'Network' } }
+  Deployment: { rel: DeploymentRelations; hop: { app: 'App'; triggeredByUser: 'User'; steps: 'DeploymentStep'; appBackups: 'AppBackup'; appDrills: 'AppDrill' } }
+  DeploymentStep: { rel: DeploymentStepRelations; hop: { deployment: 'Deployment' } }
+  Job: { rel: JobRelations; hop: { workspace: 'Workspace'; app: 'App'; runs: 'JobRun' } }
+  JobRun: { rel: JobRunRelations; hop: { job: 'Job' } }
+  Recipe: { rel: RecipeRelations; hop: { workspace: 'Workspace'; runs: 'RecipeRun' } }
+  RecipeRun: { rel: RecipeRunRelations; hop: { recipe: 'Recipe'; server: 'Server' } }
+  DiskUsage: { rel: DiskUsageRelations; hop: { server: 'Server' } }
+  ServerPosture: { rel: ServerPostureRelations; hop: { server: 'Server' } }
+  MaintenanceRun: { rel: MaintenanceRunRelations; hop: { server: 'Server' } }
+  Flag: { rel: FlagRelations; hop: { workspace: 'Workspace'; overrides: 'FlagOverride' } }
+  FlagOverride: { rel: FlagOverrideRelations; hop: { flag: 'Flag'; environment: 'Environment' } }
+  NotificationChannel: { rel: NotificationChannelRelations; hop: { workspace: 'Workspace'; rules: 'AlertRuleChannel'; monitors: 'MonitorChannel'; apps: 'AppChannel' } }
+  BackupDestination: { rel: BackupDestinationRelations; hop: { workspace: 'Workspace'; appBackups: 'AppBackup'; apps: 'App'; replicaApp: 'App' } }
+  AlertRule: { rel: AlertRuleRelations; hop: { workspace: 'Workspace'; alerts: 'Alert'; channels: 'AlertRuleChannel' } }
+  AlertRuleChannel: { rel: AlertRuleChannelRelations; hop: { rule: 'AlertRule'; channel: 'NotificationChannel' } }
+  Alert: { rel: AlertRelations; hop: { rule: 'AlertRule' } }
+  Monitor: { rel: MonitorRelations; hop: { workspace: 'Workspace'; checks: 'MonitorCheck'; events: 'MonitorEvent'; uptimeDays: 'MonitorUptimeDay'; channels: 'MonitorChannel' } }
+  MonitorCheck: { rel: MonitorCheckRelations; hop: { monitor: 'Monitor' } }
+  MonitorUptimeDay: { rel: MonitorUptimeDayRelations; hop: { monitor: 'Monitor' } }
+  MonitorEvent: { rel: MonitorEventRelations; hop: { monitor: 'Monitor' } }
+  MonitorChannel: { rel: MonitorChannelRelations; hop: { monitor: 'Monitor'; channel: 'NotificationChannel' } }
+  AppChannel: { rel: AppChannelRelations; hop: { app: 'App'; channel: 'NotificationChannel' } }
+  Dashboard: { rel: DashboardRelations; hop: { workspace: 'Workspace'; tiles: 'DashboardTile' } }
+  DashboardTile: { rel: DashboardTileRelations; hop: { dashboard: 'Dashboard'; server: 'Server'; app: 'App' } }
+  AuditEvent: { rel: AuditEventRelations; hop: { workspace: 'Workspace' } }
+  Blueprint: { rel: BlueprintRelations; hop: { params: 'BlueprintParam'; apps: 'App' } }
+  BlueprintParam: { rel: BlueprintParamRelations; hop: { blueprint: 'Blueprint' } }
+  RegistryImage: { rel: RegistryImageRelations; hop: { workspace: 'Workspace' } }
+  Dependency: { rel: DependencyRelations; hop: { workspace: 'Workspace'; uses: 'DependencyUse' } }
+  DependencyUse: { rel: DependencyUseRelations; hop: { project: 'Project'; dependency: 'Dependency' } }
+  HubConfig: { rel: HubConfigRelations; hop: { app: 'App' } }
+  Notification: { rel: NotificationRelations; hop: { user: 'User' } }
+  NotificationPreference: { rel: NotificationPreferenceRelations; hop: { user: 'User' } }
+}
+type __Hop<N, K> = N extends keyof __Models ? K extends keyof __Models[N]['hop'] ? __Models[N]['hop'][K] : never : never
+type __RelOf<N> = [N] extends [never] ? {} : N extends keyof __Models ? __Models[N]['rel'] : {}
+type __RowOf<T> = T extends (infer E)[] ? E : NonNullable<T>
+
+// A select LIST is the object it stands for (FJS-D2332): `'id'` a column,
+// `'a.b:x+y'` a path whose every hop nests as `select`. Entries naming one
+// relation intersect, which is the merge the client does.
+type __Split<S extends string, D extends string> = S extends `${infer H}${D}${infer T}` ? [H, ...__Split<T, D>] : [S]
+type __PathSel<P, L> = P extends [infer H extends string] ? { [K in H]: L } : P extends [infer H extends string, ...infer R] ? { [K in H]: { select: __PathSel<R, L> } } : never
+type __EntrySel<E> = E extends `${infer P}:${infer F}` ? __PathSel<__Split<P, '.'>, { select: { [K in __Split<F, '+'>[number]]: true } }> : E extends string ? __PathSel<__Split<E, '.'>, true> : never
+type __U2I<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never
+type __Sel<S> = S extends readonly string[] ? __U2I<{ [I in keyof S]: __EntrySel<S[I]> }[number]> : S
+// A name the model lacks, a hop that is not a relation, or a leaf field the
+// last model lacks makes that entry `never`, so the call does not compile.
+type __CheckHops<P, Rel, N, F> = P extends [infer H extends string, ...infer R]
+  ? H extends keyof Rel
+    ? R extends [] ? ([F] extends [never] ? true : F extends string ? (__Split<F, '+'>[number] extends keyof __RowOf<Rel[H]> ? true : false) : false)
+      : __CheckHops<R, __RelOf<__Hop<N, H>>, __Hop<N, H>, F>
+    : false
+  : false
+type __CheckEntry<E, TRow, TRel, N> = E extends `${infer P}:${infer F}` ? __CheckHops<__Split<P, '.'>, TRel, N, F>
+  : E extends `${string}.${string}` ? __CheckHops<__Split<E, '.'>, TRel, N, never>
+  : E extends keyof TRow | keyof TRel ? true : false
+type __SelectCheck<S, TRow, TRel, N> = S extends readonly string[] ? { readonly [I in keyof S]: __CheckEntry<S[I], TRow, TRel, N> extends true ? S[I] : never } : unknown
+
+/** A nested write through a relation, each kind taking the operations the client runs for it. */
+type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
+type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
+/** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */
+type __SearchHit = { _rank?: number | null; _highlight?: string | null; _snippet?: string | null }
+type __FtsMarks = { field: string; open?: string; close?: string }
 
 /**
  * The row a read answers: the whole row, or only the columns `select` named, and
  * in either case the relations `include` (or `select`) named. A relation takes its
  * own nested `select` to only the columns that names; a nested `include` adds nothing.
  */
-export type ReadShape<TRow, TRel, I, S> = __Flat<
+export type ReadShape<TRow, TRel, I, S, N = never> = __Shape<TRow, TRel, I, __Sel<S>, N>
+type __Shape<TRow, TRel, I, S, N> = __Flat<
   (undefined extends S ? TRow : __SelectedColumns<TRow, S>)
-  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>> }
+  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>, __Hop<N, K>> }
   & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})
 >
 /** What a create, update or upsert answers: a read of the row written, or `null` under `select: false`. */
-export type WriteShape<TRow, TRel, I, S> = S extends false ? null : ReadShape<TRow, TRel, I, S>
+export type WriteShape<TRow, TRel, I, S, N = never> = S extends false ? null : ReadShape<TRow, TRel, I, S, N>
 type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false
 type __RelOpts<I, S, K> = K extends keyof I ? (I[K] extends Record<string, unknown> ? I[K] : __RelOptsOf<S, K>) : __RelOptsOf<S, K>
 type __RelOptsOf<S, K> = K extends keyof S ? S[K] : {}
-type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
-type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
+type __Narrow<T, O, M> = [O] extends [{ select: infer NS }] ? __Rows<T, NS, M> : T
+type __Rows<T, NS, M> = T extends null ? null : T extends (infer E)[] ? __Picked<E, NS, M>[] : __Picked<T, NS, M>
+type __Picked<E, NS, M> = __Flat<__SelectedColumns<E, NS> & { [K in keyof __RelOf<M> as __On<NS, K> extends true ? K : never]: __Narrow<__RelOf<M>[K], __RelOptsOf<NS, K>, __Hop<M, K>> }>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {
-  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
-  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
-  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}, TName = never> {
+  findMany<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
-  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
-  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
+  create<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
-  createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
-  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>
+  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>
+  update<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName> | null>
   updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
-  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  upsert<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
   restore(args: { where: TWhere }): Promise<{ count: number }>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>
-  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>
+  search<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S, TName> & __SearchHit)[]>
   optimizeFts(): Promise<{ optimized: boolean; table: string }>
 
   // Reads whose shape is not one row or a count. Emitted because an app
   // calls them: leaving one out types a real call as an error, which is
   // the failure that makes a generated .d.ts worse than no types at all.
-  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>
+  findManyAndCount<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName> }): Promise<{ rows: ReadShape<TRow, TRel, I, S, TName>[]; total: number }>
   exists(args?: { where?: TWhere }): Promise<boolean>
   aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>
   groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>
@@ -6892,85 +7590,86 @@ type __PackageLitestoneClient = import('@frontierjs/litestone').LitestoneClient
 type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: unknown }
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
-  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'conduit_targets' | 'conduit_receipts' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'variableVersion' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appCopy' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
-  readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate'>
-  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | 'refreshToken' | 'previousRefreshToken' | '@@gate'>
-  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate'>
-  readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere, LoginChallengeRelations, never, 'value' | '@@gate'>
-  readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere, OauthFlowRelations, never, 'state' | 'verifier' | 'invitation' | '@@gate'>
-  readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere, MetricSeriesRelations, never, '@@gate'>
-  readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere, MetricPointRelations, never, '@@gate'>
-  readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere, MetricHourRelations, never, '@@gate'>
-  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere, FlowRelations, 'activate' | 'pause' | 'archive' | 'unarchive', 'status' | '@@gate', {}, Required<Pick<FlowCreate, 'ownerId' | 'workspaceId'>>>
-  readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere, FlowVersionRelations, never, '@@gate'>
-  readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere, FlowLayoutRelations, never, '@@gate'>
-  readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere, RunRelations, 'start' | 'suspend' | 'resume' | 'complete' | 'fail' | 'cancel', 'status' | '@@gate'>
-  readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere, RunStepRelations, never, '@@gate'>
-  readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere, WaitRelations, never, '@@gate'>
-  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere, FlowCredentialRelations, never, '@@gate', {}, Required<Pick<FlowCredentialCreate, 'workspaceId'>>>
-  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere, KvEntryRelations, never, '@@gate', {}, Required<Pick<KvEntryCreate, 'workspaceId'>>>
-  readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
-  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem>
-  readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate'>
-  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'ingressCertSecretId' | 'ingressCertExpiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem>
-  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem>
-  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate', {}, Required<Pick<InvitationCreate, 'workspaceId'>>>
-  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem, Required<Pick<SecretCreate, 'workspaceId'>>>
-  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem, Required<Pick<ApiKeyCreate, 'workspaceId' | 'userId'>>>
-  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerSecretId' | 'providerServerId' | 'registerMethod' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem, Required<Pick<ServerCreate, 'workspaceId'>>>
-  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem>
-  readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate'>
-  readonly conduit_targets: TableClient<Conduit_targets, Conduit_targetsCreate, Conduit_targetsUpdate, Conduit_targetsWhere, Conduit_targetsRelations, never, '@@gate'>
-  readonly conduit_receipts: TableClient<Conduit_receipts, Conduit_receiptsCreate, Conduit_receiptsUpdate, Conduit_receiptsWhere, Conduit_receiptsRelations, never, '@@gate'>
-  readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate'>
-  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate', {}, Required<Pick<NetworkCreate, 'workspaceId'>>>
-  readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate'>
-  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate', {}, Required<Pick<ProjectCreate, 'workspaceId'>>>
-  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate', {}, Required<Pick<EnvironmentCreate, 'workspaceId'>>>
-  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'projectId' | 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>>
-  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, 'revision' | '@@gate', VariableSystem, Required<Pick<VariableCreate, 'workspaceId'>>>
-  readonly variableVersion: TableClient<VariableVersion, VariableVersionCreate, VariableVersionUpdate, VariableVersionWhere, VariableVersionRelations, never, '@@gate', {}, Required<Pick<VariableVersionCreate, 'workspaceId'>>>
-  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem, Required<Pick<DomainCreate, 'workspaceId'>>>
-  readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate', {}, Required<Pick<DomainRouteCreate, 'workspaceId'>>>
-  readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate'>
-  readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate'>
-  readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem, Required<Pick<AppPlatformCreate, 'workspaceId'>>>
-  readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate'>
-  readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate'>
-  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'releaseId' | 'certError' | '@@gate', AppCopySystem>
-  readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate'>
-  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'releaseId' | 'schemaHash' | 'pivot' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>>
-  readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate'>
-  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem, Required<Pick<JobCreate, 'workspaceId'>>>
-  readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate'>
-  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, 'lastRunAt' | 'runCount' | '@@gate', RecipeSystem, Required<Pick<RecipeCreate, 'workspaceId'>>>
-  readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations, never, '@@gate'>
-  readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations, never, '@@gate'>
-  readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations, never, '@@gate'>
-  readonly maintenanceRun: TableClient<MaintenanceRun, MaintenanceRunCreate, MaintenanceRunUpdate, MaintenanceRunWhere, MaintenanceRunRelations, never, '@@gate'>
-  readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate', {}, Required<Pick<FlagCreate, 'workspaceId'>>>
-  readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate'>
-  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem, Required<Pick<NotificationChannelCreate, 'workspaceId'>>>
-  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | 'lockDays' | 'lockAttestedAt' | '@@gate', BackupDestinationSystem, Required<Pick<BackupDestinationCreate, 'workspaceId'>>>
-  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem, Required<Pick<AlertRuleCreate, 'workspaceId'>>>
-  readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate'>
-  readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate'>
-  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume' | 'retarget', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem, Required<Pick<MonitorCreate, 'workspaceId'>>>
-  readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate'>
-  readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate'>
-  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem>
-  readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations, never, '@@gate'>
-  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations, never, '@@gate', {}, Required<Pick<DashboardCreate, 'workspaceId'>>>
-  readonly dashboardTile: TableClient<DashboardTile, DashboardTileCreate, DashboardTileUpdate, DashboardTileWhere, DashboardTileRelations, never, '@@gate'>
-  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere, AuditEventRelations, never, '@@gate', {}, Required<Pick<AuditEventCreate, 'workspaceId'>>>
-  readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations, never, '@@gate'>
-  readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations, never, '@@gate'>
-  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate', {}, Required<Pick<RegistryImageCreate, 'workspaceId'>>>
-  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecation' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem, Required<Pick<DependencyCreate, 'workspaceId'>>>
-  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate', {}, Required<Pick<DependencyUseCreate, 'workspaceId'>>>
-  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'installId' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem>
-  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
-  readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate'>
+  'credential' | 'session' | 'verification' | 'loginChallenge' | 'oauthFlow' | 'metricSeries' | 'metricPoint' | 'metricHour' | 'flow' | 'flowVersion' | 'flowLayout' | 'run' | 'runStep' | 'wait' | 'flowCredential' | 'kvEntry' | 'auditTrail' | 'user' | 'account' | 'workspace' | 'workspaceMember' | 'invitation' | 'secret' | 'apiKey' | 'server' | 'serverEvent' | 'outpostNonce' | 'conduit_targets' | 'conduit_receipts' | 'volume' | 'network' | 'serverNetwork' | 'project' | 'environment' | 'app' | 'variable' | 'variableVersion' | 'domain' | 'domainRoute' | 'appEditor' | 'appServer' | 'appPlatform' | 'appBackup' | 'appDrill' | 'appCopy' | 'appNetwork' | 'deployment' | 'deploymentStep' | 'job' | 'jobRun' | 'recipe' | 'recipeRun' | 'diskUsage' | 'serverPosture' | 'maintenanceRun' | 'flag' | 'flagOverride' | 'notificationChannel' | 'backupDestination' | 'alertRule' | 'alertRuleChannel' | 'alert' | 'monitor' | 'monitorCheck' | 'monitorUptimeDay' | 'monitorEvent' | 'monitorChannel' | 'appChannel' | 'dashboard' | 'dashboardTile' | 'auditEvent' | 'blueprint' | 'blueprintParam' | 'registryImage' | 'dependency' | 'dependencyUse' | 'hubConfig' | 'notification' | 'notificationPreference' | 'fleetByProvider' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
+  readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere, CredentialRelations, never, 'value' | 'accessToken' | 'refreshToken' | '@@gate', {}, {}, 'Credential'>
+  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'token' | 'refreshToken' | 'previousRefreshToken' | '@@gate', {}, {}, 'Session'>
+  readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere, VerificationRelations, never, 'value' | 'secret' | 'code' | '@@gate', {}, {}, 'Verification'>
+  readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere, LoginChallengeRelations, never, 'value' | '@@gate', {}, {}, 'LoginChallenge'>
+  readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere, OauthFlowRelations, never, 'state' | 'verifier' | 'invitation' | 'grant' | '@@gate', {}, {}, 'OauthFlow'>
+  readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere, MetricSeriesRelations, never, '@@gate', {}, {}, 'MetricSeries'>
+  readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere, MetricPointRelations, never, '@@gate', {}, {}, 'MetricPoint'>
+  readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere, MetricHourRelations, never, '@@gate', {}, {}, 'MetricHour'>
+  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere, FlowRelations, 'activate' | 'pause' | 'archive' | 'unarchive', 'status' | '@@gate', {}, Required<Pick<FlowCreate, 'ownerId' | 'workspaceId'>>, 'Flow'>
+  readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere, FlowVersionRelations, never, '@@gate', {}, {}, 'FlowVersion'>
+  readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere, FlowLayoutRelations, never, '@@gate', {}, {}, 'FlowLayout'>
+  readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere, RunRelations, 'start' | 'suspend' | 'resume' | 'complete' | 'fail' | 'cancel', 'status' | '@@gate', {}, {}, 'Run'>
+  readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere, RunStepRelations, never, '@@gate', {}, {}, 'RunStep'>
+  readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere, WaitRelations, never, '@@gate', {}, {}, 'Wait'>
+  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere, FlowCredentialRelations, never, '@@gate', {}, Required<Pick<FlowCredentialCreate, 'workspaceId'>>, 'FlowCredential'>
+  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere, KvEntryRelations, never, '@@gate', {}, Required<Pick<KvEntryCreate, 'workspaceId'>>, 'KvEntry'>
+  readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate', {}, {}, 'AuditTrail'>
+  readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, 'kind' | '@@gate', UserSystem, {}, 'User'>
+  readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, '@@gate', {}, {}, 'Account'>
+  readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere, WorkspaceRelations, never, 'expiresAt' | 'ingressZone' | 'ingressCertSecretId' | 'ingressCertExpiresAt' | 'pushTopic' | '@@gate', WorkspaceSystem, {}, 'Workspace'>
+  readonly workspaceMember: TableClient<WorkspaceMember, WorkspaceMemberCreate, WorkspaceMemberUpdate, WorkspaceMemberWhere, WorkspaceMemberRelations, never, 'userId' | '@@gate', WorkspaceMemberSystem, {}, 'WorkspaceMember'>
+  readonly invitation: TableClient<Invitation, InvitationCreate, InvitationUpdate, InvitationWhere, InvitationRelations, never, 'token' | '@@gate', {}, Required<Pick<InvitationCreate, 'workspaceId'>>, 'Invitation'>
+  readonly secret: TableClient<Secret, SecretCreate, SecretUpdate, SecretWhere, SecretRelations, never, 'verifiedAt' | 'verifyError' | '@@gate', SecretSystem, Required<Pick<SecretCreate, 'workspaceId'>>, 'Secret'>
+  readonly apiKey: TableClient<ApiKey, ApiKeyCreate, ApiKeyUpdate, ApiKeyWhere, ApiKeyRelations, never, 'credentialId' | 'publicKey' | 'tokenHint' | 'revokedAt' | 'lastUsedAt' | 'totalUses' | 'usageDate' | 'usesOnDate' | '@@gate', ApiKeySystem, Required<Pick<ApiKeyCreate, 'workspaceId' | 'userId'>>, 'ApiKey'>
+  readonly server: TableClient<Server, ServerCreate, ServerUpdate, ServerWhere, ServerRelations, 'reboot' | 'drain' | 'undrain' | 'provision' | 'destroy' | 'checkIn' | 'loseContact' | 'reportProvisioned' | 'reportRunning' | 'reportStopped' | 'reportRebuilding' | 'reportDestroyed', 'providerKind' | 'providerSecretId' | 'providerServerId' | 'registerMethod' | 'enrollTokenHash' | 'outpostPublicKey' | 'outpostCert' | 'backupPolicy' | 'backupReading' | 'status' | '@@gate', ServerSystem, Required<Pick<ServerCreate, 'workspaceId'>>, 'Server'>
+  readonly serverEvent: TableClient<ServerEvent, ServerEventCreate, ServerEventUpdate, ServerEventWhere, ServerEventRelations, never, 'noticeOwedAt' | '@@gate', ServerEventSystem, {}, 'ServerEvent'>
+  readonly outpostNonce: TableClient<OutpostNonce, OutpostNonceCreate, OutpostNonceUpdate, OutpostNonceWhere, OutpostNonceRelations, never, '@@gate', {}, {}, 'OutpostNonce'>
+  readonly conduit_targets: TableClient<Conduit_targets, Conduit_targetsCreate, Conduit_targetsUpdate, Conduit_targetsWhere, Conduit_targetsRelations, never, '@@gate', {}, {}, 'Conduit_targets'>
+  readonly conduit_receipts: TableClient<Conduit_receipts, Conduit_receiptsCreate, Conduit_receiptsUpdate, Conduit_receiptsWhere, Conduit_receiptsRelations, never, '@@gate', {}, {}, 'Conduit_receipts'>
+  readonly volume: TableClient<Volume, VolumeCreate, VolumeUpdate, VolumeWhere, VolumeRelations, never, '@@gate', {}, {}, 'Volume'>
+  readonly network: TableClient<Network, NetworkCreate, NetworkUpdate, NetworkWhere, NetworkRelations, never, '@@gate', {}, Required<Pick<NetworkCreate, 'workspaceId'>>, 'Network'>
+  readonly serverNetwork: TableClient<ServerNetwork, ServerNetworkCreate, ServerNetworkUpdate, ServerNetworkWhere, ServerNetworkRelations, never, '@@gate', {}, {}, 'ServerNetwork'>
+  readonly project: TableClient<Project, ProjectCreate, ProjectUpdate, ProjectWhere, ProjectRelations, never, '@@gate', {}, Required<Pick<ProjectCreate, 'workspaceId'>>, 'Project'>
+  readonly environment: TableClient<Environment, EnvironmentCreate, EnvironmentUpdate, EnvironmentWhere, EnvironmentRelations, never, '@@gate', {}, Required<Pick<EnvironmentCreate, 'workspaceId'>>, 'Environment'>
+  readonly app: TableClient<App, AppCreate, AppUpdate, AppWhere, AppRelations, never, 'projectId' | 'status' | 'isDeployedOnPush' | 'pushSecret' | 'pushTokenHash' | 'pushActorId' | 'deployPublicKey' | 'blueprintId' | 'replicaFoundAt' | 'replicaSyncedAt' | '@@gate', AppSystem, Required<Pick<AppCreate, 'workspaceId'>>, 'App'>
+  readonly variable: TableClient<Variable, VariableCreate, VariableUpdate, VariableWhere, VariableRelations, never, 'revision' | '@@gate', VariableSystem, Required<Pick<VariableCreate, 'workspaceId'>>, 'Variable'>
+  readonly variableVersion: TableClient<VariableVersion, VariableVersionCreate, VariableVersionUpdate, VariableVersionWhere, VariableVersionRelations, never, '@@gate', {}, Required<Pick<VariableVersionCreate, 'workspaceId'>>, 'VariableVersion'>
+  readonly domain: TableClient<Domain, DomainCreate, DomainUpdate, DomainWhere, DomainRelations, never, 'certSecretId' | 'certKind' | 'certIssuedAt' | 'certExpiresAt' | 'copyCertSecretId' | 'copyCertExpiresAt' | '@@gate', DomainSystem, Required<Pick<DomainCreate, 'workspaceId'>>, 'Domain'>
+  readonly domainRoute: TableClient<DomainRoute, DomainRouteCreate, DomainRouteUpdate, DomainRouteWhere, DomainRouteRelations, never, '@@gate', {}, Required<Pick<DomainRouteCreate, 'workspaceId'>>, 'DomainRoute'>
+  readonly appEditor: TableClient<AppEditor, AppEditorCreate, AppEditorUpdate, AppEditorWhere, AppEditorRelations, never, '@@gate', {}, {}, 'AppEditor'>
+  readonly appServer: TableClient<AppServer, AppServerCreate, AppServerUpdate, AppServerWhere, AppServerRelations, never, '@@gate', {}, {}, 'AppServer'>
+  readonly appPlatform: TableClient<AppPlatform, AppPlatformCreate, AppPlatformUpdate, AppPlatformWhere, AppPlatformRelations, never, 'receiverSecret' | 'status' | 'liveVersion' | 'observedAt' | '@@gate', AppPlatformSystem, Required<Pick<AppPlatformCreate, 'workspaceId'>>, 'AppPlatform'>
+  readonly appBackup: TableClient<AppBackup, AppBackupCreate, AppBackupUpdate, AppBackupWhere, AppBackupRelations, never, '@@gate', {}, {}, 'AppBackup'>
+  readonly appDrill: TableClient<AppDrill, AppDrillCreate, AppDrillUpdate, AppDrillWhere, AppDrillRelations, never, '@@gate', {}, {}, 'AppDrill'>
+  readonly appCopy: TableClient<AppCopy, AppCopyCreate, AppCopyUpdate, AppCopyWhere, AppCopyRelations, never, 'status' | 'asOf' | 'error' | 'refreshedAt' | 'releaseId' | 'certError' | '@@gate', AppCopySystem, {}, 'AppCopy'>
+  readonly appNetwork: TableClient<AppNetwork, AppNetworkCreate, AppNetworkUpdate, AppNetworkWhere, AppNetworkRelations, never, '@@gate', {}, {}, 'AppNetwork'>
+  readonly deployment: TableClient<Deployment, DeploymentCreate, DeploymentUpdate, DeploymentWhere, DeploymentRelations, 'build' | 'succeed' | 'fail' | 'cancel' | 'rollback', 'commitSha' | 'branch' | 'builtImage' | 'imageSha256' | 'swap' | 'swapReason' | 'releaseId' | 'schemaHash' | 'pivot' | 'platformVersion' | 'previousDeploymentId' | 'startedAt' | 'finishedAt' | 'durationMs' | 'status' | '@@gate', DeploymentSystem, Required<Pick<DeploymentCreate, 'workspaceId'>>, 'Deployment'>
+  readonly deploymentStep: TableClient<DeploymentStep, DeploymentStepCreate, DeploymentStepUpdate, DeploymentStepWhere, DeploymentStepRelations, never, '@@gate', {}, {}, 'DeploymentStep'>
+  readonly job: TableClient<Job, JobCreate, JobUpdate, JobWhere, JobRelations, 'start' | 'idle' | 'fail' | 'cancel', 'retryCount' | 'lastRunAt' | 'lastRunStatus' | 'status' | '@@gate', JobSystem, Required<Pick<JobCreate, 'workspaceId'>>, 'Job'>
+  readonly jobRun: TableClient<JobRun, JobRunCreate, JobRunUpdate, JobRunWhere, JobRunRelations, never, '@@gate', {}, {}, 'JobRun'>
+  readonly recipe: TableClient<Recipe, RecipeCreate, RecipeUpdate, RecipeWhere, RecipeRelations, never, 'lastRunAt' | 'runCount' | '@@gate', RecipeSystem, Required<Pick<RecipeCreate, 'workspaceId'>>, 'Recipe'>
+  readonly recipeRun: TableClient<RecipeRun, RecipeRunCreate, RecipeRunUpdate, RecipeRunWhere, RecipeRunRelations, never, '@@gate', {}, {}, 'RecipeRun'>
+  readonly diskUsage: TableClient<DiskUsage, DiskUsageCreate, DiskUsageUpdate, DiskUsageWhere, DiskUsageRelations, never, '@@gate', {}, {}, 'DiskUsage'>
+  readonly serverPosture: TableClient<ServerPosture, ServerPostureCreate, ServerPostureUpdate, ServerPostureWhere, ServerPostureRelations, never, '@@gate', {}, {}, 'ServerPosture'>
+  readonly maintenanceRun: TableClient<MaintenanceRun, MaintenanceRunCreate, MaintenanceRunUpdate, MaintenanceRunWhere, MaintenanceRunRelations, never, '@@gate', {}, {}, 'MaintenanceRun'>
+  readonly flag: TableClient<Flag, FlagCreate, FlagUpdate, FlagWhere, FlagRelations, never, '@@gate', {}, Required<Pick<FlagCreate, 'workspaceId'>>, 'Flag'>
+  readonly flagOverride: TableClient<FlagOverride, FlagOverrideCreate, FlagOverrideUpdate, FlagOverrideWhere, FlagOverrideRelations, never, '@@gate', {}, {}, 'FlagOverride'>
+  readonly notificationChannel: TableClient<NotificationChannel, NotificationChannelCreate, NotificationChannelUpdate, NotificationChannelWhere, NotificationChannelRelations, never, 'secretId' | 'lastTestAt' | 'lastDeliveryAt' | 'lastError' | 'lastErrorAt' | '@@gate', NotificationChannelSystem, Required<Pick<NotificationChannelCreate, 'workspaceId'>>, 'NotificationChannel'>
+  readonly backupDestination: TableClient<BackupDestination, BackupDestinationCreate, BackupDestinationUpdate, BackupDestinationWhere, BackupDestinationRelations, never, 'secretId' | 'lastTestAt' | 'lockDays' | 'lockAttestedAt' | '@@gate', BackupDestinationSystem, Required<Pick<BackupDestinationCreate, 'workspaceId'>>, 'BackupDestination'>
+  readonly alertRule: TableClient<AlertRule, AlertRuleCreate, AlertRuleUpdate, AlertRuleWhere, AlertRuleRelations, never, 'snoozedUntil' | '@@gate', AlertRuleSystem, Required<Pick<AlertRuleCreate, 'workspaceId'>>, 'AlertRule'>
+  readonly alertRuleChannel: TableClient<AlertRuleChannel, AlertRuleChannelCreate, AlertRuleChannelUpdate, AlertRuleChannelWhere, AlertRuleChannelRelations, never, '@@gate', {}, {}, 'AlertRuleChannel'>
+  readonly alert: TableClient<Alert, AlertCreate, AlertUpdate, AlertWhere, AlertRelations, never, '@@gate', {}, {}, 'Alert'>
+  readonly monitor: TableClient<Monitor, MonitorCreate, MonitorUpdate, MonitorWhere, MonitorRelations, 'markUp' | 'markDown' | 'pause' | 'resume' | 'retarget', 'isManaged' | 'failStreak' | 'lastCheckedAt' | 'nextCheckAt' | 'lastLatencyMs' | 'certExpiresAt' | 'certWarnedDays' | 'status' | '@@gate', MonitorSystem, Required<Pick<MonitorCreate, 'workspaceId'>>, 'Monitor'>
+  readonly monitorCheck: TableClient<MonitorCheck, MonitorCheckCreate, MonitorCheckUpdate, MonitorCheckWhere, MonitorCheckRelations, never, '@@gate', {}, {}, 'MonitorCheck'>
+  readonly monitorUptimeDay: TableClient<MonitorUptimeDay, MonitorUptimeDayCreate, MonitorUptimeDayUpdate, MonitorUptimeDayWhere, MonitorUptimeDayRelations, never, '@@gate', {}, {}, 'MonitorUptimeDay'>
+  readonly monitorEvent: TableClient<MonitorEvent, MonitorEventCreate, MonitorEventUpdate, MonitorEventWhere, MonitorEventRelations, never, 'noticeOwedAt' | '@@gate', MonitorEventSystem, {}, 'MonitorEvent'>
+  readonly monitorChannel: TableClient<MonitorChannel, MonitorChannelCreate, MonitorChannelUpdate, MonitorChannelWhere, MonitorChannelRelations, never, '@@gate', {}, {}, 'MonitorChannel'>
+  readonly appChannel: TableClient<AppChannel, AppChannelCreate, AppChannelUpdate, AppChannelWhere, AppChannelRelations, never, '@@gate', {}, {}, 'AppChannel'>
+  readonly dashboard: TableClient<Dashboard, DashboardCreate, DashboardUpdate, DashboardWhere, DashboardRelations, never, '@@gate', {}, Required<Pick<DashboardCreate, 'workspaceId'>>, 'Dashboard'>
+  readonly dashboardTile: TableClient<DashboardTile, DashboardTileCreate, DashboardTileUpdate, DashboardTileWhere, DashboardTileRelations, never, '@@gate', {}, {}, 'DashboardTile'>
+  readonly auditEvent: TableClient<AuditEvent, AuditEventCreate, AuditEventUpdate, AuditEventWhere, AuditEventRelations, never, '@@gate', {}, Required<Pick<AuditEventCreate, 'workspaceId'>>, 'AuditEvent'>
+  readonly blueprint: TableClient<Blueprint, BlueprintCreate, BlueprintUpdate, BlueprintWhere, BlueprintRelations, never, '@@gate', {}, {}, 'Blueprint'>
+  readonly blueprintParam: TableClient<BlueprintParam, BlueprintParamCreate, BlueprintParamUpdate, BlueprintParamWhere, BlueprintParamRelations, never, '@@gate', {}, {}, 'BlueprintParam'>
+  readonly registryImage: TableClient<RegistryImage, RegistryImageCreate, RegistryImageUpdate, RegistryImageWhere, RegistryImageRelations, never, '@@gate', {}, Required<Pick<RegistryImageCreate, 'workspaceId'>>, 'RegistryImage'>
+  readonly dependency: TableClient<Dependency, DependencyCreate, DependencyUpdate, DependencyWhere, DependencyRelations, never, 'latest' | 'deprecation' | 'advisories' | 'checkedAt' | 'checkError' | '@@gate', DependencySystem, Required<Pick<DependencyCreate, 'workspaceId'>>, 'Dependency'>
+  readonly dependencyUse: TableClient<DependencyUse, DependencyUseCreate, DependencyUseUpdate, DependencyUseWhere, DependencyUseRelations, never, '@@gate', {}, Required<Pick<DependencyUseCreate, 'workspaceId'>>, 'DependencyUse'>
+  readonly hubConfig: TableClient<HubConfig, HubConfigCreate, HubConfigUpdate, HubConfigWhere, HubConfigRelations, never, 'installId' | 'encryptionKeyEscrowedAt' | 'encryptionKeyFingerprint' | 'appId' | '@@gate', HubConfigSystem, {}, 'HubConfig'>
+  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate', {}, {}, 'Notification'>
+  readonly notificationPreference: TableClient<NotificationPreference, NotificationPreferenceCreate, NotificationPreferenceUpdate, NotificationPreferenceWhere, NotificationPreferenceRelations, never, '@@gate', {}, {}, 'NotificationPreference'>
   readonly fleetByProvider: ViewClient<FleetByProvider, FleetByProviderWhere>
 
   // Auth scoping

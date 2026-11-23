@@ -25,9 +25,16 @@ export const declaredTransports = (_: unknown, r: Recipient): string[] =>
  *  path because the reader is already in the app; an email is read somewhere
  *  else and a bare path is a dead link. */
 export function appUrl(path: string): string {
-  const base = process.env.FRONTIER_APP_URL ?? 'http://localhost:8020'
-  return `${base.replace(/\/+$/, '')}${path}`
+  return `${appBase().replace(/\/+$/, '')}${path}`
 }
+
+/** Which Basecamp an email is about. A hub has no name (`FJS-D1591`) and two
+ *  hubs may send from one address, so the From line cannot say it. */
+export function appHost(): string {
+  try { return new URL(appBase()).host } catch { return appBase() }
+}
+
+const appBase = (): string => process.env.FRONTIER_APP_URL ?? 'http://localhost:8020'
 
 /** How bad a failure is — the same two levels the push tags carry
  *  (`rotating_light` for down now, `warning` for the rest). */

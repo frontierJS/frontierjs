@@ -16,6 +16,7 @@ import { Database } from 'bun:sqlite'
 import { join } from 'node:path'
 import { migrationStatus } from '@frontierjs/litestone/migrations'
 import { checksum } from '@frontierjs/litestone/migrate'
+import { containerName } from '@frontierjs/outpost/docker'
 import { shWord } from './swap.js'
 
 /** The table litestone's `apply()` records each applied file in. */
@@ -134,13 +135,42 @@ export function disagreementsFor(probe, migrationsRoot) {
  * where an operator asks whether the deploy would be refused.
  */
 export function checkJournal({ machine, container, migrationsRoot }) {
+  const bad = boxDisagreements({ machine, container, migrationsRoot })
+  return Object.keys(bad).length ? { ok: false, message: journalRefusal(bad) } : { ok: true }
+}
+
+/** The disagreements of the container on one machine, `{}` where there is nothing to compare. */
+function boxDisagreements({ machine, container, migrationsRoot }) {
   try { machine.run(`docker inspect ${shWord(container)} > /dev/null 2>&1`, { dry: false }) }
-  catch { return { ok: true } }
+  catch { return {} }
   let output
   try { output = machine.capture(journalProbeScript(container), { dry: false }) }
-  catch { return { ok: true } }
+  catch { return {} }
   const probe = parseProbe(output)
-  if (!probe) return { ok: true }
-  const bad = disagreementsFor(probe, migrationsRoot)
-  return Object.keys(bad).length ? { ok: false, message: journalRefusal(bad) } : { ok: true }
+  return probe ? disagreementsFor(probe, migrationsRoot) : {}
+}
+
+/**
+ * The same question as `checkJournal`, asked by basecamp:deploy of each machine
+ * its App is placed on, as preflight findings (`level`, `title`, `detail`,
+ * `hint`). `destinations` is `[{ name, machine }]`; `slugs` is the App's
+ * `{ appId, project, environment, appSlug }`, which name the container Outpost
+ * runs it as.
+ */
+export function journalFindings({ destinations, slugs, migrationsRoot }) {
+  const container = containerName(slugs)
+  const findings = []
+  for (const { name, machine } of destinations) {
+    const bad = boxDisagreements({ machine, container, migrationsRoot })
+    if (!Object.keys(bad).length) continue
+    const lines = journalRefusal(bad).split('\n')
+    findings.push({
+      level:  'error',
+      rule:   'migration-journal',
+      title:  `The release's migrations disagree with the databases on ${name} -- the new container would refuse to start`,
+      detail: lines.slice(1, -2).map(l => l.trim()).join('\n      '),
+      hint:   lines.at(-1),
+    })
+  }
+  return findings
 }

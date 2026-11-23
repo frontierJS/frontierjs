@@ -10,6 +10,10 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {
+    "./ask": {
+      "types": "./src/ask/ask.d.ts",
+      "default": "./src/ask/ask.js"
+    },
     "./aria": {
       "types": "./src/aria/aria.d.ts",
       "default": "./src/aria/aria.js"

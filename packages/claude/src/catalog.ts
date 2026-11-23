@@ -69,7 +69,8 @@ const MODELS_MAX = 50
 
 /**
  * The `models` of an `initialize` answer: odd entries are dropped, a repeat of a value keeps the first,
- * the count is capped. `default` is left out, since the picker has its own default entry.
+ * the count is capped. `default` is left out, since the picker has its own default entry. The list is
+ * whole, Claude Code's order: which of it a picker shows is the host's.
  */
 export function modelsOf(r: unknown): ModelChoice[] {
   const list = r && typeof r === 'object' ? (r as { models?: unknown }).models : null
@@ -85,22 +86,7 @@ export function modelsOf(r: unknown): ModelChoice[] {
     out.push({ value, displayName: clip(o.displayName, 100) || value, efforts })
     if (out.length >= MODELS_MAX) break
   }
-  return newestPerFamily(out)
-}
-
-/**
- * One model per family (Opus, Fable, Sonnet, Haiku), the first the list names: Claude Code lists
- * each family's newest first, then the pinned older versions (Opus 4.8, Sonnet 4.6, ...), which the
- * picker leaves out (owner, 2026-11-19). The family is the display name's first word.
- */
-export function newestPerFamily(list: ModelChoice[]): ModelChoice[] {
-  const seen = new Set<string>()
-  return list.filter((m) => {
-    const family = (m.displayName.split(/\s+/)[0] || m.value).toLowerCase()
-    if (seen.has(family)) return false
-    seen.add(family)
-    return true
-  })
+  return out
 }
 
 /**
@@ -113,6 +99,5 @@ export const FALLBACK_MODELS: ModelChoice[] = [
   { value: 'haiku', displayName: 'Haiku', efforts: [] },
 ]
 
-/** The modes a host's picker offers, each named by the doc's argv. The CLI may report others (`auto`, `dontAsk`), which are shown as said. */
-export const PICKED_MODES = ['default', 'acceptEdits', 'plan', 'bypassPermissions'] as const
+/** Every mode Claude Code takes on `--permission-mode` and reports. A host's picker offers the ones it chooses. */
 export const MODES = ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'] as const

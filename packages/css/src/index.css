@@ -75,6 +75,7 @@
 @import './themes/elite.css'    layer(themes);
 @import './themes/basecamp.css' layer(themes);
 @import './themes/notebook.css' layer(themes);
+@import './themes/notebook-dark.css' layer(themes);
 @import './themes/press.css'    layer(themes);
 @import './themes/field.css'    layer(themes);
 @import './themes/dracula.css'  layer(themes);

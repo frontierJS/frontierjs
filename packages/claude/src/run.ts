@@ -41,15 +41,15 @@ export type AskRun = { child: ChildProcess, done: Promise<number | null> }
  * one, or an agent with no server, or the run. Detached, so a stop signals the
  * group and takes a running `rg` with it.
  */
-export function runAsk({ root, prompt, session = null, edit = null, reads = [], work = null, agent = null, draw = null, images = [], effort = ASK_EFFORT, model = null, fork = false, partial = false, appendSystem = null, bin = 'claude', env = process.env, onEvent, onFrame, log, onExit }: RunAskOptions): AskRun | { error: string } {
+export function runAsk({ root, prompt, session = null, edit = null, reads = [], work = null, agent = null, draw = null, answer = null, bash, budget, images = [], effort = ASK_EFFORT, model = null, fork = false, partial = false, appendSystem = null, bin = 'claude', env = process.env, onEvent, onFrame, log, onExit }: RunAskOptions): AskRun | { error: string } {
   if (session && !SESSION_ID.test(String(session)))
     return { error: `not a session id: ${JSON.stringify(String(session).slice(0, 40))}` }
-  if (agent && !agent.server)
+  if ((agent && !agent.server) || (answer?.agent && !answer.agent.server))
     return { error: 'an agent names its MCP server' }
   if (effort !== null && !isEffort(effort))
     return { error: `no such effort: ${JSON.stringify(String(effort).slice(0, 40))} — one of ${EFFORTS.join(', ')}` }
 
-  const argv = askArgv({ session, edit, reads, work, agent, draw, effort, model, fork, partial, appendSystem, images: images.length > 0 })
+  const argv = askArgv({ session, edit, reads, work, agent, draw, answer, bash, budget, effort, model, fork, partial, appendSystem, images: images.length > 0 })
   let child: ChildProcess
   if (log) {
     const fd = openSync(log, 'a')

@@ -372,6 +372,30 @@ model Job {
     db.$close()
   })
 
+  // FJS-4559: upsertMany's DO UPDATE skips a row the update policy excludes,
+  // so the row was counted updated with nothing written and nothing rejected.
+  it('an upsert row the caller may not update is a reject, and the rest of its batch loads', async () => {
+    const root = (await createClient({ schema: `
+model Job {
+  id      String @id
+  name    String
+  ownerId Int
+  @@allow(read, true)
+  @@allow(create, true)
+  @@allow(update, ownerId == auth().id)
+}`, db: ':memory:' })) as any
+    await root.asSystem().job.createMany({ data: [{ id: 'a', name: 'x', ownerId: 1 }, { id: 'b', name: 'x', ownerId: 2 }] })
+    const db = root.$setAuth({ id: 2 })
+    const out = await loadRows(db, 'Job', 'id,name,ownerId\na,y,1\nb,y,2\nc,y,2\n', { key: 'id', mode: 'upsert' })
+    expect(out).toMatchObject({ loaded: 2, added: 1, updated: 1, unchanged: 0 })
+    expect(out.rejects.map((r: any) => [r.row, r.key, r.reason])).toEqual([[0, 'a', 'names a stored row this caller may not update']])
+    const lacking = await loadRows(db, 'Job', 'id,ownerId\na,2\n', { key: 'id', mode: 'upsert' })
+    expect(lacking.rejects.map((r: any) => [r.row, r.key, r.reason])).toEqual([[0, 'a', 'names a stored row this caller may not update']])
+    expect((await root.asSystem().job.findMany({ orderBy: { id: 'asc' } })).map((r: any) => [r.id, r.name, r.ownerId]))
+      .toEqual([['a', 'x', 1], ['b', 'y', 2], ['c', 'y', 2]])
+    root.$close()
+  })
+
   it('rejects a row past the entry state of a @@transitions field, and loads the rest', async () => {
     const db = (await createClient({ schema: `
 enum Stage { lead client lost }

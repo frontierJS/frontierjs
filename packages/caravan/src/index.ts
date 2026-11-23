@@ -951,8 +951,8 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
       throw new Error(`[Caravan] job "${job}": timeZone '${spec.timeZone}' is more than one relation away — a column of ${spec.model}, or relation.field`)
     const select: Record<string, unknown> = { [key]: true, [spec.cron]: true }
     if (zoneHead) select[zoneHead] = zoneField ? { select: { [zoneField]: true } } : true
-    const tenantColumn = rowTenantColumn(job, spec, db)
-    if (tenantColumn) select[tenantColumn] = true
+    const tenantAt = rowTenantPath(db, accessor)
+    if (tenantAt) selectAlong(select, tenantAt)
 
     if (tenant === null) tapScheduleWrites(db)
     const rows = await table.findMany({ select })
@@ -962,7 +962,7 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
         id:       r[key],
         cron:     (r[spec.cron] as string | null) ?? null,
         timeZone: (zoneAt as string | null) ?? undefined,
-        ...(tenantColumn ? { tenant: (r[tenantColumn] as string | null) ?? null } : {}),
+        ...(tenantAt ? { tenant: (readAlong(r, tenantAt) as string | null) ?? null } : {}),
       }
     })
   }
@@ -970,21 +970,33 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
   /**
    * Under `tenancy { strategy row }` every tenant's rows share one file, so the
    * database names no tenant and a fire dispatched in it runs with no claim —
-   * the tenancy deny then hides the very row it was bound from. The row's own
-   * column is the fire's tenant, as a commitment's is (`FJS-2231`). A model
-   * scoped through its parent carries no column, and the path to one is
-   * Litestone's to walk, so that pairing is refused by name.
+   * the tenancy deny then hides the very row it was bound from. The row's
+   * tenant is the fire's, as a commitment's is (`FJS-2231`): its own column, or
+   * for a model scoped through its parent the parent's, along the relations
+   * Litestone's `$tenantPath` names — the ones its generated deny follows.
    */
-  function rowTenantColumn(job: string, spec: RowSchedules, raw: unknown): string | null {
-    type Model = { name: string; fields: Array<{ name: string }>; attributes?: Array<{ generated?: string }> }
-    const db = raw as { $schema?: { models?: Model[] } }
+  function rowTenantPath(raw: unknown, accessor: string): string[] | null {
     const t = tenancyOf(raw)
     if (t?.strategy !== 'row' || !t.column) return null
-    const model = db.$schema?.models?.find(m => m.name === spec.model)
-    if (model?.fields.some(f => f.name === t.column)) return t.column
-    if (model?.attributes?.some(a => a.generated === 'tenancy'))
-      throw new Error(`[Caravan] job "${job}" binds its schedules from ${spec.model}, which is scoped by tenant through its parent and carries no '${t.column}' — a row schedule under strategy row reads its tenant off the row's own column`)
-    return null
+    const db = raw as { $tenantPath?: (accessor: string) => string[] | null }
+    const hops = typeof db.$tenantPath === 'function' ? db.$tenantPath(accessor) : null
+    return hops ? [...hops, t.column] : null
+  }
+
+  /** Adds `a.b.c` to a findMany select, beside whatever the zone already selects through `a`. */
+  function selectAlong(select: Record<string, unknown>, path: string[]): void {
+    const [head, ...rest] = path
+    if (!rest.length) { select[head] = true; return }
+    const into = select[head] as { select?: Record<string, unknown> } | true | undefined
+    const inner = typeof into === 'object' && into.select ? into.select : {}
+    select[head] = { select: inner }
+    selectAlong(inner, rest)
+  }
+
+  function readAlong(row: Record<string, unknown>, path: string[]): unknown {
+    let at: unknown = row
+    for (const step of path) at = (at as Record<string, unknown> | null | undefined)?.[step]
+    return at
   }
 
   // Litestone's tap sees every write the client makes — a seed's, an
@@ -1001,13 +1013,25 @@ export function caravan(opts: CaravanOptions = {}): CaravanInstance {
     })
   }
 
-  /** The models whose write can change a job's rows: its own, and the one a zone path reaches. */
+  /**
+   * The models whose write can change a job's rows: its own, the one a zone
+   * path reaches, and each parent its tenant is read through.
+   */
   function scheduleReaches(db: ScheduleClient, spec: RowSchedules): string[] {
-    const rel = spec.timeZone?.includes('.') ? spec.timeZone.split('.')[0] : null
-    const through = rel
-      ? db.$schema?.models?.find(m => m.name === spec.model)?.fields.find(f => f.name === rel)?.type?.name
-      : undefined
-    return through ? [spec.model, through] : [spec.model]
+    const relatedTo = (model: string, rel: string) =>
+      db.$schema?.models?.find(m => m.name === model)?.fields.find(f => f.name === rel)?.type?.name
+    const out = new Set([spec.model])
+    if (spec.timeZone?.includes('.')) {
+      const through = relatedTo(spec.model, spec.timeZone.split('.')[0])
+      if (through) out.add(through)
+    }
+    const accessor = spec.model.charAt(0).toLowerCase() + spec.model.slice(1)
+    let at: string | undefined = spec.model
+    for (const rel of (rowTenantPath(db, accessor) ?? []).slice(0, -1)) {
+      at = at && relatedTo(at, rel)
+      if (at) out.add(at)
+    }
+    return [...out]
   }
 
   // The whole of one dispatch, synchronously: nothing in it awaits, which is

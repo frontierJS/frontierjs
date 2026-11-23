@@ -139,6 +139,19 @@ describe('@stale — a write to a source marks the live aggregate that reads it'
   })
 })
 
+// A trigger-set mark is announced by nobody, so a screen holding an aggregate
+// row learns it went stale only by asking again when a source is written —
+// junction's live regrade reads $fromReach to know which writes those are
+// (`FJS-D2345`).
+describe('@stale — each source reaches $fromReach', () => {
+  test('every source model is in $fromReach, and absent from $fromColumns', async () => {
+    const { db } = await tree()
+    expect(db.$fromReach('grade')).toEqual(['Grade', 'GradeCategory', 'GradeItem'])
+    expect(db.$fromColumns('grade')).toEqual({})
+    expect(db.$fromReach('gradeItem')).toEqual([])
+  })
+})
+
 describe('@stale — refused by name', () => {
   const refuses = (stale: string, msg: RegExp) => {
     const r = parse(MODELS(stale))

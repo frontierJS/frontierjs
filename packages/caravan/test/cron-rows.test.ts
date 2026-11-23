@@ -308,7 +308,10 @@ describe('under tenancy { strategy row } (FJS-4547)', () => {
     ].sort())
   })
 
-  it('refuses by name a model scoped through its parent, which carries no tenant column', async () => {
+  // FJS-4565: the row carries no tenant column; its tenant is its parent's,
+  // read along the path the generated tenancy deny follows.
+  it('fires a model scoped through its parent in the parent\'s tenant', async () => {
+    const rows: Record<string, any> = {}
     const t = await bootRow(ROW_TENANCY + `
 model Site {
   id          Int    @id @default(autoincrement())
@@ -316,7 +319,19 @@ model Site {
   windows     Window[]
 }
 ${SCHEMA.replace('  id ', '  siteId Int\n  site   Site @relation(fields: [siteId], references: [id])\n  id ').replace(/\n}\n$/, '\n  @@tenant(via: site)\n}\n')}
-`)
-    await expect(t.start()).rejects.toThrow(/Window, which is scoped by tenant through its parent/)
+`, async sys => {
+      for (const w of ['acme', 'globex']) {
+        const site = await sys.site.create({ data: { workspaceId: w } })
+        rows[w] = await sys.window.create({ data: { siteId: site.id, name: w, rule: '0 3 * * *', timeZone: 'UTC' } })
+      }
+    })
+    await t.start()
+    await t.walk(new Date('2026-06-01T04:00:00Z'))
+
+    const fired = t.queue.list({ limit: 50 }).filter(r => r.name === JOB)
+    expect(fired.map(r => [r.id, r.tenant_id]).sort()).toEqual([
+      [occurrenceKey('cron', JOB, rows.acme.id,   wall(2026, 6, 1, 3, 0)), 'acme'],
+      [occurrenceKey('cron', JOB, rows.globex.id, wall(2026, 6, 1, 3, 0)), 'globex'],
+    ].sort())
   })
 })

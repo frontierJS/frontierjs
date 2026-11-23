@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-78 models · 1 view · 79 gated · 0 unrestricted
-62 with row policies · 32 with protected fields · 36 declared moves · 16 @system · 0 @seals
+79 models · 1 view · 80 gated · 0 unrestricted
+63 with row policies · 32 with protected fields · 36 declared moves · 16 @system · 0 @seals
 ```
 
 ## Gates
@@ -28,6 +28,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ApiKey` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `App` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `AppBackup` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `AppChannel` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `AppCopy` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `AppDrill` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `AppEditor` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
@@ -174,6 +175,19 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(destination, tenancy)` — "Outside your workspaceId"
 - deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+
+### `AppChannel`
+
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **postUpdate** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(channel, tenancy)` — "Outside your workspaceId"
 
 ### `AppCopy`
 

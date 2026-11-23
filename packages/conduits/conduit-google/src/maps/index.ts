@@ -33,6 +33,7 @@ import type { ComputeRoutesResponse, LatLng, Place, Route, SearchTextResponse, W
 export * from './types.ts'
 export * from './errors.ts'
 export * from './cache-key.ts'
+export * from './static-map.ts'
 
 export const GOOGLE_MAPS_PLACES_TARGET  = 'provider:google-maps:places'
 export const GOOGLE_MAPS_ROUTES_TARGET  = 'provider:google-maps:routes'

@@ -33,6 +33,8 @@ require('readline').createInterface({ input: process.stdin }).on('line', (line) 
   out({ type: 'user', message: m.message, isReplay: true })
   out({ type: 'system', subtype: 'init', session_id: 's1', model: 'haiku', permissionMode: 'default', slash_commands: ['compact', 'review'] })
   if (text.includes('DIE')) { process.stderr.write('fell over\\n'); process.exit(3) }
+  if (text.includes('SIG')) process.kill(process.pid, 'SIGTERM')
+  if (text.includes('THINK')) out({ type: 'assistant', parent_tool_use_id: null, message: { content: [{ type: 'thinking', thinking: 'mull it' }, { type: 'tool_use', id: 't9', name: 'Bash', input: { command: 'pwd' } }] } })
   if (!text.includes('ASK')) return out({ type: 'result', subtype: 'success', is_error: false, num_turns: 1 })
   out({ type: 'control_request', request_id: 'p1', request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'ls' }, tool_use_id: 't1', permission_suggestions: [{ type: 'addRules' }] } })
   answers.set('p1', (d) => {
@@ -47,19 +49,20 @@ function open(extra: Partial<ConstructorParameters<typeof Session>[0]> = {}) {
   const events: SessionEvent[] = []
   const heard: Record<string, unknown[]> = { commands: [], models: [], usage: [], init: [] }
   let exited = 0
+  const exits: [number | null, string | null][] = []
   const s = new Session({
     cwd: dir, command: bin, host: 'Testbed', env: { ...process.env, CLAUDECODE: '1' },
     onEvent: e => events.push(e),
     onCommands: c => heard.commands.push(c), onModels: m => heard.models.push(m),
     onUsage: u => heard.usage.push(u), onInit: i => heard.init.push(i),
-    onExit: () => { exited++ },
+    onExit: (code, signal) => { exited++; exits.push([code, signal]) },
     ...extra,
   })
   const until = async (type: string, n = 1) => {
     for (let i = 0; i < 200 && events.filter(e => e.type === type).length < n; i++) await Bun.sleep(10)
     return events.filter(e => e.type === type)
   }
-  return { s, events, heard, until, exited: () => exited }
+  return { s, events, heard, until, exited: () => exited, exits }
 }
 
 describe('a session', () => {
@@ -97,11 +100,37 @@ describe('a session', () => {
     s.end()
   })
 
+  test('a prompt denied in the host\'s own words, the person\'s note after them', async () => {
+    const { s, until } = open({ deny: 'Declined. Wait.' })
+    s.send('ASK')
+    await until('permission')
+    expect(s.answer('p1', 'deny')).toEqual({ behavior: 'deny', message: 'Declined. Wait.' })
+    await until('end')
+    s.end()
+  })
+
+  test('thinking is an event with its text, and a call carries the id its result names', async () => {
+    const { s, until, events } = open()
+    s.send('THINK')
+    await until('end')
+    expect(events.filter(e => e.type === 'thinking' || e.type === 'tool')).toEqual([{ type: 'thinking', text: 'mull it' }, { type: 'tool', id: 't9', text: 'Bash pwd' }])
+    s.end()
+  })
+
+  test('a process ended by a signal: the host hears the signal and no code', async () => {
+    const { s, until, exits } = open()
+    s.send('SIG')
+    await until('end')
+    expect(exits).toEqual([[null, 'SIGTERM']])
+    expect(s.running).toBe(false)
+  })
+
   test('a process that dies mid-turn: the error with its stderr, the end, the host told first', async () => {
     const { s, until, events, exited } = open()
     s.send('DIE')
     await until('end')
     expect(exited()).toBe(1)
+    expect(open().exits).toEqual([])
     expect(events.find(e => e.type === 'error')).toMatchObject({ text: expect.stringContaining('exited mid-turn (code 3): fell over') })
     expect(s.running).toBe(false)
   })

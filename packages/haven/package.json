@@ -94,6 +94,7 @@
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts"
   },
   "dependencies": {
+    "@frontierjs/claude": "workspace:*",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
     "@frontierjs/mesa": "workspace:*",

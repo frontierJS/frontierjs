@@ -441,6 +441,11 @@ function runner(app: App) {
           // last release's bundle is never told it is stale (`FJS-D160`). After
           // the Variables, so a stored FRONTIER_BUILD cannot name another commit.
           ...(build ? { FRONTIER_BUILD: build } : {}),
+          // The machine maps and probes the App's container port, but junction
+          // binds FRONTIER_PORT_BE, which the image's own ENV sets: an image
+          // naming another port is refused at the probe, and a contract release
+          // leaves the app down (`FJS-4561`). After the Variables for the same reason.
+          ...(runtime.containerPort != null ? { FRONTIER_PORT_BE: String(runtime.containerPort) } : {}),
         },
       },
       source:        config.source ?? service.source ?? {},

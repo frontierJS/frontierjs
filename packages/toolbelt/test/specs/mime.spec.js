@@ -18,7 +18,7 @@
  */
 
 import {
-  CONTENT_TYPES, DEFAULT_TYPE, extensionOf, baseType, contentTypeFor, extensionsFor,
+  CONTENT_TYPES, DEFAULT_TYPE, extensionOf, baseType, contentTypeFor, extensionsFor, extensionFor,
   isTextType, isCompressible, isInlineSafe, sniff, sameType,
 } from '../../src/mime/mime.js'
 
@@ -158,6 +158,18 @@ test('mime: a shared prefix is resolved by its second field, not by its first', 
   assert.equal(sniff(bytesOf([0, 0, 0, 0x20], 'ftyp', 'isom')), 'video/mp4')
   // A RIFF whose form is not one this knows is not guessed at.
   assert.equal(sniff(bytesOf('RIFF', [0, 0, 0, 0], 'NOPE')), null)
+})
+
+test('mime: an iTunes audio brand reads as audio, not as the video default', function () {
+  // `FJS-4581` — an audiobook's `ftyp` says `M4B `, and answering the container
+  // default refused it under `@accept("audio/*")`.
+  assert.equal(sniff(bytesOf([0, 0, 0, 0x20], 'ftyp', 'M4A ')), 'audio/mp4')
+  assert.equal(sniff(bytesOf([0, 0, 0, 0x20], 'ftyp', 'M4B ')), 'audio/mp4')
+  assert.equal(sniff(bytesOf([0, 0, 0, 0x20], 'ftyp', 'M4P ')), 'audio/mp4')
+  // The control: a video brand from the same family is still the container.
+  assert.equal(sniff(bytesOf([0, 0, 0, 0x20], 'ftyp', 'M4V ')), 'video/mp4')
+  assert.equal(contentTypeFor('book.m4b'), 'audio/mp4')
+  assert.equal(extensionFor('audio/mp4'), 'm4a')
 })
 
 test('mime: markup is sniffed as text, and `<?xml` alone is not an svg', function () {

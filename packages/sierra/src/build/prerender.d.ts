@@ -175,6 +175,5 @@ export function hasSkipLink(html?: any): boolean;
  * focused link, so a keyboard user who tabs to it before the CSS sees it.
  */
 export const SKIP_LINK_GUARD_CSS: "@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}";
-export const SKIP_LINK_GUARD: "<style id=\"sierra-skip-link\">@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}</style>";
 /** A rule, not a `style=` attribute, which a strict CSP drops. */
 export const HYDRATE_ROOT_CSS: "[data-sierra-root]{display:contents}";

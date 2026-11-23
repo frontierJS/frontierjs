@@ -78,13 +78,14 @@ check(frame.stdout.includes('Revenue is administrator-only'), 'and the gate refu
 const param = spawnSync('bun', [TUI, '--frame', '/plans/7/', '--api', API], { cwd: WEB, encoding: 'utf8' })
 check(param.status === 0 && /^Plans\s*$/m.test(param.stdout), '--frame opens a route by a path that fills its param', param.stdout + param.stderr)
 
-// The app's theme block reaches the terminal: six themes offered, the default
-// checked, and the footer naming it (FJS-2565). Each is a tile, so a border
-// stands between two (FJS-D1423).
+// The app's theme block reaches the terminal: six themes offered and the
+// default checked (FJS-2565). The radios bind the resolved theme, so an
+// unresolved one checks none; the page's footer prints the same value but sits
+// below the 30 rows a frame holds. Each is a tile, so a border stands between
+// two (FJS-D1423).
 const settings = spawnSync('bun', [TUI, '--frame', '/settings/', '--api', API], { cwd: WEB, encoding: 'utf8' })
 check(/\(•\) default[\s│]+\( \) dark[\s│]+\( \) forest[\s│]+\( \) midnight[\s│]+\( \) sunset[\s│]+\( \) elite/.test(settings.stdout),
-  "/settings/ offers the app's six themes with its default checked", settings.stdout + settings.stderr)
-check(settings.stdout.includes('theme theme-default ·'), 'and its footer names the resolved theme', settings.stdout)
+  "/settings/ offers the app's six themes with its resolved default checked", settings.stdout + settings.stderr)
 
 // ─── interactive ──────────────────────────────────────────────────────
 

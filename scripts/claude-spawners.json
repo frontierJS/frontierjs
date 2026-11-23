@@ -2,6 +2,5 @@
   "//": "The files outside packages/claude that still start the `claude` program themselves. Each names the IDEAS/claude-calls.md step that moves it onto the package; the list only shrinks, so a file that stops starting it must be deleted from here (the `claude-spawn-owned` rule fails on both). The scan is packages/cli/core/claude-boundary.js.",
   "packages/haven/agents/agents.js": "4.4 (the townsfolk's one answer, onto the local door)",
   "packages/haven/web/src/lib/hash/errand.js": "4.4 (the desk's one answer, resumable and schema JSON)",
-  "packages/haven/web/src/lib/study/session.js": "3.2 (the study chat onto the package's session)",
   "packages/workbench/api/src/domain/local/local-claude.ts": "4.4 for runClaude, which chat/catchup.ts calls, and 5.2 for the auth/mcp/plugin/doctor subcommand runner"
 }

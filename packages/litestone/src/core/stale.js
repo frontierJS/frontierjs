@@ -62,6 +62,19 @@ export function resolveStalePath(model, path, schema, pluralize = false) {
   return { hops, source: at }
 }
 
+/** The model each `@stale` source on `model` lands on — a write there sets the mark. */
+export function staleSources(model, schema) {
+  const out = new Set()
+  for (const field of model.fields) {
+    const attr = field.attributes.find(a => a.kind === 'stale')
+    for (const s of attr?.sources ?? []) {
+      const { source } = resolveStalePath(model, s.path, schema)
+      if (source) out.add(source.name)
+    }
+  }
+  return out
+}
+
 const usesClock = (node) => /"type":"(now|shift)"/.test(JSON.stringify(node ?? null))
 
 /** Every refusal one model's `@stale` fields earn, worded for validate(). */

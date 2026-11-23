@@ -578,9 +578,9 @@ export function parseSelectPaths(list) {
 }
 
 // The one reading of the path grammar both callers above share (Invariant 4).
-// `$populate` REPLACES a leaf's fields when the same relation is named twice and
-// a select list merges them: under `select` the leaf's fields and the hops
-// below it are one map, so replacing would drop a path named earlier.
+// A relation named twice merges its fields: replacing them dropped the first
+// entry's fields without a word, and under `select` the leaf's fields and the
+// hops below it are one map, so a replace would also drop a path.
 function pathTree(entries, hop) {
   const result = {}
   for (const entry of entries.map((e) => String(e).trim())) {
@@ -592,7 +592,7 @@ function pathTree(entries, hop) {
         if (colonIdx === -1) { level[name] ??= true; return }
         const fields = normalizeSelect(entry.slice(colonIdx + 1).split('+'))
         const node = typeof level[name] === 'object' ? level[name] : {}
-        level[name] = { ...node, select: hop === 'select' ? { ...node.select, ...fields } : fields }
+        level[name] = { ...node, select: { ...node.select, ...fields } }
         return
       }
       let node = level[name]

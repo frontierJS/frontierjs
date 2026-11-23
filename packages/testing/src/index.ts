@@ -172,7 +172,12 @@ export async function createTestEnv<TClient = RegisteredClient>(
   // list except the phases needing a port. Eagerly, not on first request: an
   // internal `env.as(u).service('x')` call must meet the same pipeline the wire
   // meets, and a plugin's guard that has not registered yet refuses nothing.
-  await app._startForTest()
+  //
+  // Without `start-work`: an armed scheduler and a live queue worker fire the
+  // app's crons at wall-clock boundaries, so a test passed or failed by the
+  // time of day (FJS-4584). A test that wants the queue starts it itself,
+  // `env.app.jobs.start()`, or calls the job's handler by name.
+  await app._startOnce()
 
   // ── The port, when one is asked for ────────────────────────────────────────
   // `_startForTest()` skips the `listen` phase along with everything else that

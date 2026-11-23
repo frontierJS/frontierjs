@@ -26,3 +26,5 @@ Every migration a database may have applied, with the checksum `migrate apply` r
 | `migrations/main/20261119155649_ntfy_token_generator.sql` | `be8137671455ac7d` |
 | `migrations/main/20261119201608_app_project_id.sql` | `ed432e6c4148fead` |
 | `migrations/main/20261121060148_app_project_id_index.sql` | `5e856a024e48610d` |
+| `migrations/main/20261122201937_oauth_flow_grant.sql` | `b392c11af51fe2de` |
+| `migrations/main/20261123163111_app_crash_alerts.sql` | `1b3c768b5087d0ee` |

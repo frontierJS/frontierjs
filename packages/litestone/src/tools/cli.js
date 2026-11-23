@@ -1803,8 +1803,12 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
 // every path, so the LAYOUT is the list (`FJS-D493`): everything an app keeps
 // lives under `db/`, the one volume deploy mounts.
 //
-// Only a schema IN a `db/` directory has one. A bare litestone project keeps its
-// schema beside its source, and copying that directory would copy the project.
+// The root is main's directory, where FileStorage's unbound default writes
+// (`filesRoot` in createClient), not the schema's: a container keeps the schema
+// in the image at /app/db and the databases on the /db volume, and a copy of
+// the schema's directory held the source and none of the uploads (FJS-4580).
+// Only a main IN a `db/` directory has one — one beside a bare project's
+// source would copy the project.
 //
 //   sqlite [{ name, rel, path }]   every other `*.db`, named `db-<path>` — a hyphen no
 //                                 declared database name can hold; the copy's
@@ -1815,13 +1819,15 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
 // dot-entries (litestream's own state, generated output) and the backups root,
 // which would otherwise put every earlier backup inside the next.
 function layoutFiles(cfg, declared, dirs) {
-  const root = cfg.schema ? dirname(resolve(cfg.schema)) : null
+  const main = declared.find(d => d.name === 'main' && d.driver === 'sqlite')?.path
+  const root = main && main !== ':memory:' ? dirname(resolve(main)) : null
   if (!root || basename(root) !== 'db' || !existsSync(root)) return null
 
   const coveredFile = new Set(declared.filter(d => d.driver === 'sqlite').map(d => resolve(d.path)))
   const skipDir     = new Set([
     ...declared.filter(d => d.driver !== 'sqlite' && d.path).map(d => resolve(d.path)),
     resolve(defaultBackupRoot(cfg)),
+    join(root, 'backups'),
     ...dirs.filter(d => d.backupTo && !isUrl(d.backupTo)).map(d => d.backupTo),
   ])
   const byTenancy = (dir, f) => dirs.some(t => t.dir === dir && (t.pattern === '*.db' ? f.endsWith('.db') : f === t.pattern))
@@ -4836,7 +4842,7 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
     const holdsLayout  = readdirSync(src).some(f => /^db-.+\.db$/.test(f) || f === 'db-files')
     if (existsSync(manifestPath)) {
       if (!layout)
-        fatal(`The backup holds ${cyan(LAYOUT_FILE)}, and this schema is not in a ${cyan('db/')} directory to put it under.\n` +
+        fatal(`The backup holds ${cyan(LAYOUT_FILE)}, and this schema's main database is not in a ${cyan('db/')} directory to put it under.\n` +
               `     Pass ${cyan('--db <name>')} to restore one declared database and leave the rest.`)
       let manifest
       try { manifest = parseLayoutManifest(readFileSync(manifestPath, 'utf8'), `${rel(src)}/${LAYOUT_FILE}`) }

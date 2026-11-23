@@ -10,20 +10,26 @@
  * pairs them, reads it here rather than keeping its own set — a hand-kept set
  * calls every theme added after it light.
  *
+ * `pair`, where a theme has one, is its other half — the same theme in the
+ * other scheme. A light/dark switch moves to it rather than to Default or
+ * Dark, so an app that chose Notebook stays Notebook at night. A pair names
+ * a theme of the opposite scheme that names it back; meta.spec.js holds that.
+ *
  * The guide imports this, and meta.spec.js fails when a file in src/themes/
  * has no entry, an entry has no file, or `scheme` disagrees with the
  * computed `color-scheme` of the class.
  */
 export const THEMES = {
-  'theme-default':    { label: 'Default',    blurb: 'Blue on cool neutrals',            scheme: 'light' },
-  'theme-dark':       { label: 'Dark',       blurb: 'Inverted neutrals',                scheme: 'dark'  },
+  'theme-default':    { label: 'Default',    blurb: 'Blue on cool neutrals',            scheme: 'light', pair: 'theme-dark' },
+  'theme-dark':       { label: 'Dark',       blurb: 'Inverted neutrals',                scheme: 'dark',  pair: 'theme-default' },
   'theme-sunset':     { label: 'Sunset',     blurb: 'Warm oranges',                     scheme: 'light' },
   'theme-forest':     { label: 'Forest',     blurb: 'Green on cool neutrals',           scheme: 'light' },
   'theme-midnight':   { label: 'Midnight',   blurb: 'Purple, deep contrast',            scheme: 'light' },
   'theme-elite':      { label: 'Elite',      blurb: 'Navy and lime, sharp corners',     scheme: 'light' },
   'theme-basecamp':   { label: 'Basecamp',   blurb: 'Deep blue-black',                  scheme: 'dark'  },
   'theme-press':      { label: 'Press',      blurb: 'Newsprint serif',                  scheme: 'light' },
-  'theme-notebook':   { label: 'Notebook',   blurb: 'Cream paper, sage ink',            scheme: 'light' },
+  'theme-notebook':   { label: 'Notebook',   blurb: 'Cream paper, sage ink',            scheme: 'light', pair: 'theme-notebook-dark' },
+  'theme-notebook-dark': { label: 'Notebook Dark', blurb: 'Sage ground, cream ink',     scheme: 'dark',  pair: 'theme-notebook' },
   'theme-field':      { label: 'Field',      blurb: 'Ink ground, sand type',            scheme: 'dark'  },
   'theme-dracula':    { label: 'Dracula',    blurb: 'Violet and pink on dark',          scheme: 'dark'  },
   'theme-twilight':   { label: 'Twilight',   blurb: 'Sand on warm black',               scheme: 'dark'  },

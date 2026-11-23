@@ -19,7 +19,9 @@
   //     label="The property at 14 Elm St" />
   //
   // Props:
-  //   basemap   { tiles, attribution, maxZoom, tileSize, subdomains }  required
+  //   basemap   { tiles, attribution, maxZoom, tileSize, subdomains }  required,
+  //             or { image, attribution, maxZoom, maxSize, scale }  one image
+  //             for the whole map; the vendor prints its own attribution into it
   //   label     the map's accessible name                               required
   //   width, height   logical pixels                              500 x 300
   //   fit       geometries or points to frame        ┐ exactly one
@@ -31,7 +33,8 @@
   //   markers   [{ at: { lat, lng }, tone, label }]
   //   r         the {r} value; default '@2x' when the template has {r}
   //
-  // A tone is one of @frontierjs/css's seven. The attribution renders as text.
+  // A tone is one of @frontierjs/css's seven. The attribution renders as text;
+  // an empty one draws no figcaption.
 
   import { mapModel } from './draw.js'
 
@@ -54,6 +57,9 @@
 <figure class="static-map">
   <svg viewBox={m.viewBox} role="img" aria-label={m.label} preserveAspectRatio="xMidYMid slice">
     <rect class="ground" width={m.width} height={m.height} />
+    {#if m.image}
+      <image x={m.image.x} y={m.image.y} width={m.image.width} height={m.image.height} href={m.image.href} />
+    {/if}
     {#each m.tiles as t}
       <image x={t.x} y={t.y} width={t.size} height={t.size} href={t.href} />
     {/each}

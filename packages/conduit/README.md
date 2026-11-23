@@ -331,9 +331,14 @@ public half. Like `hmac` it signs the `X-Service-Method` header a request carrie
 which junction's door reads into the signature, so a custom-method call verifies.
 
 The signer is handed the resolved `secret`, the `method`, `url`, `path`, `query`,
-the serialized `body` and the `headers` already set. It returns `headers` to add
-and, where the vendor wants the secret in the payload, a replacement `body`;
-auth headers still win over a caller's. A name is refused at `register()` when
+the serialized `body` and the `headers` already set. It returns `headers` to add,
+where the vendor wants the secret in the payload a replacement `body`, and where
+the vendor signs the URL itself (Google's `&signature=`) the `query` parameters
+to set on it (`FJS-D2354`); auth headers and auth parameters still win over a
+caller's. Those parameters go on the fetched URL alone and every value is
+scrubbed from what a caller, an observer or a log is handed, as an `api_key`
+`query` is, so name only credential-bearing ones there. Only an `http` or
+`unix` target carries them; anywhere else the send fails closed. A name is refused at `register()` when
 no such signer is installed, and so is `follow_redirects` or `address_from`
 beside it, for `hmac`'s reason.
 

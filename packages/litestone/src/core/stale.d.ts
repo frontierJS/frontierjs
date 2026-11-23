@@ -16,6 +16,8 @@ export function resolveStalePath(model?: any, path?: any, schema?: any, pluraliz
     source: any;
     error?: undefined;
 };
+/** The model each `@stale` source on `model` lands on — a write there sets the mark. */
+export function staleSources(model?: any, schema?: any): Set<any>;
 /** Every refusal one model's `@stale` fields earn, worded for validate(). */
 export function staleProblems(model?: any, schema?: any): any[];
 /** The trigger trio for every `@stale` source in the slice of a schema one database holds. */

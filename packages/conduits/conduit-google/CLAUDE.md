@@ -22,6 +22,10 @@ three targets, one builder (`googleMapsTargets`) and one bind (`bindGoogleMaps`)
   Drop `headers: { [FIELD_MASK_HEADER]: mask }` and seven rows fail.
 - **Google answers `{}` for no results**, never `places: []`. Read `?? []`.
 - **A Duration is `"1234s"`**, a string; `parseDuration` is the one parser.
+- **The Static API is its own target** (`src/maps/static-map.ts`): `signed`,
+  `per_caller`, one stored value `{ key, secret? }` per account; the bundle's key
+  is the process's. `googleUrlSigner` must sign the URL as conduit re-serializes
+  it on `searchParams.set`, or every signature is a 403 (README § Static Maps).
 - **Three sends, one bundle.** Every call takes `bindGoogleMaps()`'s result
   and picks `places`, `routes` or `geocoding` itself; a Routes path sent to
   the Places target is a 404 at Google, so a caller is never handed the choice.
@@ -49,4 +53,4 @@ onto one message, so `FcmResult` and `FcmFailure` are this module's own.
 
 ## Proving a change
 
-`bun run drive`. Green means 32 rows (22 maps, 10 `fcm.`); there is no fixture and no key.
+`bun run drive`. Green means 42 rows (32 maps, 10 `fcm.`); there is no fixture and no key.

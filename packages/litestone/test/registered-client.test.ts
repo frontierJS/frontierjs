@@ -441,3 +441,154 @@ describe('$setAuth takes a principal of any declared shape, or null (FJS-4508)',
     expect(ok).toBe(true)
   })
 })
+
+// FJS-4576 -- each call below is a documented shape that runs; the generated
+// system types refused all eight, so an app adopting db:types failed tsc on
+// correct code.
+const DOCUMENTED = `
+  model Post {
+    id         Int       @id @default(autoincrement())
+    title      String
+    tags       String[]
+    isTemplate Boolean   @default(false)
+    dueAt      DateTime?
+    isLate     Boolean   @derived(dueAt < now())
+    labels     Label[]
+    comments   Comment[]
+    @@hasTemplates(field: "isTemplate")
+    @@fts([title])
+  }
+  model Label { id Int @id @default(autoincrement())  name String  posts Post[] }
+  model Comment {
+    id     Int    @id @default(autoincrement())
+    body   String
+    postId Int
+    post   Post   @relation(fields: [postId], references: [id])
+  }
+`
+
+const DOCUMENTED_USAGE = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run(labelId: number, postId: number) {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    await db.post.findMany({ where: { labels: { some: { id: labelId } } } })
+    await db.post.findMany({ where: { labels: { none: { name: 'x' } }, comments: { every: { body: 'x' } } } })
+    await db.post.findMany({ where: { comments: { some: { body: 'x' } } } })
+    await db.comment.findMany({ where: { post: { is: { title: 'x' } } } })
+    await db.comment.findMany({ where: { post: { isNot: { title: 'x' } } } })
+    const withLabels = await db.post.findMany({ include: { labels: true } })
+    const names: string[] = withLabels[0].labels.map(l => l.name)
+    await db.post.create({ data: { title: 'x' } })
+    await db.post.update({ where: { id: postId }, data: { labels: { connect: [{ id: labelId }] } } })
+    await db.post.update({ where: { id: postId }, data: { labels: { disconnect: [{ id: labelId }] } } })
+    await db.post.findUnique({ where: { id: postId }, onlyTemplates: true })
+    await db.post.findMany({ withTemplates: true })
+    await db.post.search('x', { raw: true, select: { id: true }, withRank: false })
+    // @ts-expect-error -- a @derived column is computed, never written
+    await db.post.create({ data: { title: 'x', isLate: true } })
+    // @ts-expect-error -- a relation filter takes the target's own columns
+    await db.post.findMany({ where: { labels: { some: { nope: 1 } } } })
+    return names
+  }
+`
+
+describe('the generated system types admit every documented query shape (FJS-4576)', () => {
+  test('relation filters, m2m include and connect, templates, search and create all compile', () => {
+    const { ok, out } = compile('system', DOCUMENTED, DOCUMENTED_USAGE)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
+// FJS-D2332 -- a select LIST is typed as the object it stands for: each entry
+// is checked where it is written, and the row is typed field by field, through
+// every hop of a path.
+const PATHS = `
+  model Event { id Int @id  title String  types TicketType[] }
+  model TicketType {
+    id Int @id
+    name String
+    eventId Int
+    event Event @relation(fields: [eventId], references: [id])
+    tickets Ticket[]
+  }
+  model Member { id Int @id  name String  email String  tickets Ticket[] }
+  model Ticket {
+    id Int @id
+    code String
+    memberId Int?
+    member Member? @relation(fields: [memberId], references: [id])
+    ticketTypeId Int
+    ticketType TicketType @relation(fields: [ticketTypeId], references: [id])
+  }
+`
+
+const LISTS = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run() {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    const sys = db.asSystem()
+
+    // columns, inline with no as const
+    const cols = await sys.ticket.findMany({ select: ['id', 'code'] })
+    const code: string = cols[0].code
+    const cid: number = cols[0].id
+    // @ts-expect-error -- never fetched
+    cols[0].memberId
+
+    // a one-hop path: the relation's fields, at its cardinality
+    const one = await sys.ticket.findFirstOrThrow({ select: ['code', 'member:name+email'] })
+    const email: string | undefined = one.member?.email
+    // @ts-expect-error -- an optional relation is null-able
+    const bad: string = one.member.name
+    // @ts-expect-error -- never fetched
+    one.member?.id
+
+    // three hops nest select at each: the middle hops carry only the path
+    const deep = await sys.member.findMany({ select: ['id', 'tickets.ticketType.event:title'] })
+    // a to-one relation is typed null-able whatever its optionality, as the object form is
+    const title: string | undefined = deep[0].tickets[0].ticketType?.event?.title
+    // @ts-expect-error -- a middle hop answers only the path below it
+    deep[0].tickets[0].code
+    // @ts-expect-error -- never fetched
+    deep[0].tickets[0].ticketType?.name
+
+    // entries naming one relation merge; a path with no colon is the whole row
+    const merged = await sys.ticket.findFirstOrThrow({ select: ['member:name', 'member:email', 'ticketType'] })
+    const both: [string | undefined, string | undefined] = [merged.member?.name, merged.member?.email]
+    const whole: number | undefined = merged.ticketType?.eventId
+
+    // the list is the object: the two answer one type
+    const asObject = await sys.ticket.findFirstOrThrow({ select: { code: true, member: { select: { name: true, email: true } } } })
+    const same: typeof one = asObject
+
+    // writes and the count variant take it too
+    const made = await sys.ticket.create({ data: { code: 'c', ticketTypeId: 1 }, select: ['id'] })
+    const mid: number = made.id
+    const page = await sys.ticket.findManyAndCount({ select: ['code'] })
+    const pc: string = page.rows[0].code
+
+    // @ts-expect-error -- an unknown column
+    await sys.ticket.findMany({ select: ['id', 'cdoe'] })
+    // @ts-expect-error -- an unknown hop
+    await sys.member.findMany({ select: ['tickets.tikcetType.event:title'] })
+    // @ts-expect-error -- a column used as a hop
+    await sys.ticket.findMany({ select: ['code.x:y'] })
+    // @ts-expect-error -- an unknown leaf field
+    await sys.ticket.findMany({ select: ['member:nmae'] })
+    // @ts-expect-error -- an unknown leaf field after a valid one
+    await sys.ticket.findMany({ select: ['member:name+nope'] })
+
+    return { code, cid, email, bad, title, both, whole, same, mid, pc }
+  }
+`
+
+describe('a select list is typed as the object it stands for (FJS-D2332)', () => {
+  test('entries are checked where written and the row is typed through every hop', () => {
+    const { ok, out } = compile('system', PATHS, LISTS)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})

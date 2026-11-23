@@ -118,8 +118,10 @@ are read against what the app declares — its `defineEnv` spec, its schema's
 against what git ignores (`core/release-preflight.js`, `core/build-check.js`).
 A required variable set nowhere, a database written inside the container, no
 published port or one the app does not listen on, a schema its migrations do
-not build (`fli check`'s `migration-history`), and an env file or database in
-the image are errors, and an error stops the release before the build;
+not build (`fli check`'s `migration-history`), a migration the container
+running on a placed machine applied and this release has edited or dropped
+(read over ssh from that container's journal, `core/migration-journal.js`),
+and an env file or database in the image are errors, and an error stops the release before the build;
 `--force` releases anyway. A URL left on a default that is a real outside
 service, a health route the App never asks, and a git-ignored file the image
 would carry are warnings. `--dry` prints the whole report and builds nothing.
@@ -187,6 +189,7 @@ const { releaseFindings, gatherReleaseInputs, releasePlan, surfaceOf } = await i
 const { routePrefixes, apiPaths }    = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
 const { readAppSnapshot }            = await import(new URL('file://' + global.fliRoot + '/core/app-entry.js'))
 const { bundleEnvKeys, bundleEnvLine } = await import(new URL('file://' + global.fliRoot + '/core/bundle-env.js'))
+const { journalFindings }            = await import(new URL('file://' + global.fliRoot + '/core/migration-journal.js'))
 const { inspectBuild, inspectIgnored, gatherLocal, gatherIgnored, gatherSqliteCopies } = await import(new URL('file://' + global.fliRoot + '/core/build-check.js'))
 
 // Basecamp's own bound on a release that pulls nothing and starts and health
@@ -264,9 +267,32 @@ async function neverReleased(origin, key, app) {
   return true
 }
 
+/** The release's migrations against the journal of the container each machine
+ *  runs now (`FJS-4562`): a file edited after it was applied builds, ships, and
+ *  then the new container refuses to boot. Asked once, before the build. */
+async function journalOnMachines({ origin, key, app, destinations, dir, exec }) {
+  const { existsSync } = await import('fs')
+  const { join }       = await import('path')
+  if (!existsSync(join(dir, 'db/migrations'))) return []
+  let slugs
+  try {
+    const env     = await basecamp(origin, key, `/environments/${encodeURIComponent(app.environmentId)}`)
+    const project = await basecamp(origin, key, `/projects/${encodeURIComponent(env.projectId)}`)
+    slugs = { appId: app.id, project: project.slug, environment: env.slug, appSlug: app.slug }
+  } catch (err) {
+    return [{ level: 'warn', rule: 'migration-journal', title: 'The migrations were not compared with the databases on the machine',
+      detail: `the App's Environment and Project, which name its container, could not be read: ${err.message}` }]
+  }
+  return journalFindings({
+    destinations:   destinations.map(d => ({ name: d.name, machine: createMachine({ host: d.host, exec }) })),
+    slugs,
+    migrationsRoot: join(dir, 'db/migrations'),
+  })
+}
+
 /** Everything the preflight finds for a container App, errors first, with the
  *  API's route prefixes the plan routes back to it. */
-async function preflight({ origin, key, app, root, dir, dockerfile, text }) {
+async function preflight({ origin, key, app, root, dir, dockerfile, text, journal = [] }) {
   const fs = await import('fs')
   const { spawnSync } = await import('child_process')
   const vars     = await readList(origin, key, `/variables?environmentId=${encodeURIComponent(app.environmentId)}`)
@@ -276,6 +302,7 @@ async function preflight({ origin, key, app, root, dir, dockerfile, text }) {
   const build    = gatherLocal({ root: dir, fs, dockerfile })
   const level    = { error: 0, warn: 1, info: 2 }
   const findings = [
+    ...journal,
     ...releaseFindings({
       app, variables: vars.rows, siblings: siblings.rows, routes: routes.rows, prefixes,
       unread: { ...(vars.error ? { variables: vars.error } : {}), ...(routes.error ? { routes: routes.error } : {}) },
@@ -630,7 +657,8 @@ if (inline) {
     return count
     }
 
-    let { findings, prefixes } = await preflight({ origin, key, app, root, dir, dockerfile, text })
+    const journal = await journalOnMachines({ origin, key, app, destinations, dir, exec: $.exec })
+    let { findings, prefixes } = await preflight({ origin, key, app, root, dir, dockerfile, text, journal })
     const fresh = await neverReleased(origin, key, app)
     let count = report(findings, { setup: fresh })
 
@@ -686,7 +714,7 @@ if (inline) {
           const made = [web, widgets].filter(Boolean).map(a => `'${a.name}' (${a.id})`)
           log.done(`Set up App '${app.name}'${made.length ? ` and its static App${made.length > 1 ? 's' : ''} ${made.join(' and ')}` : ''}`)
           app = await basecamp(origin, key, `/apps/${encodeURIComponent(appId)}`)
-          ;({ findings } = await preflight({ origin, key, app, root, dir, dockerfile, text }))
+          ;({ findings } = await preflight({ origin, key, app, root, dir, dockerfile, text, journal }))
           log.info('Preflight again, on what Basecamp now holds:')
           count = report(findings)
         }

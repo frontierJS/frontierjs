@@ -98,10 +98,10 @@ describe('the composer\'s reading of the protocol', () => {
     expect(modelsOf(null)).toEqual([])
     expect(modelsOf({ models: Array.from({ length: 80 }, (_, i) => ({ value: `m${i}` })) })).toHaveLength(50)
   })
-  test('the picker offers one model per family, the newest, as Claude Code lists it first', () => {
+  test('the whole list comes back in Claude Code\'s order, the older pinned versions with it', () => {
     // The shape Claude Code's initialize answered on 2026-11-19, abridged.
     const listed = [['default', 'Default (recommended)'], ['opus', 'Opus 5.5'], ['fable', 'Fable 5.2'], ['sonnet', 'Sonnet 5.5'], ['haiku', 'Haiku 5.5'], ['claude-fable-5-1', 'Fable 5.1'], ['claude-haiku-4-5-20251001', 'Haiku 4.5'], ['claude-sonnet-5', 'Sonnet 5'], ['claude-opus-5', 'Opus 5'], ['claude-opus-4-8', 'Opus 4.8'], ['claude-sonnet-4-6', 'Sonnet 4.6']]
-    expect(modelsOf({ models: listed.map(([value, displayName]) => ({ value, displayName })) }).map((m) => m.displayName)).toEqual(['Opus 5.5', 'Fable 5.2', 'Sonnet 5.5', 'Haiku 5.5'])
+    expect(modelsOf({ models: listed.map(([value, displayName]) => ({ value, displayName })) }).map((m) => m.value)).toEqual(listed.slice(1).map(([value]) => value))
   })
   test('get_context_usage is read for its three numbers, and an answer without them is no reading', () => {
     expect(usageOf({ totalTokens: 42000, maxTokens: 200000, percentage: 21, categories: [] })).toEqual({ total: 42000, max: 200000, percent: 21 })

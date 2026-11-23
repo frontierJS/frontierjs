@@ -25,6 +25,7 @@ export function makeIntrospection(ctx?: any, { schemaFilePath, asSystem, readFor
     $trailMarks: (accessor: any) => {};
     $primaryKey: (accessor: any) => any[];
     $mirrorKey: (accessor: any) => any;
+    $tenantPath: (accessor: any) => string[];
     $declaresAccessRules: () => boolean;
     $readAs: (accessor: any, row: any, principal: any) => Promise<any>;
     $inWindow: (accessor: any, row: any, asOf: any) => boolean;

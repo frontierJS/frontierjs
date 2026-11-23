@@ -56,6 +56,28 @@ export const maps = [
   },
 ]
 
+/**
+ * The one-image kind, drawn from a stand-in for the vendor's image route: a
+ * solid fill the size the URL asks for, so a drive can tell it painted.
+ */
+export const imageBasemap = {
+  image: '/static?center={lat},{lng}&zoom={zoom}&size={width}x{height}&scale={scale}',
+  maxSize: 640, maxZoom: 20, scale: 2,
+}
+export const IMAGE_FILL = [200, 120, 40]
+export const imageMaps = [
+  {
+    id: 'image-500', frameWidth: 500,
+    props: { ...centerProps, basemap: imageBasemap, label: 'The lot, one image' },
+  },
+]
+
+export function imageSvg(width, height, scale) {
+  const [r, g, b] = IMAGE_FILL
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width * scale}" height="${height * scale}" viewBox="0 0 ${width} ${height}">
+<rect width="${width}" height="${height}" fill="rgb(${r},${g},${b})"/></svg>`
+}
+
 /** A tile's fill, distinct between neighbors in both directions. */
 export const tileColor = (z, x, y) => [40 + ((x * 53) % 180), 40 + ((y * 97) % 180), 40 + (((x + y + z) * 31) % 180)]
 
@@ -71,7 +93,7 @@ export function tileSvg(z, x, y) {
 const DEMO_CSS = `body { margin: 0; background: var(--surface); }
 main { padding: 16px; }
 .frame { margin-block-end: 16px; }
-${maps.map((m) => `#${m.id} { inline-size: ${m.frameWidth}px; }`).join('\n')}
+${[...maps, ...imageMaps].map((m) => `#${m.id} { inline-size: ${m.frameWidth}px; }`).join('\n')}
 `
 
 async function renderPage() {
@@ -79,7 +101,7 @@ async function renderPage() {
   export let maps</script>
 {#each maps as m}<section id={m.id} class="frame"><StaticMap {...m.props} /></section>{/each}`
   const out = await renderComponent(wrapper, {
-    cwd: ROOT, tmpDir: join(ROOT, 'test'), filename: 'DemoPage.mesa', data: { maps }, styleTag: false,
+    cwd: ROOT, tmpDir: join(ROOT, 'test'), filename: 'DemoPage.mesa', data: { maps: [...maps, ...imageMaps] }, styleTag: false,
   })
   const html = `<!doctype html>
 <html lang="en">
@@ -122,6 +144,11 @@ export async function startDemo({ port = 0, host = '127.0.0.1' } = {}) {
     }
     if (path === '/demo.css') return send(200, TYPES['.css'], DEMO_CSS)
     if (path === '/static-map.css') return send(200, TYPES['.css'], page.css)
+    if (path === '/static') {
+      const q = new URL(req.url, 'http://x').searchParams
+      const [w, h] = q.get('size').split('x').map(Number)
+      return send(200, TYPES['.svg'], imageSvg(w, h, Number(q.get('scale'))))
+    }
     const tile = path.match(/^\/tiles\/(\d+)\/(\d+)\/(\d+)\.svg$/)
     if (tile) return send(200, TYPES['.svg'], tileSvg(...tile.slice(1).map(Number)))
     if (path.startsWith('/css/')) {

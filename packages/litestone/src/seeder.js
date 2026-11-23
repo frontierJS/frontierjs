@@ -113,11 +113,25 @@ export function insistedKeys(def) {
     for (const a of f.attributes)
       if (a.kind === 'relation' && a.fields) for (const k of a.fields) keys.add(k)
   const out = new Set()
+  const arced = new Set((def.attributes ?? []).filter(a => a.kind === 'arc').flatMap(a => a.fields))
   for (const a of def.attributes ?? []) {
     if (a.kind === 'arc' && !a.optional) out.add(a.fields[0])
     if (a.kind !== 'check') continue
     let ast
     try { ast = parseSql(a.expr) } catch { continue }
+    // An either-or written as two key tests that must agree --
+    // `(a IS NULL) = (b IS NOT NULL)` -- fails with every key null whenever
+    // the two sides read differently then. One key filled flips one side; a
+    // key under no arc is the one taken, so an arc beside it still holds one.
+    const keyTest = n => n.t === 'isnull' && n.a.t === 'col' && keys.has(n.a.name)
+    if (ast.t === 'cmp' && keyTest(ast.a) && keyTest(ast.b) && ['=', '==', '!=', '<>'].includes(ast.op)) {
+      const sameWhenNull = ast.a.not === ast.b.not
+      if (sameWhenNull !== (ast.op === '=' || ast.op === '==')) {
+        const pair = [ast.a.a.name, ast.b.a.name]
+        out.add(pair.find(k => !arced.has(k)) ?? pair[0])
+      }
+      continue
+    }
     const branches = []
     const flat = n => n.t === 'or' ? (flat(n.a), flat(n.b)) : branches.push(n)
     flat(ast)
@@ -913,13 +927,20 @@ export async function loadRows(db, modelName, source, opts = {}) {
       return s && Object.entries(r.data).every(([n, v]) => sameValue(columns.of(n).kind, v, s[n]))
     }))
     const changed = whole.filter(r => !same.has(r))
-    if (changed.length) await tx[accessor].upsertMany({ data: changed.map(r => r.data), conflictTarget: [key] })
+    // The update policy rides upsertMany's DO UPDATE … WHERE, which skips the
+    // row it excludes rather than refusing it; a short count is that skip,
+    // and the row-at-a-time retry names which row it was.
+    if (changed.length) {
+      const { count } = await tx[accessor].upsertMany({ data: changed.map(r => r.data), conflictTarget: [key] })
+      if (count < changed.length) throw new MayNotUpdate()
+    }
     for (const r of rows) {
       if (!r.lacking.length || same.has(r)) continue
       const { [key]: keyValue, ...set } = r.data
       const kept = Object.keys(set).length
         ? await tx[accessor].update({ where: { [key]: keyValue }, data: set })
         : await tx[accessor].findFirst({ where: { [key]: keyValue } })
+      if (!kept && stored.has(String(keyValue))) throw new MayNotUpdate()
       if (!kept) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
     }
     return { fresh: whole.length - held, same: same.size }
@@ -1014,10 +1035,18 @@ class LacksForNewRow extends Error {
   }
 }
 
+// An upsert row whose key the caller can read but its update policy excludes.
+class MayNotUpdate extends Error {
+  constructor() {
+    super('names a stored row this caller may not update')
+    this.reason = this.message
+  }
+}
+
 // The refusals that are about one row's values. Anything else — a gate, a
 // closed client, a disk — is about the load, and is thrown.
 function refusesARow(e) {
-  return e instanceof LacksForNewRow || e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
+  return e instanceof LacksForNewRow || e instanceof MayNotUpdate || e instanceof ValidationError || e instanceof UniqueConflictError || e instanceof ForeignKeyError
     || e instanceof TransitionViolationError
     || /constraint failed/i.test(e?.message ?? '')
 }
@@ -1026,6 +1055,7 @@ function refusesARow(e) {
 // conflict names what is taken, a foreign key the id it could not find.
 function reasonFor(e) {
   if (e instanceof LacksForNewRow) return { field: e.field, reason: e.reason }
+  if (e instanceof MayNotUpdate) return { field: null, reason: e.reason }
   if (e instanceof UniqueConflictError)
     return { field: e.fields?.join(' + ') || null, reason: 'already taken by a stored row' }
   if (e instanceof ForeignKeyError)

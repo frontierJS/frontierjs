@@ -328,6 +328,12 @@ export function introspect(db) {
   const searchRow = master.find(r => r.type === 'table' && r.name === SEARCH_TABLE)
   schema.__search = searchRow ? { sql: searchRow.sql } : null
 
+  // The underscore tables INTERNAL hides, by name only: an implicit m2m's join
+  // table is one, and `diffSchemas` asks whether each one the schema plans exists.
+  schema.__joins = master
+    .filter(r => r.type === 'table' && r.name.startsWith('_') && r.name !== SEARCH_TABLE)
+    .map(r => r.name)
+
   // Everything above reads a NAMED dimension. This reads the statements whole,
   // so the residue tripwire below has something to compare that no reader here
   // had to remember to write. An object SQLite keeps no statement for — an
@@ -922,7 +928,9 @@ function fksEqual(a, b) {
 
 // ─── Full diff ────────────────────────────────────────────────────────────────
 
-const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql'])
+// The keys of an introspected schema that are not a table. A reader walking the
+// tables skips these, so a bucket added to `introspect` is added here.
+export const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql', '__joins'])
 
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
   // Filter the meta buckets out of the table name sets
@@ -977,6 +985,16 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   )
 
   const droppedTables = [...liveNames].filter(n => !pristineNames.has(n) && !externalNames.has(n))
+
+  // A join table is in neither name set, so an m2m added between two models
+  // that already exist compared equal everywhere and no migration was written
+  // (FJS-4569). Only a join the schema plans is asked about, and only its
+  // absence: the migration creates it, and nothing here drops one.
+  const pristineJoins = new Set(pristine.__joins ?? [])
+  const liveJoins     = new Set(live.__joins ?? [])
+  const newJoinTables = [...new Set(
+    detectM2MPairs(schemaForDatabase(parseResult.schema, dbName), pluralize).map(p => p.joinTable))]
+    .filter(t => pristineJoins.has(t) && !liveJoins.has(t))
 
   const tableDiffs = []
 
@@ -1252,6 +1270,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
 
   return {
     newTables,
+    newJoinTables,
     newMatViews,
     newViews,
     changedViews,
@@ -1267,7 +1286,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     searchPurges,
     residue,
     dbName,
-    hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
+    hasChanges: newTables.length > 0 || newJoinTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
                 changedTriggers.length > 0 || droppedTriggers.length > 0 ||
@@ -1529,9 +1548,8 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     lines.push(``)
   }
 
-  // Implicit m2m join tables are invisible to introspection (underscore
-  // prefix), so the diff never lists them — emit them unconditionally with
-  // IF NOT EXISTS so adding an m2m to an existing DB creates its join table.
+  // Every join table, IF NOT EXISTS: one a new model brings is in no list of
+  // the diff's, only `newJoinTables` names an m2m between existing models.
   {
     const pairs = detectM2MPairs(schemaForDatabase(parseResult.schema, diffResult.dbName ?? 'main'), pluralize)
     if (pairs.length) {
@@ -1833,6 +1851,9 @@ export function summarizeDiff(diffResult) {
 
   for (const m of diffResult.newTables)
     lines.push(`  + ${m.name}  (new table)`)
+
+  for (const t of diffResult.newJoinTables ?? [])
+    lines.push(`  + ${t}  (new join table)`)
 
   for (const n of diffResult.droppedTables)
     lines.push(`  ? ${n}  (in db, not in schema)`)

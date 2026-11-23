@@ -15,8 +15,9 @@ import { fileURLToPath } from 'url'
 import { createServer, build } from 'vite'
 import { readFileSync } from 'fs'
 
-import { applyDocument } from '../src/build/document-shell.js'
-import { wrapDocument, SKIP_LINK_GUARD_CSS } from '../src/build/prerender.js'
+import { createServer as createHttpServer } from 'http'
+import { applyDocument, SKIP_LINK_GUARD_SHEET } from '../src/build/document-shell.js'
+import { wrapDocument, sheetFile, SKIP_LINK_GUARD_CSS } from '../src/build/prerender.js'
 import { createSierraViteConfig } from '../src/build/index.js'
 
 const SHELL = `<!DOCTYPE html>
@@ -97,16 +98,20 @@ describe('the shell facts', () => {
 
   // An SPA's stylesheet arrives with its JS, so until then the link is bare
   // text at the top of the page. The guard is first in <head> so its layer
-  // ranks below every one the design system declares.
+  // ranks below every one the design system declares. FJS-4590: linked, since
+  // style-src 'self' refuses an inline <style>, and named as prerender names it.
   test('the link it writes is off-screen before any stylesheet loads', () => {
     const out = applyDocument(SHELL, {})
-    expect(out).toMatch(/<head>\n {2}<style id="sierra-skip-link">@layer sierra-shell\{/)
-    expect(out.indexOf('sierra-skip-link')).toBeLessThan(out.indexOf('<title>'))
-    expect(out).toContain(':where(.skip-link:not(:focus))')
+    expect(out).toMatch(new RegExp(`<head>\\n {2}<link rel="stylesheet" href="/${SKIP_LINK_GUARD_SHEET}">`))
+    expect(SKIP_LINK_GUARD_SHEET).toBe(sheetFile('sierra-shell', SKIP_LINK_GUARD_CSS))
+    expect(out.indexOf(SKIP_LINK_GUARD_SHEET)).toBeLessThan(out.indexOf('<title>'))
+    expect(out).not.toContain('<style')
 
     const bare = applyDocument('<body><div id="app"></div></body>', {})
-    expect(bare).toMatch(/<body>\n {2}<style id="sierra-skip-link">[^\n]*\n {2}<a class="skip-link"/)
-    expect(bare.match(/sierra-skip-link/g)).toHaveLength(1)
+    expect(bare).toMatch(/<body>\n {2}<link rel="stylesheet" href="[^"]+">\n {2}<a class="skip-link"/)
+    expect(bare.match(/sierra-shell-/g)).toHaveLength(1)
+
+    expect(applyDocument(SHELL, {}, { base: '/app/' })).toContain(`<link rel="stylesheet" href="/app/${SKIP_LINK_GUARD_SHEET}">`)
   })
 
   test('a shell that states either keeps its own', () => {
@@ -212,6 +217,22 @@ describe('the dev server', () => {
     expect(html).not.toContain('sierra-skip-link')
   })
 
+  // FJS-4590: the shell links the guard sheet, so dev serves it.
+  test('an spa\'s shell links the guard sheet, and the dev server serves it', async () => {
+    const html = await devShell('spa', undefined)
+    expect(html).not.toContain('<style')
+    expect(html).toContain(`<link rel="stylesheet" href="/${SKIP_LINK_GUARD_SHEET}">`)
+    const http = createHttpServer(servers.at(-1).middlewares)
+    await new Promise((r) => http.listen(0, '127.0.0.1', r))
+    try {
+      const res = await fetch(`http://127.0.0.1:${http.address().port}/${SKIP_LINK_GUARD_SHEET}`)
+      expect(res.headers.get('content-type')).toMatch(/^text\/css/)
+      expect(await res.text()).toBe(SKIP_LINK_GUARD_CSS)
+    } finally {
+      await new Promise((r) => http.close(r))
+    }
+  })
+
   test('a skip-link rule in a stylesheet is not a skip link', async () => {
     const html = await devShell('spa', undefined, {
       'src/routes/_module.mesa': '<main><slot /></main>\n<style>.skip-link { left: 0 }</style>\n',
@@ -232,5 +253,19 @@ describe('the build', () => {
     }))
     const html = readFileSync(join(root, 'dist/client/index.html'), 'utf8')
     expect(html).toMatch(/<body class="app theme-default">/)
+  }, 60_000)
+
+  // FJS-4590: an SPA's built shell links the guard, so the sheet ships beside it.
+  test('an spa\'s built shell links the guard sheet, written beside it', async () => {
+    await fixture()
+    await writeFile(join(root, 'index.html'), SHELL, 'utf8')
+    await build(createSierraViteConfig({
+      target: 'spa',
+      vite: { root, logLevel: 'silent', build: { outDir: 'dist/client', emptyOutDir: true } },
+    }))
+    const html = readFileSync(join(root, 'dist/client/index.html'), 'utf8')
+    expect(html).not.toContain('<style')
+    expect(html).toContain(`<link rel="stylesheet" href="/${SKIP_LINK_GUARD_SHEET}">`)
+    expect(readFileSync(join(root, 'dist/client', SKIP_LINK_GUARD_SHEET), 'utf8')).toBe(SKIP_LINK_GUARD_CSS)
   }, 60_000)
 })

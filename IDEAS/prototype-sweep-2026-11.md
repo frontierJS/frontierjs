@@ -14,7 +14,6 @@ dated: 2026-11-21
 
 - `FJS-D2339` — one rule for a hand-registered helper in `api/src/routes/`. `sstime` is blocked on it.
 - `FJS-D2340` — whether `fli check` names a stale `AUDIT_PATH=./db/audit/` line. Seen in `notion`, `jazzhr`, `personal-starter`, `connectteam`, `linear`, `sstime`, `transit`, `quo`, and likely `saas-starter`, `eventmark`, `lago`.
-- **Owed, not a ruling:** `saas-starter`'s `db/migrations/main/20261121065653_schema_catchup.sql` carries an unanswered data-loss box. It drops the `notification` table.
 
 ## Filed
 
@@ -31,7 +30,7 @@ dated: 2026-11-21
 | `calendly` | 76 pass, 1 fail | The failure depends on time of day. Port 8400 has no port category. Widget and site fetch `/api/event-types/`, now a 404 (the wire path is camelCase). |
 | `ghost`, `moodle` | 5 pass, 1 fail | `FJS-4589`. |
 | `notion` | 9 pass, 4 fail | Raw route `/links/redeem` collides with the `links` service; three pins assert `FJS-1752`, `FJS-1754`, `FJS-1755`, since fixed. |
-| `saas-starter` | 2 pass, 4 fail | The org-membership schema rewrite is ahead of `gate.ts` and the tests. |
+| `saas-starter` | 2 pass, 4 fail | The org-membership schema rewrite is ahead of `gate.ts` and the tests. `drive.ts` stops at signup (`userId` given undefined). Migrations replay to the schema: the catch-up accepts dropping `notification`, which is now the opt-in add-on and was in no db, and `20261123160718_oauth_flow_grant.sql` adds auth's two new columns. |
 | `lago` | 220 pass, 6 fail | Six tests pin behavior the framework changed. |
 | `serpgrid` | 258 pass, 3 fail | `FJS-4588`, and a file `mime` that comes back `null` in two tests. |
 | `connectteam` | 63 pass, 11 fail | Tests use the removed `@@log`, the old audit table, and a `Shift` created already `published`. |

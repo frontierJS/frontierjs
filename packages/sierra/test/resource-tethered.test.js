@@ -1118,6 +1118,26 @@ describe('a zoned day window folds its one-hop zone into the load', () => {
     expect(last().get('$populate')).toBe('customer:name+timeZone')
   })
 
+  // FJS-4575: a push replaces the held row whole and carries no relation, so the
+  // folded zone went with it and the row's edge was read at UTC midnight.
+  test('a pushed row still leaves at its own midnight', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-11-23T14:30:00Z') })   // 23:30 in Tokyo
+    await build('customer.timeZone')
+    extra = { dueOn: '2026-11-24', customerId: 9, customer: { timeZone: 'Asia/Tokyo' } }
+    await boot('/invoices/')
+    const list = track(createResource('invoices', { model: 'Invoice' }).tethered({ state: 'local' }))
+    await settle()
+    expect(list.rows.map(r => r.id)).toEqual([1, 2, 3])
+
+    client.service('invoices').emit('patched', { id: 2, number: 'INV-2b', status: 'open', total: 200, dueOn: '2026-11-24', customerId: 9 })
+    await settle()
+    expect(list.rows.find(r => r.id === 2)?.number).toBe('INV-2b')
+
+    await vi.advanceTimersByTimeAsync(31 * 60_000)
+    await settle()
+    expect(list.rows).toEqual([])
+  })
+
   test('a same-row zone loads nothing extra', async () => {
     await build('timeZone')
     await boot('/invoices/')

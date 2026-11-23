@@ -10,10 +10,12 @@
 // A transcript is Claude Code's file, and holds entry kinds the stream does not
 // (`attachment`, `queue-operation`, `file-history-snapshot`, meta lines, a
 // subagent's sidechain). Only a main-line `user` or `assistant` entry is read,
-// and it is the stream's own event inside, so `fold` takes it from there.
+// and it is the stream's own event inside, so the package's reader makes the
+// session's events of it and `fold` takes them from there.
 //
 // Terminal only, like `session.js`.
 import { closeSync, openSync, readSync, statSync } from 'node:fs'
+import { readAskEvent } from '@frontierjs/claude'
 import { fold, fresh } from './session.js'
 
 /** The most messages a read-along keeps, the newest: a day's transcript is thousands. */
@@ -31,11 +33,13 @@ const plain = (text) => {
   return t.replace(/<([\w-]+)[^>]*>[\s\S]*?<\/\1>/g, '').trim()
 }
 
+const folded = (state, frame) => readAskEvent(frame).reduce(fold, state)
+
 /** `state` after one transcript entry; `state` itself for one the tab does not draw. */
 export function foldEntry(state, entry) {
   if (!entry || typeof entry !== 'object' || entry.isSidechain || entry.isMeta) return state
   if (entry.type === 'assistant') {
-    const next = fold(state, { type: 'assistant', message: entry.message })
+    const next = folded(state, { type: 'assistant', message: entry.message })
     return entry.message?.model && next.model !== entry.message.model ? { ...next, model: entry.message.model } : next
   }
   if (entry.type !== 'user') return state
@@ -43,7 +47,7 @@ export function foldEntry(state, entry) {
   const text = typeof content === 'string' ? plain(content)
     : Array.isArray(content) ? content.filter((b) => b.type === 'text').map((b) => plain(b.text)).filter(Boolean).join('\n') : ''
   const images = Array.isArray(content) ? content.filter((b) => b.type === 'image').length : 0
-  const next = fold(state, { type: 'user', message: entry.message })
+  const next = Array.isArray(content) ? folded(state, { type: 'user', message: entry.message }) : state
   const at = Date.parse(entry.timestamp) || null
   return text || images ? { ...next, messages: [...next.messages, { kind: 'you', text, ...(images ? { images } : {}), ...(at ? { at } : {}) }] } : next
 }

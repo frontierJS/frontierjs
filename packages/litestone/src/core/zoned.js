@@ -37,7 +37,7 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
   /** @type {Record<string, any[]>} */ const byParent = {}
   /** @type {Record<string, Record<string, any>>} */ const windows = {}
   for (const model of schema.models) {
-    const cols = columnMapFor(model)
+    const cols = /** @type {Record<string, string>} */ (columnMapFor(model))
     const col  = (/** @type {string} */ f) => cols[f] ?? f
     const win  = windowDays(model, schema, pluralize, col)
     if (win) windows[model.name] = win
@@ -62,7 +62,7 @@ export function buildZonedMap(/** @type {any} */ schema, pluralize = false) {
       } else {
         const hop = inferToOneFrom(model, schema, { rel: zoned.path[0] })
         if (hop.error) continue                                   // validate() already named it
-        const pcols = columnMapFor(hop.targetModel)
+        const pcols = /** @type {Record<string, string>} */ (columnMapFor(hop.targetModel))
         const pcol  = (/** @type {string} */ f) => pcols[f] ?? f
         entry.via = {
           rel:        zoned.path[0],
@@ -210,7 +210,7 @@ export function wallInstant(/** @type {any} */ date, /** @type {any} */ time, /*
 // ─── The writes ─────────────────────────────────────────────────────────────
 
 export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
-  const { modelName, tableName } = shape
+  const { tableName } = shape
   const { readDb, writeDb, col, buildWhereWithEncryption, sinkFor } = deps
   const own     = shape.zoned ?? []
   const parents = shape.zonedParents ?? []
@@ -225,7 +225,7 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
     if (named.length) throw new ValidationError(named.map((/** @type {any} */ z) => ({
       path: [z.field],
       message: `${z.field} is ${z.label} — litestone derives it from the wall clock and the zone, so it cannot be written. Write ${z.date}, ${z.time} or the zone instead`,
-    })), { model: modelName, operation: 'write' })
+    })))
   }
 
   const sourcesOf = (/** @type {any} */ z) => [z.date, z.time, ...(z.anchorTime ? [z.anchorTime] : []), ...(z.zone ? [z.zone] : z.via.fkFields)]
@@ -252,9 +252,8 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
       if (missing.length) {
         if (!where) throw new ValidationError([{ path: [z.field], message:
           `${z.field} is ${z.label} — this write names ${sourcesOf(z).filter(k => Object.hasOwn(data, k)).join(', ')} with no row to read ` +
-          `${missing.join(', ')} from; name every source, or write through update()` }], { model: modelName, operation: 'write' })
-        stored ??= readStored(where)
-        rows = stored.map(r => ({ ...r, ...data }))
+          `${missing.join(', ')} from; name every source, or write through update()` }])
+        rows = (stored ??= readStored(where)).map((/** @type {any} */ r) => ({ ...r, ...data }))
       }
       const values = [...new Set(rows.map(r => {
         const zone = z.zone && creating && r[z.zone] === undefined ? z.zoneDefault : zoneOf(z, r)
@@ -263,7 +262,7 @@ export function makeZoned(/** @type {any} */ shape, /** @type {any} */ deps) {
       }))]
       if (values.length > 1) throw new ValidationError([{ path: [z.field], message:
         `${z.field} is ${z.label}, and this write moves it to a different instant on each of the ${rows.length} rows it reaches — ` +
-        `one statement writes one value; update the rows one at a time` }], { model: modelName, operation: 'write' })
+        `one statement writes one value; update the rows one at a time` }])
       if (values.length) out[z.field] = values[0]
     }
     return out

@@ -50,11 +50,12 @@ function answersFor(a: Ask, raw: unknown): Record<string, string> {
 /**
  * What the model reads for a deny, as an error tool result. A bare note read as
  * tool output: haiku called "Reply with the word cherry" an error that was not
- * the person's decision and ignored it, so the note says whose it is.
+ * the person's decision and ignored it, so the note says whose it is. A host
+ * whose model reads it otherwise passes its own `words`; a note still follows.
  */
-export function denial(tool: string, note?: unknown, host = 'this app'): string {
+export function denial(tool: string, note?: unknown, host = 'this app', words?: string): string {
   const said = typeof note === 'string' && note.trim() ? note.trim().slice(0, 2000) : null
-  const base = `The person using ${host} denied this ${tool} call, so it did not run.`
+  const base = words ?? `The person using ${host} denied this ${tool} call, so it did not run.`
   return said ? `${base} Their note: ${said}` : base
 }
 
@@ -65,7 +66,7 @@ export function denial(tool: string, note?: unknown, host = 'this app'): string 
  * rule to send, so the choice is refused rather than made up. An approved plan
  * takes the session out of plan mode as the extension does.
  */
-export function decide(a: Ask, behavior: unknown, message?: unknown, extra: Extra = {}, host?: string): Decision | null {
+export function decide(a: Ask, behavior: unknown, message?: unknown, extra: Extra = {}, host?: string, words?: string): Decision | null {
   if (behavior === 'allow') {
     const d: Decision = { behavior: 'allow', updatedInput: a.input }
     if (extra.answers !== undefined) d.updatedInput = { ...(a.input as object), answers: answersFor(a, extra.answers) }
@@ -76,6 +77,6 @@ export function decide(a: Ask, behavior: unknown, message?: unknown, extra: Extr
     else if (extra.edits === true) throw new BadAnswer(`accepting edits is a plan's approval, and this request is ${a.tool}`)
     return d
   }
-  if (behavior === 'deny') return { behavior: 'deny', message: denial(a.tool, message, host) }
+  if (behavior === 'deny') return { behavior: 'deny', message: denial(a.tool, message, host, words) }
   return null
 }

@@ -13,10 +13,8 @@
 // the schema no longer declares breaks nothing until a migration drops it.
 
 import { openDatabase } from './engine.js'
-import { buildPristine, buildPristineForDatabase, introspect } from './migrate.js'
+import { buildPristine, buildPristineForDatabase, introspect, META_KEYS } from './migrate.js'
 import { modelToTableName } from './ddl.js'
-
-const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql'])
 
 /**
  * @param {{ schema: any }} parseResult

@@ -17,12 +17,13 @@ place, compute a drive time. Outbound only; Google signs nothing back.
 | --- | --- |
 | target builder | `googleMapsTargets({ ref?, placesAddress?, routesAddress?, geocodingAddress? }) → { places, routes, geocoding }` — `api_key` in `X-Goog-Api-Key`, ref `GOOGLE_MAPS_API_KEY`; `geocoding` is legacy Geocoding, `api_key` with `query: 'key'` (`FJS-2727`) |
 | calls | `geocode(maps, { address })`, `searchText(maps, { query, fieldMask })`, `placeDetails(maps, { id })`, `driveTime(maps, { origin, destination })`, `geocodeLegacy(maps, { address, region? })` — every outcome a 200, graded by `status` |
+| static map | `googleStaticMapTarget({ ref?, address? })`, `staticMapSigners`, `staticMapCredential(key, secret?)`, `bindStaticMap(conduit)`, `staticMap(send, { center, zoom, width, height, scale?, maptype? }, { who? })` — § Static Maps |
 | payload types | `Place`, `LatLng`, `Route`, `Waypoint`, `GoogleErrorBody` |
 | error mapping | `translate(ConduitError) → GoogleMapsFailure` — the table below |
 | cache key | `cacheKey(address, { region? })`, `normalizeAddress(address)` — the connector caches nothing |
 | verifier | none; Google has no webhooks here |
 | sink | `sink.ts`, `startGoogleSink()` on `port: 0`; `sink/maps.ts` answers the three Maps hosts, `sink/fcm.ts` FCM and the token endpoint |
-| drive | `bun run drive` — 32 rows (22 maps, 10 `fcm.`), sink only; no fixture exists |
+| drive | `bun run drive` — 42 rows (32 maps, 10 of them `staticMap.`; 10 `fcm.`), sink only; no fixture exists |
 
 `maps` is `bindGoogleMaps(conduit, targets)`, one `Send` per target: the
 connector never holds an app, and every call takes the bundle and picks the
@@ -89,6 +90,63 @@ address collide. It folds case, whitespace, comma spacing and trailing
 punctuation and nothing geographic — `St` and `Street` are two keys, because
 guessing that they are one is a geocode. Store the `zero_results` answer too.
 
+## Static Maps
+
+One Maps Static API image per call, for an app's own image route (`FJS-D2348`,
+`FJS-D2336`). `staticMap(send, { center: { lat, lng }, zoom, width, height,
+scale?, maptype? }, { who })` → `{ image?: { bytes, contentType, cacheControl?,
+etag? }, error? }`, the bytes untouched. Its own target,
+`provider:google-maps:static`, because the key is the ACCOUNT's: `signed` with
+`signer: 'google-maps-url'` and `per_caller: true`, ref
+`GOOGLE_STATIC_MAP_CREDENTIAL`, resolved `getFor(ref, who)` (`FJS-D2354`).
+Sharing the bundle's process-wide ref would send the operator's key for an
+account with no key of its own.
+
+```ts fragment
+createConduit({ signers: { ...staticMapSigners }, targets: [googleStaticMapTarget()], credentials })
+// the account's one stored value, an @encrypted secret on its Integration row:
+staticMapCredential(key, signingSecret)   // '{"key":"AIza…","secret":"…"}'
+```
+
+The stored value is JSON `{ key, secret? }`. With no `secret` the request goes
+out unsigned, under the project's "Unsigned requests per day" quota: a working
+key still draws a map. A value that is not that shape fails the send before
+anything leaves, as `no_key`, with a message naming the shape and not the value.
+
+Before anything is sent, the call refuses (`refused`) a `center.lat` outside
+-90..90, a `center.lng` outside -180..180, a `zoom` not an integer 0..21, a
+`width` or `height` not an integer 1..640, a `scale` not 1 or 2, and a
+`maptype` outside `satellite | hybrid | roadmap | terrain`
+([size and scale](https://developers.google.com/maps/documentation/maps-static/start)).
+Host and path are fixed in code; the query is built from the checked numbers
+(`center` at six decimals, never an exponent).
+
+| Answer | `StaticMapFailure.kind` |
+| --- | --- |
+| no credential for `who`, or one that is not `{ key, secret? }`; nothing sent | `no_key` (the route's cue to try Esri, `FJS-D2349`) |
+| 403 | `bad_key` — a bad signature is 403 per Google; a bad key's 403 is assumed, unverified |
+| 2xx that is not `image/*` | `not_an_image`; an HTML 2xx is conduit's own `invalid_response` first |
+| 429 | `rate_limited`, `retryAfterMs` 60 s when Google sends none |
+| 5xx | `server_error`, replayed (`replayable: true`: a second charge, never a second write) |
+
+**Signing.** Google's
+[digital signature](https://developers.google.com/maps/documentation/maps-static/digital-signature)
+(read 2026-11-23): strip scheme and host, HMAC-SHA1 the path and query (with
+`key=`) under the URL-safe-base64-decoded secret, URL-safe base64 the result,
+append it as `&signature=`. An invalid signature answers HTTP 403. Unsigned
+requests run under an "Unsigned requests per day" quota the project sets.
+`signStaticMapUrl(pathAndQuery, secret)` implements it over WebCrypto and
+reproduces `chaRF2hTJKOScPr-RQCEhZbSzIE=` for
+`/maps/api/geocode/json?address=New+York&client=clientID` under
+`vNIXE0xscrmjlyV-12Nj_BvUPaw=`, the sample from Google's older signing docs
+(recalled; not re-found on a page read this session). `googleUrlSigner` sets
+`key`, signs the URL serialized as conduit will fetch it, and returns
+`{ query: { key, signature } }`; conduit puts both on the fetched URL alone and
+scrubs both from every result, observer and log (`SignOutput.query`,
+`FJS-D2354`). A request carrying its own `signature` parameter is refused. The
+sink verifies with `node:crypto`, apart from the WebCrypto signer, and refuses
+a wrong secret with a 403, which the drive reads back as `bad_key`.
+
 ## Not built, and why
 
 - **Nominatim** (OpenStreetMap) is the free fallback: the same `geocode()`
@@ -99,9 +157,10 @@ guessing that they are one is a geocode. Store the `zero_results` answer too.
 
 `/maps/_sink/arm` with `{ lost }`, `{ rateLimit: { retryAfter?, times? } }`,
 `{ failNext }` (503 UNAVAILABLE), `{ denyApi: 'places' | 'routes' }` (403
-PERMISSION_DENIED naming the API). A request with no field mask is refused
+PERMISSION_DENIED naming the API), `{ markup200 }` (an HTML 200 on the
+Static path). A request with no field mask is refused
 with Google's 400 — the drive's negative control: strip the local check and
-the sink refuses.
+the sink refuses. A Static request out of range is a 400 the same way.
 
 ## FCM
 

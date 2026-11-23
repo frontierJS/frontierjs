@@ -1189,6 +1189,7 @@ function onlyDrops(diffResult) {
   // what a drop LOOKS like and testing it here would answer false in the one
   // case this exists for. The question is whether anything arrives.
   if (diffResult.newTables?.length)      return false
+  if (diffResult.newJoinTables?.length)  return false
   if (diffResult.newMatViews?.length)    return false
   if (diffResult.newViews?.length)       return false
   if (diffResult.changedViews?.length)   return false

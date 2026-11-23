@@ -302,3 +302,39 @@ describe('$or / $and / $not over the wire', () => {
     expect(res.status).toBe(400)
   })
 })
+
+// One filter, one answer by transport (FJS-4567): the socket carries a query as
+// JSON and never met the query string's depth limit, so a where nested six
+// deep loaded rows with the socket up and threw over REST the moment it was not.
+describe('a filter past the depth limit is refused over the socket as over REST', () => {
+  const deep = { OR: [{ status: 'open' }, { OR: [{ replies: { some: { deletedAt: null } } }] }] }
+
+  test('the REST encoder refuses it', async () => {
+    const { encodeQueryString, QueryLimitError } = await import('@frontierjs/toolbelt/query')
+    expect(() => encodeQueryString(deep)).toThrow(QueryLimitError)
+  })
+
+  test('the socket answers it 400 naming the limit', async () => {
+    const app = createApp({ config: { port: 0 } })
+    app.services.register(echoService())
+    app.configure((await import('../index.ts')).channels())
+    await app.start()
+    try {
+      const ws = new WebSocket(`ws://localhost:${app.http.port}/ws`)
+      await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
+      const frame = await new Promise<any>(ok => {
+        ws.onmessage = (e: any) => {
+          const f = JSON.parse(e.data)
+          if (f.id === 'd1') ok(f)
+        }
+        ws.send(JSON.stringify({ type: 'service_call', id: 'd1', service: 'things', method: 'find', meta: { query: deep } }))
+      })
+      ws.close()
+      expect(frame.type).toBe('service_error')
+      expect(frame.error?.code ?? frame.error?.status).toBe(400)
+      expect(frame.error?.message).toMatch(/depth limit of 5/)
+    } finally {
+      await app.stop()
+    }
+  })
+})

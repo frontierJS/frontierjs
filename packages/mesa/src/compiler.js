@@ -5912,10 +5912,15 @@ export function buildBlock(data, option = {}) {
             // still carries whatever it evaluates to, because `null` there means
             // remove and `undefined` there means leave alone.
             const exp = rewriteTextResult(pe, ctx.accessors ?? null, { coerceNullish: true })
-            if (!writtenOnce(exp, ctx.analysis?.opaqueValues)) { liveBinding(ctx, n.start); hydrationVar(ctx, textNode, n.start) }
+            const once = writtenOnce(exp, ctx.analysis?.opaqueValues)
+            if (!once) { liveBinding(ctx, n.start); hydrationVar(ctx, textNode, n.start) }
             binds.push(
               xNode('bindText', { el: textNode.bindName(), exp, srcStart: n.start }, (w, nd) => {
-                w.writeLine(`$$runtime.bindText(${nd.el}, () => (${mark(nd.srcStart)}${nd.exp}));`)
+                // _renderGroup turns a one-line constant into this write and
+                // passes a multi-line one through; left a bindText, the flagged
+                // client counts that node as a read nobody keyed (FJS-4573).
+                if (once && nd.exp.includes('\n')) w.writeLine(`${nd.el}.nodeValue = ${mark(nd.srcStart)}${nd.exp};`)
+                else w.writeLine(`$$runtime.bindText(${nd.el}, () => (${mark(nd.srcStart)}${nd.exp}));`)
               })
             )
           }
@@ -6183,6 +6188,8 @@ export function buildBlock(data, option = {}) {
             // satisfied by that node put the element ahead of the whitespace
             // that preceded it.
             const label = ownAnchor('element')
+            hydrationSite(ctx, 'block', dynamicElementBlock(n.start))
+            hydrationVar(ctx, label, dynamicElementBlock(n.start))
             binds.push(xNode('dynamic-element', { label, tagExp, block }, (w, nd) => {
               w.write(true, `$$runtime.keyBlock(${nd.label.name}, () => (${nd.tagExp}), `)
               w.write(`$$runtime.makeBlock($$runtime.dynamicElement(() => (${nd.tagExp}), `)
@@ -10993,6 +11000,9 @@ function _domTraversal(code) {
 // undefined on that path, so the handle refuses it by name and the enclosing
 // block, or the page, renders afresh (FJS-D2260). The block calls become their
 // adopting forms, which hand an unflagged anchor straight to the block itself.
+// A block body's template argument: the hoisted template, or a <mesa:element>'s
+// dynamicElement around one. Two groups: the whole argument, and the inner template.
+const BLOCK_TEMPLATE = '(\\$\\$tpl\\d+|\\$\\$runtime\\.dynamicElement\\([^\\n]*?, (\\$\\$tpl\\d+)\\))'
 const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['keyBlock', 'hydKey'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
 
 function _adoptRoots(code, ctx) {
@@ -11014,7 +11024,7 @@ function _adoptRoots(code, ctx) {
   const bodyAfter = (str, from, ind) => {
     let body = str.slice(from, bodyEnd(str, from, ind))
     // A nested block body declares its own walk, under the same names.
-    const nested = /makeBlock\(\$\$tpl\d+, \(\$\$parentElement[^)\n]*\) => \{\n/g
+    const nested = new RegExp('makeBlock\\(' + BLOCK_TEMPLATE + ', \\(\\$\\$parentElement[^)\\n]*\\) => \\{\\n', 'g')
     for (let k; (k = nested.exec(body));) {
       const start = k.index + k[0].length
       body = body.slice(0, k.index) + body.slice(bodyEnd(body, start, body.slice(start).match(/^[ \t]*/)[0]))
@@ -11024,9 +11034,11 @@ function _adoptRoots(code, ctx) {
   }
   // A text or attribute the body writes once, at its own level, already reads
   // right on the page, so that write lands on a node nobody shows. A constant
-  // style: is emitted as bindStyle and counts too, or its node reads unkeyed
-  // and the whole block re-renders (FJS-4543).
-  const constStyle = '\\$\\$runtime\\.bindStyle\\(NAME, \'[^\'\\n]+\', \\(\\) => \\(`(?:[^`$\\\\\\n]|\\$(?!\\{))*`\\)\\);$'
+  // style:, class: or class passthrough is emitted as an effect and counts too,
+  // or its node reads unkeyed and the whole block re-renders (FJS-4543, FJS-4573).
+  const constBinds = (name, body, ind) =>
+    [...body.matchAll(new RegExp('^' + ind + '\\$\\$runtime\\.bind(?:Style|Class|ClassPassthrough)\\(' + name + ', (.*)\\);$', 'gm'))]
+      .filter((m) => writtenOnce(m[1], ctx.analysis?.opaqueValues)).length
   const plan = (walk, body, ind) => {
     const lines = walk.split('\n').filter(Boolean)
     const declared = lines.map((l) => l.match(/^\s*(?:let|var) (\S+) = /)?.[1]).filter(Boolean)
@@ -11035,8 +11047,8 @@ function _adoptRoots(code, ctx) {
     const read = declared.filter((n) => !byName.has(n) && !aliases.includes(n) && uses(n, body).length)
     const once = read.filter((n) => {
       const name = n.replace(/\$/g, '\\$')
-      const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', |' + constStyle.replace('NAME', () => name) + ')', 'gm')) ?? []
-      return uses(n, body).length === writes.length
+      const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', )', 'gm')) ?? []
+      return uses(n, body).length === writes.length + constBinds(name, body, ind)
     })
     const unkeyed = read.filter((n) => !once.includes(n))
     const adopt = [
@@ -11061,13 +11073,15 @@ function _adoptRoots(code, ctx) {
         `${ind}if (!$$h) {\n${walk}${ind}} else {\n${adopt.map((l) => ind + '  ' + l + '\n').join('')}${ind}}\n`
     }
   ).replace(/^(\s*)\$\$runtime\.append\(__anchor, \$\$parentElement\);/mg, (_, ind) => `${ind}if (!$$h) $$runtime.append(__anchor, $$parentElement);`)
-  // A block body: the callback a makeBlock hands its template's clone.
+  // A block body: the callback a makeBlock hands its template's clone, or the
+  // element a <mesa:element>'s dynamicElement builds from its template.
   out = out.replace(
-    /makeBlock\((\$\$tpl\d+), \((\$\$parentElement(?:, [^)\n]*)?)\) => \{\n((?:[ \t]+(?:(?:let|var) [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/g,
-    (whole, tpl, params, walk, at, str) => {
+    new RegExp('makeBlock\\(' + BLOCK_TEMPLATE + ', \\((\\$\\$parentElement(?:, [^)\\n]*)?)\\) => \\{\\n((?:[ \\t]+(?:(?:let|var) [^;\\n]+|\\$\\$runtime\\.pop\\([^)\\n]*\\));\\n)*)', 'g'),
+    (whole, arg, dynTpl, params, walk, at, str) => {
+      const tpl = dynTpl ?? arg
       const ind = (walk.match(/^[ \t]*/)?.[0]) || '  '
       const { lines, declared, unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind)
-      const head = `makeBlock(${tpl}, (${params}) => {\n`
+      const head = `makeBlock(${arg}, (${params}) => {\n`
       adopt.unshift(`$$parentElement = $$h.root(${tpl}) ?? $$parentElement;`)
       return head +
         `${ind}const $$h = $$runtime.adopting(${file}${unkeyed.length ? ', ' + JSON.stringify(unkeyed.join(', ')) : ''});\n` +
@@ -11237,6 +11251,13 @@ export function hydrationSite(ctx, kind, offset) {
   if (!ctx.hydrationSites) ctx.hydrationSites = new Set()
   ctx.hydrationSites.add(kind + ' ' + bindingKey(offset))
 }
+
+/**
+ * The offset a `<mesa:element>`'s keyBlock is keyed by. The element inside
+ * takes the tag's own offset, and a block keyed by that one too is found by
+ * `take()` as the element's marker, never as its range.
+ */
+export const dynamicElementBlock = (start) => start + 1
 
 /** Name a live binding and record it on the compile, so `test/binding-keys.test.js` can compare the walks. */
 export function liveBinding(ctx, offset) {

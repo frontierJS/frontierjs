@@ -4,11 +4,13 @@ export const THEMES: {
         label: string;
         blurb: string;
         scheme: string;
+        pair: string;
     };
     'theme-dark': {
         label: string;
         blurb: string;
         scheme: string;
+        pair: string;
     };
     'theme-sunset': {
         label: string;
@@ -44,6 +46,13 @@ export const THEMES: {
         label: string;
         blurb: string;
         scheme: string;
+        pair: string;
+    };
+    'theme-notebook-dark': {
+        label: string;
+        blurb: string;
+        scheme: string;
+        pair: string;
     };
     'theme-field': {
         label: string;

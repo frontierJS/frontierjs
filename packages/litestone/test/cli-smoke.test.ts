@@ -1899,6 +1899,37 @@ describe('backup / replicate — the rest of db/', () => {
     expect(readFileSync(join(dir, 'out', 'db-files', 'files', 'photos', 'k1')).equals(bytes)).toBe(true)
   })
 
+  // FJS-4580: a container keeps the schema in the image (/app/db) and the
+  // databases on the volume (/db). The stored bytes sit beside the database, so
+  // a copy of the schema's directory held the source and none of the uploads.
+  test('the layout is the database volume, not the schema\'s source directory', async () => {
+    const dir = makeFixtureDir('layout-volume', { schema: null })
+    const src = join(dir, 'app', 'db'), vol = join(dir, 'volume', 'db')
+    mkdirSync(join(src, 'migrations'), { recursive: true })
+    mkdirSync(join(vol, 'files', 'Account', 'logo'), { recursive: true })
+    writeFileSync(join(src, 'schema.lite'), `model Post {\n  id    Int    @id\n  title String\n}\n`, 'utf8')
+    writeFileSync(join(src, 'computed.ts'), 'export {}\n')
+    writeFileSync(join(src, 'migrations', '0001.sql'), 'SELECT 1;\n')
+    writeFileSync(join(dir, 'litestone.config.js'), `export default { schema: './app/db/schema.lite', db: './volume/db/app.db' }\n`, 'utf8')
+    new Database(join(vol, 'app.db')).run('CREATE TABLE post (id INTEGER PRIMARY KEY, title TEXT)')
+    new Database(join(vol, 'jobs.db')).run('CREATE TABLE jobs (id TEXT PRIMARY KEY)')
+    writeFileSync(join(vol, 'files', 'Account', 'logo', 'k.png'), 'LOGO')
+
+    const r = await runCli(dir, ['backup', 'out'])
+    expect(r.exit).toBe(0)
+    expect(readFileSync(join(dir, 'out', 'db-files', 'files', 'Account', 'logo', 'k.png'), 'utf8')).toBe('LOGO')
+    expect(existsSync(join(dir, 'out', 'db-jobs.db'))).toBe(true)
+    expect(existsSync(join(dir, 'out', 'db-files', 'computed.ts'))).toBe(false)
+    expect(existsSync(join(dir, 'out', 'db-files', 'schema.lite'))).toBe(false)
+
+    rmSync(join(vol, 'files'), { recursive: true })
+    rmSync(join(vol, 'jobs.db'))
+    const back = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), '--force'])
+    expect(back.exit).toBe(0)
+    expect(readFileSync(join(vol, 'files', 'Account', 'logo', 'k.png'), 'utf8')).toBe('LOGO')
+    expect(existsSync(join(vol, 'jobs.db'))).toBe(true)
+  })
+
   test('replicate streams the queue and names the bytes it cannot stream', async () => {
     const dir  = appFixture('layout-replicate')
     const fake = join(dir, 'fake-litestream')

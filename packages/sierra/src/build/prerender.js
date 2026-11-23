@@ -317,7 +317,6 @@ export const hasSkipLink = (html) => /class="[^"]*\bskip-link\b[^"]*"/.test(html
  */
 export const SKIP_LINK_GUARD_CSS =
   '@layer sierra-shell{:where(.skip-link:not(:focus)){position:fixed;top:0;left:0;transform:translateY(-200%)}}'
-export const SKIP_LINK_GUARD = `<style id="sierra-skip-link">${SKIP_LINK_GUARD_CSS}</style>`
 
 /**
  * The `document` keys as HTML. One serializer for the prerendered page and for

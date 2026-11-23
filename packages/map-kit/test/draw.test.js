@@ -156,3 +156,70 @@ describe('mapModel', () => {
     expect(() => mapModel({ ...base, shapes: [{ geojson: lot, treatment: 'glass' }] })).toThrow('unknown treatment "glass"')
   })
 })
+
+describe('an image basemap', () => {
+  const image = {
+    image: 'https://api.test/static?center={lat},{lng}&zoom={zoom}&size={width}x{height}&scale={scale}',
+    maxSize: 640,
+    maxZoom: 20,
+    scale: 2,
+  }
+  const base = { basemap: image, label: 'A map', center, width: 500, height: 300 }
+
+  test('one image covers the whole box, its URL carrying the center, zoom, size and scale', () => {
+    const m = mapModel(base)
+    expect(m.tiles).toEqual([])
+    expect(m.image).toMatchObject({ x: 0, y: 0, width: 500, height: 300 })
+    expect(m.image?.href).toBe('https://api.test/static?center=40.7128,-74.006&zoom=19&size=500x300&scale=2')
+  })
+
+  test('scale defaults to 1', () => {
+    expect(mapModel({ ...base, basemap: { image: image.image } }).image?.href).toEndWith('&scale=1')
+  })
+
+  test('a marker at the center lands at exactly half the box, with no whole-pixel round', () => {
+    const m = mapModel({ ...base, width: 501, height: 299, markers: [{ at: center }] })
+    expect(m.markers[0].transform).toBe('translate(250.5 149.5)')
+  })
+
+  test('shapes and markers are projected as for tiles, a whole-pixel origin apart at most', () => {
+    const tiled = mapModel({ ...base, basemap, shapes: [{ geojson: lot }], markers: [{ at: { lat: 40.7126, lng: -74.0062 } }] })
+    const imaged = mapModel({ ...base, shapes: [{ geojson: lot }], markers: [{ at: { lat: 40.7126, lng: -74.0062 } }] })
+    const nums = (/** @type {string} */ s) => (s.match(/-?\d+(\.\d+)?/g) ?? []).map(Number)
+    nums(tiled.shapes[0].d).forEach((n, i) => expect(Math.abs(n - nums(imaged.shapes[0].d)[i])).toBeLessThanOrEqual(0.5))
+    nums(tiled.markers[0].transform).forEach((n, i) => expect(Math.abs(n - nums(imaged.markers[0].transform)[i])).toBeLessThanOrEqual(0.5))
+  })
+
+  test('a fit centers the image on the fitted center', () => {
+    const size = { width: 640, height: 360 }
+    const want = fit([lot], { ...size, padding: 20, maxZoom: 19 })
+    const m = mapModel({ ...base, center: undefined, fit: [lot], ...size })
+    const href = m.image?.href ?? ''
+    expect(href).toContain(`zoom=${want.zoom}&`)
+    expect(Number(href.match(/center=([-\d.]+),/)?.[1])).toBeCloseTo(want.center.lat, 6)
+  })
+
+  test('a default zoom is capped at maxZoom and 19; an explicit one is used', () => {
+    expect(mapModel({ ...base, basemap: { ...image, maxZoom: 17 } }).image?.href).toContain('zoom=17&')
+    expect(mapModel({ ...base, zoom: 20 }).image?.href).toContain('zoom=20&')
+  })
+
+  test('refuses, never clamps: a box over maxSize, a zoom over maxZoom, a fractional size or zoom', () => {
+    expect(() => mapModel({ ...base, width: 641 })).toThrow('over the basemap\'s maxSize of 640')
+    expect(() => mapModel({ ...base, height: 700 })).toThrow('maxSize')
+    expect(() => mapModel({ ...base, zoom: 21 })).toThrow('over the basemap\'s maxZoom of 20')
+    expect(() => mapModel({ ...base, width: 500.5 })).toThrow('whole width and height')
+    expect(() => mapModel({ ...base, zoom: 18.5 })).toThrow('whole zoom')
+    expect(() => mapModel({ ...base, basemap: { ...image, scale: 0 } })).toThrow('scale')
+  })
+
+  test('refuses a template key with no value, and a basemap that is both kinds or neither', () => {
+    expect(() => mapModel({ ...base, basemap: { image: 'https://api.test/{key}' } })).toThrow('{key}')
+    expect(() => mapModel({ ...base, basemap: { ...image, tiles: '/t/{z}/{x}/{y}.png' } })).toThrow('not both')
+    expect(() => mapModel(/** @type {any} */ ({ ...base, basemap: { attribution: 'x' } }))).toThrow('basemap is required')
+  })
+
+  test('an empty attribution stays empty', () => {
+    expect(mapModel(base).attribution).toBe('')
+  })
+})

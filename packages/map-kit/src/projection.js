@@ -17,7 +17,9 @@ const D = Math.PI / 180
 /** @typedef {{ x: number, y: number }} Point */
 /** @typedef {{ x: number, y: number, z: number, left: number, top: number, size: number }} Tile */
 /** @typedef {{ zoom: number, width: number, height: number, origin: Point, tiles: Tile[], toLayer: (point: LatLng) => Point }} View */
-/** @typedef {{ tiles: string, attribution?: string, maxZoom?: number, tileSize?: number, subdomains?: string | string[] }} Basemap */
+/** @typedef {{ tiles: string, attribution?: string, maxZoom?: number, tileSize?: number, subdomains?: string | string[] }} TiledBasemap */
+/** @typedef {{ image: string, attribution?: string, maxZoom?: number, maxSize?: number, scale?: number }} ImageBasemap */
+/** @typedef {TiledBasemap | ImageBasemap} Basemap */
 
 /** @param {string} name @param {unknown} value */
 function refuseNumber(name, value) {
@@ -240,14 +242,14 @@ export function fit(geometries, { width, height, padding = 0, maxZoom } = /** @t
 /**
  * The URL of one tile. `x` and `y` arrive wrapped, from `view().tiles`; a
  * template key with no value throws, naming the key.
- * @param {Basemap} basemap
+ * @param {Basemap} basemap a tiled one
  * @param {number} x
  * @param {number} y
  * @param {number} z
  * @param {{ r?: string }} [options]
  */
 export function tileUrl(basemap, x, y, z, { r = '' } = {}) {
-  const { tiles, subdomains } = basemap
+  const { tiles, subdomains } = /** @type {TiledBasemap} */ (basemap)
   return tiles.replace(/\{(\w+)\}/g, (_, key) => {
     switch (key) {
       case 'z': return String(z)
@@ -259,6 +261,28 @@ export function tileUrl(basemap, x, y, z, { r = '' } = {}) {
         return String(subdomains[Math.abs(x + y) % subdomains.length])
       }
       default: throw new Error(`tileUrl: the template has {${key}}, which has no value`)
+    }
+  })
+}
+
+/**
+ * The URL of the one image that is the whole map: the template's `{lat}`,
+ * `{lng}`, `{zoom}`, `{width}`, `{height}` and `{scale}` filled in. A key with
+ * no value throws, naming it, as `tileUrl` does.
+ * @param {ImageBasemap} basemap
+ * @param {{ center: LatLng, zoom: number, width: number, height: number }} frame
+ * @returns {string}
+ */
+export function imageUrl(basemap, { center, zoom, width, height }) {
+  return basemap.image.replace(/\{(\w+)\}/g, (_, key) => {
+    switch (key) {
+      case 'lat': return String(center.lat)
+      case 'lng': return String(center.lng)
+      case 'zoom': return String(zoom)
+      case 'width': return String(width)
+      case 'height': return String(height)
+      case 'scale': return String(basemap.scale ?? 1)
+      default: throw new Error(`imageUrl: the template has {${key}}, which has no value`)
     }
   })
 }

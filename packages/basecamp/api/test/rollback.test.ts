@@ -705,6 +705,25 @@ describe('how the machine swapped, on the row', () => {
     })
   })
 
+  // FJS-4561: an image whose ENV FRONTIER_PORT_BE named 3000 bound 3000 while
+  // the App said 8100, so the probe was refused and a contract release left the
+  // app down.
+  describe('the port the container binds', () => {
+    test('the container is told to bind the App\'s container port', async () => {
+      expect((await startAgainst({}, {}, { containerPort: 8100 })).env.FRONTIER_PORT_BE).toBe('8100')
+    })
+
+    test('a stored FRONTIER_PORT_BE Variable does not name another port', async () => {
+      const row = await startAgainst({}, {}, {}, undefined, {
+        configSnapshot: { env: { FRONTIER_PORT_BE: '3000', KEPT: '1' }, runtime: { containerPort: 8100 } } })
+      expect(row.env).toMatchObject({ FRONTIER_PORT_BE: '8100', KEPT: '1' })
+    })
+
+    test('an App that states no container port leaves the image its own', async () => {
+      expect((await startAgainst({}, { containerPort: null }, { containerPort: null })).env).not.toHaveProperty('FRONTIER_PORT_BE')
+    })
+  })
+
   // IDEAS/read-only-copy.md 1.4 (FJS-D1914): the image follows the release into
   // the replica bucket, and only for an App that has one.
   describe('the release\'s image export', () => {

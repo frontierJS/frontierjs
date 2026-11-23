@@ -772,7 +772,7 @@ enum DependencyKind { dependency dev peer optional }
 /// `asSystem()` are all held to the set too.
 ///
 /// Add a member when a notification starts pointing somewhere new.
-enum NotificationContext { Deployment Alert JobRun Server Workspace Monitor }
+enum NotificationContext { Deployment Alert JobRun Server Workspace Monitor App }
 
 enum NotificationKind {
   DeploySuccess
@@ -791,6 +791,7 @@ enum NotificationKind {
   ReplicaFound
   MonitorCertExpiring
   AppBackupFailed
+  AppCrashed
 }
 
 // ============================================================
@@ -2046,6 +2047,11 @@ model App {
   // a request: Outpost overlaps only for an expand, and never for an app that
   // exposes its port or names no healthCheck. Read off the live app, rollbacks included.
   swap          DeploySwap  @default(stopFirst) @label("Swap order")
+  // Whether an uncaught throw in this app pages anyone (`FJS-D2273`): the bell,
+  // email and the workspace push topic by each person's defaults, and every
+  // channel in `crashChannels`. On by default, for `isPagedForFleet`'s reason —
+  // a crash nobody heard about is the failure (`FJS-D2353`).
+  isCrashAlerted Boolean    @default(true)
 
   // Deploy on push (`FJS-D884`): a forge's push event releases this app through
   // the `git` Receiver. `pushSecret` is the HMAC key a forge signs with and
@@ -2122,6 +2128,7 @@ model App {
   domainRoutes  DomainRoute[]
   variables     Variable[]
   editors       AppEditor[]
+  crashChannels AppChannel[]
   // Set on the one App that is this Basecamp (`FJS-D1603`): the pointer is the
   // flag, so no column here says it.
   hub           HubConfig?  @relation("HubApp") @keep
@@ -3146,6 +3153,7 @@ model NotificationChannel {
 
   rules       AlertRuleChannel[]
   monitors    MonitorChannel[]
+  apps        AppChannel[]
 
   @@gate(2.5)
   @@softDelete
@@ -3498,6 +3506,23 @@ model MonitorChannel {
 
   @@gate(2.5)
   @@relator([monitorId, channelId], once)
+}
+
+// Where an app's crash pages, beyond the people `AppCrashed` reaches on its own
+// (`FJS-D2273`). The App's write level, as `MonitorChannel` takes the Monitor's:
+// a developer who may delete the app may choose which existing channels hear it
+// crash, and making a channel stays an admin's (`FJS-D2352`).
+model AppChannel {
+  id        String              @id @default(uuid())
+  appId     String
+  app       App                 @relation(fields: [appId], references: [id], onDelete: Cascade)
+  channelId String
+  channel   NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime            @default(now())
+
+  @@gate(2.4)
+  @@relator([appId, channelId], once)
 }
 
 // ============================================================

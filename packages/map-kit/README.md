@@ -38,6 +38,30 @@ render holds it and nothing is placed by a `style` attribute:
 - A `tone` is one of `@frontierjs/css`'s seven; a shape's `treatment` is
   `outlined` or none. Anything else is refused by name.
 - `r` is the `{r}` value, `@2x` when the template has `{r}`.
-- The attribution renders as text.
+- The attribution renders as text; an empty one draws no `<figcaption>`.
+
+A basemap is one of two plain-data kinds, never both. A **tiled** one names a
+`tiles` template (above). An **image** one names one URL for the whole map, for
+a vendor whose API answers a center, a zoom and a size with a single picture
+(Google's Maps Static API):
+
+```js
+const basemap = {
+  image: 'https://api.example/static?center={lat},{lng}&zoom={zoom}&size={width}x{height}&scale={scale}',
+  maxSize: 640, // most logical pixels on a side; scale 2 doubles the file, not the area
+  maxZoom: 20,
+  scale: 2,     // the {scale} value, 1 if absent; `attribution` is usually absent
+}
+```
+
+- The image covers the whole `width` by `height` box, centered on `center` (or
+  the fit's center) at `zoom`, Web Mercator with a 256-pixel world at zoom 0. A
+  marker or shape is projected as for tiles, so a center marker sits at the box
+  center exactly.
+- `width`, `height` and `zoom` must be whole numbers. A box over `maxSize` or
+  an explicit `zoom` over `maxZoom` is refused by name, not clamped; a default
+  zoom is capped at `maxZoom` and 19 as for tiles.
+- The vendor prints its logo and copyright into the picture, so `attribution`
+  is normally empty and no `<figcaption>` is drawn.
 
 `bun run test` runs it.

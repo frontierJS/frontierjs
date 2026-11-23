@@ -20,7 +20,7 @@ const ok = (cost: number, turns: number): AskEvent => ({ type: 'result', ok: tru
 test('read-only: a Read, its result, the answer', () => {
   expect(drawn(read('read-only.jsonl'))).toEqual([
     { type: 'session', id: 'session-1' },
-    { type: 'tool',    text: `Read ${FILE}` },
+    { type: 'tool',    id: 'toolu-1', text: `Read ${FILE}` },
     { type: 'read',    id: 'toolu-1', file: FILE },
     { type: 'landed',  id: 'toolu-1' },
     { type: 'text',    text: 'The launch is on Tuesday, according to notes.txt.' },
@@ -31,10 +31,10 @@ test('read-only: a Read, its result, the answer', () => {
 test('edit: the Read before the Edit, and the Edit as an undo reverses it', () => {
   expect(drawn(read('edit.jsonl'))).toEqual([
     { type: 'session', id: 'session-2' },
-    { type: 'tool',    text: `Read ${FILE}` },
+    { type: 'tool',    id: 'toolu-2', text: `Read ${FILE}` },
     { type: 'read',    id: 'toolu-2', file: FILE },
     { type: 'landed',  id: 'toolu-2' },
-    { type: 'tool',    text: `Edit ${FILE}` },
+    { type: 'tool',    id: 'toolu-3', text: `Edit ${FILE}` },
     { type: 'edit',    id: 'toolu-3', file: FILE, old: 'Bring the blue folder.', new: 'Bring the green folder.', all: false },
     { type: 'landed',  id: 'toolu-3' },
     { type: 'text',    text: 'done' },
@@ -54,16 +54,16 @@ test('chats: the tool calls, statuses while waiting, and deltas that add up to t
   const permission = read('chat-permission.jsonl'), question = read('chat-question.jsonl')
   expect(drawn(permission)).toEqual([
     { type: 'session', id: 'session-3' },
-    { type: 'tool',    text: "Bash printf 'hi' > /home/user/project/hello.txt && cat /home/user/project/hello.txt" },
+    { type: 'tool',    id: 'toolu-4', text: "Bash printf 'hi' > /home/user/project/hello.txt && cat /home/user/project/hello.txt" },
     { type: 'landed',  id: 'toolu-4' },
     { type: 'text',    text: 'done' },
     ok(0.0007589200000000001, 2),
   ])
   expect(drawn(question)).toEqual([
     { type: 'session', id: 'session-4' },
-    { type: 'tool',    text: 'ToolSearch' },
+    { type: 'tool',    id: 'toolu-5', text: 'ToolSearch' },
     { type: 'landed',  id: 'toolu-5' },
-    { type: 'tool',    text: 'AskUserQuestion' },
+    { type: 'tool',    id: 'toolu-6', text: 'AskUserQuestion' },
     { type: 'landed',  id: 'toolu-6' },
     { type: 'text',    text: 'Pear' },
     ok(0.00129198, 3),

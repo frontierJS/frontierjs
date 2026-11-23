@@ -7,7 +7,7 @@
 import { X509Certificate } from 'node:crypto'
 import { redactUrl } from '@frontierjs/toolbelt/redact'
 import { parseEvents, type ParseState } from '@frontierjs/toolbelt/sse'
-import { BaseTransport } from './base.ts'
+import { BaseTransport, type Spent } from './base.ts'
 import { encodeBody, CONTENT_TYPE } from './encode.ts'
 import type { BodyEncoding, EncodedBody } from './encode.ts'
 import { CredentialError, ConduitStreamError } from '../types.ts'
@@ -101,9 +101,11 @@ function redactedRaw(err: unknown): unknown {
 
 // Every spelling of `secret` a URL can hold, replaced wherever it appears in a
 // string or one level of an object's values.
-function scrubber(secret: string | undefined): (v: unknown) => unknown {
-  if (!secret) return (v) => v
-  const forms = [...new Set([secret, encodeURIComponent(secret), new URLSearchParams({ k: secret }).toString().slice(2)])]
+function scrubber(secrets: readonly string[] | undefined): (v: unknown) => unknown {
+  const kept = (secrets ?? []).filter(Boolean)
+  if (kept.length === 0) return (v) => v
+  const forms = [...new Set(kept.flatMap(secret => [secret, encodeURIComponent(secret), new URLSearchParams({ k: secret }).toString().slice(2)]))]
+    .sort((a, b) => b.length - a.length)
   const one   = (v: unknown) => typeof v === 'string' ? forms.reduce((s, f) => s.split(f).join('[redacted]'), v) : v
   return (v) => (typeof v === 'object' && v !== null)
     ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, one(x)]))
@@ -359,7 +361,7 @@ export class HttpTransport extends BaseTransport {
 
       // The per-attempt timeout is also capped by what is left of the total
       // budget, so a long tail of retries cannot outlive the deadline.
-      const spent  = {} as { value?: string }
+      const spent  = {} as Spent
       const result = await this.attempt<T>(sent, remaining, spent, open)
 
       if (this.refusedCredential(result) && !reminted && spent.value !== undefined
@@ -406,7 +408,7 @@ export class HttpTransport extends BaseTransport {
     return this.fail('server_error', 'Retry loop exhausted')
   }
 
-  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: { value?: string }, open = false): Promise<ConduitResult<T>> {
+  private async attempt<T>(req: ConduitRequest, budgetMs = Infinity, spent?: Spent, open = false): Promise<ConduitResult<T>> {
     const maxBytes = this.opts.max_response_bytes ?? DEFAULT_MAX_BYTES
     const timeout  = Math.min(
       req.timeout_ms ?? this.opts.timeout_ms ?? DEFAULT_TIMEOUT_MS,
@@ -518,6 +520,7 @@ export class HttpTransport extends BaseTransport {
           // as a caller's header is by an auth header.
           for (const [k, v] of Object.entries(signed.query)) keyed.searchParams.set(k, v)
           wire = keyed.toString()
+          if (spent) spent.inUrl = Object.values(signed.query)
         }
         const init = this.fetchInit({
           method,
@@ -748,10 +751,9 @@ export class HttpTransport extends BaseTransport {
     } catch { return false }
   }
 
-  // Only a key carried in the URL can come back inside one.
-  private scrub(spent: { value?: string } | undefined): (v: unknown) => unknown {
-    const auth = this.descriptor.auth
-    return scrubber(auth.type === 'api_key' && auth.query ? spent?.value : undefined)
+  // Only what was carried in the URL can come back inside one.
+  private scrub(spent: Spent | undefined): (v: unknown) => unknown {
+    return scrubber(spent?.inUrl)
   }
 
   private refusedAs(shape: CredentialRefusal): boolean {

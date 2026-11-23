@@ -61,6 +61,9 @@ beforeAll(async () => {
     api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
   })
   app = env.app
+  // A record reaches its zone through the queued sync job, and createTestEnv
+  // starts no worker.
+  await app.jobs.start()
 
   const sys  = env.system as any
   const uniq = Math.random().toString(36).slice(2, 8)

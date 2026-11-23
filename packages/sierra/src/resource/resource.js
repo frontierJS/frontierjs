@@ -846,7 +846,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     // A row leaving an imposed window emits no frame, so the list drops it at
     // its edge by the clock (`FJS-1274`). Absent where the model has none.
     ...(modelDef?.['x-effective']?.imposed
-      ? { until: (record, params) => leavesAt(modelDef['x-effective'], record, params) }
+      ? { until: (record, params) => leavesAt(modelDef['x-effective'], withHeldZone(record), params) }
       : {}),
     // A pushed row is placed in the order the column sorts in, not BINARY.
     collations,
@@ -1473,6 +1473,25 @@ export function createResource(serviceName, opts = {}, ...extra) {
     } else if (list.some(e => e === rel || e.startsWith(`${rel}.`))) return directives
     else list.push(`${rel}:${column}`)
     return { ...directives, populate: list.join(',') }
+  }
+
+  // A push replaces a held row whole and carries no relation, so the zone the
+  // load folded in leaves with it and the row's edge reads as UTC (`FJS-4575`).
+  // The zone is the parent's: a row that carried it answers for every row naming
+  // that parent by key, and a parent no load has shown reads UTC until one does.
+  const zoneKey = zoneHop?.length === 2
+    ? modelDef?.['x-relations']?.find(r => r?.field === zoneHop[0])?.fields
+    : null
+  const _zones = new Map()
+  function withHeldZone(record) {
+    if (zoneKey?.length !== 1 || !record) return record
+    const [rel, column] = zoneHop
+    const parent = record[zoneKey[0]]
+    if (parent == null) return record
+    const zone = record[rel]?.[column]
+    if (zone !== undefined) { _zones.set(parent, zone); return record }
+    if (!_zones.has(parent)) return record
+    return { ...record, [rel]: { ...record[rel], [column]: _zones.get(parent) } }
   }
 
   // `load` and `more` over one tether. The resource's own pair is over the
@@ -2293,6 +2312,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
     _options.clear()
     _read.clear()
     _seen.clear()
+    _zones.clear()
     tether.set([])
     for (const live of _ownLives) live.tether.set([])
     stale.reset?.()

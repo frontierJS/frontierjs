@@ -228,7 +228,7 @@ export function generateTypeScript(schema, opts = {}) {
     }
     lines.push(`export interface ${pascal(model.name)} {`)
     for (const field of model.fields) {
-      if (field.type.kind === 'relation') continue
+      if (isRelation(field)) continue
       const spec = fieldRowSpec(field, schema, audience, modelNames)
       if (!spec) continue
       if (includeComments) {
@@ -250,7 +250,12 @@ export function generateTypeScript(schema, opts = {}) {
     // ── Create type ──────────────────────────────────────────────────────────
     lines.push(`export interface ${pascal(model.name)}Create {`)
     for (const field of model.fields) {
-      if (field.type.kind === 'relation' || isSystemField(field)) continue
+      if (isRelation(field)) {
+        const write = relationWriteTs(field, model, schema)
+        if (write) lines.push(`  ${field.name}?: ${write}`)
+        continue
+      }
+      if (isSystemField(field)) continue
       const spec = fieldCreateSpec(field, schema, audience, modelNames, model)
       if (!spec) continue
       if (includeComments && field.comments?.length) {
@@ -273,7 +278,12 @@ export function generateTypeScript(schema, opts = {}) {
     // without it. Marking it required is the type saying what the runtime does.
     lines.push(`export interface ${pascal(model.name)}Update {`)
     for (const field of model.fields) {
-      if (field.type.kind === 'relation' || isSystemField(field)) continue
+      if (isRelation(field)) {
+        const write = relationWriteTs(field, model, schema)
+        if (write) lines.push(`  ${field.name}?: ${write}`)
+        continue
+      }
+      if (isSystemField(field)) continue
       const spec = fieldUpdateSpec(field, schema, audience, modelNames)
       if (!spec) continue
       const required = field.attributes.some(a => a.kind === 'version')
@@ -304,7 +314,10 @@ export function generateTypeScript(schema, opts = {}) {
     // ── Where type ───────────────────────────────────────────────────────────
     lines.push(`export interface ${pascal(model.name)}Where extends WhereBase {`)
     for (const field of model.fields) {
-      if (field.type.kind === 'relation') continue
+      if (isRelation(field)) {
+        if (modelNames.includes(field.type.name)) lines.push(`  ${field.name}?: ${relationWhereTs(field)}`)
+        continue
+      }
       const spec = fieldWhereSpec(field, schema, modelNames)
       if (!spec) continue
       lines.push(`  ${spec.name}?: ${spec.tsType}`)
@@ -327,7 +340,7 @@ export function generateTypeScript(schema, opts = {}) {
     // names, so a relation not asked for is not on the type.
     lines.push(`export interface ${pascal(model.name)}Relations {`)
     for (const field of model.fields) {
-      if (field.type.kind !== 'relation' || !modelNames.includes(field.type.name)) continue
+      if (!isRelation(field) || !modelNames.includes(field.type.name)) continue
       const target = pascal(field.type.name)
       lines.push(`  ${field.name}: ${field.type.array ? `${target}[]` : `${target} | null`}`)
     }
@@ -492,6 +505,12 @@ export interface CursorResult<T> {`,
   )
 
   // ── TableClient generic ──────────────────────────────────────────────────────
+  const graphLines = schema.models.map(model => {
+    const hops = model.fields
+      .filter(f => isRelation(f) && modelNames.includes(f.type.name))
+      .map(f => `${f.name}: '${pascal(f.type.name)}'`)
+    return `  ${pascal(model.name)}: { rel: ${pascal(model.name)}Relations; hop: { ${hops.join('; ')} } }`
+  })
   lines.push(
     `// ── Table client interface ───────────────────────────────────────────────────`,
     ``,
@@ -503,64 +522,103 @@ export interface CursorResult<T> {`,
     `/** The \`@system\` columns a write may carry in its data: the ones its \`system\` names. */`,
     `type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>`,
     `/** The client \`asSystem()\` returns: it writes a \`@system\` column with no \`system\` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (\`_TSudoCreate\`, a phantom only \`infer\` reads). */`,
-    `type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }`,
+    `type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q, infer N> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q, N> : T[K] }`,
     ``,
     `/** What \`include\` may name: a relation, or \`_count\`. A relation takes \`true\` or its own read options. */`,
     `export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }`,
-    `/** What \`select\` may name: a column or a relation, \`true\` or an options object. */`,
-    `export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions }`,
+    `/** What \`select\` may name: a column or a relation, \`true\` or an options object — or a list of names and paths (FJS-D2332). */`,
+    `export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions } | readonly string[]`,
     `// A nested \`select\` is typed as booleans so an inferred \`false\` stays \`false\`, which a`,
     `// bare Record<string, unknown> widens to boolean and ReadShape would then read as on.`,
-    `type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }`,
+    `type __RelOptions = { select?: { [field: string]: boolean | __RelOptions }; [option: string]: unknown }`,
+    ``,
+    `/** Each model's relations by name, and the model each one reaches: what a nested select and a select path hop through. */`,
+    `export interface __Models {`,
+    ...graphLines,
+    `}`,
+    `type __Hop<N, K> = N extends keyof __Models ? K extends keyof __Models[N]['hop'] ? __Models[N]['hop'][K] : never : never`,
+    `type __RelOf<N> = [N] extends [never] ? {} : N extends keyof __Models ? __Models[N]['rel'] : {}`,
+    `type __RowOf<T> = T extends (infer E)[] ? E : NonNullable<T>`,
+    ``,
+    `// A select LIST is the object it stands for (FJS-D2332): \`'id'\` a column,`,
+    `// \`'a.b:x+y'\` a path whose every hop nests as \`select\`. Entries naming one`,
+    `// relation intersect, which is the merge the client does.`,
+    `type __Split<S extends string, D extends string> = S extends \`\${infer H}\${D}\${infer T}\` ? [H, ...__Split<T, D>] : [S]`,
+    `type __PathSel<P, L> = P extends [infer H extends string] ? { [K in H]: L } : P extends [infer H extends string, ...infer R] ? { [K in H]: { select: __PathSel<R, L> } } : never`,
+    `type __EntrySel<E> = E extends \`\${infer P}:\${infer F}\` ? __PathSel<__Split<P, '.'>, { select: { [K in __Split<F, '+'>[number]]: true } }> : E extends string ? __PathSel<__Split<E, '.'>, true> : never`,
+    `type __U2I<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never`,
+    `type __Sel<S> = S extends readonly string[] ? __U2I<{ [I in keyof S]: __EntrySel<S[I]> }[number]> : S`,
+    `// A name the model lacks, a hop that is not a relation, or a leaf field the`,
+    `// last model lacks makes that entry \`never\`, so the call does not compile.`,
+    `type __CheckHops<P, Rel, N, F> = P extends [infer H extends string, ...infer R]`,
+    `  ? H extends keyof Rel`,
+    `    ? R extends [] ? ([F] extends [never] ? true : F extends string ? (__Split<F, '+'>[number] extends keyof __RowOf<Rel[H]> ? true : false) : false)`,
+    `      : __CheckHops<R, __RelOf<__Hop<N, H>>, __Hop<N, H>, F>`,
+    `    : false`,
+    `  : false`,
+    `type __CheckEntry<E, TRow, TRel, N> = E extends \`\${infer P}:\${infer F}\` ? __CheckHops<__Split<P, '.'>, TRel, N, F>`,
+    `  : E extends \`\${string}.\${string}\` ? __CheckHops<__Split<E, '.'>, TRel, N, never>`,
+    `  : E extends keyof TRow | keyof TRel ? true : false`,
+    `type __SelectCheck<S, TRow, TRel, N> = S extends readonly string[] ? { readonly [I in keyof S]: __CheckEntry<S[I], TRow, TRel, N> extends true ? S[I] : never } : unknown`,
+    ``,
+    `/** A nested write through a relation, each kind taking the operations the client runs for it. */`,
+    `type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }`,
+    `type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }`,
+    `type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }`,
+    `/** What \`search()\` adds to a hit: \`_rank\` unless \`withRank: false\`, and the \`highlight\` and \`snippet\` asked for. */`,
+    `type __SearchHit = { _rank?: number | null; _highlight?: string | null; _snippet?: string | null }`,
+    `type __FtsMarks = { field: string; open?: string; close?: string }`,
     ``,
     `/**`,
     ` * The row a read answers: the whole row, or only the columns \`select\` named, and`,
     ` * in either case the relations \`include\` (or \`select\`) named. A relation takes its`,
     ` * own nested \`select\` to only the columns that names; a nested \`include\` adds nothing.`,
     ` */`,
-    `export type ReadShape<TRow, TRel, I, S> = __Flat<`,
+    `export type ReadShape<TRow, TRel, I, S, N = never> = __Shape<TRow, TRel, I, __Sel<S>, N>`,
+    `type __Shape<TRow, TRel, I, S, N> = __Flat<`,
     `  (undefined extends S ? TRow : __SelectedColumns<TRow, S>)`,
-    `  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>> }`,
+    `  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>, __Hop<N, K>> }`,
     `  & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})`,
     `>`,
     `/** What a create, update or upsert answers: a read of the row written, or \`null\` under \`select: false\`. */`,
-    `export type WriteShape<TRow, TRel, I, S> = S extends false ? null : ReadShape<TRow, TRel, I, S>`,
+    `export type WriteShape<TRow, TRel, I, S, N = never> = S extends false ? null : ReadShape<TRow, TRel, I, S, N>`,
     `type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false`,
     `type __RelOpts<I, S, K> = K extends keyof I ? (I[K] extends Record<string, unknown> ? I[K] : __RelOptsOf<S, K>) : __RelOptsOf<S, K>`,
     `type __RelOptsOf<S, K> = K extends keyof S ? S[K] : {}`,
-    `type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T`,
-    `type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>`,
+    `type __Narrow<T, O, M> = [O] extends [{ select: infer NS }] ? __Rows<T, NS, M> : T`,
+    `type __Rows<T, NS, M> = T extends null ? null : T extends (infer E)[] ? __Picked<E, NS, M>[] : __Picked<T, NS, M>`,
+    `type __Picked<E, NS, M> = __Flat<__SelectedColumns<E, NS> & { [K in keyof __RelOf<M> as __On<NS, K> extends true ? K : never]: __Narrow<__RelOf<M>[K], __RelOptsOf<NS, K>, __Hop<M, K>> }>`,
     `type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>`,
     ``,
-    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {`,
-    `  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>`,
-    `  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
-    `  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>`,
-    `  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>`,
-    `  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>`,
+    `export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}, TName = never> {`,
+    `  findMany<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>[]>`,
+    `  findFirst<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>`,
+    `  findUnique<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>`,
+    `  findFirstOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>`,
+    `  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>`,
     `  findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>`,
     `  /** The cursor of a row already taken, for the ordering it was scanned in; \`null\` where the row lacks a sort key. Throws where the ordering is not total. */`,
     `  cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null`,
-    `  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>`,
-    `  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>`,
+    `  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>`,
+    `  create<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>`,
     `  /** \`select\` adds \`rows\`: the written rows the caller may read, in insert order; \`count\` stays the number written. */`,
-    `  createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>`,
-    `  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>`,
+    `  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>`,
+    `  update<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName> | null>`,
     `  updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>`,
-    `  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>`,
+    `  upsert<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>`,
     `  upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>`,
     `  remove(args: { where: TWhere }): Promise<TRow | null>`,
     `  removeMany(args?: { where?: TWhere }): Promise<{ count: number }>`,
     `  restore(args: { where: TWhere }): Promise<{ count: number }>`,
     `  delete(args: { where: TWhere }): Promise<TRow | null>`,
     `  deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>`,
-    `  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>`,
+    `  search<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S, TName> & __SearchHit)[]>`,
     `  optimizeFts(): Promise<{ optimized: boolean; table: string }>`,
     ``,
     `  // Reads whose shape is not one row or a count. Emitted because an app`,
     `  // calls them: leaving one out types a real call as an error, which is`,
     `  // the failure that makes a generated .d.ts worse than no types at all.`,
-    `  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>`,
+    `  findManyAndCount<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName> }): Promise<{ rows: ReadShape<TRow, TRel, I, S, TName>[]; total: number }>`,
     `  exists(args?: { where?: TWhere }): Promise<boolean>`,
     `  aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>`,
     `  groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>`,
@@ -655,9 +713,9 @@ export interface CursorResult<T> {`,
       .map(f => `'${f.name}'`)
     const tail = tenantCols.length
       ? `, ${hasSystemData ? `${pascal(model.name)}System` : '{}'}, Required<Pick<${pascal(model.name)}Create, ${tenantCols.join(' | ')}>>`
-      : hasSystemData ? `, ${pascal(model.name)}System` : ''
+      : hasSystemData ? `, ${pascal(model.name)}System, {}` : ', {}, {}'
     lines.push(
-      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations, ${moves || 'never'}, ${sys}${tail}>`
+      `  readonly ${accessor(model.name)}: TableClient<${pascal(model.name)}, ${pascal(model.name)}Create, ${pascal(model.name)}Update, ${pascal(model.name)}Where, ${pascal(model.name)}Relations, ${moves || 'never'}, ${sys}${tail}, '${pascal(model.name)}'>`
     )
   }
   // And one per view. A view is reached exactly as a table is — `db.<name>` —
@@ -842,7 +900,7 @@ function fieldRowSpec(field, schema, audience, modelNames) {
   const { name, type, attributes } = field
 
   // Always skip relations — virtual
-  if (type.kind === 'relation') return null
+  if (isRelation(field)) return null
 
   // @guarded / @secret — strip for client audience
   const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
@@ -885,6 +943,41 @@ function fileInputTs(field, mode) {
 
 const isSystemField = field => field.attributes.some(a => a.kind === 'system')
 
+// An implicit many-to-many parses as its own kind, and tested by `relation`
+// alone it was typed as a column: required on create, `Label[]` on update and
+// an array predicate in a where (FJS-4576).
+const isRelation = field => field.type.kind === 'relation' || field.type.kind === 'implicitM2M'
+
+// What a where may ask of a relation: a to-many takes some/every/none and a
+// to-one is/isNot, each over the target's own Where.
+function relationWhereTs(field) {
+  const where = `${pascal(field.type.name)}Where`
+  return field.type.array
+    ? `{ some?: ${where}; every?: ${where}; none?: ${where} }`
+    : `{ is?: ${where}; isNot?: ${where} }`
+}
+
+// The nested write a create or update may carry through a relation, as
+// `nested-writes.js` runs it. The back side of a one-to-one holds no key and
+// takes none. A hasMany child's create leaves out the columns that point back
+// here, which the write fills from this row.
+function relationWriteTs(field, model, schema) {
+  const targetModel = schema.models.find(m => m.name === field.type.name)
+  if (!targetModel) return null
+  const target = pascal(field.type.name)
+  const where = `${target}Where`, create = `${target}Create`
+  if (field.type.kind === 'implicitM2M') return `__ManyToManyWrite<${where}, ${create}>`
+  if (field.type.array) {
+    const backKeys = targetModel.fields
+      .filter(f => f.type.kind === 'relation' && f.type.name === model.name)
+      .flatMap(f => f.attributes.find(a => a.kind === 'relation')?.fields ?? [])
+    const child = backKeys.length ? `Omit<${create}, ${[...new Set(backKeys)].map(k => `'${k}'`).join(' | ')}>` : create
+    return `__HasManyWrite<${where}, ${child}, ${target}Update>`
+  }
+  if (field.attributes.some(a => a.kind === 'relation' && a.fields)) return `__BelongsToWrite<${where}, ${create}>`
+  return null
+}
+
 // The column row tenancy stamps from the claim (`@default(auth().<claim>)`, generated).
 // A column `@default(auth().<claim>)`, tenancy's or the schema's own: the write fills it from the principal.
 const isAuthStamp = field => field.attributes.some(a => a.kind === 'default' && a.value?.kind === 'call' && a.value.fn === 'auth')
@@ -894,10 +987,10 @@ const isTenantStamp = field => field.attributes.some(a => a.kind === 'default' &
 function fieldCreateSpec(field, schema, audience, modelNames, model) {
   const { name, type, attributes } = field
 
-  if (type.kind === 'relation') return null
+  if (isRelation(field)) return null
 
-  // Skip computed / generated — db handles these
-  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
+  // Skip computed / generated / derived — db handles these
+  if (attributes.some(a => a.kind === 'computed' || a.kind === 'derived' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
 
   // Skip @guarded / @secret for client audience
   const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
@@ -930,8 +1023,9 @@ function fieldCreateSpec(field, schema, audience, modelNames, model) {
 
   // Optional in create if: has @default (an `auth()` one included: a principal's
   // client stamps it, and asSystem()'s table clients re-require it, see __Sudo),
-  // is nullable, is @id (auto-increment), is minted, or is a @digest target
-  const optional = type.optional || isId || isMinted || isDigestTarget || hasDefault
+  // is nullable, is @id (auto-increment), is minted, is a @digest target, or is
+  // an array, whose column defaults to '[]' in ddl.js
+  const optional = type.optional || isId || isMinted || isDigestTarget || hasDefault || type.array
 
   return { name, tsType, optional, comment: null }
 }
@@ -939,8 +1033,8 @@ function fieldCreateSpec(field, schema, audience, modelNames, model) {
 function fieldUpdateSpec(field, schema, audience, modelNames) {
   const { name, type, attributes } = field
 
-  if (type.kind === 'relation') return null
-  if (attributes.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
+  if (isRelation(field)) return null
+  if (attributes.some(a => a.kind === 'computed' || a.kind === 'derived' || a.kind === 'generated' || a.kind === 'funcCall' || a.kind === 'from' || (a.kind === 'zoned' && a.sources?.length))) return null
   if (name === 'createdAt' || name === 'updatedAt' || name === 'deletedAt') return null
 
   const isGuarded = attributes.some(a => a.kind === 'guarded' || a.kind === 'secret')
@@ -955,7 +1049,7 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
 
 function fieldWhereSpec(field, schema, modelNames) {
   const { name, type, attributes } = field
-  if (type.kind === 'relation') return null
+  if (isRelation(field)) return null
 
   // @transient has no column, so the client refuses it in a `where` by name —
   // offering it here would make a filter that cannot work compile.

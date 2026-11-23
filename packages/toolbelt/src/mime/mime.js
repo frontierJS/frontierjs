@@ -97,6 +97,8 @@ export const CONTENT_TYPES = {
   wav:  'audio/wav',
   ogg:  'audio/ogg',
   flac: 'audio/flac',
+  m4a:  'audio/mp4',
+  m4b:  'audio/mp4',
 
   // archives and binaries
   pdf:  'application/pdf',
@@ -170,6 +172,7 @@ export function extensionFor(type) {
 const PREFERRED = {
   'image/jpeg':  'jpg',
   'image/tiff':  'tif',
+  'audio/mp4':   'm4a',
   'text/html':   'html',
   'text/javascript': 'js',
   'application/json': 'json',
@@ -294,6 +297,8 @@ const FTYP_BRANDS = {
   heic: 'image/heic', heix: 'image/heic', hevc: 'image/heic',
   mif1: 'image/heif', msf1: 'image/heif',
   qt:   'video/quicktime',
+  // Brands are lowercased before lookup, and the trailing space is part of one.
+  'm4a ': 'audio/mp4', 'm4b ': 'audio/mp4', 'm4p ': 'audio/mp4',
 }
 
 function matches(bytes, sig, offset) {

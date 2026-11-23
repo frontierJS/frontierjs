@@ -15,6 +15,7 @@ import {
 } from '../core/context.ts'
 import { isServiceResult, unwrapResult, type ServiceResult } from '../core/envelope.ts'
 import { splitParams } from '@frontierjs/toolbelt/directives'
+import { encodePairs } from '@frontierjs/toolbelt/query'
 
 // ─── HTTP method → service method map ────────────────────────────────────
 // PUT -> update, PATCH -> patch. Both MERGE (`FJS-D179`): Feathers' word for
@@ -236,6 +237,11 @@ export const bridge = {
     },
     appRef?: import('../core/app.ts').App
   ): ServiceContext {
+    // A frame's query is JSON, which the query string's limits never met: a
+    // filter too deep for REST was served here, so a screen worked until the
+    // socket dropped and the client fell back (`FJS-4567`). The same walk that
+    // writes the query string grades it, and throws its 400.
+    encodePairs(frame.query)
     const { query, directives, flags } = readParams(frame.query)
     const method = frame.method === 'find' && flags.first ? 'get' : frame.method
     refuseUnservableWindow(directives)

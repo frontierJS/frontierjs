@@ -43,6 +43,8 @@ export type SessionOptions = {
   env?:            Record<string, string | undefined>
   /** Names this side in its request ids, the refusal of a request it does not serve, and a deny's note. */
   host?:           string
+  /** What the model reads for a deny, in place of the default naming the host and the tool; a person's note follows it. */
+  deny?:           string
   onEvent:         (e: SessionEvent) => void
   /** The CLI reported a permission mode other than the last one: what it says wins over what was asked. */
   onMode?:         (mode: string) => void
@@ -56,8 +58,8 @@ export type SessionOptions = {
   onUsage?:        (u: Usage) => void
   /** What the host adds to a prompt's card, asked when the prompt arrives and each time `cards()` is read. */
   card?:           (a: Ask) => Record<string, unknown>
-  /** The process ended, on purpose or not; called before the events that report it. */
-  onExit?:         () => void
+  /** The process ended, on purpose or not, with its exit code or the signal that ended it; called before the events that report it. */
+  onExit?:         (code: number | null, signal: NodeJS.Signals | null) => void
 }
 
 /** How long a `get_context_usage` gets before the reading is skipped: the meter keeps the last one. */
@@ -118,11 +120,11 @@ export class Session {
     child.stderr?.on('data', (chunk: string) => { err = (err + chunk).slice(-8000) })
 
     let spawnError: string | null = null
-    const died = (code: number | null) => {
+    const died = (code: number | null, signal: NodeJS.Signals | null = null) => {
       if (this.ended) return
       this.ended = true
       take(reader.flush())
-      o.onExit?.()
+      o.onExit?.(code, signal)
       if (this.closing) return
       for (const request of this.proto.close('Claude Code exited')) o.onEvent({ type: 'answered', request, behavior: 'withdrawn' })
       const tail = err.trim().split('\n').slice(-5).join('\n')
@@ -141,7 +143,7 @@ export class Session {
     // A closed stdin means no further message can reach it: the process is as good as gone.
     child.stdin?.on('error', () => { if (!this.closing) try { child.kill('SIGTERM') } catch {} })
     // `close`, not `exit`: the last stdout lines, the result among them, arrive after exit.
-    child.on('close', (code) => died(code))
+    child.on('close', (code, signal) => died(code, signal))
 
     // The answer holds the commands with their descriptions, ahead of the first turn's system/init.
     this.proto.initialize()
@@ -197,7 +199,7 @@ export class Session {
   answer(request: string, behavior: unknown, message?: unknown, extra: Extra = {}): Decision {
     const ask = this.proto.asks.get(request)
     if (!ask) throw new BadAnswer(`Claude is not waiting on request ${request.slice(0, 80)}`)
-    const decision = decide(ask, behavior, message, extra, this.host)
+    const decision = decide(ask, behavior, message, extra, this.host, this.o.deny)
     if (!decision) throw new BadAnswer('behavior is allow or deny')
     this.proto.answer(request, decision)
     this.o.onEvent({ type: 'answered', request, behavior: decision.behavior, ...(extra.always === true && decision.behavior === 'allow' ? { always: true as const } : {}) })

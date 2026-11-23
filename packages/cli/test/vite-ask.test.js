@@ -629,7 +629,7 @@ process.stdout.write(JSON.stringify({ type: 'result', subtype: 'success', is_err
       body: JSON.stringify({ instruction: 'read it' }),
     })
     const events = (await res.text()).split('\n').filter(Boolean).map(l => JSON.parse(l))
-    expect(events.find(e => e.type === 'tool')).toEqual({ type: 'tool', text: 'Read Page.mesa' })
+    expect(events.find(e => e.type === 'tool')).toEqual({ type: 'tool', id: 't', text: 'Read Page.mesa' })
   })
 
   test('an undone change is nobody\'s to submit', async () => {

@@ -393,6 +393,25 @@ test('the gate ladder fills every key of a conjunction branch — kind != x OR (
   finally { env.close() }
 })
 
+// An either-or written as two key tests that must agree, beside an optional
+// arc over one of them: with every key null the two sides differ, and the
+// ladder reported "no fixture could be built" at every level (FJS-4589, the
+// moodle prototype's GradeItem).
+test('the gate ladder fills a key when two key tests must agree — (a IS NULL) = (b IS NOT NULL)', async () => {
+  const env = await createTestEnv({ schema: `
+    model Activity { id Int @id @default(autoincrement()); label String; items Item[] }
+    model Category { id Int @id @default(autoincrement()); label String; items Item[]; owns Item[] @relation("Own") }
+    model Item { id Int @id @default(autoincrement()); name String
+      categoryId   Int?;         category   Category? @relation(fields: [categoryId], references: [id])
+      activityId   Int? @unique; activity   Activity? @relation(fields: [activityId], references: [id])
+      aggregatesId Int? @unique; aggregates Category? @relation("Own", fields: [aggregatesId], references: [id])
+      @@arc([activityId, aggregatesId], optional: true)
+      @@check("(aggregatesId IS NULL) = (categoryId IS NOT NULL)")
+      @@gate(4.4.4.8) }` })
+  try { expect(await env.verifyGateLadder()).toEqual([]) }
+  finally { env.close() }
+})
+
 test('an exactly-one arc spelled as a check keeps one key — a branch with an IS NULL in it is not taken', async () => {
   const { factories } = await makeTestClient(`
     model User { id Int @id @default(autoincrement()); name String; e E[] }

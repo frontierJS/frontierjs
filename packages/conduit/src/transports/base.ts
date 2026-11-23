@@ -181,8 +181,13 @@ export abstract class BaseTransport {
     return out
   }
 
+  // Only the http transport builds the URL it sends, so a signer's URL
+  // parameters anywhere else would be dropped and the request go out unsigned.
   protected async buildAuthHeaders(ctx: AuthContext = {}): Promise<Record<string, string>> {
-    return (await this.authorize(ctx)).headers
+    const out = await this.authorize(ctx)
+    if (out.query && Object.keys(out.query).length > 0)
+      throw new CredentialError(this.descriptor.id, this.descriptor.auth.type === 'none' ? '' : this.descriptor.auth.ref, 'the signer set URL parameters, which only an http target carries')
+    return out.headers
   }
 
   // buildAuthHeaders plus the body, for the one scheme that rewrites it: a
@@ -191,7 +196,7 @@ export abstract class BaseTransport {
   protected async authorize(ctx: AuthContext = {}): Promise<{
     headers: Record<string, string>
     body:    string | Uint8Array | undefined
-    // URL parameters only the fetch carries: an `api_key` target's `query`.
+    // URL parameters only the fetch carries: an `api_key` target's `query`, or a signer's.
     query?:  Record<string, string>
   }> {
     const auth = this.descriptor.auth
@@ -224,7 +229,7 @@ export abstract class BaseTransport {
           body:    ctx.body,
           headers: ctx.headers ?? {},
         }))
-        return { headers: out.headers ?? {}, body: out.body ?? ctx.body }
+        return { headers: out.headers ?? {}, body: out.body ?? ctx.body, ...(out.query ? { query: out.query } : {}) }
       }
 
       case 'hmac': {
@@ -327,6 +332,10 @@ export abstract class BaseTransport {
 
 // ─── Internal ────────────────────────────────────────────────
 
+// `value` is the secret resolved, for `invalidate`; `inUrl` every value the
+// fetched URL carries for the credential, each one scrubbed from what returns.
+export interface Spent { value?: string; inUrl?: string[] }
+
 interface AuthContext {
   method?:  string
   path?:    string
@@ -342,7 +351,7 @@ interface AuthContext {
   headers?: Record<string, string>
   // Filled with the secret these headers carry, so a 401 can name the one
   // the target refused to `CredentialResolver.invalidate`.
-  spent?:   { value?: string }
+  spent?:   Spent
   // Whose credential a `per_caller` target spends (`FJS-D848`).
   who?:     CredentialCaller
 }

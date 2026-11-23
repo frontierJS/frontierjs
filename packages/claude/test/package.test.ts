@@ -14,9 +14,9 @@ test('the entry exports the transport and the live chat', async () => {
   expect(Object.keys(mod).sort()).toEqual([
     'ASK_BASH', 'ASK_BUDGET_USD', 'ASK_EFFORT', 'ASK_TOOLS', 'BadAnswer', 'ControlError', 'DRAW_BUDGET_USD',
     'EDIT_TOOLS', 'EFFORTS', 'FALLBACK_MODELS', 'IMAGE_TYPES', 'LineReader', 'MAX_IMAGE', 'MAX_IMAGES', 'MODES',
-    'PICKED_MODES', 'Protocol', 'SESSION_ID', 'Session', 'WORK_BUDGET_USD',
-    'agentCall', 'agentEventOf', 'askArgv', 'askCard', 'askInput', 'askSummary', 'commandsOf', 'decide', 'denial',
-    'initOf', 'mergeCommands', 'modelsOf', 'newestPerFamily', 'readAskEvent', 'readImages', 'resumeCommand',
+    'Protocol', 'SESSION_ID', 'Session', 'WORK_BUDGET_USD',
+    'agentCall', 'agentEventOf', 'askArgv', 'askCard', 'askInput', 'askSummary', 'claudeDoor', 'commandsOf', 'decide', 'denial',
+    'initOf', 'mcpConfigOf', 'mergeCommands', 'modelsOf', 'readAskEvent', 'readImages', 'resumeCommand',
     'runAsk', 'sessionArgv', 'usageOf',
   ])
 })

@@ -41,7 +41,8 @@ export type StreamLine =
 
 /**
  * What the page draws. A `delta` is reply text as it streams; the `text` after
- * it is the same block whole, and replaces it. `read`, `edit` and `write` are
+ * it is the same block whole, and replaces it; `thinking` is a thinking block's
+ * text, whole. A `tool`'s `id` is the one its `landed`/`refused` names. `read`, `edit` and `write` are
  * what an undo reverses; `landed`/`refused` say whether the call with that id
  * went through. `error` is `runAsk`'s own, never the stream's. The `agent*`
  * events are a subagent's: its Agent call, and the `system/task_*` frames of
@@ -49,7 +50,8 @@ export type StreamLine =
  */
 export type AskEvent =
   | { type: 'session', id: string }
-  | { type: 'status' | 'delta' | 'text' | 'tool' | 'error', text: string }
+  | { type: 'status' | 'delta' | 'text' | 'thinking' | 'error', text: string }
+  | { type: 'tool', id: string, text: string }
   | { type: 'read', id: string, file: string }
   | { type: 'edit', id: string, file: string, old: string, new: string, all: boolean }
   | { type: 'write', id: string, file: string, content: string }
@@ -105,8 +107,9 @@ export function readAskEvent(line: unknown): AskEvent[] {
     const out: AskEvent[] = []
     for (const part of event.message?.content ?? []) {
       if (part.type === 'text' && part.text?.trim()) out.push({ type: 'text', text: part.text })
+      if (part.type === 'thinking' && typeof part.thinking === 'string' && part.thinking.trim()) out.push({ type: 'thinking', text: part.thinking })
       if (part.type !== 'tool_use') continue
-      out.push({ type: 'tool', text: toolLine(part) })
+      out.push({ type: 'tool', id: part.id, text: toolLine(part) })
       // What an undo reverses. Reported at the CALL, which may yet be denied;
       // the tool's result below is what says whether it landed. A Read is
       // reported because it comes before any change to that file, so it is

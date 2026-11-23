@@ -111,13 +111,13 @@ async function makeApp(opts: { mail?: boolean } = {}) {
   })
   envs.push(env)
 
-  const sent: { to: string; subject: string }[] = []
+  const sent: { to: string; subject: string; text: string }[] = []
   const app: any = {
     db: env.db, logger: noopLog(), root: join(NOTIF_DIR, '..'),
     // The mailer is real enough to be graded: what matters is whether the email
     // transport was ATTEMPTED, which a recorder answers and a missing property
     // cannot.
-    ...(opts.mail ? { mail: { send: async (m: any) => { sent.push({ to: m.to, subject: m.subject }); return { id: '1', message: 'ok' } } } } : {}),
+    ...(opts.mail ? { mail: { send: async (m: any) => { sent.push({ to: m.to, subject: m.subject, text: m.text ?? m.html ?? '' }); return { id: '1', message: 'ok' } } } } : {}),
     channel: () => undefined,
     own(name: string, value: unknown) { (this as any)[name] = value },
   }
@@ -260,6 +260,27 @@ describe('email is a capability, not a preference', () => {
     expect(sent).toHaveLength(1)
     expect(sent[0]!.to).toBe(user.email)
     expect(sent[0]!.subject).toContain('api')
+  })
+
+  test('a hub posture email names the Basecamp it is about (FJS-4587)', async () => {
+    // Two hubs can mail from one sender address, so the From line does not
+    // say which box failed; the subject and the opening line have to.
+    const { app, db, sent } = await makeApp({ mail: true })
+    const { user } = await member(db, 'hubmail')
+    await db.notificationPreference.create({
+      data: { userId: user.id, kind: 'HubPostureFailed', inApp: true, email: true },
+    })
+    const prior = process.env.FRONTIER_APP_URL
+    process.env.FRONTIER_APP_URL = 'https://camp.myknight.cloud/'
+    try {
+      await notifyPeople(app, 'HubPostureFailed', [user.id], { failed: ['hub.backup-recent: no backup'] })
+    } finally {
+      if (prior === undefined) delete process.env.FRONTIER_APP_URL
+      else process.env.FRONTIER_APP_URL = prior
+    }
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.subject).toContain('camp.myknight.cloud')
+    expect(sent[0]!.text).toContain('camp.myknight.cloud runs on is failing')
   })
 
   test('every kind can be delivered on BOTH transports', async () => {

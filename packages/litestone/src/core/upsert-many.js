@@ -64,8 +64,7 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
       : [updateFields].flat().includes(m.field))
     if (_upMono) throw new ValidationError([{ path: [_upMono.field], message:
       `${modelName}.${_upMono.field} is @monotonic, and upsertMany cannot hold its conflict half to a direction. ` +
-      `Leave it out of update:, or write it with update() or updateMany(), which refuse a backwards write by name` }],
-      { model: modelName, operation: 'upsertMany' })
+      `Leave it out of update:, or write it with update() or updateMany(), which refuse a backwards write by name` }])
     // The insert half's guard checked the payload's key and day. A conflict half
     // writing some of the fold's columns and keeping the others lands the row
     // on a key and day nobody checked, which may be a folded one.
@@ -78,8 +77,7 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
       if (partial) throw new ValidationError([{ path: [partial[0]], message:
         `${modelName} folds into ${shape.fold.into} by ${foldCols.join(', ')}, and upsertMany's conflict half would write ` +
         `${partial.join(', ')} and keep the rest, so a row could move into a folded day its create half never checked. ` +
-        `Write all of them or none, or write it with update(), which refuses that move by name` }],
-        { model: modelName, operation: 'upsertMany' })
+        `Write all of them or none, or write it with update(), which refuses that move by name` }])
     }
     // Its statements never reach writeUnit, where the append runs, so a value
     // written here would be missing from the history the router reads.
@@ -87,8 +85,7 @@ export function makeUpsertMany(/** @type {any} */ shape, /** @type {any} */ ctx,
       .find(h => data?.some((/** @type {any} */ d) => d?.[h.field] !== undefined))
     if (_upHist) throw new ValidationError([{ path: [_upHist.field], message:
       `${modelName}.${_upHist.field} is @history(into: ${_upHist.target}), and upsertMany does not append to it. ` +
-      `Write it with create(), update() or upsert(), which do` }],
-      { model: modelName, operation: 'upsertMany' })
+      `Write it with create(), update() or upsert(), which do` }])
     // No `update:` list sets every key the rows carry on a conflict.
     refuseSoftDeleteWrite(updateFields == null ? data?.find((/** @type {any} */ d) => d?.deletedAt !== undefined) : [updateFields].flat(), 'upsertMany')
     if (!data?.length) return { count: 0 }

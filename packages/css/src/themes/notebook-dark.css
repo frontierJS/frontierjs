@@ -1,0 +1,59 @@
+/*
+ * notebook-dark.css
+ * Notebook by lamplight: the same sage ink and cream paper, swapped.
+ *
+ * notebook.css's ink becomes the ground and its paper becomes the type, so
+ * the pair reads as one notebook in two lights rather than two themes. The
+ * tones are notebook's own hues, lifted until they read as text on a dark
+ * ground; THEMES pairs the two, so a light/dark switch moves between them.
+ */
+
+.theme-notebook-dark {
+  /*
+   * Native form controls, scrollbars and the <select> dropdown render dark.
+   * Without it the theme only looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
+  /*
+   * The tone-as-text lightness window, inverted — required by any theme
+   * that sets `color-scheme: dark`. See tokens.css and tones.css.
+   */
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  /* ── Ground and ink ─────────────────────────────────────────────────
+   * The grounds are notebook's --ink (#202522), a green-black, stepped
+   * either side of it. The ink is notebook's cream. --ink-mute is body text
+   * (table heads, field hints, facts), so it is fitted against
+   * --surface-raised, the lightest ground and therefore the tightest.
+   */
+  --surface:        #1c201d;
+  --surface-raised: #242925;
+  --surface-sunken: #141714;
+  --ink:            #ece7d8;
+  --ink-soft:       #c2bcab;
+  --ink-mute:       #9a9586;
+  --rule:           #313731;
+  --rule-strong:    #687068;
+
+  /* ── Tones ──────────────────────────────────────────────────────────
+   * notebook.css's hues — slate teal, sage, sea, moss, ochre, brick — at a
+   * lightness that clears AA as text on --surface-raised.
+   */
+  --color-primary:   #7fb3c6;
+  --color-secondary: #a3bb9d;
+  --color-info:      #85bfcf;
+  --color-success:   #97bd8b;
+  --color-warning:   #d9ae62;
+  --color-danger:    #e3897d;
+  --color-muted:     #959a90;
+
+  /*
+   * The default shadows are near-black at 4–10% alpha, invisible on a
+   * green-black ground; elevation needs markedly more opacity to read.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
+}

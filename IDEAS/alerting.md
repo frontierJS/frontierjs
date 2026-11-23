@@ -154,7 +154,7 @@ Goal: in an app Basecamp deploys, the crash ping reaches the channels the operat
 Done when: an app deployed by a local Basecamp, with a webhook channel picked and crash alerts on, crashes and the webhook listener receives one `AppCrashed` POST and the workspace topic one push; with Basecamp stopped the same crash reaches the ntfy trio directly; a second crash inside the window sends nothing either way.
 
 - [x] 2.1 Rule Q5–Q7. (`FJS-D2272`, `FJS-D2273`, `FJS-D2275`)
-- [ ] 2.2 basecamp schema: `AppCrashed` in `NotificationKind` and `kinds.ts` (email, in-app, push); the `AppChannel` join; the on/off switch on `App`. Check whether `NotificationContext` needs `App`.
+- [x] 2.2 basecamp schema: `AppCrashed` in `NotificationKind` and `kinds.ts` (email, in-app, push); the `AppChannel` join; the on/off switch on `App`. Check whether `NotificationContext` needs `App`. **Built 2026-11-23:** `App.isCrashAlerted` (on, `FJS-D2353`), `AppChannel` at `@@gate(2.4)` (`FJS-D2352`), `App` added to `NotificationContext`, `AppCrashed.notification.ts` (push at priority 5), migration `20261123163111_app_crash_alerts.sql`, seed links one production app. No service writes `AppChannel` yet: attach/detach methods on `apps`, after `monitors.attachChannel`, land with 2.5.
 - [ ] 2.3 basecamp: find the seam that writes an app's env at release, and mint the per-app crash credential there. A raw route takes the crash (typed body, the credential, a rate limit after `FJS-D2183`), queues the fan-out and answers 202 — the app holds its exit for at most 3 s (`FJS-D2185`), so nothing is delivered inline.
 - [ ] 2.4 notifications `crash.ts`: the destination is the relay when its settings are present, else the Q1 trio, else off; a relay that fails falls back to the trio; the window stays here (`FJS-D2186`), so a crash loop POSTs once. The boot line names the destination. `crash-ping.test.ts` gains the relay and the fallback.
 - [ ] 2.5 basecamp web: the switch and the channel picker on the App page.
@@ -197,6 +197,14 @@ Done when: an app deployed by a local Basecamp, with a webhook channel picked an
   - **A** — trigger only, no `dedupKey`: a person closes the incident.
   - **B** — `dedupKey` per app, resolved after the app has run one crash window without crashing.
   - **Recommend A** — B invents a recovery Basecamp cannot see; the managed `Monitor`'s `MonitorUp` already reports the URL answering again.
+- ~~**Q8 — Who may pick an app's crash channels?**~~ **Answered 2026-11-23 (`FJS-D2352`): A — developers: `AppChannel` is `@@gate(2.4)`, the App's own write level, as `MonitorChannel` takes the `Monitor`'s.** Making a channel stays admin's (`NotificationChannel` is `@@gate(2.5)`); writing an `App` is a developer's (`@@gate(2.4.4.4)`), and a `Monitor`'s picks are an admin's because the `Monitor` is.
+  - **A** — developers: `AppChannel` is `@@gate(2.4)`, the App's own write level, as `MonitorChannel` takes the `Monitor`'s.
+  - **B** — admins: `@@gate(2.5)`, as every other channel join; the App's switch, written at the App's level, then needs its own guard or a developer can still silence what they cannot reroute.
+  - **Recommend A** — a join's gate is its parent's in both siblings, and a developer who may delete the app gains nothing by muting it; the credential stays behind the admin-only channel.
+- ~~**Q9 — Is a new App's crash alerting on or off?**~~ **Answered 2026-11-23 (`FJS-D2353`): A — on: `App.isCrashAlerted Boolean @default(true)`; with no channel picked a crash still reaches people through the kind's defaults and the workspace push topic.**
+  - **A** — on: `App.isCrashAlerted Boolean @default(true)`; with no channel picked a crash still reaches people through the kind's defaults and the workspace push topic.
+  - **B** — off until someone turns it on.
+  - **Recommend A** — `isPagedForFleet`'s reason: a crash nobody heard about is the failure, so silence is the opt-out.
 
 ## See also
 

@@ -248,6 +248,22 @@ describe('createTestEnv — the API tier', () => {
     expect((await e.system.lead.findUnique({ where: { id: fx.id } })).name).toBe('fixture')
     await e.close()
   })
+
+  // FJS-4584: a real app's cron firing at a wall-clock boundary inside a test
+  // made that test pass or fail by the time of day.
+  test('the app runs nothing on its own clock', async () => {
+    let ran = 0
+    const e = await env({
+      api: ({ db }: any) => {
+        const app = buildApp(db)
+        app.scheduler.every('10ms', () => { ran++ })
+        return app
+      },
+    })
+    await new Promise(r => setTimeout(r, 60))
+    expect(ran).toBe(0)
+    await e.close()
+  })
 })
 
 describe('sessionContext()', () => {

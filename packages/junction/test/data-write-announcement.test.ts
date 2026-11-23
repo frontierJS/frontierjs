@@ -844,6 +844,37 @@ describe('a write moves a @from on another model (FJS-2632)', () => {
   })
 })
 
+// FJS-D2345 — a `@stale` mark is set by trigger, and a trigger write reaches no
+// write event, so a screen holding the aggregate row kept reading it fresh.
+describe('a write to a @stale source regrades the aggregate\'s service (FJS-D2345)', () => {
+  const STALE = `
+    model Rollup { id Int @id  total Int?  stale Boolean @default(false) @system @stale(on: [items])
+                   items Item[] }
+    model Item   { id Int @id  score Int  rollupId Int  rollup Rollup @relation(fields: [rollupId], references: [id]) }
+    model Note   { id Int @id  text String }
+  `
+  type Sys = Record<string, Record<string, (a: unknown) => Promise<unknown>>>
+
+  test('creating a source row tells the aggregate\'s service to re-read, and an unrelated write does not', async () => {
+    const db  = await createClient({ db: ':memory:', schema: STALE })
+    const app = createApp({ db: db as never })
+    for (const [name, model] of [['rollups', 'Rollup'], ['items', 'Item'], ['notes', 'Note']])
+      app.services.register(createService({ name, model, db: db as never }))
+    await app._startForTest()
+    const sys = () => (db as never as { asSystem(): Sys }).asSystem()
+    await sys().rollup.create({ data: { id: 1 } })
+    await tick(); await tick()
+    const seen: string[] = []
+    app.events.on('rollups:changed', (d: { operation: string }) => { seen.push(d.operation) })
+    await sys().note.create({ data: { id: 1, text: 'x' } })
+    await tick(); await tick()
+    expect(seen).toEqual([])
+    await sys().item.create({ data: { id: 1, score: 5, rollupId: 1 } })
+    await tick(); await tick()
+    expect(seen).toEqual(['regrade'])
+  })
+})
+
 // FJS-2919 — a model counting its own children: the child write announces the
 // child row, and the parent whose count moved was dropped as the written
 // model's own service.
@@ -1002,4 +1033,46 @@ describe('a write to a column no read verdict reads regrades nothing (FJS-3127)'
     await tick(); await tick()
     expect(seen).toContain('chunks:changed:regrade')
   })
+})
+
+// FJS-4568: the ELA shape. `messages.promote` creates a Task, joins the Message
+// to it through the Task's update, announces nothing of its own and answers the
+// Task. The Message row's columns never move, so the joined event (FJS-2013) is
+// all a list filtered by the relation hears. Without `answers: 'Task'` the
+// call's `$.dispatch = false` covers `$.id`, the very message joined, and the
+// tap stays quiet in either mode -- transactional is not what drops it.
+describe('a many-to-many connect inside a method that answers another model (FJS-4568)', () => {
+  const M2M = `
+    model Message { id Int @id  title String  tasks Task[] }
+    model Task    { id Int @id  title String  messages Message[] }
+  `
+  for (const transactional of [false, true]) {
+    test(`the joined message is announced${transactional ? ' (transactional)' : ''}`, async () => {
+      const { $ } = await import('../src/core/context.ts')
+      const db = await createClient({ db: ':memory:', schema: M2M }) as never as Record<string, any>
+      const app = createApp({ db: db as never })
+      app.services.register(createService({
+        name: 'messages', model: 'Message', db: db as never,
+        ...(transactional ? { transactional: ['promote'] } : {}),
+        methods: [{ method: 'promote', answers: 'Task' }],
+        async promote() {
+          const tdb = $.db as never as Record<string, any>
+          const task = await tdb.task.create({ data: { title: 'ticket' } })
+          await tdb.task.update({ where: { id: task.id }, data: { messages: { connect: { id: 7 } } } })
+          $.dispatch = false
+          return tdb.task.findUnique({ where: { id: task.id } })
+        },
+      } as never))
+      app.services.register(createService({ name: 'tasks', model: 'Task', db: db as never }))
+      await app._startForTest()
+      await db.asSystem().message.create({ data: { id: 7, title: 'mail' } })
+      await tick()
+      const seen: string[] = []
+      for (const e of ['messages:updated', 'tasks:created'])
+        app.events.on(e, (row: { id: number }) => { seen.push(`${e}#${row.id}`) })
+      await (app.service('messages') as never as { call(m: string, ...a: unknown[]): Promise<unknown> }).call('promote', 7)
+      await tick(); await tick()
+      expect(seen.sort()).toEqual(['messages:updated#7', 'tasks:created#1'])
+    })
+  }
 })

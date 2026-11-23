@@ -13,6 +13,7 @@ prototype depends on it directly.
 | ------ | ---------- |
 | `askArgv(profile)` | the `claude -p` command line for one profile, below |
 | `sessionArgv(opts)` | a long-lived chat a host drives over stdin: stream-json both ways, every prompt to the host (`--permission-prompt-tool stdio`) |
+| `claudeDoor(opts)` | the one-answer door (`@frontierjs/toolbelt/ask`): a question in, a `Reply` out, never a throw; `mcpConfigOf(agent)` is the `--mcp-config` JSON it and the `agent` profile share |
 | `runAsk(opts)` | starts one `askArgv` run detached in `root`, the prompt on stdin, and calls `onEvent` per drawn event (`onFrame` per raw line); takes the `work` profile; with `log` the child writes that file itself and outlives the caller, `onExit` hearing its code and signal; `{ error }` for a bad session id, effort or agent |
 | `readAskEvent(line)` | one parsed stream-json line → `AskEvent[]` (`session`, `status`, `delta`, `text`, `tool`, `read`/`edit`/`write`, `landed`/`refused`, `result`) |
 | `readImages(list)`, `askInput(prompt, images)` | pasted images checked, and the one stream-json message that carries them |
@@ -26,7 +27,7 @@ prototype depends on it directly.
 
 ## The profiles
 
-- **read-only** (the default) — `Read`, `Grep`, `Glob` and an allow-listed Bash, hooks off, no MCP, `$2`.
+- **read-only** (the default) — `Read`, `Grep`, `Glob` and an allow-listed Bash (`bash` replaces the list), `dontAsk`, hooks off, no MCP, `$2` unless `budget` says otherwise.
 - **edit** — `Edit`/`Write` scoped to one path, every settings source dropped, `dontAsk`.
 - **work** — every tool, `bypassPermissions`, a budget, hooks off unless asked.
 - **agent** — no built-in tool, one MCP server the caller names.
@@ -36,3 +37,23 @@ What each run SAYS is the caller's: `@frontierjs/cli`'s `core/{plan,edit,ask}-pr
 Workbench's reviewer. This package holds no prompt, and a test fails when an export looks like one.
 
 The control protocol a live chat speaks, measured frame by frame, is `docs/control-protocol.md`.
+
+## The one-answer door
+
+`claudeDoor(options)` answers `@frontierjs/toolbelt/ask`'s contract with the local `claude`: one
+question, one `Reply`, never a throw, never a retry. It is a completion, not a session: no tool unless
+`allow` names one, no hooks, no settings files, no MCP server but `agent`, no session kept unless
+`persist` or `resume`, `dontAsk`. The prompt goes on stdin, and an agent's `headers` go in a 0600 file
+that is removed afterwards, never argv. Every reply also carries `run: { session, turns, denials }`.
+`forbidden` and `refused` are never produced: nothing local causes either.
+
+```js
+import { claudeDoor } from '@frontierjs/claude'
+import { checkReply } from '@frontierjs/toolbelt/ask'
+
+const door = claudeDoor({ model: 'haiku' })
+const question = { prompt: 'What is 2+2?', schema: { type: 'object', properties: { n: { type: 'number' } }, required: ['n'] } }
+const reply = await door(question, { signal: AbortSignal.timeout(60_000) })
+console.log(reply.ok ? reply.answer : reply.failure, checkReply(reply, question))
+// { n: 4 } []
+```

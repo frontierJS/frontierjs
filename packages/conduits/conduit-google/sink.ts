@@ -9,18 +9,20 @@
 import { mapsSink, type ModuleSink } from './sink/maps.ts'
 import { fcmSink } from './sink/fcm.ts'
 
-export { KNOWN_PLACES } from './sink/maps.ts'
+export { KNOWN_PLACES, SIGNING_SECRET, STATIC_PNG } from './sink/maps.ts'
 
 export interface GoogleSinkOptions {
   port?:      number
   /** The one key the Maps APIs accept. */
   key?:       string
+  /** The Static API's signing secret; `SIGNING_SECRET` by default. */
+  signingSecret?: string
   /** The Firebase project the FCM module answers for. */
   projectId?: string
 }
 
 export function startGoogleSink(opts: GoogleSinkOptions = {}) {
-  const maps = mapsSink({ key: opts.key })
+  const maps = mapsSink({ key: opts.key, signingSecret: opts.signingSecret })
   const fcm  = fcmSink({ projectId: opts.projectId })
   const modules: ModuleSink[] = [maps, fcm]
 

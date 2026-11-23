@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import * as claude from '../index.ts'
-import { ASK_BASH, ASK_EFFORT, DRAW_BUDGET_USD, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, sessionArgv, readAskEvent, runAsk } from '../index.ts'
+import { ASK_BASH, ASK_BUDGET_USD, ASK_EFFORT, DRAW_BUDGET_USD, EFFORTS, WORK_BUDGET_USD, askArgv, askInput, sessionArgv, readAskEvent, runAsk } from '../index.ts'
 import type { Agent, AskEvent, RunAskOptions } from '../index.ts'
 
 const SESSION = '5acea7bb-3850-44cf-81dc-97688510acda'
@@ -98,6 +98,57 @@ describe('askArgv', () => {
     expect(askArgv({ work: {}, fork: true })).not.toContain('--fork-session')
   })
 
+  test('the headless loop: auto mode over the project settings, hooks on, no account MCP, a lane\'s worktree added', () => {
+    const argv = askArgv({ work: { permission: 'auto', hooks: true, settingSources: 'project,local', mcp: false, addDirs: ['/tmp/x'], budget: 1 } })
+    expect(argv).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--permission-mode', 'auto',
+      '--max-budget-usd', '1',
+      '--setting-sources', 'project,local',
+      '--strict-mcp-config',
+      '--add-dir', '/tmp/x',
+    ])
+    expect(argv).not.toContain('bypassPermissions')
+  })
+
+  test('work with no permission named is bypassPermissions, and leaves the settings sources and MCP alone', () => {
+    expect(askArgv({ work: {} })).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--permission-mode', 'bypassPermissions',
+      '--max-budget-usd', String(WORK_BUDGET_USD),
+      '--settings', '{"disableAllHooks":true}',
+    ])
+  })
+
+  test('the Workbench work run: a fork, an appended prompt, partials, and no --effort at all', () => {
+    expect(askArgv({ work: {}, session: SESSION, fork: true, partial: true, appendSystem: 'ctx', effort: null })).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--permission-mode', 'bypassPermissions',
+      '--max-budget-usd', String(WORK_BUDGET_USD),
+      '--settings', '{"disableAllHooks":true}',
+      '--resume', SESSION, '--fork-session',
+      '--include-partial-messages',
+      '--append-system-prompt', 'ctx',
+    ])
+  })
+
+  test('read-only: bash replaces ASK_BASH rather than adding to it, and budget replaces ASK_BUDGET_USD', () => {
+    const argv = askArgv({ bash: ['basecamp todos list:*'], budget: 1 })
+    expect(argv).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--settings', '{"disableAllHooks":true}',
+      '--strict-mcp-config',
+      '--permission-mode', 'dontAsk',
+      '--tools', 'Read,Grep,Glob,Bash',
+      '--allowedTools', 'Bash(basecamp todos list:*)',
+      '--max-budget-usd', '1',
+    ])
+    for (const p of ASK_BASH) expect(argv).not.toContain(`Bash(${p})`)
+    const plain = askArgv()
+    expect(plain[plain.indexOf('--max-budget-usd') + 1]).toBe(String(ASK_BUDGET_USD))
+    expect(askArgv({ budget: 0 })).toEqual(plain)
+  })
+
   test('draw: no tool, the system prompt replaced, no settings file, hooks or MCP, the budget stated', () => {
     const argv = askArgv({ draw: { system: 'draw it', budget: 5 } })
     expect(argv[argv.indexOf('--tools') + 1]).toBe('')
@@ -122,6 +173,44 @@ describe('askArgv', () => {
     expect(runAsk({ root: dir, prompt: 'x', agent: nameless })).toEqual({ error: 'an agent names its MCP server' })
   })
 
+  test('answer: a completion — no settings, tools derived from the allow rules, the schema and system inline, no session kept', () => {
+    const argv = askArgv({ answer: { schema: { type: 'object' }, system: 'be brief', allow: ['Read', 'Bash(rg:*)', 'Bash(ls:*)'], addDirs: ['/a', '/b'], budget: 0.5 }, model: 'haiku', effort: 'low' })
+    expect(argv).toEqual([
+      '-p', '--output-format', 'stream-json', '--verbose',
+      '--settings', '{"disableAllHooks":true}', '--setting-sources', '',
+      '--strict-mcp-config', '--permission-mode', 'dontAsk',
+      '--tools', 'Read,Bash',
+      '--allowedTools', 'Read', 'Bash(rg:*)', 'Bash(ls:*)',
+      '--json-schema', '{"type":"object"}',
+      '--system-prompt', 'be brief',
+      '--add-dir', '/a', '--add-dir', '/b',
+      '--max-budget-usd', '0.5',
+      '--no-session-persistence',
+      '--effort', 'low', '--model', 'haiku',
+    ])
+    const bare = askArgv({ answer: {} })
+    expect(bare[bare.indexOf('--tools') + 1]).toBe('')
+    expect(bare).not.toContain('--allowedTools')
+    expect(bare[bare.indexOf('--max-budget-usd') + 1]).toBe(String(ASK_BUDGET_USD))
+  })
+
+  test('answer: persist keeps the session, a session resumes it, an agent is allowed by server and its config is a path', () => {
+    expect(askArgv({ answer: { persist: true } })).not.toContain('--no-session-persistence')
+    const resumed = askArgv({ answer: {}, session: SESSION })
+    expect(resumed.slice(-2)).toEqual(['--resume', SESSION])
+    expect(resumed).not.toContain('--no-session-persistence')
+    const argv = askArgv({ answer: { agent: { server: 'app', url: 'http://x/mcp', headers: { authorization: 'Bearer s3cret' } }, mcpConfig: '/tmp/d/mcp.json' } })
+    expect(argv[argv.indexOf('--allowedTools') + 1]).toBe('mcp__app')
+    expect(argv[argv.indexOf('--mcp-config') + 1]).toBe('/tmp/d/mcp.json')
+    expect(argv.join(' ')).not.toContain('s3cret')
+  })
+
+  test('mcpConfigOf is the one shape; the inline agent profile refuses a header', () => {
+    expect(claude.mcpConfigOf({ server: 'app', url: 'http://x/mcp' })).toEqual({ mcpServers: { app: { type: 'http', url: 'http://x/mcp' } } })
+    expect(claude.mcpConfigOf({ server: 'app', url: 'http://x/mcp', headers: { a: 'b' } })).toEqual({ mcpServers: { app: { type: 'http', url: 'http://x/mcp', headers: { a: 'b' } } } })
+    expect(() => askArgv({ agent: { server: 'app', url: 'http://x/mcp', headers: { a: 'b' } } })).toThrow('headers')
+  })
+
   test('effort is passed when named and left to the account when not', () => {
     expect(askArgv()).not.toContain('--effort')
     expect(askArgv({ work: {} })).not.toContain('--effort')
@@ -133,18 +222,19 @@ describe('askArgv', () => {
 
 describe('readAskEvent', () => {
 
-  test('init → session, text and tool calls → lines, thinking → nothing', () => {
+  test('init → session, text, thinking and tool calls → lines, each call with its id', () => {
     expect(readAskEvent({ type: 'system', subtype: 'init', session_id: SESSION })).toEqual([{ type: 'session', id: SESSION }])
     expect(readAskEvent({ type: 'assistant', message: { content: [
       { type: 'thinking', thinking: '…' },
       { type: 'text', text: 'It failed because…' },
-      { type: 'tool_use', name: 'Bash', input: { command: 'git status --short\nsecond line' } },
-      { type: 'tool_use', name: 'Read', input: { file_path: 'ISSUES.md' } },
+      { type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'git status --short\nsecond line' } },
+      { type: 'tool_use', id: 'u2', name: 'Read', input: { file_path: 'ISSUES.md' } },
     ] } })).toEqual([
+      { type: 'thinking', text: '…' },
       { type: 'text', text: 'It failed because…' },
-      { type: 'tool', text: 'Bash git status --short' },
-      { type: 'tool', text: 'Read ISSUES.md' },
-      { type: 'read', file: 'ISSUES.md' } as AskEvent,
+      { type: 'tool', id: 'u1', text: 'Bash git status --short' },
+      { type: 'tool', id: 'u2', text: 'Read ISSUES.md' },
+      { type: 'read', id: 'u2', file: 'ISSUES.md' },
     ])
     expect(readAskEvent({ type: 'rate_limit_event' })).toEqual([])
   })

@@ -134,6 +134,24 @@ check('the ground rect is drawn under the tiles',
   check('an explicit zoom is used', images(zoomed).every((i) => /\/15\//.test(attr(i, 'href'))))
 }
 
+
+// ── An image basemap: one <image> for the whole map ──────────────────────────
+{
+  const imageMap = { image: 'https://api.test/static?center={lat},{lng}&zoom={zoom}&size={width}x{height}&scale={scale}', maxSize: 640, scale: 2 }
+  const out = await render({ basemap: imageMap, label: 'Imaged', center, width: 500, height: 300, markers: [{ at: center, tone: 'info' }], shapes: [{ geojson: lot, tone: 'success' }] })
+  const one = images(out)
+  check('an image basemap renders exactly one <image>', one.length === 1, one.join('\n    '))
+  check('it covers the box at 0 0 and carries the URL', attr(one[0], 'x') === '0' && attr(one[0], 'y') === '0'
+    && attr(one[0], 'width') === '500' && attr(one[0], 'height') === '300'
+    && attr(one[0], 'href').replaceAll('&amp;', '&') === 'https://api.test/static?center=40.7128,-74.006&zoom=19&size=500x300&scale=2', one[0])
+  check('the center marker sits at the box center', attr(tagWith(out, 'g', 'marker'), 'transform') === 'translate(250 150)', tagWith(out, 'g', 'marker'))
+  check('the shape is still drawn over the image', attr(tagWith(out, 'path', 'shape'), 'd')?.startsWith('M'))
+  check('an empty attribution draws no figcaption; no style= attribute', !/<figcaption/.test(out) && !/\sstyle=/.test(out))
+  check('the image comes after the ground and before the shape', out.indexOf('<rect') < out.indexOf('<image') && out.indexOf('<image') < out.indexOf(tagWith(out, 'path', 'shape')))
+  const over = await refusal({ basemap: imageMap, label: 'x', center, width: 700, height: 300 })
+  check('refuses a box over maxSize', over.includes('maxSize of 640'), over)
+}
+
 // ── Refusals, each by name ───────────────────────────────────────────────────
 for (const [name, bad, want] of [
   ['a missing label', { ...props, label: undefined }, 'label is required'],

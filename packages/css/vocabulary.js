@@ -768,6 +768,7 @@ const NOT_ANATOMY = {
   'theme-default': 'A theme', 'theme-dark': 'A theme', 'theme-midnight': 'A theme',
   'theme-forest': 'A theme', 'theme-sunset': 'A theme', 'theme-elite': 'A theme',
   'theme-basecamp': 'A theme', 'theme-notebook': 'A theme',
+  'theme-notebook-dark': 'A theme',
   'theme-press': 'A theme', 'theme-field': 'A theme',
   'theme-dracula': 'A theme', 'theme-twilight': 'A theme',
   'theme-expedition': 'A theme', 'theme-catppuccin': 'A theme',

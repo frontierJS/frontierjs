@@ -87,3 +87,13 @@ describe('m2m nested write announces the joined model', () => {
     expect(messageUpdates()).toEqual([])
   })
 })
+
+describe('m2m nested write inside a committed transaction', () => {
+  test('connect through the transaction client announces the joined model at commit (FJS-4568)', async () => {
+    await db.$transaction(async (tx: any) => {
+      await tx.task.update({ where: { id: 1 }, data: { messages: { connect: [{ id: 1 }] } } })
+    })
+    await settle()
+    expect(messageUpdates().map(e => e.result?.id)).toEqual([1])
+  })
+})

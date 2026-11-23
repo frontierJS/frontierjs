@@ -52,5 +52,20 @@ export function placedTrails(schema: any, places: Record<string, string>): Array
  * @returns {string|null}
  */
 export function tenantFrom(resolution: any, { host, headers, principal }?: any): string | null;
+/**
+ * The belongsTo hops from `modelName` to the model carrying the tenant column:
+ * `[]` when the model carries it itself, null under no row tenancy or when no
+ * path reaches one.
+ * @param {any} schema
+ * @param {Record<string, any>} shapes
+ * @param {string} modelName
+ * @returns {Array<{ field: string, fks: string[], target: string, refs: string[] }> | null}
+ */
+export function tenantHops(schema: any, shapes: Record<string, any>, modelName: string): Array<{
+    field: string;
+    fks: string[];
+    target: string;
+    refs: string[];
+}> | null;
 export function tenantAdmission(claim?: any): string;
 export function isUrl(s?: string): boolean;

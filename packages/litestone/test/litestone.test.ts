@@ -15427,7 +15427,7 @@ const POLICY_LADDER_SCHEMA = `
     ownerId String
     title   String
     @@gate(2.4.4.5)
-    @@allow(create, ownerId == auth().id || title == 'open')
+    @@allow(create, ownerId == auth().id && title != 'closed')
   }
 `
 
@@ -15905,7 +15905,7 @@ describe('createTestEnv', () => {
   test('a create policy pinning a column to the caller is graded, not skipped', async () => {
     // PushSubscription's `@@allow(all, userId == auth().id)` reported every
     // admitted create level as skipped; the fixture is now owned by the caller.
-    const schema = POLICY_LADDER_SCHEMA.replace(" || title == 'open'", '')
+    const schema = POLICY_LADDER_SCHEMA.replace(" && title != 'closed'", '')
     const env    = await createTestEnv({ schema })
     expect(await env.verifyGateLadder({ ops: ['create'] })).toEqual([])
 
@@ -15941,6 +15941,41 @@ describe('createTestEnv', () => {
     const stricter = parse(schema.replaceAll('@@gate(2.4.4.5)', '@@gate(2.5.4.5)')).schema
     const caught   = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
     expect(caught.map((m: any) => [m.model, m.level, m.got])).toEqual([['Playlist', 4, 'allow'], ['PlaylistTrack', 4, 'allow']])
+    env.close()
+  })
+
+  // FJS-4560: an OR in the allow, a claim the synthetic caller did not hold, a
+  // literal on the parent and a parent its read policy hid each made the create
+  // unpinnable, so it was skipped.
+  test('a create policy with a disjunction, a claim and a parent literal is graded, not skipped', async () => {
+    const schema = `
+      claim commenterId
+      enum PostStatus { draft published }
+      model Post {
+        id           Int        @id
+        title        String
+        commentsOpen Boolean
+        status       PostStatus @default(draft)
+        comments     Comment[]
+        @@gate(0.4.4.5)
+        @@allow(read, status == 'published' || auth().isAdmin)
+      }
+      model Comment {
+        id          Int    @id
+        postId      Int
+        post        Post   @relation(fields: [postId], references: [id])
+        commenterId Int?
+        body        String
+        @@gate(0.0.5.5)
+        @@allow(create, (commenterId == auth().commenterId || auth().isAdmin) && post.commentsOpen == true)
+      }
+    `
+    const env = await createTestEnv({ schema })
+    expect(await env.verifyGateLadder({ ops: ['create'] })).toEqual([])
+
+    const stricter = parse(schema.replace('@@gate(0.0.5.5)', '@@gate(0.1.5.5)')).schema
+    const caught   = await env.verifyGateLadder({ against: stricter, ops: ['create'] })
+    expect(caught.map((m: any) => [m.model, m.level, m.got])).toEqual([['Comment', 0, 'allow']])
     env.close()
   })
 
@@ -17043,7 +17078,7 @@ describe('generateTypeScript', () => {
 
   test('emits TableClient<TRow, TCreate, TUpdate, TWhere>', () => {
     const dts = generateTypeScript(schema)
-    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}>')
+    expect(dts).toContain('export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}, TName = never>')
     expect(dts).toContain('findMany<')
     expect(dts).toContain('createMany<')
     expect(dts).toContain('findManyCursor(')
@@ -17062,8 +17097,8 @@ describe('generateTypeScript', () => {
     `)
     const dts = generateTypeScript(withMoves)
     expect(dts).toContain('transition(id: TRow | string | number, name: TMove, opts?: { system?: boolean }): Promise<TRow>')
-    expect(dts).toContain("readonly order: TableClient<Order, OrderCreate, OrderUpdate, OrderWhere, OrderRelations, 'pay' | 'ship', 'status'>")
-    expect(dts).toContain('readonly note: TableClient<Note, NoteCreate, NoteUpdate, NoteWhere, NoteRelations, never, never>')
+    expect(dts).toContain("readonly order: TableClient<Order, OrderCreate, OrderUpdate, OrderWhere, OrderRelations, 'pay' | 'ship', 'status', {}, {}, 'Order'>")
+    expect(dts).toContain("readonly note: TableClient<Note, NoteCreate, NoteUpdate, NoteWhere, NoteRelations, never, never, {}, {}, 'Note'>")
   })
 
   // FJS-3079
@@ -17081,10 +17116,10 @@ describe('generateTypeScript', () => {
     const dts = generateTypeScript(withSys, { audience: 'system' })
     for (const call of ['create', 'createMany', 'update', 'updateMany', 'upsert', 'upsertMany'])
       expect(dts.match(new RegExp(`  ${call}<.*K extends TSys = never>.*system\\?: K\\[\\]`))).not.toBeNull()
-    expect(dts).toContain("ComponentRelations, never, 'lastCheckOk' | 'token' | '@@gate', ComponentSystem>")
-    expect(dts).toContain('PlainRelations, never, never>')
+    expect(dts).toContain("ComponentRelations, never, 'lastCheckOk' | 'token' | '@@gate', ComponentSystem, {}, 'Component'>")
+    expect(dts).toContain("PlainRelations, never, never, {}, {}, 'Plain'>")
     // the client audience cannot see a @guarded column, so cannot lift it
-    expect(generateTypeScript(withSys)).toContain("ComponentRelations, never, 'lastCheckOk' | '@@gate', ComponentSystem>")
+    expect(generateTypeScript(withSys)).toContain("ComponentRelations, never, 'lastCheckOk' | '@@gate', ComponentSystem, {}, 'Component'>")
   })
 
   // FJS-3107
@@ -17113,8 +17148,8 @@ describe('generateTypeScript', () => {
   test('emits LitestoneClient with all models', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('export interface LitestoneClient {')
-    expect(dts).toContain('readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, never>')
-    expect(dts).toContain('readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, never>')
+    expect(dts).toContain("readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere, AccountRelations, never, never, {}, {}, 'Account'>")
+    expect(dts).toContain("readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere, UserRelations, never, never, {}, {}, 'User'>")
     expect(dts).toContain('asSystem(): __Sudo<LitestoneClient>')
     expect(dts).toContain('$tapQuery(')
   })
@@ -21041,7 +21076,7 @@ describe('type declarations', () => {
     expect(body('Check')).toMatch(/polledAt\?:\s*string \| null\n/)
     expect(body('CheckCreate')).toMatch(/scheduledFor:\s*string \| Date\n/)
     expect(body('CheckCreate')).toMatch(/polledAt\?:\s*string \| Date \| null\n/)
-    expect(body('CheckCreate')).toMatch(/marks:\s*\(string \| Date\)\[\]/)
+    expect(body('CheckCreate')).toMatch(/marks\?:\s*\(string \| Date\)\[\]/)
     expect(body('CheckUpdate')).toMatch(/scheduledFor\?:\s*string \| Date\n/)
     expect(body('CheckWhere')).toMatch(/scheduledFor\?:\s*string \| Date \| WhereOp<string \| Date> \| null\n/)
   })
@@ -26312,7 +26347,7 @@ describe('@default(auth().id) — typegen (FJS-4154)', () => {
 
   test('asSystem() has no principal to stamp from, so its table client re-requires it', () => {
     const ts = generateTypeScript(schema)
-    expect(ts).toMatch(/TableClient<Star, StarCreate[^\n]*Required<Pick<StarCreate, 'userId'>>>/)
+    expect(ts).toMatch(/TableClient<Star, StarCreate[^\n]*Required<Pick<StarCreate, 'userId'>>, 'Star'>/)
   })
 })
 

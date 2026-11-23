@@ -5439,11 +5439,17 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d2345"></a>2026-11-23 · `FJS-D2345` — Which surface lists `@stale`'s sources per schema — Widen `fromReach`/`fromColumns` (`policy.js`) to include each `@stale` source model as whole-model (in `$fromReach`, absent from `$fromColumns`). Keep the name and reword its comment to "the models whose write moves a value on this one's rows without the client announcing it". Amend `FJS-D2307`'s sentence so the sources reach junction through `$fromReach`, and the per-field listing is the DDL comment. Proved by an introspect case and a junction case where a source write regrades a service holding the declaring model.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, plus a new client probe `$staleSources(accessor)` → `{ field: [{ path, source, where }] }`, threaded through the four client proxies (`client.js` root/system/auth/scoped). It adds a field-level map with no consumer today), **C** (build `FJS-D2307` literally: a per-schema `rollupSources` section in `litestone access` or a `litestone advise` rule that `fli check` reads. There is no question for it to answer, and it leaves the live-regrade miss in place).
+
+The paper's recommendation, taken as written: it coins no noun and keeps the existing owner, and it fixes the one consumer that misses the mark today. Over-regrading a whole source model costs one spurious re-read, against a stale screen. The fork inside A is to keep `$fromReach`'s name (fewer callers, no new convention) or rename it with no alias (e.g. `$valueReach`) across junction, the four proxies and the tests (`decision-rules`, confidence 2). The owner kept the name. Built in `introspect.js` rather than `policy.js`, because `stale.js` already imports `policy.js`: `staleSources` (`stale.js`) is merged into `$fromReach` and removed from `$fromColumns`. Proved by `test/stale.test.ts` § each source reaches $fromReach, and by junction's `data-write-announcement.test.ts` § FJS-D2345, which fails without the merge.
+
 ### <a id="fjs-d2332"></a>2026-11-23 · `FJS-D2332` — Does litestone's object form accept a shorter `select` — Yes, both shorthands, through one owner. `select` takes a list as well as the object: a plain name (`'id'`) is a column, and a `$populate`-grammar path (`'tickets.ticketType.event:title'`, with dots for the relation hops and `:` before the leaf fields joined by `+`) is a relation projection. Both normalize to today's object tree in ONE pure function in `@frontierjs/toolbelt/query`, beside `normalizeSelect`. Junction's private `parsePopulate` moves there (Invariant 1: litestone cannot import junction), so junction's `$select`/`$populate` and litestone's argument share one parse (Invariant 4). An unknown name or path segment is still refused by name, so FJS-828's silent `{}` stays impossible. This reverses only FJS-828's "the list is not accepted as a second spelling" clause.
 
 Raised while reading grouppi's brace-heavy reads (`payments.ts` `exportYear`, `dues.ts` `remindUnpaid`). **Picked over** an Eloquent-style chain (a closure cannot cross the wire the object form crosses, and against raw SQL it adds only `.when()`), raw `asSystem().sql` (no gate, tenancy, decode or types), dotted paths alone (the `decision-rules` verdict, which kept FJS-828 whole; the measured pain is mostly long flat `{ a: true, … }` lists, and calling the existing owner is not a second owner), and neither (``where: { $raw: sql`…` }`` remains the SQL door either way). Open at build time: a middle hop in the populate grammar includes the whole row (`tickets` above), and whether a path may name only the leaf is unruled. Not built.
 
-### <a id="fjs-d2307"></a>2026-11-23 · `FJS-D2307` — What build shape does `FJS-D1301` C take — A `@system` Boolean on the aggregate's own model takes `@stale(on: [<source>.<path>, …])`, and each source carries its own relation path plus `@from`'s `where: this.userId` correlation. For each source, litestone's DDL emits an AFTER INSERT/UPDATE/DELETE trigger trio that sets the flag on the live parent row, in the same statement as the change. This is the `@@refreshOn` pattern (`ddl.js` ~1289) with a one-row UPDATE in place of a rebuild. The app's job "clears" the flag by inserting the successor row with it false. `stale: true` is then an ordinary `where`, and the catalog's `rollupSources` row is what `fli check` reads. Two cases stay silent: a source the author forgot to list, and a user with no aggregate row yet, whom the job must select itself.
+### <a id="fjs-d2307"></a>2026-11-23 · `FJS-D2307` — What build shape does `FJS-D1301` C take — A `@system` Boolean on the aggregate's own model takes `@stale(on: [<source>.<path>, …])`, and each source carries its own relation path plus `@from`'s `where: this.userId` correlation. For each source, litestone's DDL emits an AFTER INSERT/UPDATE/DELETE trigger trio that sets the flag on the live parent row, in the same statement as the change. This is the `@@refreshOn` pattern (`ddl.js` ~1289) with a one-row UPDATE in place of a rebuild. The app's job "clears" the flag by inserting the successor row with it false. `stale: true` is then an ordinary `where`. Each source's model reaches junction's live regrade through `$fromReach`, and the per-field listing is the DDL's `-- M.f is stale after a write to …` comment; no catalog `rollupSources` row exists (amended by `FJS-D2345`). Two cases stay silent: a source the author forgot to list, and a user with no aggregate row yet, whom the job must select itself.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the ruling's sketch read literally: one FK path, with the flag on the parent model (`GradeItem`), per item. The trigger cost is the same as A's, but one student's attempt marks the whole class's category stale, and the flag sits on a teacher-gated row), **C** (no write side: staleness is computed at read time as `max(child.computedAt) > own computedAt`, through `@from`/`@derived`, plus a catalog row. It misses deletes (a cascade leaves no newer child), and it misses edits to `weight` and to category settings. It also compares timestamps from different processes' clocks (data-hazards columns-and-clocks.md:6). It needs A's multi-hop path grammar anyway, paid as a correlated subquery on every read).
 
@@ -9523,6 +9529,18 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2353"></a>2026-11-23 · `FJS-D2353` — Q9 — Is a new App's crash alerting on or off — On: `App.isCrashAlerted Boolean @default(true)`; with no channel picked a crash still reaches people through the kind's defaults and the workspace push topic.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (off until someone turns it on).
+
+The paper's recommendation, taken as written: `isPagedForFleet`'s reason: a crash nobody heard about is the failure, so silence is the opt-out.
+
+### <a id="fjs-d2352"></a>2026-11-23 · `FJS-D2352` — Q8 — Who may pick an app's crash channels — Developers: `AppChannel` is `@@gate(2.4)`, the App's own write level, as `MonitorChannel` takes the `Monitor`'s.
+
+Asked in [`IDEAS/alerting.md`](IDEAS/alerting.md) § Open questions. **A** was picked over **B** (admins: `@@gate(2.5)`, as every other channel join; the App's switch, written at the App's level, then needs its own guard or a developer can still silence what they cannot reroute).
+
+The paper's recommendation, taken as written: a join's gate is its parent's in both siblings, and a developer who may delete the app gains nothing by muting it; the credential stays behind the admin-only channel.
 
 ### <a id="fjs-d2329"></a>2026-11-23 · `FJS-D2329` — Q9 — What happens to `junction/ai` — Keep the `app.ai` slot (an app's named models), but each entry satisfies Q7's contract with `schema` optional, and `IAIModel` goes; orion's `ai` node calls `ask`, and Phase 4's two doors register there.
 
@@ -14881,6 +14899,32 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2349"></a>2026-11-23 · `FJS-D2349` — Q12 — Which imagery an account with both keys gets — A fixed order: Google, then Esri, then no map.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked over **B** (a per-account setting), **C** (refuse a second active imagery `Integration`).
+
+The paper's recommendation, taken as written: it adds no setting.
+
+The order is Google, then Esri, then the keyless NAIP fallback `FJS-D2335` already rules, so "no map" means no keyed imagery, not a blank frame; a missing key still falls back visibly. Google here is the one-image kind (`FJS-D2348`) and Esri the tiled kind, so the choice is made once, in the app's route, before map-kit is asked to draw.
+
+### <a id="fjs-d2348"></a>2026-11-23 · `FJS-D2348` — Q11 — Which Google product — Maps Static API: one image per map, as the legacy `MapView-Elite.svelte` used. Google prints its logo and copyright into the image; 640×640 at most, 1280×1280 pixels with `scale=2`; signing is server side and strongly recommended, and unsigned requests get a lower quota ([start](https://developers.google.com/maps/documentation/maps-static/start), [signing](https://developers.google.com/maps/documentation/maps-static/digital-signature)). map-kit gains a one-image basemap beside the tiled one.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **B** was picked over **A** (Map Tiles API: 2D satellite tiles map-kit draws, `scaleFactor2x` for retina, usable by Stage 2's pan. Needs a session token per account (about two weeks), the Google logo at 16–19dp, and a copyright string from a per-viewport `viewport` call ([policies](https://developers.google.com/maps/documentation/tile/policies), [sessions](https://developers.google.com/maps/documentation/tile/session_tokens))).
+
+Against the recommendation (**A**): Owner ruled the Maps Static API, 2026-11-23, over the recommended Map Tiles API. One image per map is what the legacy MapView-Elite.svelte used and it is all the estimator widget (FJS-D2337) shows, so no session token, no per-viewport copyright call and no logo placement are map-kit's to carry: Google prints its logo and copyright into the image. map-kit gains a one-image basemap kind beside the tiled one. The cost accepted: a Google account has no pan at Stage 2 (a second source, Esri tiles, serves that), 640x640 (1280x1280 with scale=2) caps the image, and the signing secret is a second credential per account, held server side beside the key (FJS-D2335). The FJS-D2336 proxy route serves this kind too: it fetches the one image, so z/x/y become center, zoom and size, each parsed and range-checked, upstream host and path fixed in code. Reopen toward A when Stage 2 needs Google imagery under a pan.
+
+### <a id="fjs-d2347"></a>2026-11-23 · `FJS-D2347` — Q10 — When Google imagery is built — Now, beside Esri, as a second keyed source.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked over **B** (only if Esri grades soft at 4.3 and Nearmap does not fit; make the tile route vendor-neutral now).
+
+Against the recommendation (**B**): Owner ruled it now, beside Esri, 2026-11-23. Google is a second keyed source built before 4.3 grades Esri, so an ELA account that holds a Google key gets Google imagery without waiting on a grade. The cost accepted: a second billed vendor and its terms in the kit, and the tile route must be vendor-neutral now (the fixed upstream host moves into the descriptor, still never built from the request, Invariant 8). Reopen toward B if Google's terms (no caching of Static API images beyond what the terms allow, logo and copyright printed into the image) prove to conflict with the FJS-D2336 cache owed.
+
+### <a id="fjs-d2346"></a>2026-11-23 · `FJS-D2346` — Which parser, and whether it ships in `ui` or `toolbelt` — A small safe subset written as `@frontierjs/toolbelt/markdown`, zero dependencies, emitting no raw HTML so there is nothing to sanitize.
+
+Asked in [`IDEAS/markdown-kit.md`](IDEAS/markdown-kit.md) § Open questions. **C** was picked over **A** (unified and remark, the chain mesa's `compiler-md.js` already uses, plus `rehype-sanitize`, as an optional peer of `ui`), **B** (`marked` plus DOMPurify in `ui`).
+
+The paper's recommendation, taken as written: the text is written by strangers and shown in public, and a renderer that never emits raw HTML cannot be talked into a script, where A and B are only as safe as a sanitizer's configuration. A pure function in the substrate runs on the server and in the browser, which answers the next question too. Page `.md` keeps remark, since it needs Mesa components inside the markup and its author is trusted.
+
 ### <a id="fjs-d2337"></a>2026-11-23 · `FJS-D2337` — Q9 — The first consumer — A, accepting a wait.
 
 Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked as the recommendation qualifies it (*A, accepting a wait*) over **B** (the property on the intake screen, for an existing property with a location (ELA 14.3)), **C** (a read-only tracker: the route as a line, the visits as markers (part of ELA 23.9)).
@@ -18390,6 +18434,18 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2351"></a>2026-11-23 · `FJS-D2351` — Q11 — Where is a door's model chosen — When the door is built, and `door(question, { model })` may override it for one question; `Reply.model` names what answered.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (only when the door is built; another model is another door), **C** (on every call, as Chronicle's `doors.ts` does).
+
+Against the recommendation (**B**): it is Lathe's shape: a chat is built with a model and its picker moves the live process to another, answering the model that resolved.
+
+### <a id="fjs-d2350"></a>2026-11-23 · `FJS-D2350` — Q10 — What are the contract's names — Kit `@frontierjs/toolbelt/ask`; the request is `Question`, a way in is a `Door`, the reply `Reply` (`Answered` | `Unanswered`).
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (the same types under kit `/answer`), **C** (rename the claude package's `Ask` to `PermissionAsk` and call the request `Ask`).
+
+The paper's recommendation, taken as written: toolbelt names a kit for the operation (`/redact`, `/seal`), and `Question` clears the collision without moving a live protocol type.
 
 ### <a id="fjs-d2341"></a>2026-11-23 · `FJS-D2341` — Q11 — whose 37signals grant Workbench sends a to-do on — Workbench's own: one more authorization-code exchange through the OAuth app Intake uses, refreshed by `basecampTokenResolver`.
 
@@ -23253,19 +23309,29 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d2354"></a>2026-11-23 · `FJS-D2354` — Q13 — How a URL-signing vendor signs through conduit — `SignOutput` gains URL parameters, which the transport sets and scrubs like an `api_key` query; the target is `signed`, `per_caller`, and its one stored value holds `{ key, secret }`; conduit-google's signer writes `key=`, signs, and appends `signature`.
+
+Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked over **B** (a target names a second credential beside `ref`, and conduit signs, putting a vendor scheme inside conduit against `FJS-D891`), **C** (stay unsigned under Google's daily unsigned quota and drop the secret, reversing part of `FJS-D2348`).
+
+The paper's recommendation, taken as written: one optional field, the scheme stays in a connector signer (`FJS-D891`), and one credential per account matches an `Integration` row.
+
 ### <a id="fjs-d2343"></a>2026-11-23 · `FJS-D2343` — Q18 — What the "one fli command" for Headscale is — A `headscale` Blueprint row plus a generic `fli basecamp:blueprint <slug>` that calls `fromBlueprint` (params as flags), then `place` on `--server` and `deployments.create`, as the Blueprints page does. Its `--domain` uses the Domain helper, which moves out of `deploy.md` into `core/basecamp.js`. One new verb, and every catalog entry gets it.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (the Blueprint row only, installed from the Blueprints page: no new command, but no fli path either), **C** (a bespoke `fli headscale:install`: Headscale-specific, and a second way to make an App beside `fromBlueprint`).
 
 The paper's recommendation, taken as written: the catalog stays the one place a third-party App is described, and the verb serves all ten entries. Reopen to C only if Headscale needs a step `fromBlueprint` cannot express, such as bootstrapping a key after first boot.
 
-### <a id="fjs-d2342"></a>2026-11-23 · `FJS-D2342` — Q17 — How an App publishes a UDP port — No column yet: Headscale takes Q16's fallback, Tailscale's public STUN with our DERP relay over HTTPS, until something else needs UDP.
+Amended 2026-11-23, the owner's calls once it was built: params come as a repeatable `--param KEY=VALUE`, since fli's flags are fixed before the command knows which entry it installs. With no `--environment`, the App goes to the `production` environment of a project named for it, made if absent. A step that fails after the App exists keeps the App, as the Blueprints page does, and names it and the step. A rerun into an environment that already holds the slug is refused and pointed at `fli basecamp:deploy --app <id>`.
+
+### <a id="fjs-d2342"></a>2026-11-23 · `FJS-D2342` — Q17 — How an App publishes a UDP port — No column yet: Headscale takes Q16's fallback, relay-only through our DERP over HTTPS, until something else needs UDP.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **D** was picked over **A** (`udpPorts Int[] @default([])` on App: each published `N:N/udp` on every interface and always in the exposed set (the label becomes a list). `host-port.ts` refuses two Apps on one box with the same UDP port, and the posture grader counts each as declared. One column, holding only the ports Caddy cannot front), **B** (`extraPorts String[]` in docker's `-p` spelling (`3478/udp`, `9000:9000/tcp`): any protocol and any mapping, at the cost of a grammar to parse and a second TCP door beside `port` and Caddy), **C** (an `AppPort` model (`port`, `containerPort`, `protocol`, `exposed`), which would eventually absorb `port`, `containerPort` and `hasExposedPort`. The most general, at the cost of a new noun, a relation and a migration of every App).
 
 Against the recommendation (**A**): nothing but Headscale's STUN needs UDP yet, and Q16's fallback covers it; build A when a second consumer arrives.
 
-### <a id="fjs-d2338"></a>2026-11-23 · `FJS-D2338` — Q16 — Where the Headscale server runs, and in what form — A container App on yuma-test, deployed by its Basecamp with a Domain row for `hs.awe.dev` (DNS-only, since the control protocol does not pass Cloudflare's proxy), and its own DERP relay with STUN on UDP 3478, so no traffic relays through Tailscale's servers. Basecamp's deploy, logs and backups cover it like any App; prod moves later. If 3.3 finds an App cannot publish UDP, the relay falls back to Tailscale's public STUN with our DERP still over HTTPS. Only the relay source changes, so this ruling does not reopen.
+Amended 2026-11-23: the fallback as first written, Tailscale's public STUN, cannot be configured. Headscale v0.29.7 reads extra DERP nodes only from a `derp.paths` file or a `derp.urls` map, and a blueprint carries neither. The owner took relay-only: the embedded region alone, STUN listening unpublished. A node with a public address still connects directly; one behind NAT relays through `hs.awe.dev`. Reopen to A when direct connections between NATed nodes matter.
+
+### <a id="fjs-d2338"></a>2026-11-23 · `FJS-D2338` — Q16 — Where the Headscale server runs, and in what form — A container App on yuma-test, deployed by its Basecamp with a Domain row for `hs.awe.dev` (DNS-only, since the control protocol does not pass Cloudflare's proxy), and its own DERP relay with STUN on UDP 3478, so no traffic relays through Tailscale's servers. Basecamp's deploy, logs and backups cover it like any App; prod moves later. If 3.3 finds an App cannot publish UDP, the relay falls back to relay-only through our DERP over HTTPS (`FJS-D2342` as amended). Only the relay source changes, so this ruling does not reopen.
 
 Asked in [`IDEAS/app-peering.md`](IDEAS/app-peering.md) § Open questions. **A** was picked over **B** (`fli overlay:install <box>` over ssh, the way `outpost:install` works: binary, systemd unit, Caddy route. Fastest to write, invisible to Basecamp), **C** (a dedicated small box bought by `fli server:create`: isolated, one more box to back up and patch), **D** (Tailscale's public DERP servers instead of our own: no UDP port, but relayed traffic crosses a vendor).
 

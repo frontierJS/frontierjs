@@ -73,8 +73,10 @@ tenant directory is one of its `*.db` files and gets no target of its own.
 
 An app keeps what the schema cannot name under `db/` as well: a Caravan queue
 (`jobs.db`) and a `local` storage adapter's files. Everything an app persists
-lives there (`FJS-D493`), so when the schema sits in a `db/` directory both
-commands cover the whole directory:
+lives there (`FJS-D493`), so when the main database sits in a `db/` directory
+both commands cover the whole directory. That is main's directory, not the
+schema's: a container keeps the schema in its image (`/app/db`) and the
+databases on the volume (`/db`), and the uploads are beside the databases:
 
 ```
 s3://mybucket/myapp/db-jobs        every other *.db, named db-<path under db/>
@@ -84,8 +86,8 @@ s3://mybucket/myapp/db-jobs        every other *.db, named db-<path under db/>
 for byte under `db-files/`, keeping its path. `replicate` streams the `*.db`
 files and names the rest as not replicated, the way it names a trail. Skipped:
 what a declaration or the tenancy block already covers, `-wal`/`-shm`
-companions, dot-entries, and `db/backups/`. A schema outside `db/` is a bare
-project whose directory is its source, and gets none of this.
+companions, dot-entries, and `db/backups/`. A main database outside `db/` is a
+bare project whose directory is its source, and gets none of this.
 
 A record kept as a directory of files, such as a store of git repositories, goes
 under `db/` too. The same directory beside `db/` is skipped by every backup

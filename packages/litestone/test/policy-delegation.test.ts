@@ -454,3 +454,47 @@ describe('an operation named in a check()', () => {
     await expect(open(item('bogus'))).rejects.toThrow(/invalid operation 'bogus'/)
   })
 })
+
+// FJS-4588. The parent's read runs through the very model being created, so a
+// create policy evaluated after its own row lands would read that row as
+// membership and admit the person it is meant to refuse.
+describe("a create gated by check(parent, 'read') where the parent's read is its children", () => {
+  const schema = `
+    model User { id Int @id  @@auth }
+    model Room {
+      id      Int     @id
+      private Boolean @default(false)
+      members Member[]
+      @@allow(create, true)
+      @@allow(read,   !private)
+      @@allow(read,   members.some(userId == auth().id))
+      @@allow(update, members.some(userId == auth().id))
+    }
+    model Member {
+      id     Int  @id
+      roomId Int
+      room   Room @relation(fields: [roomId], references: [id])
+      userId Int
+      @@allow(read,   userId == auth().id || check(room, 'read'))
+      @@allow(create, (userId == auth().id && check(room, 'read')) || check(room, 'update'))
+    }
+  `
+
+  test('a non-member cannot add themselves to a private room; a member can add them', async () => {
+    const db = await open(schema)
+    const sys = db.asSystem()
+    await sys.room.create({ data: { id: 1, private: true } })
+    await sys.member.create({ data: { id: 1, roomId: 1, userId: 1 } })
+    const owner = db.$setAuth({ id: 1 })
+    const vlad  = db.$setAuth({ id: 2 })
+
+    expect(await vlad.room.findUnique({ where: { id: 1 } })).toBeNull()
+    await expect(vlad.member.create({ data: { id: 2, roomId: 1, userId: 2 } })).rejects.toThrow()
+    expect(await sys.member.count({ where: { userId: 2 } })).toBe(0)
+
+    // The same row, written by a member, is the one the rule admits.
+    await owner.member.create({ data: { id: 3, roomId: 1, userId: 2 } })
+    expect((await vlad.room.findUnique({ where: { id: 1 } }))?.id).toBe(1)
+    db.$close?.()
+  })
+})

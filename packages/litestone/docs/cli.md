@@ -301,7 +301,7 @@ Take a bulk extract of a dataset that declares `@@export`, graded as the account
 ```bash
 litestone backup [dest] [--vacuum] [--zip] [--db=<name>] [--place=<name>]
 ```
-Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the schema in `db/`, every other file under `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db). A tenancy place is left out unless its `backup` clause names a directory, which then gets a stamped copy of that place alone; `--place <name> [dest]` copies one place by itself.
+Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the main database in `db/`, every other file under that `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db). A tenancy place is left out unless its `backup` clause names a directory, which then gets a stamped copy of that place alone; `--place <name> [dest]` copies one place by itself.
 
 ```bash
 litestone optimize [table]

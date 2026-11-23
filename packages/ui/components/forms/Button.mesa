@@ -65,6 +65,7 @@
     aria-busy={isLoading || null}
     {class}
     {...$attributes}
+    onclick={handleClick}
   >
     {#if leading}{@render leading?.()}{/if}
       <slot />

@@ -62,12 +62,16 @@ export interface MemberCreate {
   id?: number
   nick: string
   chatToken?: string | null
+  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
+  notifications?: __HasManyWrite<NotificationWhere, Omit<NotificationCreate, 'userId'>, NotificationUpdate>
 }
 
 export interface MemberUpdate {
   id?: number
   nick?: string
   chatToken?: string | null
+  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
+  notifications?: __HasManyWrite<NotificationWhere, Omit<NotificationCreate, 'userId'>, NotificationUpdate>
 }
 
 export interface MemberSystem {
@@ -82,6 +86,8 @@ export interface MemberWhere extends WhereBase {
   chatToken?: string | WhereOp<string> | null
   profileExternalId?: string | WhereOp<string> | null
   chatSyncedAt?: string | Date | WhereOp<string | Date> | null
+  sessions?: { some?: SessionWhere; every?: SessionWhere; none?: SessionWhere }
+  notifications?: { some?: NotificationWhere; every?: NotificationWhere; none?: NotificationWhere }
   AND?: MemberWhere[]
   OR?:  MemberWhere[]
   NOT?: MemberWhere
@@ -146,6 +152,7 @@ export interface SessionCreate {
   revokedAt?: string | Date | null
   id?: number
   memberId: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   /**
    * Required where the trait leaves it open: a session that never expires buys
    * nothing and is a standing hole for a token that leaked.
@@ -157,6 +164,7 @@ export interface SessionUpdate {
   revokedAt?: string | Date | null
   id?: number
   memberId?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   expiresAt?: string | Date
 }
 
@@ -171,6 +179,7 @@ export interface SessionWhere extends WhereBase {
   lastUsedAt?: string | Date | WhereOp<string | Date> | null
   id?: number | WhereOp<number> | null
   memberId?: number | WhereOp<number> | null
+  member?: { is?: MemberWhere; isNot?: MemberWhere }
   createdAt?: string | Date | WhereOp<string | Date> | null
   expiresAt?: string | Date | WhereOp<string | Date> | null
   AND?: SessionWhere[]
@@ -438,6 +447,7 @@ export interface Notification {
 export interface NotificationCreate {
   id?: number
   userId: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   type: string
   data: unknown
   subjectType?: string | null
@@ -449,6 +459,7 @@ export interface NotificationCreate {
 export interface NotificationUpdate {
   id?: number
   userId?: number
+  member?: __BelongsToWrite<MemberWhere, MemberCreate>
   type?: string
   data?: unknown
   subjectType?: string | null
@@ -460,6 +471,7 @@ export interface NotificationUpdate {
 export interface NotificationWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   userId?: number | WhereOp<number> | null
+  member?: { is?: MemberWhere; isNot?: MemberWhere }
   type?: string | WhereOp<string> | null
   data?: unknown | WhereOp<unknown> | null
   subjectType?: string | WhereOp<string> | null
@@ -541,10 +553,12 @@ export interface Team {
 
 export interface TeamCreate {
   id?: number
+  channels?: __HasManyWrite<ChannelWhere, Omit<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
 }
 
 export interface TeamUpdate {
   id?: number
+  channels?: __HasManyWrite<ChannelWhere, Omit<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
 }
 
 export interface TeamSystem {
@@ -568,6 +582,7 @@ export interface TeamWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  channels?: { some?: ChannelWhere; every?: ChannelWhere; none?: ChannelWhere }
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: TeamWhere[]
   OR?:  TeamWhere[]
@@ -610,10 +625,20 @@ export interface Profile {
 
 export interface ProfileCreate {
   id?: number
+  memberships?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'profileExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
 }
 
 export interface ProfileUpdate {
   id?: number
+  memberships?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'profileExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
 }
 
 export interface ProfileSystem {
@@ -657,6 +682,11 @@ export interface ProfileWhere extends WhereBase {
   customEmoji?: string | WhereOp<string> | null
   customText?: string | WhereOp<string> | null
   customExpiresAt?: string | Date | WhereOp<string | Date> | null
+  memberships?: { some?: ChannelMemberWhere; every?: ChannelMemberWhere; none?: ChannelMemberWhere }
+  posts?: { some?: PostWhere; every?: PostWhere; none?: PostWhere }
+  threads?: { some?: ThreadWhere; every?: ThreadWhere; none?: ThreadWhere }
+  reactions?: { some?: ReactionWhere; every?: ReactionWhere; none?: ReactionWhere }
+  files?: { some?: FileInfoWhere; every?: FileInfoWhere; none?: FileInfoWhere }
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: ProfileWhere[]
   OR?:  ProfileWhere[]
@@ -699,10 +729,16 @@ export interface Channel {
 
 export interface ChannelCreate {
   id?: number
+  team?: __BelongsToWrite<TeamWhere, TeamCreate>
+  members?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'channelExternalId'>, PostUpdate>
 }
 
 export interface ChannelUpdate {
   id?: number
+  team?: __BelongsToWrite<TeamWhere, TeamCreate>
+  members?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'channelExternalId'>, PostUpdate>
 }
 
 export interface ChannelSystem {
@@ -725,6 +761,7 @@ export interface ChannelWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   teamExternalId?: string | WhereOp<string> | null
+  team?: { is?: TeamWhere; isNot?: TeamWhere }
   creatorExternalId?: string | WhereOp<string> | null
   type?: ChannelType | WhereOp<ChannelType> | null
   name?: string | WhereOp<string> | null
@@ -738,6 +775,8 @@ export interface ChannelWhere extends WhereBase {
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
+  members?: { some?: ChannelMemberWhere; every?: ChannelMemberWhere; none?: ChannelMemberWhere }
+  posts?: { some?: PostWhere; every?: PostWhere; none?: PostWhere }
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: ChannelWhere[]
   OR?:  ChannelWhere[]
@@ -776,10 +815,14 @@ export interface ChannelMember {
 
 export interface ChannelMemberCreate {
   id?: number
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ChannelMemberUpdate {
   id?: number
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ChannelMemberSystem {
@@ -802,7 +845,9 @@ export interface ChannelMemberWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   channelExternalId?: string | WhereOp<string> | null
+  channel?: { is?: ChannelWhere; isNot?: ChannelWhere }
   profileExternalId?: string | WhereOp<string> | null
+  profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   roles?: string | WhereOp<string> | null
   isAdmin?: boolean | WhereOp<boolean> | null
   lastViewedAt?: string | Date | WhereOp<string | Date> | null
@@ -853,10 +898,24 @@ export interface Post {
 
 export interface PostCreate {
   id?: number
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
+  author?: __BelongsToWrite<ProfileWhere, ProfileCreate>
+  root?: __BelongsToWrite<PostWhere, PostCreate>
+  replies?: __HasManyWrite<PostWhere, Omit<PostCreate, 'rootExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'postExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
 }
 
 export interface PostUpdate {
   id?: number
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
+  author?: __BelongsToWrite<ProfileWhere, ProfileCreate>
+  root?: __BelongsToWrite<PostWhere, PostCreate>
+  replies?: __HasManyWrite<PostWhere, Omit<PostCreate, 'rootExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'postExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
 }
 
 export interface PostSystem {
@@ -880,8 +939,12 @@ export interface PostWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   channelExternalId?: string | WhereOp<string> | null
+  channel?: { is?: ChannelWhere; isNot?: ChannelWhere }
   profileExternalId?: string | WhereOp<string> | null
+  author?: { is?: ProfileWhere; isNot?: ProfileWhere }
   rootExternalId?: string | WhereOp<string> | null
+  root?: { is?: PostWhere; isNot?: PostWhere }
+  replies?: { some?: PostWhere; every?: PostWhere; none?: PostWhere }
   message?: string | WhereOp<string> | null
   type?: string | WhereOp<string> | null
   isPinned?: boolean | WhereOp<boolean> | null
@@ -894,6 +957,9 @@ export interface PostWhere extends WhereBase {
   editedAt?: string | Date | WhereOp<string | Date> | null
   deletedAt?: string | Date | WhereOp<string | Date> | null
   embeds?: unknown | WhereOp<unknown> | null
+  threads?: { some?: ThreadWhere; every?: ThreadWhere; none?: ThreadWhere }
+  reactions?: { some?: ReactionWhere; every?: ReactionWhere; none?: ReactionWhere }
+  files?: { some?: FileInfoWhere; every?: FileInfoWhere; none?: FileInfoWhere }
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: PostWhere[]
   OR?:  PostWhere[]
@@ -932,10 +998,14 @@ export interface Thread {
 
 export interface ThreadCreate {
   id?: number
+  root?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ThreadUpdate {
   id?: number
+  root?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ThreadSystem {
@@ -955,7 +1025,9 @@ export interface ThreadWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   rootExternalId?: string | WhereOp<string> | null
+  root?: { is?: PostWhere; isNot?: PostWhere }
   profileExternalId?: string | WhereOp<string> | null
+  profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   replyCount?: number | WhereOp<number> | null
   lastReplyAt?: string | Date | WhereOp<string | Date> | null
   lastViewedAt?: string | Date | WhereOp<string | Date> | null
@@ -991,10 +1063,14 @@ export interface Reaction {
 
 export interface ReactionCreate {
   id?: number
+  post?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ReactionUpdate {
   id?: number
+  post?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ReactionSystem {
@@ -1009,7 +1085,9 @@ export interface ReactionWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   postExternalId?: string | WhereOp<string> | null
+  post?: { is?: PostWhere; isNot?: PostWhere }
   profileExternalId?: string | WhereOp<string> | null
+  profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   emojiName?: string | WhereOp<string> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   missingSince?: string | Date | WhereOp<string | Date> | null
@@ -1049,10 +1127,14 @@ export interface FileInfo {
 
 export interface FileInfoCreate {
   id?: number
+  post?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface FileInfoUpdate {
   id?: number
+  post?: __BelongsToWrite<PostWhere, PostCreate>
+  profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface FileInfoSystem {
@@ -1073,7 +1155,9 @@ export interface FileInfoWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   externalId?: string | WhereOp<string> | null
   postExternalId?: string | WhereOp<string> | null
+  post?: { is?: PostWhere; isNot?: PostWhere }
   profileExternalId?: string | WhereOp<string> | null
+  profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   name?: string | WhereOp<string> | null
   extension?: string | WhereOp<string> | null
   size?: number | WhereOp<number> | null
@@ -1549,6 +1633,14 @@ export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean |
 // bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
 type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
 
+/** A nested write through a relation, each kind taking the operations the client runs for it. */
+type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
+type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
+/** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */
+type __SearchHit = { _rank?: number | null; _highlight?: string | null; _snippet?: string | null }
+type __FtsMarks = { field: string; open?: string; close?: string }
+
 /**
  * The row a read answers: the whole row, or only the columns `select` named, and
  * in either case the relations `include` (or `select`) named. A relation takes its
@@ -1569,15 +1661,15 @@ type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__Se
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
 export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {
-  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
-  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
-  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
-  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
+  count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
   create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
   createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
@@ -1590,7 +1682,7 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove ex
   restore(args: { where: TWhere }): Promise<{ count: number }>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>
-  search(query: string, args?: { where?: TWhere; limit?: number; offset?: number }): Promise<TRow[]>
+  search<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S> & __SearchHit)[]>
   optimizeFts(): Promise<{ optimized: boolean; table: string }>
 
   // Reads whose shape is not one row or a count. Emitted because an app

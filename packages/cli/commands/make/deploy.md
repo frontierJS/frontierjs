@@ -148,7 +148,8 @@ USER ${IMAGE_USER.name}
 
 # What the API binds, said by the file that exposes it: a machine that reads
 # the EXPOSE maps traffic there, and junction otherwise binds its development
-# slot. The deploy's own --env repeats it, and a Variable on the App wins.
+# slot. The deploy starts it with its own --env FRONTIER_PORT_BE, the port it
+# maps and probes, over any Variable of that name.
 ENV FRONTIER_PORT_BE=3000
 EXPOSE 3000
 

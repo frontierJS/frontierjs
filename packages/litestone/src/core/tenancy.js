@@ -179,3 +179,38 @@ export function tenantFrom(resolution, { host = null, headers = null, principal 
       return null
   }
 }
+
+// ─── The path to a row's tenant ──────────────────────────────────────────────
+//
+// Under strategy row a model scoped through its parent (`@@tenant(via:)`)
+// carries no tenant column: its tenant is the parent's, along the relation its
+// generated tenancy deny follows. Write routing, the commitment sweep and
+// `$tenantPath` all read it here, so a second walk cannot pick another parent.
+
+/**
+ * The belongsTo hops from `modelName` to the model carrying the tenant column:
+ * `[]` when the model carries it itself, null under no row tenancy or when no
+ * path reaches one.
+ * @param {any} schema
+ * @param {Record<string, any>} shapes
+ * @param {string} modelName
+ * @returns {Array<{ field: string, fks: string[], target: string, refs: string[] }> | null}
+ */
+export function tenantHops(schema, shapes, modelName) {
+  const t = schema?.tenancy
+  if (t?.strategy !== 'row' || !shapes[modelName]) return null
+  const carries = (/** @type {string} */ m) => !!shapes[m]?.model.fields.some((/** @type {any} */ f) => f.name === t.column)
+  /** @type {(m: string, seen: Set<string>) => any} */
+  const walk = (m, seen) => {
+    if (carries(m)) return []
+    for (const a of shapes[m]?.model.attributes ?? []) {
+      const ref = a.generated === 'tenancy' && a.expr?.type === 'not' && a.expr.expr?.type === 'check' ? a.expr.expr : null
+      const rel = ref && shapes[m].relations?.[ref.field]
+      if (rel?.kind !== 'belongsTo' || seen.has(rel.targetModel)) continue
+      const rest = walk(rel.targetModel, new Set([...seen, rel.targetModel]))
+      if (rest) return [{ field: ref.field, fks: rel.foreignKeys, target: rel.targetModel, refs: rel.referencedKeys }, ...rest]
+    }
+    return null
+  }
+  return walk(modelName, new Set([modelName]))
+}

@@ -339,7 +339,9 @@
     changed()
   }
   function answer(choice) {
-    tabs[at].session.answer(choice)
+    const ask = tabs[at].session?.state.asking[0]
+    // An always with no rule to send is refused, not quietly made an allow once.
+    if (!tabs[at].session?.answer(choice) && choice === 'always' && ask && !ask.suggestions.length) say('this call suggested no rule to allow always — 1 allow · 3 deny', TONES.warn)
     changed()
   }
   // Each action is its line in the help, so the names are `tabs.js`'s.

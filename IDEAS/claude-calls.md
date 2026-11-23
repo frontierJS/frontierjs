@@ -137,6 +137,23 @@ More facts the phases turn on:
     own, and B leaves an app writing an adapter by hand (the file's own header
     sketches one) for a door Phase 4 already builds.
 
+- ~~**Q10 — What are the contract's names?**~~ **Answered 2026-11-23 (`FJS-D2350`): A — kit `@frontierjs/toolbelt/ask`; the request is `Question`, a way in is a `Door`, the reply `Reply` (`Answered` | `Unanswered`).** `Ask` is already `@frontierjs/claude`'s
+  control-protocol permission question, beside `runAsk` and `AskEvent`.
+  - **A** — kit `@frontierjs/toolbelt/ask`; the request is `Question`, a way in is a
+    `Door`, the reply `Reply` (`Answered` | `Unanswered`).
+  - **B** — the same types under kit `/answer`.
+  - **C** — rename the claude package's `Ask` to `PermissionAsk` and call the request `Ask`.
+  - **Recommend A** — toolbelt names a kit for the operation (`/redact`, `/seal`), and
+    `Question` clears the collision without moving a live protocol type.
+
+- ~~**Q11 — Where is a door's model chosen?**~~ **Answered 2026-11-23 (`FJS-D2351`): A — when the door is built, and `door(question, { model })` may override it for one question; `Reply.model` names what answered.**
+  - **A** — when the door is built, and `door(question, { model })` may override it for
+    one question; `Reply.model` names what answered.
+  - **B** — only when the door is built; another model is another door.
+  - **C** — on every call, as Chronicle's `doors.ts` does.
+  - **Recommend B** — the simplest shape, and `app.ai` is then named doors; an override
+    can be added later without breaking a caller.
+
 ## Phase 0 — Groundwork
 
 Goal: the package exists, empty, with the guard against vendor drift in place.
@@ -218,19 +235,18 @@ The chat stays on raw stream-json, as Lathe's Q20 ruled. Speaking ACP through
 `@agentclientprotocol/claude-agent-acp` instead was raised and deferred by the owner
 on 2026-11-22: revisit when a second agent (Codex, Gemini) is actually wanted.
 Done when: Lathe and Haven hold their chats on the package's session, and no
-consumer builds a `claude` command line itself.
+consumer builds a chat or work-run `claude` command line itself. The one-answer
+callers are Phase 4's.
 
 - [x] 3.1 Move Lathe's `claude-protocol.ts` and `Sessions`; Lathe imports them.
   - `src/{protocol,permission,catalog,session}.ts` and `docs/control-protocol.md`; Lathe's `Sessions` is a
     map of `Session` with its diff card and env. Uncommitted, both trees (2026-11-23).
-- [ ] 3.2 Move Haven's study session onto it and delete its protocol copy.
-- [ ] 3.3 A work profile for `runAsk`; Workbench and Lathe work runs, the chat and
+- [x] 3.2 Move Haven's study session onto it and delete its protocol copy.
+  - Built, uncommitted (2026-11-23): `study/session.js` folds `Session` events (deny in Haven's words via `deny`, `always` with no rule refused); the package gained `thinking`, a `tool`'s `id` and `onExit(code, signal)`; the read-along reads through `readAskEvent`. A live Haven study chat by the owner is owed.
+  - Owner rulings (2026-11-23): Haven adopts the package's protocol; each host supplies its deny wording; "always" with no suggested rule is refused; the picker's choices are Lathe's; the study pane shows the package's tool line.
+- [x] 3.3 A work profile for `runAsk`; Workbench and Lathe work runs, the chat and
   serpgrid TUIs and `scripts/headless.mjs` drop their own argv. Closes FJS-4252.
-  - Built, uncommitted (2026-11-23): `runAsk` takes `work`, `fork`, `appendSystem`, `partial`, a null effort, `log`,
-    `onExit` and `onFrame`; Workbench's `launch()`, `headless.mjs` and the chat TUI use it; Lathe's work run is already
-    a Session (3.1). Left: serpgrid's TUI keeps its own argv until the owner rules its Bash list (profile option or stay).
-- [ ] 3.4 Charter's `agent.ts` and `connect.ts` onto the agent profile, and
-  serpgrid's draft onto the read-only one.
+  - Built, uncommitted (2026-11-23): Workbench `launch()`, `scripts/headless.mjs` and the chat and serpgrid TUIs run on `runAsk` (the read-only profile takes `bash` and `budget`, and passes `dontAsk` so an account defaulting to `auto` cannot run other Bash); Lathe's work run was already a `Session`, and its picker's `newestPerFamily` and `PICKED_MODES` live in Lathe. A real paid headless loop and a live Workbench work run are owed to the owner. FJS-4252 stays open for Chronicle's `doors.ts` (4.4).
 
 ## Phase 4 — One answer, both ways in
 
@@ -239,11 +255,25 @@ Done when: Chronicle, the mechanic generator, Intake, Charter's builder, Workben
 chat recap and Haven's townsfolk and desk spawn no `claude` of their own, and both
 doors return the same failure names.
 
-- [ ] 4.1 The contract type, where Q7 puts it.
-- [ ] 4.2 The local door in the package, from Chronicle's `doors.ts`.
+- [x] 4.1 The contract type, where Q7 puts it. `@frontierjs/toolbelt/ask`: `Question`, `Door`,
+  `Reply`, the closed `REASONS` set with `retryable` read from it, `unanswered` and
+  `checkReply`, which 4.2 and 4.3 each run every reply they can give through (`FJS-D2350`,
+  `FJS-D2351`).
+- [x] 4.2 The local door in the package, from Chronicle's `doors.ts`. `claudeDoor` in
+  `src/door.ts` over argv's `answer` profile; the door's own facts ride `run: { session,
+  turns, denials }`; an MCP server's headers go in a 0600 file, never argv. Driven live
+  (haiku): a schema answer, a text answer under `question.system`, an unknown model as
+  `model_gone`, and a cwd `CLAUDE.md` that did not reach the answer.
+  - Measured on 2026-11-23, when Charter's builder and serpgrid's draft were tried against the
+    agent and read-only profiles and fit neither: both are one answer (`--output-format json`,
+    `--json-schema`), so they move in 4.4. The door has to carry what they pass: a schema, an
+    MCP server with request headers (Charter's bearer token), added read directories and the
+    `Skill` tool (serpgrid's draft), `--no-session-persistence`, a wall-clock timeout, and
+    `permission_denials` on the result.
 - [ ] 4.3 The API door in `conduit-anthropic`, with the same failure names and the
   retry rule Q6 rules.
-- [ ] 4.4 Move Chronicle, the mechanic generator, Intake, Charter's builder,
+- [ ] 4.4 Move Chronicle, the mechanic generator, Intake, Charter's builder
+  (`agent.ts`, `connect.ts`), serpgrid's draft (`providers/claude/index.ts`),
   Workbench's `chat/catchup.ts` and Haven's `agents.js` and `errand.js`; each
   deletes its own door. Closes FJS-4171.
 - [ ] 4.5 `junction/ai` per Q9: `IAIModel` goes, `app.ai` holds entries that satisfy

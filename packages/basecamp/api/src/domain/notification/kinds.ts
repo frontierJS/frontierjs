@@ -103,6 +103,11 @@ export const NOTIFICATION_KINDS: NotificationKindDef[] = [
     description: 'A scheduled backup or restore drill of an app failed, so the app\'s last good copy is getting older.',
     email: true,  inApp: true, push: false },
 
+  // A crash is NOW and the restart hides it from every monitor, so it rings.
+  { kind: 'AppCrashed',  label: 'App crashed',
+    description: 'An app died of an uncaught error. It restarts on its own; the error is why it died.',
+    email: true,  inApp: true, push: true },
+
   { kind: 'ReplicaFound',  label: 'Replica found',
     description: 'After Basecamp was restored, an app\'s replica was found in its bucket and can be restored.',
     email: true,  inApp: true, push: false },

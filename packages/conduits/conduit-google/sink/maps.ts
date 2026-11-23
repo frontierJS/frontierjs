@@ -24,6 +24,15 @@
 // A module of the one Google sink (`../sink.ts`): `mapsSink()` answers a path it
 // owns and returns null for any other, and its control endpoints are
 // `/maps/_sink/{seen,arm,reset}`.
+//
+// The Static API (`/maps/api/staticmap`) is the fourth: key as `?key=`, and a
+// `signature` CHECKED against `signingSecret` with node:crypto, apart from the
+// connector's WebCrypto signer. A wrong key or signature is a 403 (Google's
+// page says so for a signature; the body text is a stand-in). Out-of-range
+// numbers are a 400, the negative control for the connector's local check.
+// `{ markup200 }` arms a 200 HTML body, which conduit refuses as invalid_response.
+
+import { createHmac } from 'node:crypto'
 
 interface KnownPlace { id: string; formattedAddress: string; location: { latitude: number; longitude: number }; displayName: { text: string; languageCode: string }; types: string[]; aliases: string[] }
 
@@ -79,7 +88,23 @@ const googleError = (code: number, status: string, message: string, details: unk
 export interface MapsSinkOptions {
   /** The one key both APIs accept. */
   key?:  string
+  /** The Static API's URL signing secret, URL-safe base64 as Google issues it. */
+  signingSecret?: string
 }
+
+export const SIGNING_SECRET = 'c2luay1zaWduaW5nLXNlY3JldC1maXh0dXJl'
+/** A PNG signature then a byte run only an untouched body keeps. */
+export const STATIC_PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...Array.from({ length: 64 }, (_, i) => (i * 7) & 0xff), 0xff, 0x00])
+
+// Signed: everything after the host up to `&signature=`, which Google appends last.
+function signatureOk(search: string, path: string, secret: string): boolean | null {
+  const at = search.indexOf('&signature=')
+  if (at < 0) return null
+  const given = decodeURIComponent(search.slice(at + '&signature='.length))
+  const want  = createHmac('sha1', Buffer.from(secret, 'base64url')).update(path + search.slice(0, at)).digest('base64').replace(/\+/g, '-').replace(/\//g, '_')
+  return given === want
+}
+const rejected = (why: string) => new Response(`The Google Maps Platform server rejected your request. ${why}`, { status: 403, headers: { 'content-type': 'text/plain; charset=UTF-8' } })
 
 export interface ModuleSink {
   /** The response for a path this module owns; null for any other. */
@@ -90,9 +115,10 @@ export interface ModuleSink {
 
 export function mapsSink(opts: MapsSinkOptions = {}): ModuleSink {
   const KEY = opts.key ?? 'AIza-sink-dev'
-  const seen: { api: 'places' | 'routes' | 'geocoding' | 'unknown'; method: string; path: string; headers: Record<string, string>; body: string; fieldMask: string | null; sku: string; at: number; keyInQuery?: boolean }[] = []
-  const armed = { lost: false, failNext: false, rateLimit: null as null | { retryAfter?: number; times?: number }, denyApi: null as null | 'places' | 'routes' }
-  const disarm = () => Object.assign(armed, { lost: false, failNext: false, rateLimit: null, denyApi: null })
+  const SECRET = opts.signingSecret ?? SIGNING_SECRET
+  const seen: { api: 'places' | 'routes' | 'geocoding' | 'static' | 'unknown'; query?: string; signed?: boolean | null; method: string; path: string; headers: Record<string, string>; body: string; fieldMask: string | null; sku: string; at: number; keyInQuery?: boolean }[] = []
+  const armed = { lost: false, failNext: false, rateLimit: null as null | { retryAfter?: number; times?: number }, denyApi: null as null | 'places' | 'routes', markup200: false }
+  const disarm = () => Object.assign(armed, { lost: false, failNext: false, rateLimit: null, denyApi: null, markup200: false })
   const hanging: Array<() => void> = []
 
   return {
@@ -116,6 +142,23 @@ export function mapsSink(opts: MapsSinkOptions = {}): ModuleSink {
         const hit = findByText(q)
         if (!hit) return json({ status: 'ZERO_RESULTS', results: [] })
         return json({ status: 'OK', results: [{ place_id: hit.id, formatted_address: hit.formattedAddress, geometry: { location: { lat: hit.location.latitude, lng: hit.location.longitude } } }] })
+      }
+
+      if (path === '/maps/api/staticmap') {
+        const p = url.searchParams, signed = signatureOk(url.search, path, SECRET)
+        seen.push({ api: 'static', method: req.method, path, query: url.search, signed, headers: Object.fromEntries(req.headers), body: '', fieldMask: null, sku: 'static', at: Date.now(), keyInQuery: p.get('key') === KEY })
+        if (p.get('key') !== KEY) return rejected('The provided API key is invalid.')
+        if (signed === false) return rejected('Invalid request. Invalid \'signature\' parameter.')
+        if (armed.rateLimit) { armed.rateLimit = null; return new Response('quota', { status: 429, headers: { 'content-type': 'text/plain' } }) }
+        if (armed.failNext) { armed.failNext = false; return new Response('unavailable', { status: 503, headers: { 'content-type': 'text/plain' } }) }
+        const size = /^(\d+)x(\d+)$/.exec(p.get('size') ?? ''), zoom = Number(p.get('zoom')), scale = p.get('scale') ?? '1'
+        const [lat, lng] = (p.get('center') ?? '').split(',').map(Number)
+        const inRange = !!size && +size[1]! >= 1 && +size[1]! <= 640 && +size[2]! >= 1 && +size[2]! <= 640
+          && Number.isInteger(zoom) && zoom >= 0 && zoom <= 21 && (scale === '1' || scale === '2')
+          && Number.isFinite(lat) && Math.abs(lat!) <= 90 && Number.isFinite(lng) && Math.abs(lng!) <= 180
+        if (!inRange) return new Response('Invalid request. size, zoom, scale or center is out of range.', { status: 400, headers: { 'content-type': 'text/plain' } })
+        if (armed.markup200) return new Response('<html><body>sign in</body></html>', { headers: { 'content-type': 'text/html; charset=UTF-8' } })
+        return new Response(STATIC_PNG, { headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' } })
       }
 
       const api: 'places' | 'routes' | 'unknown' = path.startsWith('/v1/places') ? 'places' : path.startsWith('/directions/v2:') ? 'routes' : 'unknown'
