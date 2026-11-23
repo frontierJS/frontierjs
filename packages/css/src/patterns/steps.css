@@ -341,7 +341,7 @@
  * The horizontal tracks are equal, so six steps at phone width are six
  * 50px columns and every label breaks a letter at a time. Under the `sm`
  * step the strip turns vertical, and a box named
- * `container: fjs / inline-size` turns it under 30rem — the opt-in and
+ * `container: fjs / inline-size` turns it under 480px — the opt-in and
  * threshold facts.css uses. Both blocks are .vertical above, written again
  * because neither query can share a body with a class.
  */
@@ -388,7 +388,7 @@
   }
 }
 
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .steps {
     flex-direction: column;
     align-items:    stretch;

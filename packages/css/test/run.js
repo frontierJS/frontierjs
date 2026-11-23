@@ -141,6 +141,27 @@ if (filters.length) {
 }
 
 /*
+ * Every spec shares one global scope, so a top-level name two specs declare
+ * is whichever ran last by the time a test body reads it. core-gaps.spec's
+ * 8-theme THEMES replaced contrast.spec's list, and the full suite stopped
+ * grading shadcn while the spec run alone failed it (FJS-4555). Read across
+ * every spec, filtered or not: the clobber only bites when they run together.
+ */
+const declaredBy = new Map();
+for (const f of readdirSync(specDir).filter((f) => f.endsWith('.spec.js'))) {
+  const src = readFileSync(join(specDir, f), 'utf8');
+  for (const [, name] of src.matchAll(/^(?:var|let|const|function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+    declaredBy.set(name, [...(declaredBy.get(name) || []), f]);
+  }
+}
+const clashes = [...declaredBy].filter(([, files]) => files.length > 1);
+if (clashes.length) {
+  console.error('Specs share one global scope; prefix each name with its spec\'s subject:');
+  for (const [name, files] of clashes) console.error(`  ${name}  declared in ${files.join(', ')}`);
+  process.exit(2);
+}
+
+/*
  * Specs are inlined as classic scripts, so a `</script>` appearing inside a
  * spec's markup string would close the tag early and silently truncate the
  * suite. Escaping it is not optional.

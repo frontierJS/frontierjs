@@ -13,7 +13,7 @@
  * component names a tone.
  */
 
-var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
+var TONE_NAMES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
 
 /*
  * Every consumer that reads a tone, with the markup it contracts for and
@@ -58,7 +58,7 @@ CONSUMERS.forEach(function (consumer) {
     var seen = {};
     var matchedBase = [];
 
-    TONES.forEach(function (tone) {
+    TONE_NAMES.forEach(function (tone) {
       var node = el(consumer.html.replace('TONE', tone));
       var value = style(node, consumer.prop);
 
@@ -74,7 +74,7 @@ CONSUMERS.forEach(function (consumer) {
       cleanup();
     });
 
-    assert.equal(Object.keys(seen).length, TONES.length, 'expected seven distinct renderings');
+    assert.equal(Object.keys(seen).length, TONE_NAMES.length, 'expected seven distinct renderings');
     assert.ok(
       matchedBase.length <= 1,
       consumer.name + ' renders untoned identically to more than one tone: ' + matchedBase.join(', ')
@@ -99,7 +99,7 @@ test('tone: no component file names a tone', function () {
     var sheetHref = (rule.parentStyleSheet && rule.parentStyleSheet.href) || '';
     if (/tones\.css$/.test(sheetHref)) return;
 
-    TONES.forEach(function (tone) {
+    TONE_NAMES.forEach(function (tone) {
       /* Word-boundary match so `.primary` does not also match `.primary-x`. */
       if (new RegExp('\\.' + tone + '(?![\\w-])').test(rule.selectorText || '')) {
         offenders.push(sheetHref.split('/').pop() + ': ' + rule.selectorText);

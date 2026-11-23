@@ -717,6 +717,9 @@ export function auth(opts: AuthPluginOptions): Plugin {
             return ctx.redirect!(returnTo ?? '/')
           }
 
+          // Only a grant provider may answer no identity, and a sign-in keys on it.
+          if (!identity) return oauthFailure(ctx, oauth, 'exchange')
+
           // A flow the mailed link started ends at the link and nowhere else:
           // an identity that is not the invitation's must not fall through to
           // an ordinary sign-in on the holder's browser.

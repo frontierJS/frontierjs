@@ -249,9 +249,6 @@
   overflow: hidden;
 }
 .sg-modal-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-sm);
   font-family: var(--font-mono);
   font-size: var(--text-md);
   color: var(--ink);

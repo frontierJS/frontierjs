@@ -11019,7 +11019,10 @@ function _adoptRoots(code, ctx) {
     return body
   }
   // A text or attribute the body writes once, at its own level, already reads
-  // right on the page, so that write lands on a node nobody shows.
+  // right on the page, so that write lands on a node nobody shows. A constant
+  // style: is emitted as bindStyle and counts too, or its node reads unkeyed
+  // and the whole block re-renders (FJS-4543).
+  const constStyle = '\\$\\$runtime\\.bindStyle\\(NAME, \'[^\'\\n]+\', \\(\\) => \\(`(?:[^`$\\\\\\n]|\\$(?!\\{))*`\\)\\);$'
   const plan = (walk, body, ind) => {
     const lines = walk.split('\n').filter(Boolean)
     const declared = lines.map((l) => l.match(/^\s*(?:let|var) (\S+) = /)?.[1]).filter(Boolean)
@@ -11028,7 +11031,7 @@ function _adoptRoots(code, ctx) {
     const read = declared.filter((n) => !byName.has(n) && !aliases.includes(n) && uses(n, body).length)
     const once = read.filter((n) => {
       const name = n.replace(/\$/g, '\\$')
-      const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', )', 'gm')) ?? []
+      const writes = body.match(new RegExp('^' + ind + '(?:' + name + '\\.nodeValue = |\\$\\$runtime\\.set_(?:attribute|class|style)\\(' + name + ', |' + constStyle.replace('NAME', () => name) + ')', 'gm')) ?? []
       return uses(n, body).length === writes.length
     })
     const unkeyed = read.filter((n) => !once.includes(n))

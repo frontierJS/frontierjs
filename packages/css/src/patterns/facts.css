@@ -120,7 +120,7 @@
  *
  * The viewport cannot see a narrow box on a wide screen: a Facts in a 20rem
  * Aside is two cramped columns at 1400px. A box the app names
- * `container: fjs / inline-size` stacks it under 30rem, the same opt-in and
+ * `container: fjs / inline-size` stacks it under 480px, the same opt-in and
  * threshold as derived density. The two blocks are one rule written twice,
  * because a media query and a container query cannot share a body.
  */
@@ -144,7 +144,7 @@
   }
 }
 
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .facts {
     grid-template-columns: 1fr;
     gap: 0;

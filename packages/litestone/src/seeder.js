@@ -906,20 +906,23 @@ export async function loadRows(db, modelName, source, opts = {}) {
       select: Object.fromEntries([...named].map(n => [n, true])),
     })).map(s => [String(s[key]), s]))
     const held = whole.filter(r => stored.has(String(r.data[key]))).length
-    const same = rows.filter(r => {
+    // A row restating its stored values has nothing to write, so it moves no
+    // stamp and announces nothing (FJS-368's rule for an empty patch).
+    const same = new Set(rows.filter(r => {
       const s = stored.get(String(r.data[key]))
       return s && Object.entries(r.data).every(([n, v]) => sameValue(columns.of(n).kind, v, s[n]))
-    }).length
-    if (whole.length) await tx[accessor].upsertMany({ data: whole.map(r => r.data), conflictTarget: [key] })
+    }))
+    const changed = whole.filter(r => !same.has(r))
+    if (changed.length) await tx[accessor].upsertMany({ data: changed.map(r => r.data), conflictTarget: [key] })
     for (const r of rows) {
-      if (!r.lacking.length) continue
+      if (!r.lacking.length || same.has(r)) continue
       const { [key]: keyValue, ...set } = r.data
       const kept = Object.keys(set).length
         ? await tx[accessor].update({ where: { [key]: keyValue }, data: set })
         : await tx[accessor].findFirst({ where: { [key]: keyValue } })
       if (!kept) throw new LacksForNewRow(r.lacking[0], r.blank.includes(r.lacking[0]))
     }
-    return { fresh: whole.length - held, same }
+    return { fresh: whole.length - held, same: same.size }
   }
 
   const run = async (tx) => {

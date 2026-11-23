@@ -2,8 +2,8 @@
 // under each, read at build time by every page under /docs/.
 //
 // A package guide's tree is its loadGuide(), so the sidebar and the guide's own
-// README cannot disagree about which pages exist or in what order. The owed
-// guides are data/docs-guides.js, each a stub page the sidebar tags as one.
+// README cannot disagree about which pages exist or in what order. The
+// per-job guides are data/docs-guides.js, each a link into a package guide.
 
 import { existsSync }                from 'node:fs'
 import { fileURLToPath }             from 'node:url'
@@ -55,7 +55,7 @@ const learn = () => [
   START,
   ...loadGuides().map((s) => ({
     section: s.section,
-    pages:   s.guides.map((g) => ({ title: g.title, href: g.href, stub: !g.page, icon: iconOf(g) })),
+    pages:   s.guides.map((g) => ({ title: g.title, href: g.href, icon: iconOf(g) })),
   })),
   ELSEWHERE,
 ]

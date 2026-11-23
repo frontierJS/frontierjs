@@ -353,6 +353,25 @@ model Job {
     db.$close()
   })
 
+  // FJS-4551: a row counted unchanged still rode upsertMany, so a re-import
+  // moved every stamp and announced a write nobody made (FJS-368).
+  it('an upsert row it counts unchanged is not written: no stamp moves and nothing is announced', async () => {
+    const db = await openStamped()
+    const old = '2020-01-01T00:00:00.000Z'
+    await loadRows(db, 'Job', [{ id: 'a', name: 'x', updatedAt: old }, { id: 'b', name: 'y', updatedAt: old }])
+    const settle = () => new Promise(r => setImmediate(() => setImmediate(r)))
+    await settle()
+    const seen: { operation?: string; count?: number }[] = []
+    db.$tapEvents((e: { operation?: string; count?: number }) => { seen.push({ operation: e.operation, count: e.count }) })
+    expect(await loadRows(db, 'Job', 'id,name\na,x\nb,z\n', { key: 'id', mode: 'upsert' }))
+      .toEqual({ loaded: 2, added: 0, updated: 1, unchanged: 1, rejects: [] })
+    await settle()
+    expect((await db.job.findFirst({ where: { id: 'a' } })).updatedAt).toBe(old)
+    expect((await db.job.findFirst({ where: { id: 'b' } })).updatedAt > old).toBe(true)
+    expect(seen).toEqual([{ operation: 'upsertMany', count: 1 }])
+    db.$close()
+  })
+
   it('rejects a row past the entry state of a @@transitions field, and loads the rest', async () => {
     const db = (await createClient({ schema: `
 enum Stage { lead client lost }

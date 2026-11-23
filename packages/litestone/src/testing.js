@@ -607,6 +607,14 @@ export async function createTestEnv(opts = {}) {
               // refused it at every level the gate admits and the create was
               // never graded. Owning the row leaves the gate as the only rule.
               Object.assign(data, owned.columns)
+              // An arc key left out is filled by its `@default(auth().id)` from
+              // the synthetic caller, beside the key wired above, and the arc
+              // refuses two set at every level below 8 (`FJS-4545`). An
+              // explicit null keeps the one the fixture chose.
+              for (const arc of schema.models.find(x => x.name === modelName)?.attributes ?? []) {
+                if (arc.kind !== 'arc' || !arc.fields.some(k => data[k] != null)) continue
+                for (const k of arc.fields) if (data[k] == null) data[k] = null
+              }
               run = () => client[acc].create({ data, ...named(data) })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as

@@ -530,6 +530,8 @@ try {
 
   console.log('\n  New message: a direct channel, then a group')
   const roomIds = async (type) => ((await sinkCall(`/users/${ids.alice}/teams/${ids.team}/channels`, tokens.alice)).json ?? []).filter(c => c.type === type)
+  // The form stays mounted inside a closed <dialog>, so finding it says nothing about the dialog being open.
+  const dmShown = `!!document.querySelector('[data-new-dm]')?.closest('dialog')?.open`
   const pickPerson = async (name) => {
     await evaluate(`document.querySelector('[data-new-dm] [role=combobox]').focus()`)
     await click('[data-new-dm] [role=combobox]')
@@ -539,7 +541,7 @@ try {
     await sleep(300)
   }
   await click('[data-add="dms"]')
-  await until(`!!document.querySelector('[data-new-dm]')`, v => v, 'the + beside Direct messages never opened the dialog')
+  await until(dmShown, v => v, 'the + beside Direct messages never opened the dialog')
   await pickPerson('bob')
   await evaluate(`document.querySelector('[data-new-dm] button[type=submit]').click()`)
   await until(`location.pathname`, p => /^\/messages\/[a-z0-9]{26}\/$/.test(p) && p !== `/messages/${ids.open}/`, 'Open never navigated to the direct channel', 20_000)
@@ -554,7 +556,7 @@ try {
   check('a post in it lands on the sink in the direct channel', dmPosted?.channel_id === dmId, dmPosted)
   check('and the sidebar lists it under Direct messages', await exists(`[data-section="dms"] [data-channel="${dmId}"]`))
   await click('[data-add="dms"]')
-  await until(`!!document.querySelector('[data-new-dm]')`, v => v, 'the dialog never opened a second time')
+  await until(dmShown, v => v, 'the dialog never opened a second time')
   await pickPerson('bob')
   await pickPerson('bot')
   await evaluate(`document.querySelector('[data-new-dm] button[type=submit]').click()`)

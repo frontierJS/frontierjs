@@ -581,4 +581,46 @@ describe('a grant provider', () => {
     expect(() => defineProvider({ name: 'x', preset: 'google', clientId: 'c', clientSecret: 's', purpose: 'grant' })).toThrow(/needs onGrant/)
     expect(() => defineProvider({ name: 'x', preset: 'google', clientId: 'c', clientSecret: 's', onGrant: () => {} })).toThrow(/purpose: 'grant'/)
   })
+
+  // FJS-4554: Jobber's API is GraphQL only and answers no userinfo URL, so the
+  // grant lands with no identity rather than not at all.
+  test('with no userinfo endpoint lands with identity null, and only a sign-in provider still needs one', async () => {
+    const landed: any[] = []
+    const jobber = defineProvider({
+      name: 'jobber', preset: 'oidc', clientId: 'c', clientSecret: 's',
+      authorizeUrl: 'https://api.getjobber.com/api/oauth/authorize',
+      tokenUrl:     'https://api.getjobber.com/api/oauth/token',
+      purpose:      'grant',
+      onGrant:      (event) => { landed.push(event) },
+    })
+    expect(() => defineProvider({
+      name: 'x', preset: 'oidc', clientId: 'c', clientSecret: 's',
+      authorizeUrl: 'https://idp.test/authorize', tokenUrl: 'https://idp.test/token',
+    })).toThrow(/needs userinfoUrl/)
+
+    const j = await makeAuth({ oauthProviders: { jobber } })
+    try {
+      const japp = await createTestApp({ auth: j.auth as any, config: { publicUrl: PUBLIC_URL } as any })
+      japp.setAuth(j.auth as any)
+      japp.configure(auth({ auth: j.auth, cookieAuth: true, oauth: { errorRedirect: '/sign-in', rateLimit: { max: 10_000, window: '15 minutes' } } }))
+      const { state } = await j.auth.oauthBegin('jobber', {
+        redirectUri: `${PUBLIC_URL}/auth/oauth/jobber/callback`,
+        grant:       { model: 'Integration', id: 'i-2' },
+      })
+      const fetched: string[] = []
+      globalThis.fetch = (async (input: any) => {
+        fetched.push(String(input))
+        return new Response(JSON.stringify({ access_token: 'at', refresh_token: 'rt', expires_in: 3600 }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }) as unknown as typeof fetch
+
+      const res = await request(japp)
+        .get(`/auth/oauth/jobber/callback?code=c&state=${state}`)
+        .set('cookie', `${OAUTH_STATE_COOKIE}=${state}`)
+
+      expect(String(res.headers['location'])).not.toContain('oauth_error')
+      expect(fetched).toEqual(['https://api.getjobber.com/api/oauth/token'])
+      expect(landed).toHaveLength(1)
+      expect(landed[0]).toMatchObject({ grant: { model: 'Integration', id: 'i-2' }, tokens: { accessToken: 'at' }, identity: null })
+    } finally { j.cleanup() }
+  })
 })

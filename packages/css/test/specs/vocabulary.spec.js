@@ -247,7 +247,9 @@ test('vocabulary: every @container width is on the scale', function () {
   /*
    * Only a `fjs` container is the package's (tokens.css requires the name), so
    * only those are graded. The same table as @media plus CONTAINER_STEPS, and
-   * the same under-by-one rule; a rem is read at 16px, as the CSS writes it.
+   * the same under-by-one rule. A width in rem is off the scale: a condition
+   * cannot read var(--rem), so inside a widget it reads the host's root
+   * (FJS-4556).
    */
   var steps = Object.keys(BREAKPOINTS).map(function (k) { return BREAKPOINTS[k]; })
     .concat(Object.keys(CONTAINER_STEPS).map(function (k) { return CONTAINER_STEPS[k]; }));
@@ -267,8 +269,8 @@ test('vocabulary: every @container width is on the scale', function () {
       seen++;
       var op = m[1] || m[3];
       var raw = (m[2] || m[4]).trim();
-      var unit = /^(\d+(?:\.\d+)?)(px|rem)$/.exec(raw);
-      var px = unit && Number(unit[1]) * (unit[2] === 'rem' ? 16 : 1);
+      var unit = /^(\d+(?:\.\d+)?)px$/.exec(raw);
+      var px = unit && Number(unit[1]);
       var under = op === 'max' || op === '<=' || op === '>';
       var ok = px !== null && px !== undefined && steps.indexOf(px + (under ? 1 : 0)) !== -1;
       if (!ok) off.push(sheet.href.split('/src/').pop() + ': @container ' + rule.containerName + ' ' + text);

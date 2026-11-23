@@ -708,6 +708,13 @@ export interface CaravanApp {
   withDb?: <T>(fn: (db: unknown) => T | Promise<T>) => Promise<T>
 
   /**
+   * `createApp({ db })`'s root client, which a row-bound schedule taps for
+   * writes: under row tenancy `withDb` hands over a scoped client, and a
+   * Litestone tap is on the root alone.
+   */
+  db?: unknown
+
+  /**
    * The tenant registry under `createApp({ tenants })`, where there is no one
    * client: a job's row-bound schedules are read from each tenant it lists.
    */

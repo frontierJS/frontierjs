@@ -117,8 +117,8 @@ describe('oauthCallback', () => {
       code: 'c', state, cookieState: state, redirectUri: REDIRECT,
     })
 
-    expect(out.identity.providerId).toBe('99')
-    expect(out.identity.isEmailVerified).toBe(true)
+    expect(out.identity?.providerId).toBe('99')
+    expect(out.identity?.isEmailVerified).toBe(true)
     expect(out.returnTo).toBe('/dashboard')
     expect(out.tokens.accessToken).toBe('at')
     expect(out).not.toHaveProperty('token')

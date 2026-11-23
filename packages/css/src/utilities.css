@@ -162,7 +162,7 @@
  *
  * Content a narrow box does without: a snippet beside a title, a search
  * button's word, a URL under a bookmark. It drops below sm (640px), or
- * inside a `fjs` container narrower than `narrow` (30rem).
+ * inside a `fjs` container narrower than `narrow` (480px).
  *
  * Six apps wrote this hide by hand, each with its own `@media`, and five
  * of the six were a narrow COMPONENT, not a narrow screen -- a viewport
@@ -181,7 +181,7 @@
 @media (max-width: 639px) {
   .spare { display: none; }
 }
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .spare { display: none; }
 }
 

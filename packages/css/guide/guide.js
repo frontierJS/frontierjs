@@ -2332,9 +2332,9 @@ function densityPage() {
           <table class="table compact">
             <thead><tr><th>Box is</th><th>Density becomes</th></tr></thead>
             <tbody>
-              <tr><td>30rem or wider</td><td><code>1</code> — unchanged</td></tr>
-              <tr><td>under 30rem</td><td><code>0.9</code></td></tr>
-              <tr><td>under 20rem</td><td><code>0.8</code></td></tr>
+              <tr><td>480px or wider</td><td><code>1</code> — unchanged</td></tr>
+              <tr><td>under 480px</td><td><code>0.9</code></td></tr>
+              <tr><td>under 320px</td><td><code>0.8</code></td></tr>
             </tbody>
           </table>
         </div>
@@ -2347,7 +2347,7 @@ function densityPage() {
           to find out why.
         </p>
         <p>
-          A <code>.facts</code> in a named box under 30rem stacks its pairs
+          A <code>.facts</code> in a named box under 480px stacks its pairs
           too, so one in a narrow aside stacks on a wide screen without an
           app restyling it.
         </p>
@@ -9341,8 +9341,8 @@ function disclosurePage() {
    ══════════════════════════════════════════════════════════════════════ */
 
 const CONTAINER_STEPS = [
-  ["narrow", "480px", "30rem — a <code>fjs</code> container below this derives a lighter density"],
-  ["cramped", "320px", "20rem — a <code>fjs</code> container below this derives the lightest"],
+  ["narrow", "480px", "a <code>fjs</code> container below this derives a lighter density"],
+  ["cramped", "320px", "a <code>fjs</code> container below this derives the lightest"],
 ];
 
 const BREAKPOINTS = [
@@ -9452,7 +9452,7 @@ function responsivePage() {
           snippet beside a title, the word on a search button, a URL under a
           bookmark. It drops below <code>sm</code> (640px), and inside a
           <code>fjs</code> container narrower than <code>narrow</code>
-          (<code>30rem</code>). The second branch is the one that matters: most
+          (<code>480px</code>). The second branch is the one that matters: most
           secondary content sits in a panel, and a panel can be narrow on a wide
           window.
         </p>
@@ -9481,7 +9481,7 @@ function responsivePage() {
           parent, not on a flex item.
         </p>
         ${code(`@media (max-width: 639px)               { .spare { display: none } }
-@container fjs (inline-size < 30rem)    { .spare { display: none } }`)}`,
+@container fjs (inline-size < 480px)    { .spare { display: none } }`)}`,
       )}
 
       ${section(
@@ -12641,7 +12641,7 @@ function configModal() {
   return `
     <dialog class="dialog sg-modal" aria-labelledby="sg-modal-title" data-modal>
       <header class="surface-header">
-        <div class="sg-modal-title" id="sg-modal-title">
+        <div class="item sg-modal-title" id="sg-modal-title">
           <span class="sg-modal-glyph">{ }</span>
           index.css
         </div>

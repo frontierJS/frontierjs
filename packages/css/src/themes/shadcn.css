@@ -23,7 +23,7 @@
 
   --ink:      #09090b; /* zinc-950 */
   --ink-soft: #3f3f46; /* zinc-700 */
-  --ink-mute: #71717a; /* zinc-500, 4.8:1 on white */
+  --ink-mute: #6e6e77; /* a step under zinc-500, which is 4.4:1 on zinc-100 */
 
   --rule:        #e4e4e7; /* zinc-200 */
   --rule-strong: #929296; /* between zinc-400 and zinc-500 */

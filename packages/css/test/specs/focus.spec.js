@@ -75,7 +75,7 @@ function mountFocused(spec) {
   return node;
 }
 
-function rootProp(name) {
+function focusRootProp(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
@@ -138,7 +138,7 @@ FOCUSABLE.forEach(function (spec) {
     var node = mountFocused(spec);
     assert.equal(
       getComputedStyle(node).outlineWidth,
-      rootProp('--ring-width'),
+      focusRootProp('--ring-width'),
       spec.name + ' hardcodes its ring width instead of reading the token'
     );
   });
@@ -146,7 +146,7 @@ FOCUSABLE.forEach(function (spec) {
   test('focus: ' + spec.name + ' offsets the ring ' + (INSET.indexOf(spec.name) > -1 ? 'inward' : 'outward'), function () {
     var node = mountFocused(spec);
     var offset = parseFloat(getComputedStyle(node).outlineOffset);
-    var token = parseFloat(rootProp('--ring-offset'));
+    var token = parseFloat(focusRootProp('--ring-offset'));
     var expected = INSET.indexOf(spec.name) > -1 ? -token : token;
     assert.equal(offset, expected, spec.name + ' ring offset is not derived from --ring-offset');
   });
@@ -183,7 +183,7 @@ test('focus: every theme retints the ring', function () {
    * Reading it at the use site is what makes the theme visible.
    */
   var themes = ['sunset', 'forest', 'midnight', 'dark', 'elite'];
-  var defaultPrimary = rootProp('--color-primary');
+  var defaultPrimary = focusRootProp('--color-primary');
   var ringed = 0;
 
   themes.forEach(function (name) {
@@ -207,7 +207,7 @@ test('focus: .field rings in its tone when it has one', function () {
   toned.focus();
   assert.sameColor(
     getComputedStyle(toned).outlineColor,
-    focusEdge(toned, rootProp('--color-danger')),
+    focusEdge(toned, focusRootProp('--color-danger')),
     'a .field.danger should ring in danger, not in --ring'
   );
 });

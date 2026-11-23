@@ -361,6 +361,20 @@ test('the gate ladder builds the parents a create needs — @@arc, a keys-only @
   finally { env.close() }
 })
 
+// The fixture wires the arc's first key, and the caller fills the second from
+// its default, so both are set and the arc refuses before the gate is asked.
+test('the gate ladder keeps an arc at one key when another defaults from auth()', async () => {
+  const env = await createTestEnv({ schema: `
+    model User      { id String @id; name String; c Comment[] }
+    model Commenter { id Int @id @default(autoincrement()); name String; c Comment[] }
+    model Comment { id Int @id @default(autoincrement()); body String
+      commenterId Int?    @default(auth().commenterId); commenter Commenter? @relation(fields: [commenterId], references: [id])
+      authorId    String? @default(auth().id);          author    User?      @relation(fields: [authorId], references: [id])
+      @@arc([commenterId, authorId]); @@gate(0.0.5.5) }` })
+  try { expect(await env.verifyGateLadder()).toEqual([]) }
+  finally { env.close() }
+})
+
 // An implication: one kind needs BOTH keys. The branch that is nothing but
 // IS NOT NULL clauses satisfies the check alone, so both are filled; before,
 // only an OR made entirely of IS NOT NULLs was read, the row failed the check,

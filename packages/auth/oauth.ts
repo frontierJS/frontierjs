@@ -83,7 +83,12 @@ export interface OAuthProvider {
   clientSecret:  string
   authorizeUrl:  string
   tokenUrl:      string
-  userinfoUrl:   string
+  /**
+   * Null only on a grant provider whose API answers no identity (Jobber is
+   * GraphQL only): its `onGrant` then receives `identity: null`. A sign-in
+   * provider keys its Credential on the identity, so it is never null there.
+   */
+  userinfoUrl:   string | null
   scope:         string
   /**
    * May this provider's `isEmailVerified` be believed at all?
@@ -119,7 +124,8 @@ export interface OAuthGrantTarget {
 export interface OAuthGrantEvent {
   provider:  string
   tokens:    TokenSet
-  identity:  OAuthIdentity
+  /** Null when the provider declares no `userinfoUrl`. */
+  identity:  OAuthIdentity | null
   grant:     OAuthGrantTarget
   /** The user id of whoever started the flow; the callback itself has no session. */
   initiator: string | null
@@ -132,7 +138,7 @@ export interface OAuthProviderOptions {
   /** Widen or replace the preset's scope. The preset's is the sign-in minimum. */
   scope?:        string
   trustEmail?:   boolean
-  /** Required by `oidc`, which has no endpoints of its own. */
+  /** Required by `oidc`, which has no endpoints of its own; a grant provider may omit `userinfoUrl`. */
   authorizeUrl?: string
   tokenUrl?:     string
   userinfoUrl?:  string
@@ -270,14 +276,17 @@ export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
     trustEmail:   opts.trustEmail   ?? base.trustEmail,
     authorizeUrl: opts.authorizeUrl ?? base.authorizeUrl,
     tokenUrl:     opts.tokenUrl     ?? base.tokenUrl,
-    userinfoUrl:  opts.userinfoUrl  ?? base.userinfoUrl,
+    userinfoUrl:  (opts.userinfoUrl ?? base.userinfoUrl) || null,
     purpose,
     ...(opts.onGrant ? { onGrant: opts.onGrant } : {}),
   }
 
   // The `oidc` preset ships three empty strings, so a missing endpoint would
   // otherwise surface as a fetch of '' at the moment somebody clicks sign-in.
-  for (const key of ['authorizeUrl', 'tokenUrl', 'userinfoUrl'] as const) {
+  const required = purpose === 'grant'
+    ? ['authorizeUrl', 'tokenUrl'] as const
+    : ['authorizeUrl', 'tokenUrl', 'userinfoUrl'] as const
+  for (const key of required) {
     if (!provider[key]) {
       throw new OAuthError(`OAuth provider '${name}' (preset '${preset}') needs ${key}`)
     }
@@ -287,7 +296,7 @@ export function defineProvider(spec: OAuthProviderSpec): OAuthProvider {
   // the bearer token: over http:// any hop between here and the provider reads
   // them. Loopback is exempt so a provider run on the dev machine still works.
   for (const key of ['tokenUrl', 'userinfoUrl'] as const) {
-    if (!isSecureEndpoint(provider[key])) {
+    if (provider[key] !== null && !isSecureEndpoint(provider[key])) {
       throw new OAuthError(
         `OAuth provider '${name}' (preset '${preset}') needs ${key} to be https:// (got '${provider[key]}')`
       )
@@ -486,6 +495,7 @@ export async function fetchIdentity(
     return res.json()
   }
 
+  if (!provider.userinfoUrl) throw new OAuthError(`OAuth provider '${provider.name}' declares no userinfoUrl`)
   const identity = await provider.identify(await get(provider.userinfoUrl), get)
 
   // A provider that answers no subject leaves nothing to key a credential on,
@@ -558,7 +568,8 @@ export interface AuthOAuth {
     providerName: string,
     args: { code: string; state: string; cookieState: string | null; redirectUri: string },
   ): Promise<{
-    identity:  OAuthIdentity
+    /** Null only for a grant provider that declares no `userinfoUrl`. */
+    identity:  OAuthIdentity | null
     tokens:    TokenSet
     returnTo:  string | null
     link:      string | null

@@ -2367,8 +2367,8 @@ const { loaded, rejects } = await loadRows(db.asSystem(), 'Lead', csvText, {
   `added + updated + unchanged`: under `mode: 'upsert'` a row whose key a stored
   row holds is `unchanged` when every value it states matches that row and
   `updated` otherwise, so a `dryRun` is an import preview's *will add 2, will
-  update 5, leaves 40 as they are*. An unchanged row is still written, so its
-  `@updatedAt` moves.
+  update 5, leaves 40 as they are*. An unchanged row is not written: its
+  `@updatedAt` stays, and no write event or trail entry is made for it.
 - **A reason never quotes the cell**: the text may be what the column encrypts.
 - A header naming no column, or a required column with no default that the file
   lacks, **throws** before any row: every row would be rejected for it. Under

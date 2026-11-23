@@ -279,9 +279,9 @@ test('shadow: no declaration spells a size in bare rem', function () {
   /*
    * The guard on the test above: a bare `Nrem` in any declaration reads the
    * host page's root inside a widget, and nothing in a page shows it. The
-   * one rem the kit declares is --rem's own value at :root. A condition of
-   * @media or @container is a rule's prelude, not a declaration, and cannot
-   * read a var().
+   * one rem the kit declares is --rem's own value at :root. A condition is
+   * a rule's prelude, not a declaration; vocabulary.spec.js holds a fjs
+   * container's widths to px.
    */
   var bare = /(^|[^\w.-])-?\d*\.?\d+rem\b/;
   var offenders = [];
@@ -296,4 +296,24 @@ test('shadow: no declaration spells a size in bare rem', function () {
     offenders.push(href.split('/').pop() + ': ' + (rule.selectorText || rule.name || '') + ' {' + hits.join(';') + ' }');
   });
   assert.equal(offenders.join('\n'), '', 'write calc(N * var(--rem)), never Nrem (FJS-D1164)');
+});
+
+test('shadow: a host page\'s root font size does not move the fjs container breakpoints', function () {
+  /*
+   * A container-query condition cannot read var(--rem), so a breakpoint in
+   * rem reads the host document's root inside a widget: on a 10px root a
+   * 30rem step trips at 300px, and a 400px box stays at full density
+   * (FJS-4556).
+   */
+  var html = '<div style="container: fjs / inline-size; inline-size: 400px"><p>x</p></div>';
+  var page = el(html, 'p');
+  var f = shadowRoot('small-root', 'font-size: 10px');
+  var wrap = f.doc.createElement('div');
+  wrap.innerHTML = html;
+  var node = f.root.appendChild(wrap.firstElementChild).querySelector('p');
+  var want = style(page, '--density');
+  var got = shadowStyle(node, '--density');
+  shadowCleanup();
+  assert.equal(want, '0.9', 'the page premise: a 400px fjs box is under the narrow step');
+  assert.equal(got, want, '--density in a 400px fjs box on a 10px host root');
 });

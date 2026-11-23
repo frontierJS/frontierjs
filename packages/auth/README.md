@@ -486,6 +486,10 @@ callback's path, as the begin route does, and answers `authorizeUrl` for the
 browser to navigate to. The callback is auth's, and it ends at `onGrant` and the
 flow's `returnTo`; a throw from `onGrant` lands on `oauth_error=exchange`.
 
+A provider whose API answers no identity (Jobber, GraphQL only) is declared on
+the `oidc` preset with `authorizeUrl` and `tokenUrl` and no `userinfoUrl`: only
+a grant provider may omit it, and its `onGrant` receives `identity: null`.
+
 ## Escape hatch
 
 OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).

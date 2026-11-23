@@ -54,8 +54,9 @@
  * `calc(N * var(--rem))`, never `Nrem` (FJS-D1164). In a page --rem is 1rem
  * and a reader's raised base font still scales everything; in a widget it
  * is pinned to 16px, which gives up that base font there to stop following
- * the host's. A condition of @media or @container cannot read a var() and
- * stays in rem. The last test in test/specs/shadow.spec.js fails a bare rem.
+ * the host's. A condition of @media or @container cannot read a var(), so a
+ * width there is px: in rem a container query reads the host's root
+ * (FJS-4556). The last tests in test/specs/shadow.spec.js fail a bare rem.
  */
 :root { --rem: 1rem; }
 :host { --rem: 16px; }
@@ -623,11 +624,11 @@
  * still wins: DECLARED BEATS DERIVED, which is the only rule worth
  * remembering here.
  */
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   * { --density: 0.9; }
 }
 
-@container fjs (inline-size < 20rem) {
+@container fjs (inline-size < 320px) {
   * { --density: 0.8; }
 }
 

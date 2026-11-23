@@ -1813,7 +1813,7 @@ export function createLitestoneAuth(
       providerName: string,
       args: { code: string; state: string; cookieState: string | null; redirectUri: string },
     ): Promise<{
-      identity:  OAuthIdentity
+      identity:  OAuthIdentity | null
       tokens:    TokenSet
       returnTo:  string | null
       link:      string | null
@@ -1857,7 +1857,9 @@ export function createLitestoneAuth(
         verifier:    flow.verifier,
         redirectUri: args.redirectUri,
       })
-      const identity = await fetchIdentity(provider, tokens)
+      // A sign-in provider cannot be defined without a userinfoUrl, so a null
+      // here is a grant provider whose API answers no identity (FJS-4554).
+      const identity = provider.userinfoUrl ? await fetchIdentity(provider, tokens) : null
 
       return {
         identity,

@@ -792,8 +792,8 @@ const BREAKPOINTS = { sm: 640, md: 768, lg: 1024, xl: 1280, "2xl": 1536 };
 
 /*
  * The two widths a `fjs` container changes density at, in px — the BOX's
- * width, not the viewport's (`@container fjs (inline-size < 30rem)` and
- * `< 20rem`, written as rem in src/). They sit beside BREAKPOINTS rather than
+ * width, not the viewport's (`@container fjs (inline-size < 480px)` and
+ * `< 320px`). They sit beside BREAKPOINTS rather than
  * in a scale of their own (FJS-D2021): `vocabulary: every @container width is
  * on the scale` grades each one against both tables.
  */

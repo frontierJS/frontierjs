@@ -10,8 +10,8 @@
  * scroll in its own box instead of taking the page with it.
  */
 
-var TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'field'];
+var COMPONENT_TONES = ['primary', 'secondary', 'muted', 'info', 'success', 'warning', 'danger'];
+var COMPONENT_THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'field'];
 
 var STEPS =
   '<ol class="steps" aria-label="Progress">' +
@@ -518,7 +518,7 @@ test('steps: a tone on .steps reaches the markers', function () {
   var baseBg = style(base, 'background-color');
   cleanup();
 
-  TONES.forEach(function (tone) {
+  COMPONENT_TONES.forEach(function (tone) {
     var toned = el(STEPS.replace('class="steps"', 'class="steps ' + tone + '"'), '#s1 .step-marker');
     var bg = style(toned, 'background-color');
     if (tone !== 'primary') {
@@ -536,8 +536,8 @@ test('steps: a completed marker keeps its text readable on every tone', function
    * derivation has to hold everywhere chip's does.
    */
   var failures = [];
-  THEMES.forEach(function (theme) {
-    TONES.forEach(function (tone) {
+  COMPONENT_THEMES.forEach(function (theme) {
+    COMPONENT_TONES.forEach(function (tone) {
       var m = themed(theme, STEPS.replace('class="steps"', 'class="steps ' + tone + '"'), '#s1 .step-marker');
       var cs = getComputedStyle(m);
       var ratio = contrast(cs.color, cs.backgroundColor);
@@ -563,8 +563,8 @@ test('avatar: initials clear AA on every tone in every theme', function () {
    * lineage.
    */
   var failures = [];
-  THEMES.forEach(function (theme) {
-    TONES.forEach(function (tone) {
+  COMPONENT_THEMES.forEach(function (theme) {
+    COMPONENT_TONES.forEach(function (tone) {
       var a = themed(theme, '<span class="avatar ' + tone + '">DO</span>');
       var cs = getComputedStyle(a);
       var ratio = contrast(cs.color, cs.backgroundColor);

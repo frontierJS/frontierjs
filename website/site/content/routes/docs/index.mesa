@@ -29,7 +29,7 @@ render: static
   </section>
   <section>
     <h2>Guides</h2>
-    <p>One page per job, grouped by realm: Data, API, UI, Ship and Test. Each one ends in code that runs. The Data guides are pages of the <a href="/docs/litestone/">Litestone guide</a>; the rest are stub pages today naming what each will cover and where the material is now. Start with <a href="/docs/litestone/schema/models-and-fields/">Models and fields</a>.</p>
+    <p>One page per job, grouped by realm: Data, API, UI, Ship and Test. Each one is a page of a package guide: Data in the <a href="/docs/litestone/">Litestone guide</a>, API in the <a href="/docs/junction/">Junction guide</a>, UI in the <a href="/docs/sierra/">Sierra guide</a>, Ship in the <a href="/docs/basecamp/">Basecamp guide</a> and Test in the <a href="/docs/testing/">Testing guide</a>. Start with <a href="/docs/litestone/schema/models-and-fields/">Models and fields</a>.</p>
     <p class="from">From: <a href="https://github.com/frontierjs/frontierjs/blob/main/docs/QUICKSTART.md">docs/QUICKSTART.md</a> and the package READMEs</p>
   </section>
   <section>

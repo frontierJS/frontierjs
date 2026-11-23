@@ -8,7 +8,7 @@
  * moved in v0.10. These tests are what stops them drifting back out.
  */
 
-var THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'field'];
+var GAP_THEMES = ['default', 'sunset', 'forest', 'midnight', 'dark', 'elite', 'basecamp', 'field'];
 
 /* ── Icon ────────────────────────────────────────────────────────────
  *
@@ -205,7 +205,7 @@ test('text: the small steps still clear AA on every theme', function () {
    * package, and it is exactly what a meta line uses.
    */
   var failures = [];
-  THEMES.forEach(function (theme) {
+  GAP_THEMES.forEach(function (theme) {
     var p = themed(theme, '<p class="text-xs text-muted">2 hours ago</p>');
     var probe = themed(theme, '<div>x</div>');
     var bg = getComputedStyle(probe).getPropertyValue('--surface').trim();

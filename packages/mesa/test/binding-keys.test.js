@@ -80,6 +80,13 @@ describe('the binding key', () => {
     expect(server).toEqual(dom)
   })
 
+  it('adopts a node written once by a constant style: beside a constant attribute (FJS-4543)', async () => {
+    const src = '<script>\n  let n = 1\n  const r = 42\n</script>\n<svg><circle r={r} style:stroke="var(--x)" /><text>{n}</text></svg>'
+    const ctx = await compile(src, { ...quiet, hydratable: true })
+    expect(ctx.result).not.toMatch(/unkeyed:/)
+    expect(ctx.result).toMatch(/= document\.createElement\('i'\);/)
+  })
+
   it('names a snippet rendered twice once, by the snippet body, on both walks', async () => {
     const src = '<script>\n  let n = 1\n</script>\n{#snippet s()}<b>{n}</b>{/snippet}\n{@render s()}{@render s()}'
     const { dom, server } = await both(src)
@@ -88,7 +95,7 @@ describe('the binding key', () => {
   })
 })
 
-const UNRESOLVED_TODAY = 83
+const UNRESOLVED_TODAY = 51
 
 describe('every corpus file', () => {
   // rg skips node_modules and gitignored build output, as scripts/corpus.mjs does.

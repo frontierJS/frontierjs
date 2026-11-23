@@ -1,25 +1,13 @@
-// site/content/data/docs-guides.js — the guides the docs owe, one per job,
-// grouped by realm. Each is a stub page at /docs/guides/<slug>/ until written:
-// `covers` is the brief, `from` the repo files that hold the material today,
-// and `tutor` the fli lesson that already walks it, where one does.
-//
-// An entry with a `page` ('schema/models-and-fields') is written: it names a
-// page of a package guide, links there, and has no stub. The guide is Litestone's
-// unless `guide: 'junction'` says otherwise. A `page` the guide README does not
-// list, or a `from` path that no longer exists, fails the build rather than
-// publishing a link that 404s.
+// site/content/data/docs-guides.js — the guides the docs offer, one per job,
+// grouped by realm. Each entry names a `page` of a package guide
+// ('schema/models-and-fields') and links there; the guide is Litestone's unless
+// `guide: 'junction'` says otherwise. A `page` the guide README does not list
+// fails the build rather than publishing a link that 404s.
 //
 // `pkg` names the workspace folder whose brand icon (brand/assets/icons) the
 // sidebar draws beside the entry; docs-nav.js refuses one with no icon file.
 
-import { existsSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { litestoneGuide, junctionGuide, sierraGuide, basecampGuide, testingGuide } from './package-guide.js'
-
-const ROOT = fileURLToPath(new URL('../../../../', import.meta.url))
-const BLOB = 'https://github.com/frontierjs/frontierjs/blob/main'
-
-export const BASE = '/docs/guides/'
 
 const SECTIONS = [
   { section: 'Data', lede: 'The Model realm: what db/schema.lite declares and Litestone enforces.', guides: [
@@ -73,36 +61,19 @@ const SECTIONS = [
   ] },
 ]
 
-const linkOf = (path) => {
-  if (!existsSync(ROOT + path)) throw new Error(`docs-guides: ${path} does not exist`)
-  return { label: path, href: `${BLOB}/${path}` }
-}
-
 const GUIDES = { litestone: litestoneGuide, junction: junctionGuide, sierra: sierraGuide, basecamp: basecampGuide, testing: testingGuide }
 
 const guidePages = () => Object.fromEntries(Object.entries(GUIDES).map(([id, g]) =>
   [id, new Map(g.loadGuide().flatMap((s) => s.pages.map((p) => [`${p.dir}/${p.slug}`, p.href])))]))
 
 const resolve = (g, pages) => {
-  if (!g.page) return { ...g, href: `${BASE}${g.slug}/`, from: g.from.map(linkOf), tutor: g.tutor ?? null }
   const id = g.guide ?? 'litestone'
   if (!pages[id].has(g.page)) throw new Error(`docs-guides: ${g.slug} names ${g.page}, which the ${id} guide README does not list`)
   return { ...g, href: pages[id].get(g.page) }
 }
 
-/** [{ section, lede, guides: [{ slug, title, href, page? } | stub: { lede, covers, from: [{label, href}], tutor }] }] */
+/** [{ section, lede, guides: [{ slug, title, href, page, guide?, pkg? }] }] */
 export function loadGuides() {
   const pages = guidePages()
   return SECTIONS.map((s) => ({ ...s, guides: s.guides.map((g) => resolve(g, pages)) }))
-}
-
-/** The stub guides: those not yet written as a guide page. */
-export const stubs = () => loadGuides().flatMap((s) => s.guides.filter((g) => !g.page))
-
-export function loadGuidePage(slug) {
-  for (const s of loadGuides()) {
-    const g = s.guides.find((x) => x.slug === slug && !x.page)
-    if (g) return { ...g, section: s.section }
-  }
-  throw new Error(`docs-guides: no stub guide ${slug}`)
 }

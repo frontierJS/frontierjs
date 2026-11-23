@@ -252,3 +252,71 @@ ${SCHEMA}
     ].sort())
   })
 })
+
+describe('under tenancy { strategy row } (FJS-4547)', () => {
+  // Every tenant shares one file, so the database names no tenant: the rows
+  // are read past policy, as the commitment sweep reads them, and each fire
+  // carries its ROW's tenant, which the app's principal then holds as its
+  // claim (FJS-2231). A row's id is one per file, so the fire's id stays the
+  // row's and the minute. A write rebinds through the root client's tap: the
+  // client withDb hands over is scoped, and a scoped client has no tap.
+  const ROW_TENANCY = 'tenancy { strategy row  column workspaceId  claim workspaceId }\n'
+
+  async function bootRow(schema: string, seed: (sys: any) => Promise<void> = async () => {}) {
+    const db: any = await createClient({ db: ':memory:', schema })
+    closers.push(() => db.$close())
+    await seed(db.asSystem())
+    const app = createApp({ db, system: { id: 'system', role: 'system' } as any }) as any
+    let at = new Date('2026-06-01T00:00:00Z')
+    const queue = caravan({ db: ':memory:', pollInterval: 60_000, cronClock: () => at })
+    app.configure(queue)
+    queue.handle(JOB, async () => {}, { schedules: { model: 'Window', cron: 'rule', timeZone: 'timeZone' } })
+    return {
+      sys: db.asSystem(), queue,
+      async start() {
+        jest.useFakeTimers()
+        await app._startForTest()
+        closers.push(() => queue.stop())
+        await settle()
+      },
+      async walk(until: Date) {
+        while (at < until) {
+          at = new Date(at.getTime() + 10 * 60_000)
+          jest.advanceTimersByTime(10_000)
+          await settle()
+        }
+      },
+    }
+  }
+
+  it('fires each row in its own tenant, and a write after start rebinds', async () => {
+    const rows: Record<string, any> = {}
+    const t = await bootRow(ROW_TENANCY + SCHEMA.replace('  id ', '  workspaceId String\n  id '), async sys => {
+      for (const w of ['acme', 'globex'])
+        rows[w] = await sys.window.create({ data: { workspaceId: w, name: w, rule: '0 3 * * *', timeZone: 'UTC' } })
+    })
+    await t.start()
+    const added = await t.sys.window.create({ data: { workspaceId: 'globex', name: 'added', rule: '0 2 * * *', timeZone: 'UTC' } })
+    await settle()
+    await t.walk(new Date('2026-06-01T04:00:00Z'))
+
+    const fired = t.queue.list({ limit: 50 }).filter(r => r.name === JOB)
+    expect(fired.map(r => [r.id, r.tenant_id]).sort()).toEqual([
+      [occurrenceKey('cron', JOB, rows.acme.id,   wall(2026, 6, 1, 3, 0)), 'acme'],
+      [occurrenceKey('cron', JOB, rows.globex.id, wall(2026, 6, 1, 3, 0)), 'globex'],
+      [occurrenceKey('cron', JOB, added.id,       wall(2026, 6, 1, 2, 0)), 'globex'],
+    ].sort())
+  })
+
+  it('refuses by name a model scoped through its parent, which carries no tenant column', async () => {
+    const t = await bootRow(ROW_TENANCY + `
+model Site {
+  id          Int    @id @default(autoincrement())
+  workspaceId String
+  windows     Window[]
+}
+${SCHEMA.replace('  id ', '  siteId Int\n  site   Site @relation(fields: [siteId], references: [id])\n  id ').replace(/\n}\n$/, '\n  @@tenant(via: site)\n}\n')}
+`)
+    await expect(t.start()).rejects.toThrow(/Window, which is scoped by tenant through its parent/)
+  })
+})

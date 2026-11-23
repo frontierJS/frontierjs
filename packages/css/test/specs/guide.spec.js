@@ -579,7 +579,7 @@ test('guide: no .sg-* class renders identically to a shipped term', function () 
  * the two classes agree on how the box is BUILT — display, the flex/grid
  * axes, gap, alignment. Agreeing on `border-radius` and `color` is a
  * coincidence between any two styled boxes. So a term must set at least one
- * STRUCTURAL property, and the near-miss must agree with it on all of them:
+ * GUIDE_STRUCTURAL property, and the near-miss must agree with it on all of them:
  * `.tiles` (display+grid-template-columns) qualifies, `.spinner` (border,
  * radius, height, width — no structure) does not, and no threshold has to
  * guess.
@@ -608,7 +608,7 @@ var NEAR_FLOOR = 0.9;
  * whose gap is 12px rather than 16px, which is the exact case this check
  * exists to catch. A gap is a value inside a layout, not a different layout.
  */
-var STRUCTURAL = [
+var GUIDE_STRUCTURAL = [
   'flex-direction', 'flex-wrap', 'grid-template-columns',
   'align-items', 'justify-content', 'place-items',
 ];
@@ -696,7 +696,7 @@ test('guide: no .sg-* class is a shipped term plus a tweak', function () {
     PROBE_TERMS.forEach(function (t) {
       var v = vec(t);
       var structural = PROBE_PROPS.some(function (p, i) {
-        return STRUCTURAL.indexOf(p) !== -1 && v[i] !== bareVec[i];
+        return GUIDE_STRUCTURAL.indexOf(p) !== -1 && v[i] !== bareVec[i];
       });
       if (structural) termVec[t] = v;
     });
@@ -723,7 +723,7 @@ test('guide: no .sg-* class is a shipped term plus a tweak', function () {
          * a different way, however much paint the two happen to share.
          */
         var sharesBuild = PROBE_PROPS.every(function (p, i) {
-          if (STRUCTURAL.indexOf(p) === -1) return true;
+          if (GUIDE_STRUCTURAL.indexOf(p) === -1) return true;
           if (tv[i] === bareVec[i]) return true;
           return v[i] === tv[i];
         });
