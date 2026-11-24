@@ -1114,6 +1114,9 @@ function columnReader(model, schema, modelName, overflow) {
     if (f.attributes.some(a => DERIVED.has(a.kind) || a.kind === 'default' || a.kind === 'updatedAt')) return false
     // An Int @id with no default is the rowid, which SQLite assigns.
     if (f.attributes.some(a => a.kind === 'id') && f.type.name === 'Int') return false
+    // An @version counter is the client's: a create starts it and an update
+    // moves it, so a row never carries one and lacks nothing without it.
+    if (f.attributes.some(a => a.kind === 'version')) return false
     return true
   }
 

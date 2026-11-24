@@ -571,3 +571,27 @@ model Event {
     db.$close()
   })
 })
+
+// An @version counter is no column a row carries: counted as required, every
+// upsert row "lacked" it and fell to an update by key, which a principal's
+// client refused VersionRequired — new rows and stored ones alike.
+describe('loadRows on a model with an @version counter', () => {
+  const versioned = `
+model Vendor {
+  id      Int    @id
+  name    String @unique
+  phone   String?
+  version Int    @version
+}
+`
+  it('a principal upserts new and stored rows without stating the version', async () => {
+    const db = (await createClient({ schema: versioned, db: ':memory:' })) as any
+    const user = db.$setAuth({ id: 'owner' })
+    expect(await loadRows(user, 'Vendor', 'name,phone\nAcme,555\nZed,\n', { key: 'name', mode: 'upsert' }))
+      .toMatchObject({ loaded: 2, added: 2, updated: 0, rejects: [] })
+    expect(await loadRows(user, 'Vendor', 'name,phone\nAcme,556\n', { key: 'name', mode: 'upsert' }))
+      .toMatchObject({ loaded: 1, added: 0, updated: 1, rejects: [] })
+    expect(await db.vendor.findFirst({ where: { name: 'Acme' } })).toMatchObject({ phone: '556' })
+    db.$close()
+  })
+})
