@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/conduit-37signals",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Basecamp over @frontierjs/conduit — the account's API target and its token endpoint; reads, verbs, the event feed and the mirror claim as the plan builds them.",
   "type": "module",
   "license": "MIT",

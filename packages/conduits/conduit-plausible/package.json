@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/conduit-plausible",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Plausible Analytics over @frontierjs/conduit — the read-only, rate-limited stats query.",
   "type": "module",
   "license": "MIT",

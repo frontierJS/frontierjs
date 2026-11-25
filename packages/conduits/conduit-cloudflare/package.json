@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/conduit-cloudflare",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Cloudflare DNS over @frontierjs/conduit — zones, records, one all-or-nothing batch; a 200 that is a failure.",
   "type": "module",
   "license": "MIT",
