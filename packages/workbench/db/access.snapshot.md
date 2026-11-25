@@ -121,7 +121,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Reaction`
 
 - allow **read** — `check(post)`
-- allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read')`
+- allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId`
 - allow **delete** — `profileExternalId == auth().profileExternalId`
 
 ### `SavedPost`
@@ -204,6 +204,7 @@ rather than refusing the row.
 | `Draft` | `missingSince` | `@system` |
 | `FileInfo` | `externalId` | `@system` |
 | `FileInfo` | `postExternalId` | `@system` |
+| `FileInfo` | `channelExternalId` | `@system` |
 | `FileInfo` | `profileExternalId` | `@system` |
 | `FileInfo` | `name` | `@system` |
 | `FileInfo` | `extension` | `@system` |
@@ -262,6 +263,7 @@ rather than refusing the row.
 | `QuietSchedule` | `profileExternalId` | `@system` |
 | `Reaction` | `externalId` | `@system` |
 | `Reaction` | `postExternalId` | `@system` |
+| `Reaction` | `channelExternalId` | `@system` |
 | `Reaction` | `profileExternalId` | `@system` |
 | `Reaction` | `emojiName` | `@system` |
 | `Reaction` | `createdAt` | `@system` |

@@ -8,3 +8,6 @@ import '@frontierjs/css'
 
 import { applyTextSize } from './lib/text-size.js'
 applyTextSize()
+
+// The desktop window's title bar follows the theme; a no-op in a browser.
+import './lib/titlebar.js'

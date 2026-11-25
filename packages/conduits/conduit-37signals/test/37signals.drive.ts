@@ -64,7 +64,7 @@ import { startBasecampSink } from '../sink.ts'
 import { basecampTargets, bindBasecamp, translate, basecampTokenResolver, BASECAMP_API_TARGET, BASECAMP_PERSON_TARGET, type GrantStore, type BasecampSend, me, project, projects, recording, todolists, walk, nextLink, type DockEntry,
   createTodo, completeTodo, postMessage, comment, chatLine, findCreated, type RichText, pollEvents, FEED_TYPES, type FeedFrom, type FeedFilters, eventJobId, reread,
   basecampStreamDialect, BASECAMP_STREAM_TARGET, type StreamEvent,
-  basecampSignInTargets, registerClient, pkcePair, pkceChallenge, authorizeUrl, exchangeCode, authorization } from '../src/index.ts'
+  basecampSignInTargets, registerClient, pkcePair, pkceChallenge, authorizeUrl, exchangeCode, readAuthorization } from '../src/index.ts'
 
 const { got, t } = results()
 const sink = startBasecampSink({ people: { bc_refresh_ana: 1000200, bc_refresh_ben: 1000201 } }), ctl = control(sink.url)
@@ -568,7 +568,7 @@ try {
   // After: the granted token reads which account it reaches, and its refresh
   // token is the one the resolver spends, under the registered client's id.
   if (!('grant' in granted)) throw new Error('drive: the approved sign-in was never granted')
-  const authz = await authorization(signer, { accessToken: granted.grant.accessToken, apiOrigin: sink.url })
+  const authz = await readAuthorization(signer, { accessToken: granted.grant.accessToken, apiOrigin: sink.url })
   const bc3 = authz.row?.accounts.filter(a => a.product === 'bc3') ?? []
   const kept = { refresh: granted.grant.refreshToken }
   const signedIn = createConduit({

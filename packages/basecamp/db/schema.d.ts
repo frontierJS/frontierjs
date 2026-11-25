@@ -7709,10 +7709,11 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   // lost belongs in a durable mechanism and not here (FJS-D247).
   $tapEvents(fn: (event: WriteEvent) => void): () => void
 
-  // Utilities
+  // Utilities. The four ops writes run on asSystem() only, and every other
+  // flavor refuses them by name (FJS-D2363).
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ path: string; size: number }>
-  $attach(path: string, alias: string): void
-  $detach(alias: string): void
+  $attach(path: string, alias: string): this
+  $detach(alias: string): this
   $rotateKey(newKey: string): Promise<Record<string, { rows: number; fields: number }>>
   $close(): void
 

@@ -1644,6 +1644,8 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
+/** A `createMany` or `upsertMany` row. Both refuse a nested write, so the row names no relation, and the Create branch where a relation write stands in for a key is dropped: the key stays required. */
+type __BulkCreate<C, Rel> = C extends unknown ? ({} extends Pick<C, Extract<keyof Rel, keyof C>> ? Omit<C, keyof Rel> : never) : never
 /** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`_TSudoCreate`, a phantom only `infer` reads). */
 type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q, infer N> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q, N> : T[K] }
 
@@ -1748,11 +1750,11 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove ex
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
   create<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
-  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>
+  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<__BulkCreate<TCreate, TRel> & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>
   update<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName> | null>
   updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
   upsert<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
-  upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
+  upsertMany<K extends TSys = never>(args: { data: Array<__BulkCreate<TCreate, TRel> & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
   restore(args: { where: TWhere }): Promise<{ count: number }>
@@ -1871,10 +1873,11 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   // lost belongs in a durable mechanism and not here (FJS-D247).
   $tapEvents(fn: (event: WriteEvent) => void): () => void
 
-  // Utilities
+  // Utilities. The four ops writes run on asSystem() only, and every other
+  // flavor refuses them by name (FJS-D2363).
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ path: string; size: number }>
-  $attach(path: string, alias: string): void
-  $detach(alias: string): void
+  $attach(path: string, alias: string): this
+  $detach(alias: string): this
   $rotateKey(newKey: string): Promise<Record<string, { rows: number; fields: number }>>
   $close(): void
 

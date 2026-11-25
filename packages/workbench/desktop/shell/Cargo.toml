@@ -14,3 +14,8 @@ tauri-plugin-single-instance = "2"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# The title bar in the app's theme (src/main.rs with_titlebar): a GTK header
+# bar replaces the window manager's, and the page sends its colors.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"

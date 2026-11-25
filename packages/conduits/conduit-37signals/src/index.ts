@@ -270,7 +270,7 @@ export interface AuthorizedAccount { product: string; id: number; name: string; 
 export interface Authorization { identity: { id: number; first_name?: string; last_name?: string; email_address?: string }; accounts: AuthorizedAccount[] }
 
 /** Who a freshly granted token is and which accounts it reaches, read before any account is chosen. */
-export async function authorization(bc: BasecampSend, opts: { accessToken: string; apiOrigin?: string }): Promise<Read<Authorization>> {
+export async function readAuthorization(bc: BasecampSend, opts: { accessToken: string; apiOrigin?: string }): Promise<Read<Authorization>> {
   const r = await bc.token<Authorization>({
     method: 'GET', address: (opts.apiOrigin ?? BASECAMP_API_ORIGIN).replace(/\/+$/, ''), path: '/authorization.json',
     headers: { authorization: `Bearer ${opts.accessToken}` }, replayable: true,

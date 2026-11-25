@@ -10,9 +10,9 @@ are the source of the list; a `fli check` rule declares the hazard it grades wit
 **`none` is an answer.** A hazard no rule grades reads exactly like one that is
 graded, and lives only in prose — so every new session re-learns it by failing.
 
-Graded: **13 of 217**.
+Graded: **13 of 219**.
 
-## data — 3 of 79
+## data — 3 of 80
 
 ### Schema and parse
 
@@ -54,6 +54,7 @@ Graded: **13 of 217**.
 | A bare `check(rel)` over an optional parent is TRUE for a row naming no parent — beside another scope, that row is the other scope's | **none** |
 | `asSystem()` does not bypass a `@check`, a `@@check` or an `@@arc`, and it bypasses everything else. | **none** |
 | Raw SQL requires `asSystem()` once a schema declares access rules. | **none** |
+| The ops writes (`$backup`, `$rotateKey`, `$attach`, `$detach`, `$retain`) run on `asSystem()` alone, root included, and root `$db` follows raw SQL's rule | **none** |
 | A field `@allow` is a PREDICATE and it is compiled into SQL, both ways | **none** |
 | `@guarded` is not a level | **none** |
 | A column your `getLevel` reads must not be writable by the caller being graded. | **none** |
@@ -268,7 +269,7 @@ Graded: **13 of 217**.
 | `createTestEnv` starts no worker and arms no scheduler | **none** |
 | The shutdown budgets live inside the container's stop grace, and a stated one that reaches it refuses the boot | **none** |
 
-## ui — 4 of 60
+## ui — 4 of 61
 
 ### Routes, prerender and static
 
@@ -294,6 +295,7 @@ Graded: **13 of 217**.
 | A tether over a `@zoned` day window one relation away loads that zone column, so its rows carry a relation nobody asked for. | **none** |
 | `@version` is the revision a screen READ, and a push does not move it. | **none** |
 | A watched record empties itself on its own delete, before the handler's next line. | **none** |
+| A `tethered()` whose `where` reads a signal is a NEW list on every change of it, empty until its own read answers. | **none** |
 
 ### Resources and forms
 

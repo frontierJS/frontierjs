@@ -42,6 +42,11 @@ html {
 }
 
 
+
+
+:root { --rem: 1rem; }
+:host { --rem: 16px; }
+
 :root,
 :host {
   
@@ -65,7 +70,8 @@ html {
   
   --ink-mute:       #757067;
   --rule:           #e7e3d8;
-  --rule-strong:    #d4cfc0;
+  
+  --rule-strong:    #8d887b;
 
   
 
@@ -80,7 +86,7 @@ html {
 
   
   --stroke-width: 2px;
-  --track-size:   0.5rem;
+  --track-size:   calc(0.5 * var(--rem));
 
   
   --surface-shadow: none;
@@ -126,6 +132,7 @@ html {
   --motion-base:  150ms;
   --motion-enter: 160ms;
   --motion-slow:  200ms;
+  --motion-travel: 400ms;
   
   --motion-spin:    600ms;
   --motion-shimmer: 1.4s;
@@ -133,18 +140,19 @@ html {
   --motion-ease:       ease;
   --motion-ease-out:   ease-out;
   --motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-ease-spring: linear(0, 0.0072 1.2%, 0.0291 2.5%, 0.1134 5.1%, 0.4285 11.5%, 0.6532 16.8%, 0.8093 22.2%, 0.9063 27.6%, 0.9656 33.2%, 0.9983 39.1%, 1.0138 45.5%, 1.0172 52.2%, 1.0121 62.4%, 1.0034 77.6%, 1);
 
   
   --container-max:    1280px;
   --container-narrow: 768px;
-  --container-pad:    1rem;
+  --container-pad:    var(--rem);
 
   
-  --topbar-height:  3.5rem;
-  --sidebar-width:  15rem;
-  --rail-width:     3.5rem;
-  --screen-pad:     1.5rem;
-  --aside-width:    20rem;
+  --topbar-height:  calc(3.5 * var(--rem));
+  --sidebar-width:  calc(15 * var(--rem));
+  --rail-width:     calc(3.5 * var(--rem));
+  --screen-pad:     calc(1.5 * var(--rem));
+  --aside-width:    calc(20 * var(--rem));
 
   
   --z-topbar:     20;
@@ -157,6 +165,9 @@ html {
   
   --tone-l-min: 0;
   --tone-l-max: 0.46;
+
+  
+  --tone-l-slack: 0.12;
 
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -180,15 +191,15 @@ html {
   --font-mono:    ui-monospace, monospace;
 
   
-  --text-2xs: 0.6875rem;  
-  --text-xs:  0.75rem;    
-  --text-sm:  0.8125rem;  
-  --text-md:  0.875rem;   
-  --text-lg:  1rem;       
-  --text-xl:  1.125rem;   
-  --text-2xl: 1.375rem;   
-  --text-3xl: 1.75rem;    
-  --text-4xl: 2.25rem;    
+  --text-2xs: calc(0.6875 * var(--rem));  
+  --text-xs:  calc(0.75 * var(--rem));    
+  --text-sm:  calc(0.8125 * var(--rem));  
+  --text-md:  calc(0.875 * var(--rem));   
+  --text-lg:  var(--rem);                 
+  --text-xl:  calc(1.125 * var(--rem));   
+  --text-2xl: calc(1.375 * var(--rem));   
+  --text-3xl: calc(1.75 * var(--rem));    
+  --text-4xl: calc(2.25 * var(--rem));    
 
   
   --leading-display: 1.1;   
@@ -219,11 +230,11 @@ html {
 .align-end    { --align: end;    text-align: end; }
 
 
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   * { --density: 0.9; }
 }
 
-@container fjs (inline-size < 20rem) {
+@container fjs (inline-size < 320px) {
   * { --density: 0.8; }
 }
 
@@ -232,18 +243,18 @@ html {
 *::before,
 *::after,
 :host {
-  --space-3xs: calc(var(--space-3xs-base, 0.125rem) * var(--density));  
-  --space-2xs: calc(var(--space-2xs-base, 0.25rem)  * var(--density));  
-  --space-xs:  calc(var(--space-xs-base,  0.375rem) * var(--density));  
-  --space-sm:  calc(var(--space-sm-base,  0.5rem)   * var(--density));  
-  --space-md:  calc(var(--space-md-base,  0.625rem) * var(--density));  
-  --space-lg:  calc(var(--space-lg-base,  0.75rem)  * var(--density));  
-  --space-xl:  calc(var(--space-xl-base,  0.875rem) * var(--density));  
-  --space-2xl: calc(var(--space-2xl-base, 1rem)     * var(--density));  
-  --space-3xl: calc(var(--space-3xl-base, 1.25rem)  * var(--density));  
-  --space-4xl: calc(var(--space-4xl-base, 1.5rem)   * var(--density));  
-  --space-5xl: calc(var(--space-5xl-base, 2rem)     * var(--density));  
-  --space-6xl: calc(var(--space-6xl-base, 3rem)     * var(--density));  
+  --space-3xs: calc(var(--space-3xs-base, calc(0.125 * var(--rem))) * var(--density));  
+  --space-2xs: calc(var(--space-2xs-base, calc(0.25 * var(--rem)))  * var(--density));  
+  --space-xs:  calc(var(--space-xs-base,  calc(0.375 * var(--rem))) * var(--density));  
+  --space-sm:  calc(var(--space-sm-base,  calc(0.5 * var(--rem)))   * var(--density));  
+  --space-md:  calc(var(--space-md-base,  calc(0.625 * var(--rem))) * var(--density));  
+  --space-lg:  calc(var(--space-lg-base,  calc(0.75 * var(--rem)))  * var(--density));  
+  --space-xl:  calc(var(--space-xl-base,  calc(0.875 * var(--rem))) * var(--density));  
+  --space-2xl: calc(var(--space-2xl-base, var(--rem))     * var(--density));  
+  --space-3xl: calc(var(--space-3xl-base, calc(1.25 * var(--rem)))  * var(--density));  
+  --space-4xl: calc(var(--space-4xl-base, calc(1.5 * var(--rem)))   * var(--density));  
+  --space-5xl: calc(var(--space-5xl-base, calc(2 * var(--rem)))     * var(--density));  
+  --space-6xl: calc(var(--space-6xl-base, calc(3 * var(--rem)))     * var(--density));  
 }
 
 
@@ -265,6 +276,8 @@ html {
 
 
 :host {
+  --color-accent:   initial;
+
   --space-3xs-base: initial;
   --space-2xs-base: initial;
   --space-xs-base:  initial;
@@ -290,6 +303,9 @@ html {
   --switch-at:            initial;
   --fr:                   initial;
   --side:                 initial;
+  --bleed-inline:         initial;
+  --rating:               initial;
+  --rating-max:           initial;
   --app-bg:               initial;
   --app-depth:            initial;
   --topbar-bg:            initial;
@@ -299,6 +315,7 @@ html {
   --dialog-bg:            initial;
   --toast-bg:             initial;
   --toast-radius:         initial;
+  --popover-bg:           initial;
   --popover-x:            initial;
   --popover-y:            initial;
   --sheet-offset:         initial;
@@ -401,6 +418,7 @@ html {
   --motion-base:  0s !important;
   --motion-enter: 0s !important;
   --motion-slow:  0s !important;
+  --motion-travel: 0s !important;
 }
 
 
@@ -444,7 +462,7 @@ html {
   --ink-mute:       #5f6e84;
 
   --rule:           #dfe5ec;
-  --rule-strong:    #c6d0dc;
+  --rule-strong:    #8a939e;
 
   
   --topbar-bg: #ffffff;
@@ -462,7 +480,7 @@ html {
 
   
   --heading-font-weight: 600;
-  --text-4xl:            2rem;
+  --text-4xl:            calc(2 * var(--rem));
 }
 }
 @layer themes {
@@ -515,7 +533,7 @@ html {
   
   --ink-mute:       #8c8c8c;
   --rule:           #2d2d2d;
-  --rule-strong:    #404040;
+  --rule-strong:    #686868;
 
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -597,7 +615,7 @@ html {
 
   
   --rule:        rgba(255, 255, 255, 0.07);
-  --rule-strong: rgba(255, 255, 255, 0.13);
+  --rule-strong: rgba(255, 255, 255, 0.34);
 
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -629,6 +647,40 @@ html {
 --color-warning: #b08335;
 --color-danger: #a94b43;
 
+}
+}
+@layer themes {
+.theme-notebook-dark {
+  
+  color-scheme: dark;
+
+  
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  
+  --surface:        #1c201d;
+  --surface-raised: #242925;
+  --surface-sunken: #141714;
+  --ink:            #ece7d8;
+  --ink-soft:       #c2bcab;
+  --ink-mute:       #9a9586;
+  --rule:           #313731;
+  --rule-strong:    #687068;
+
+  
+  --color-primary:   #7fb3c6;
+  --color-secondary: #a3bb9d;
+  --color-info:      #85bfcf;
+  --color-success:   #97bd8b;
+  --color-warning:   #d9ae62;
+  --color-danger:    #e3897d;
+  --color-muted:     #959a90;
+
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 1px 3px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 }
 @layer themes {
@@ -684,15 +736,15 @@ html {
   --font-mono:    ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
 
   
-  --text-2xs: 0.625rem;
-  --text-xs:  0.6875rem;
-  --text-sm:  0.75rem;
-  --text-md:  0.8125rem;
-  --text-lg:  0.9375rem;
-  --text-xl:  1.125rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 2.125rem;
-  --text-4xl: 3rem;
+  --text-2xs: calc(0.625 * var(--rem));
+  --text-xs:  calc(0.6875 * var(--rem));
+  --text-sm:  calc(0.75 * var(--rem));
+  --text-md:  calc(0.8125 * var(--rem));
+  --text-lg:  calc(0.9375 * var(--rem));
+  --text-xl:  calc(1.125 * var(--rem));
+  --text-2xl: calc(1.5 * var(--rem));
+  --text-3xl: calc(2.125 * var(--rem));
+  --text-4xl: calc(3 * var(--rem));
 
   
   --leading-display: 0.95;
@@ -706,19 +758,21 @@ html {
   --density: 1.15;
 
   
-  --space-4xl-base: 1.75rem;
-  --space-5xl-base: 2.5rem;
-  --space-6xl-base: 4rem;
+  --space-4xl-base: calc(1.75 * var(--rem));
+  --space-5xl-base: calc(2.5 * var(--rem));
+  --space-6xl-base: calc(4 * var(--rem));
 
   
   --motion-fast:  80ms;
   --motion-base:  90ms;
   --motion-enter: 100ms;
   --motion-slow:  120ms;
+  --motion-travel: 150ms;
 
-  --motion-ease:       linear;
-  --motion-ease-out:   linear;
-  --motion-ease-enter: linear;
+  --motion-ease:        linear;
+  --motion-ease-out:    linear;
+  --motion-ease-enter:  linear;
+  --motion-ease-spring: linear;
 
   
   --label-font-weight:    700;
@@ -745,10 +799,10 @@ html {
   
   --container-max:    1080px;
   --container-narrow: 680px;
-  --container-pad:    1.5rem;
-  --topbar-height:    3rem;
-  --sidebar-width:    14rem;
-  --screen-pad:       2rem;
+  --container-pad:    calc(1.5 * var(--rem));
+  --topbar-height:    calc(3 * var(--rem));
+  --sidebar-width:    calc(14 * var(--rem));
+  --screen-pad:       calc(2 * var(--rem));
 }
 }
 @layer themes {
@@ -768,7 +822,7 @@ html {
   --ink-soft:       #b3ab93;
   --ink-mute:       #8e876f;
   --rule:           #2c312d;
-  --rule-strong:    #434942;
+  --rule-strong:    #61675f;
 
   
   --color-primary:   #4fa8a0;
@@ -839,7 +893,7 @@ html {
 
   
   --rule:        #44475a;
-  --rule-strong: #565a72;
+  --rule-strong: #70748d;
 
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
@@ -881,7 +935,7 @@ html {
 
   
   --rule:        rgba(255, 255, 255, 0.08);
-  --rule-strong: rgba(255, 255, 255, 0.15);
+  --rule-strong: rgba(255, 255, 255, 0.34);
 
   
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
@@ -924,7 +978,7 @@ html {
 
   
   --rule:            #2e2e2e;
-  --rule-strong:     #454545;
+  --rule-strong:     #666666;
 
   
   --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.24);
@@ -973,7 +1027,7 @@ html {
 
   
   --rule:            #45475a; 
-  --rule-strong:     #585b70; 
+  --rule-strong:     #6c7086; 
 
   
   --surface-shadow:  0 1px 2px rgba(0, 0, 0, 0.22);
@@ -1015,7 +1069,7 @@ html {
 
   
   --rule:            #45475a;
-  --rule-strong:     #585b70;
+  --rule-strong:     #6c7086;
 
   
   --color-primary:   #cba6f7;
@@ -1116,10 +1170,10 @@ html {
 
   --ink:      #09090b; 
   --ink-soft: #3f3f46; 
-  --ink-mute: #71717a; 
+  --ink-mute: #6e6e77; 
 
   --rule:        #e4e4e7; 
-  --rule-strong: #d4d4d8; 
+  --rule-strong: #929296; 
 
   
   --btn-radius:   6px;
@@ -1215,6 +1269,7 @@ html {
   --motion-base:  200ms;
   --motion-enter: 300ms;
   --motion-slow:  400ms;
+  --motion-travel: 500ms;
 
   --motion-ease:       cubic-bezier(0.2, 0, 0, 1);
   --motion-ease-out:   cubic-bezier(0.05, 0.7, 0.1, 1);
@@ -1279,7 +1334,8 @@ html {
 }
 }
 @layer base {
-:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker),
+:where(.surface, .card, .tile, .lane, .alert, .toast, .dialog, .popover, .drawer, .band):where(.solid) {
   --_fill: color(from var(--tone-fill) xyz-d65
     calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
@@ -1290,8 +1346,10 @@ html {
       calc(clamp(0, (0.35 - y) * infinity, 1) * 0.9505)
            clamp(0, (0.35 - y) * infinity, 1)
       calc(clamp(0, (0.35 - y) * infinity, 1) * 1.089)));
+}
 
-  display:         inline-flex;
+:where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
+  display:        inline-flex;
   align-items:     center;
   justify-content: center;
   gap:             var(--space-xs);
@@ -1363,6 +1421,18 @@ html {
                          var(--bg-mix, var(--color-primary));
   }
   
+  
+  &.solid {
+    --tone-fill:       var(--bg-mix, var(--color-primary));
+    --surface-bg:      var(--_fill);
+    --_surface-border: var(--_fill);
+    --_surface-color:  var(--_on-fill);
+    --ink:             var(--_on-fill);
+    --ink-soft:        var(--_on-fill);
+    --ink-mute:        var(--_on-fill);
+    --rule:            color-mix(in srgb, var(--_on-fill) 30%, transparent);
+    background-image:  none;
+  }
   &.glass {
     --surface-bg:     color-mix(in srgb,
                         var(--surface-ground, var(--surface)) var(--glass-alpha), transparent);
@@ -1479,7 +1549,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 
 .grid {
   display:               grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, 16rem), 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--grid-min, calc(16 * var(--rem))), 100%), 1fr));
   gap:                   var(--space-2xl);
   inline-size:           100%;
 }
@@ -1502,7 +1572,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 .switcher > * {
   flex-grow:  var(--fr, 1);
-  flex-basis: max(var(--side, 0px), calc((var(--switch-at, 48rem) - 100%) * 999));
+  flex-basis: max(var(--side, 0px), calc((var(--switch-at, calc(48 * var(--rem))) - 100%) * 999));
 }
 .switcher > [style*="--side:"] {
   flex-grow: 0;
@@ -1530,10 +1600,10 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 .container.wide   { max-width: none; }
 
 @media (min-width: 768px) {
-  .container { --container-pad: 1.5rem; }
+  .container { --container-pad: calc(1.5 * var(--rem)); }
 }
 @media (min-width: 1280px) {
-  .container { --container-pad: 2rem; }
+  .container { --container-pad: calc(2 * var(--rem)); }
 }
 }
 @layer components {
@@ -1550,6 +1620,13 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
   line-height:      var(--leading-body);
   letter-spacing:   var(--body-letter-spacing);
   -webkit-font-smoothing: antialiased;
+}
+
+
+:where(.app [class^="theme-"], .app [class*=" theme-"]) {
+  font-size:      var(--text-md);
+  line-height:    var(--leading-body);
+  letter-spacing: var(--body-letter-spacing);
 }
 
 
@@ -1680,7 +1757,7 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 
 
 .pane {
-  margin-block-end: 2rem;
+  margin-block-end: calc(2 * var(--rem));
 }
 .pane:last-child {
   margin-block-end: 0;
@@ -2011,7 +2088,7 @@ code[language] > span::before {
 .pill-close { --icon-size: 0.85em; }
 
 
-.empty-icon { --icon-size: 2rem; }
+.empty-icon { --icon-size: calc(2 * var(--rem)); }
 }
 @layer components {
 .btn {
@@ -2020,7 +2097,7 @@ code[language] > span::before {
   padding:       var(--control-padding-block, var(--space-sm)) var(--space-xl);
   border-radius: var(--btn-radius);
   font-size:     var(--text-md);
-  line-height:   1.25rem;
+  line-height:   calc(1.25 * var(--rem));
   cursor:        pointer;
   transition:    background-color var(--motion-base), border-color var(--motion-base),
                  color var(--motion-base), box-shadow var(--motion-base),
@@ -2170,7 +2247,7 @@ code[language] > span::before {
   padding:       var(--space-3xs) var(--space-sm);
   border-radius: var(--pill-radius);
   font-size:     var(--text-xs);
-  line-height:   1rem;
+  line-height:   var(--rem);
 
   
   --tone-fill:    var(--bg-mix, var(--color-muted));
@@ -2227,7 +2304,7 @@ code[language] > span::before {
   
   border-radius: var(--badge-radius, var(--btn-radius));
   font-size:     var(--text-xs);
-  line-height:   1rem;
+  line-height:   var(--rem);
 
   
   --tone-fill:    var(--bg-mix, var(--color-muted));
@@ -2240,7 +2317,10 @@ code[language] > span::before {
 }
 }
 @layer components {
-.card { padding: var(--space-3xl); }
+.card {
+  padding:        var(--space-3xl);
+  --bleed-inline: var(--space-3xl);
+}
 
 
 :is(.card, .screen, .container, .pane):where(:not(.stack, .cluster, .group, .center, .split, .grid, .switcher, .bar, .toolbar, .navlist, .pagination, .section)) > :where(:not(:first-child)) {
@@ -2258,7 +2338,7 @@ code[language] > span::before {
 @layer components {
 .tiles {
   display:               grid;
-  grid-template-columns: repeat(auto-fit, minmax(var(--tile-min, 12rem), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--tile-min, calc(12 * var(--rem))), 1fr));
   gap:                   var(--space-2xl);
 }
 
@@ -2296,7 +2376,7 @@ code[language] > span::before {
 }
 @layer components {
 .avatar {
-  --avatar-size: 2.25rem;
+  --avatar-size: calc(2.25 * var(--rem));
 
   
   --tone-fill: var(--data-accent, var(--bg-mix, var(--color-muted)));
@@ -2341,7 +2421,7 @@ img.avatar {
 }
 
 .avatars > :is(.avatar, :has(> .avatar)) + :is(.avatar, :has(> .avatar)) {
-  margin-inline-start: calc(var(--avatar-overlap, 0.625rem) * -1);
+  margin-inline-start: calc(var(--avatar-overlap, calc(0.625 * var(--rem))) * -1);
 }
 }
 @layer components {
@@ -2372,18 +2452,20 @@ img.avatar {
   
   background:    var(--surface-sunken);
   color:         var(--bg-mix, var(--color-primary));
+  
+  --_bar-fill:   var(--bg-mix, var(--color-primary));
 }
 .progress::-webkit-progress-bar {
   background:    var(--surface-sunken);
   border-radius: 999px;
 }
 .progress::-webkit-progress-value {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
   transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .progress::-moz-progress-bar {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
 }
 
@@ -2397,6 +2479,7 @@ img.avatar {
   overflow:      hidden;
   background:    var(--surface-sunken);
   color:         var(--bg-mix, var(--color-primary));
+  --_bar-fill:   var(--bg-mix, var(--color-primary));
 }
 .meter::-webkit-meter-bar {
   background:    var(--surface-sunken);
@@ -2406,12 +2489,12 @@ img.avatar {
 .meter::-webkit-meter-optimum-value,
 .meter::-webkit-meter-suboptimum-value,
 .meter::-webkit-meter-even-less-good-value {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
   transition:    inline-size var(--motion-slow) var(--motion-ease);
 }
 .meter::-moz-meter-bar {
-  background:    var(--bg-mix, var(--color-primary));
+  background:    var(--_bar-fill);
   border-radius: 999px;
 }
 
@@ -2479,7 +2562,7 @@ img.avatar {
   display:     flex;
   flex-wrap:   wrap;
   gap:         var(--space-sm);
-  margin-block-start: 0.5rem;
+  margin-block-start: calc(0.5 * var(--rem));
 }
 }
 @layer components {
@@ -2620,8 +2703,8 @@ dialog.drawer[open]::backdrop {
 @layer components {
 .toast {
   position:   fixed;
-  bottom:     1rem;
-  right:      1rem;
+  bottom:     var(--rem);
+  right:      var(--rem);
   min-width:  240px;
   max-width:  360px;
   padding:    var(--space-lg) var(--space-2xl);
@@ -2630,14 +2713,14 @@ dialog.drawer[open]::backdrop {
   --overlay-from: translateY(8px);
 
   
-  --surface-ground: var(--toast-bg, var(--surface));
+  --surface-ground: var(--toast-bg, var(--surface-raised));
   border-radius:    var(--toast-radius, var(--card-radius));
 }
 
 .toast-stack {
   position:       fixed;
-  bottom:         1rem;
-  right:          1rem;
+  bottom:         var(--rem);
+  right:          var(--rem);
   display:        flex;
   flex-direction: column-reverse;
   gap:            var(--space-sm);
@@ -2675,6 +2758,9 @@ dialog.drawer[open]::backdrop {
   font-size:  var(--text-sm);
   z-index:    var(--z-popover);
   --overlay-from: translateY(-4px);
+
+  
+  --surface-ground: var(--popover-bg, var(--surface-raised));
 }
 
 
@@ -2697,7 +2783,7 @@ dialog.drawer[open]::backdrop {
 .popover:has(> .surface-header) {
   display:        flex;
   flex-direction: column;
-  width:          22rem;
+  width:          calc(22 * var(--rem));
   max-width:      calc(100vw - 2 * var(--space-md));
   max-height:     calc(100dvh - 2 * var(--space-lg));
   padding:        0;
@@ -2765,7 +2851,7 @@ dialog.drawer[open]::backdrop {
 
   position:  absolute;
   z-index:   var(--z-tooltip);
-  inset-block-end:   calc(100% + 0.5rem);
+  inset-block-end:   calc(100% + calc(0.5 * var(--rem)));
   inset-inline-start: 50%;
   translate: -50% 0;
 
@@ -2809,7 +2895,7 @@ dialog.drawer[open]::backdrop {
 
 .tooltip.bottom {
   inset-block-end:   auto;
-  inset-block-start: calc(100% + 0.5rem);
+  inset-block-start: calc(100% + calc(0.5 * var(--rem)));
 }
 .tooltip.bottom::after {
   inset-block-start: auto;
@@ -2825,11 +2911,11 @@ dialog.drawer[open]::backdrop {
   inset-inline-start: auto;
 }
 .tooltip.start {
-  inset-inline-end: calc(100% + 0.5rem);
+  inset-inline-end: calc(100% + calc(0.5 * var(--rem)));
   translate:        0 -50%;
 }
 .tooltip.end {
-  inset-inline-start: calc(100% + 0.5rem);
+  inset-inline-start: calc(100% + calc(0.5 * var(--rem)));
   translate:          0 -50%;
 }
 .tooltip.start::after,
@@ -2852,7 +2938,7 @@ dialog.drawer[open]::backdrop {
 
 .tooltip.wrap {
   white-space:     normal;
-  max-inline-size: 16rem;
+  max-inline-size: calc(16 * var(--rem));
   text-align:      center;
 }
 }
@@ -2863,7 +2949,7 @@ dialog.drawer[open]::backdrop {
   inset:    0;
 
   
-  --surface-ground: var(--dialog-bg, var(--surface));
+  --surface-ground: var(--dialog-bg, var(--surface-raised));
 
   
   margin:        0;
@@ -2940,7 +3026,10 @@ dialog.drawer[open]::backdrop {
   --field-color:  var(--ink);
 
   
-  --field-border: var(--bg-mix, var(--rule-strong));
+  --_field-edge:  oklch(from var(--bg-mix)
+                    clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                          calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
+  --field-border: var(--_field-edge, var(--rule-strong));
 
   
   display:     block;
@@ -2948,7 +3037,7 @@ dialog.drawer[open]::backdrop {
   
   padding:     var(--control-padding-block, var(--space-sm)) var(--space-lg);
   font-size:   var(--text-md);
-  line-height: 1.25rem;
+  line-height: calc(1.25 * var(--rem));
 
   background:    var(--field-bg);
   color:         var(--field-color);
@@ -2963,7 +3052,9 @@ dialog.drawer[open]::backdrop {
 
 
 .field:focus {
-  border-color: var(--bg-mix, var(--ring, var(--color-primary)));
+  border-color: oklch(from var(--bg-mix, var(--ring, var(--color-primary)))
+                  clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                        calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
 }
 
 .field:disabled {
@@ -3006,7 +3097,7 @@ input[type="file"]::file-selector-button {
   font-family:       var(--font-primary), sans-serif;
   font-size:         var(--text-md);
   font-weight:       var(--btn-font-weight);
-  line-height:       1.25rem;
+  line-height:       calc(1.25 * var(--rem));
   cursor:            pointer;
   transition:        background-color var(--motion-base), border-color var(--motion-base);
 }
@@ -3049,7 +3140,7 @@ input[type="file"]:disabled::file-selector-button {
 }
 
 .field-check {
-  --check-accent: var(--bg-mix, var(--color-primary));
+  --check-accent: var(--bg-mix, var(--color-accent, var(--color-primary)));
 }
 
 
@@ -3081,24 +3172,24 @@ input[type="file"]:disabled::file-selector-button {
 .switch {
   appearance:    none;
   flex-shrink:   0;
-  inline-size:   2.25rem;
-  block-size:    1.25rem;
+  inline-size:   calc(2.25 * var(--rem));
+  block-size:    calc(1.25 * var(--rem));
   border-radius: 999px;
   cursor:        pointer;
 
   background-color: var(--rule-strong);
   background-image: radial-gradient(circle at center, #fff 42%, transparent 44%);
-  background-size:     1rem 1rem;
+  background-size:     var(--rem) var(--rem);
   background-repeat:   no-repeat;
-  background-position: 0.125rem center;
+  background-position: calc(0.125 * var(--rem)) center;
 
   transition: background-color var(--motion-base) var(--motion-ease),
               background-position var(--motion-base) var(--motion-ease);
 }
 
 .switch:checked {
-  background-color:    var(--bg-mix, var(--check-accent, var(--color-primary)));
-  background-position: calc(100% - 0.125rem) center;
+  background-color:    var(--bg-mix, var(--check-accent, var(--color-accent, var(--color-primary))));
+  background-position: calc(100% - calc(0.125 * var(--rem))) center;
 }
 
 .switch:disabled {
@@ -3190,6 +3281,84 @@ input[type="file"]:disabled::file-selector-button {
   font-family: var(--font-primary), sans-serif;
   font-size:   var(--text-md);
   white-space: nowrap;
+}
+}
+@layer components {
+.rating {
+  --_rating-fill: var(--bg-mix, var(--color-primary));
+  --_rating-off:  var(--rule-strong);
+  --_rating-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.5l2.94 6.1 6.56.9-4.78 4.6 1.17 6.6L12 17.6l-5.89 3.1 1.17-6.6L2.5 9.5l6.56-.9z'/%3E%3C/svg%3E");
+
+  position:       relative;
+  display:        inline-flex;
+  align-items:    center;
+  margin:         0;
+  padding:        0;
+  border:         0;
+  min-inline-size: 0;
+  font-size:      var(--text-2xl);
+  line-height:    1;
+}
+
+.rating > input {
+  position:       absolute;
+  inline-size:    1px;
+  block-size:     1px;
+  margin:         0;
+  opacity:        0;
+  pointer-events: none;
+}
+
+.rating > label {
+  --_star:     var(--_rating-off);
+  position:    relative;
+  flex-shrink: 0;
+  inline-size: 1em;
+  block-size:  1em;
+  overflow:    hidden;
+  white-space: nowrap;
+  color:       transparent;
+  cursor:      pointer;
+}
+.rating > label::before {
+  content:          '';
+  position:         absolute;
+  inset:            0;
+  background-color: var(--_star);
+  mask:             var(--_rating-star) center / 100% 100% no-repeat;
+  transition:       background-color var(--motion-base) var(--motion-ease);
+}
+
+
+.rating:has(> :checked) > label       { --_star: var(--_rating-fill); }
+.rating > :checked + label ~ label    { --_star: var(--_rating-off); }
+
+
+@media (hover: hover) {
+  .rating:not(:has(> :disabled)):has(> label:hover) > label { --_star: var(--_rating-fill); }
+  .rating:not(:has(> :disabled)) > label:hover ~ label       { --_star: var(--_rating-off); }
+}
+
+.rating > :disabled + label {
+  cursor:  not-allowed;
+  opacity: 0.5;
+}
+
+
+.rating.readonly {
+  --_rating-to:     right;
+  display:          inline-block;
+  vertical-align:   middle;
+  inline-size:      calc(var(--rating-max, 5) * 1em);
+  block-size:       1em;
+  background-image: linear-gradient(to var(--_rating-to),
+                      var(--_rating-fill) calc(var(--rating, 0) / var(--rating-max, 5) * 100%),
+                      var(--_rating-off) 0);
+  mask:             var(--_rating-star) left center / 1em 1em repeat-x;
+}
+.rating.readonly:dir(rtl) {
+  --_rating-to: left;
+  mask-position: right center;
 }
 }
 @layer components {
@@ -3337,11 +3506,12 @@ input[type="file"]:disabled::file-selector-button {
   --surface-tint-color:  initial;
 
   
-  --surface-ground: var(--dialog-bg, var(--surface));
+  --surface-ground: var(--dialog-bg, var(--surface-raised));
 
-  --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface));
+  
+  --dialog-header-bg:     color-mix(in srgb, var(--bg-mix) 10%, var(--surface-ground));
   --dialog-header-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
-  --dialog-header-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface));
+  --dialog-header-border: color-mix(in srgb, var(--bg-mix) 30%, var(--surface-ground));
 }
 .dialog > .surface-header {
   background:          var(--dialog-header-bg,     transparent);
@@ -3401,7 +3571,7 @@ hr, .divider {
   block-size:   1px;
   inline-size:  100%;
   background:   var(--rule);
-  margin-block: 1.5rem;
+  margin-block: calc(1.5 * var(--rem));
 }
 
 
@@ -3409,7 +3579,7 @@ hr, .divider {
   display:     flex;
   align-items: center;
   gap:         var(--space-lg);
-  margin:      0.5rem 0;
+  margin:      calc(0.5 * var(--rem)) 0;
   color:       var(--ink-mute);
   font-size:   var(--text-sm);
 }
@@ -3424,11 +3594,21 @@ hr, .divider {
 
 .kicker,
 .navlist-label {
+  --_kicker-ink:  oklch(from var(--color-accent)
+                    clamp(var(--tone-l-min), l, var(--tone-l-max)) c h);
   font-size:      var(--text-2xs);
   font-weight:    var(--label-font-weight);
   text-transform: var(--label-text-transform);
   letter-spacing: var(--label-letter-spacing);
-  color:          var(--ink-mute);
+  color:          var(--_kicker-ink, var(--ink-mute));
+}
+
+
+.lead {
+  font-size:       var(--text-xl);
+  line-height:     var(--leading-relaxed);
+  color:           var(--ink-soft);
+  max-inline-size: var(--measure, 64ch);
 }
 }
 @layer patterns {
@@ -3442,7 +3622,7 @@ hr, .divider {
 .lane {
   display:        flex;
   flex-direction: column;
-  flex:           0 0 var(--lane-size, 18rem);
+  flex:           0 0 var(--lane-size, calc(18 * var(--rem)));
   gap:            var(--space-lg);
   padding:        var(--space-lg);
   min-inline-size: 0;
@@ -3581,15 +3761,15 @@ hr, .divider {
 
 .feed-item {
   display:               grid;
-  grid-template-columns: 0.625rem 1fr;
+  grid-template-columns: calc(0.625 * var(--rem)) 1fr;
   gap:                   var(--space-lg);
   position:              relative;
 }
 
 .feed-dot {
-  width:         0.625rem;
-  height:        0.625rem;
-  margin-top:    0.3rem;
+  width:         calc(0.625 * var(--rem));
+  height:        calc(0.625 * var(--rem));
+  margin-top:    calc(0.3 * var(--rem));
   border-radius: 9999px;
   background:    var(--bg-mix, var(--color-muted));
   flex-shrink:   0;
@@ -3599,9 +3779,9 @@ hr, .divider {
 .feed > li:not(:last-child) .feed-item::after {
   content:    "";
   position:   absolute;
-  top:        0.95rem;
-  bottom:     -1.25rem;
-  left:       0.3125rem;
+  top:        calc(0.95 * var(--rem));
+  bottom:     calc(-1.25 * var(--rem));
+  left:       calc(0.3125 * var(--rem));
   transform:  translateX(-50%);
   width:      1px;
   background: var(--rule);
@@ -3654,8 +3834,8 @@ hr, .divider {
 
 .disclosure-summary::after {
   content:       "";
-  width:         0.45rem;
-  height:        0.45rem;
+  width:         calc(0.45 * var(--rem));
+  height:        calc(0.45 * var(--rem));
   border-right:  var(--stroke-width) solid var(--ink-mute);
   border-bottom: var(--stroke-width) solid var(--ink-mute);
   transform:     rotate(-45deg);
@@ -3740,7 +3920,7 @@ hr, .divider {
   }
 }
 
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .facts {
     grid-template-columns: 1fr;
     gap: 0;
@@ -3762,8 +3942,8 @@ hr, .divider {
 }
 @layer patterns {
 .steps {
-  --step-accent:      var(--bg-mix, var(--color-primary));
-  --step-marker-size: 1.75rem;
+  --step-accent:      var(--bg-mix, var(--color-accent, var(--color-primary)));
+  --step-marker-size: calc(1.75 * var(--rem));
 
   display:     flex;
   align-items: flex-start;
@@ -3954,16 +4134,16 @@ hr, .divider {
 .steps.vertical .step-label {
   flex: 1;
   
-  padding-block-start: 0.3125rem;
+  padding-block-start: calc(0.3125 * var(--rem));
 }
 .steps.vertical .step-hint {
   flex-basis:          100%;
-  margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+  margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
   padding-block-start: var(--space-3xs);
 }
 
 .steps.vertical .step > :not(.step-marker, .step-label, .step-hint) {
-  margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+  margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
 }
 
 
@@ -3997,7 +4177,7 @@ hr, .divider {
     & .step.complete::after { background: var(--step-accent); }
     & .step-label {
       flex:                1;
-      padding-block-start: 0.3125rem;
+      padding-block-start: calc(0.3125 * var(--rem));
     }
     & .step-hint {
       flex-basis:          100%;
@@ -4005,12 +4185,12 @@ hr, .divider {
     }
     & .step-hint,
     & .step > :not(.step-marker, .step-label, .step-hint) {
-      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+      margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
     }
   }
 }
 
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .steps {
     flex-direction: column;
     align-items:    stretch;
@@ -4040,7 +4220,7 @@ hr, .divider {
     & .step.complete::after { background: var(--step-accent); }
     & .step-label {
       flex:                1;
-      padding-block-start: 0.3125rem;
+      padding-block-start: calc(0.3125 * var(--rem));
     }
     & .step-hint {
       flex-basis:          100%;
@@ -4048,7 +4228,7 @@ hr, .divider {
     }
     & .step-hint,
     & .step > :not(.step-marker, .step-label, .step-hint) {
-      margin-inline-start: calc(var(--step-marker-size) + 0.75rem);
+      margin-inline-start: calc(var(--step-marker-size) + calc(0.75 * var(--rem)));
     }
   }
 }
@@ -4060,7 +4240,7 @@ hr, .divider {
 
 
 .tablist {
-  --tab-accent: var(--bg-mix, var(--color-primary));
+  --tab-accent: var(--bg-mix, var(--color-accent, var(--color-primary)));
 
   
   --tab-indicator-width: calc(var(--border-width) + 1px);
@@ -4215,7 +4395,7 @@ hr, .divider {
   mask-image:      none;
   animation-name:  none;
   flex-shrink:     0;
-  min-inline-size: 11rem;
+  min-inline-size: calc(11 * var(--rem));
 }
 
 .tabs.vertical .tab {
@@ -4291,7 +4471,7 @@ hr, .divider {
 }
 
 .pagination-link {
-  min-inline-size: 2rem;
+  min-inline-size: calc(2 * var(--rem));
   padding:         var(--space-xs) var(--space-md);
   border-radius:   var(--btn-radius);
   font-size:       var(--text-md);
@@ -4341,7 +4521,7 @@ hr, .divider {
   display:         flex;
   align-items:     center;
   gap:             var(--space-sm);
-  padding:         0.4375rem var(--space-md);
+  padding:         calc(0.4375 * var(--rem)) var(--space-md);
   border-radius:   var(--btn-radius);
   font-size:       var(--text-md);
   font-weight:     500;
@@ -4418,8 +4598,8 @@ summary.navlist-label:hover {
 summary.navlist-label::after {
   content:             "";
   margin-inline-start: auto;
-  inline-size:         0.35rem;
-  block-size:          0.35rem;
+  inline-size:         calc(0.35 * var(--rem));
+  block-size:          calc(0.35 * var(--rem));
   border-right:        var(--stroke-width) solid currentColor;
   border-bottom:       var(--stroke-width) solid currentColor;
   transform:           rotate(-45deg);
@@ -4503,9 +4683,19 @@ details[open]:has(> summary.navlist-label)::details-content {
 @layer patterns {
 .bleed,
 .band {
-  inline-size:     100vw;
+  inline-size:     100cqi;
   max-inline-size: none;
-  margin-inline:   calc(50% - 50vw);
+  margin-inline:   calc(50% - 50cqi);
+}
+
+
+.badge.bleed {
+  display:                   flex;
+  inline-size:               fit-content;
+  margin-inline:             calc(var(--bleed-inline, 0px) * -1) 0;
+  padding-inline-start:      var(--bleed-inline, var(--space-sm));
+  border-start-start-radius: 0;
+  border-end-start-radius:   0;
 }
 
 
@@ -4653,7 +4843,7 @@ details[open]:has(> summary.navlist-label)::details-content {
 @media (max-width: 639px) {
   .spare { display: none; }
 }
-@container fjs (inline-size < 30rem) {
+@container fjs (inline-size < 480px) {
   .spare { display: none; }
 }
 
@@ -4733,8 +4923,13 @@ details[open]:has(> summary.navlist-label)::details-content {
   .pill-close,
   .drawer-handle
 ):focus-visible,
+:where(.rating > input:focus-visible + label),
 :where(.field, .skip-link):focus {
-  outline:        var(--ring-width) var(--ring-style) var(--ring-color, var(--ring, var(--color-primary)));
+  
+  outline:        var(--ring-width) var(--ring-style)
+                  oklch(from var(--ring-color, var(--ring, var(--color-primary)))
+                    clamp(calc(var(--tone-l-min) - var(--tone-l-slack)), l,
+                          calc(var(--tone-l-max) + var(--tone-l-slack))) c h);
   outline-offset: var(--ring-offset);
 }
 
@@ -4757,7 +4952,7 @@ details[open]:has(> summary.navlist-label)::details-content {
 
 
 :where(.pill-close):focus-visible {
-  --ring-color: currentColor;
+  outline-color: currentColor;
 }
 }
 @layer a11y {
@@ -4788,8 +4983,8 @@ details[open]:has(> summary.navlist-label)::details-content {
 
 .skip-link {
   position:       fixed;
-  top:            0.5rem;
-  left:           0.5rem;
+  top:            calc(0.5 * var(--rem));
+  left:           calc(0.5 * var(--rem));
   z-index:        var(--z-skip-link);
   padding:        var(--space-sm) var(--space-2xl);
   background:     var(--surface);
@@ -4804,7 +4999,7 @@ details[open]:has(> summary.navlist-label)::details-content {
   text-decoration: none;
 
   
-  transform:  translateY(calc(-100% - 1rem));
+  transform:  translateY(calc(-100% - var(--rem)));
   transition: transform var(--motion-fast) var(--motion-ease-out);
 }
 
@@ -4900,7 +5095,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
 try {
   var saved = localStorage.getItem('fli.theme')
   var wants = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-  document.documentElement.className = 'theme-' + (["basecamp","catppuccin","dark","default","dracula","elite","expedition","field","forest","material","midnight","notebook","press","shadcn","sunset","survey","twilight"].indexOf(saved) >= 0 ? saved : wants ? 'field' : 'press')
+  document.documentElement.className = 'theme-' + (["basecamp","catppuccin","dark","default","dracula","elite","expedition","field","forest","material","midnight","notebook","notebook-dark","press","shadcn","sunset","survey","twilight"].indexOf(saved) >= 0 ? saved : wants ? 'field' : 'press')
 } catch (e) {}
 </script>
 </head><body class="app">
@@ -4910,7 +5105,7 @@ try {
   <div class="kicker">frontierjs · generated by fli ws:atlas --as=report</div>
   <h1>Repo map</h1>
   <p class="lede">Every row on this page was read out of the tree it describes — the snapshot walker, <code>main()</code> in the CI script, each package.json and the port registry. Regenerate it rather than editing it.</p>
-  <div class="counters"><div class="counter"><b>56</b><span>packages</span></div><div class="counter"><b>45</b><span>snapshots</span></div><div class="counter"><b>17</b><span>ci phases</span></div><div class="counter"><b>101</b><span>drives</span></div><div class="counter"><b>275</b><span>commands</span></div></div>
+  <div class="counters"><div class="counter"><b>59</b><span>packages</span></div><div class="counter"><b>45</b><span>snapshots</span></div><div class="counter"><b>17</b><span>ci phases</span></div><div class="counter"><b>102</b><span>drives</span></div><div class="counter"><b>276</b><span>commands</span></div></div>
 </header>
 <section id="run">
   <div class="head"><h2>Run it</h2><div class="rule"></div><span class="kicker">scripts declared at the workspace root</span></div>
@@ -4952,7 +5147,7 @@ try {
       <p>bun run --filter &#39;*&#39; test</p>
     </div><div class="card" data-row>
       <div class="cmd">bun run typecheck</div>
-      <p>bun run --filter &#39;*&#39; typecheck</p>
+      <p>node scripts/typecheck.mjs</p>
     </div></div>
 </section>
 <section id="snapshots">
@@ -5255,7 +5450,7 @@ try {
       </tr><tr data-row>
         <td class="m">@frontierjs/basecamp</td>
         <td class="m sub"><span class="chip c-tool">private</span></td>
-        <td class="m sub">auth · caravan · conduit · css · junction · litestone · mcp · mesa · notifications · orion · sierra · site-kit · toolbelt · ui</td>
+        <td class="m sub">auth · caravan · claude · conduit · css · junction · litestone · mcp · mesa · notifications · orion · sierra · site-kit · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/caravan</td>
@@ -5263,9 +5458,14 @@ try {
         <td class="m sub">junction · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
+        <td class="m">@frontierjs/claude</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit · conduit-anthropic · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
         <td class="m">@frontierjs/cli</td>
         <td class="m sub">0.1.17</td>
-        <td class="m sub">css · litestone · mesa · outpost · sierra · toolbelt · ui</td>
+        <td class="m sub">claude · css · litestone · mesa · outpost · sierra · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit</td>
@@ -5274,7 +5474,7 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-37signals</td>
-        <td class="m sub">0.0.1</td>
+        <td class="m sub">0.1.0</td>
         <td class="m sub">conduit</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -5285,7 +5485,7 @@ try {
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-anthropic</td>
         <td class="m sub">0.0.1</td>
-        <td class="m sub">conduit</td>
+        <td class="m sub">conduit · toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-apns</td>
@@ -5294,7 +5494,7 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-cloudflare</td>
-        <td class="m sub">0.0.1</td>
+        <td class="m sub">0.1.0</td>
         <td class="m sub">conduit</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -5311,6 +5511,11 @@ try {
         <td class="m">@frontierjs/conduit-easypost</td>
         <td class="m sub">0.0.1</td>
         <td class="m sub">conduit · toolbelt</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
+        <td class="m">@frontierjs/conduit-esri</td>
+        <td class="m sub">0.0.1</td>
+        <td class="m sub">conduit</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-gmail</td>
@@ -5359,7 +5564,7 @@ try {
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/conduit-plausible</td>
-        <td class="m sub">0.0.1</td>
+        <td class="m sub">0.1.0</td>
         <td class="m sub">conduit</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
@@ -5435,7 +5640,7 @@ try {
       </tr><tr data-row>
         <td class="m">@frontierjs/haven</td>
         <td class="m sub"><span class="chip c-tool">private</span></td>
-        <td class="m sub">junction · litestone · mesa · sierra · toolbelt · ui</td>
+        <td class="m sub">claude · junction · litestone · mesa · sierra · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/jetty</td>
@@ -5453,6 +5658,11 @@ try {
         <td class="m sub">toolbelt</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
+        <td class="m">@frontierjs/map-kit</td>
+        <td class="m sub"><span class="chip c-tool">private</span></td>
+        <td class="m sub">css · mesa</td>
+        <td class="m sub">bun run test</td>
+      </tr><tr data-row>
         <td class="m">@frontierjs/mcp</td>
         <td class="m sub">0.0.8</td>
         <td class="m sub">junction · toolbelt</td>
@@ -5465,7 +5675,7 @@ try {
       </tr><tr data-row>
         <td class="m">@frontierjs/notifications</td>
         <td class="m sub">0.1.10</td>
-        <td class="m sub">junction</td>
+        <td class="m sub">junction · mesa · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">@frontierjs/oracle</td>
@@ -5515,7 +5725,7 @@ try {
       </tr><tr data-row>
         <td class="m">@frontierjs/workbench</td>
         <td class="m sub"><span class="chip c-tool">private</span></td>
-        <td class="m sub">caravan · conduit · conduit-37signals · conduit-digitalocean · conduit-hetzner · conduit-mattermost · css · junction · litestone · mesa · notifications · sierra · toolbelt · ui</td>
+        <td class="m sub">caravan · claude · conduit · conduit-37signals · conduit-anthropic · conduit-digitalocean · conduit-hetzner · conduit-mattermost · css · junction · litestone · mesa · notifications · sierra · toolbelt · ui</td>
         <td class="m sub">bun run test</td>
       </tr><tr data-row>
         <td class="m">create-frontier</td>
@@ -5530,7 +5740,7 @@ try {
       </tr></tbody></table></div>
 </section>
 <section id="features">
-  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">511 across 56 packages · read, never invented</span></div>
+  <div class="head"><h2>Every capability</h2><div class="rule"></div><span class="kicker">525 across 59 packages · read, never invented</span></div>
   <p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p><div class="panel scroll"><table><thead><tr><th>Package</th><th>Capability</th><th>The first thing it says</th><th>Where</th></tr></thead><tbody><tr data-row>
       <td class="m">@frontierjs/auth</td>
       <td class="m">auth — hazards</td>
@@ -5585,6 +5795,11 @@ try {
       <td class="m"></td>
       <td class="m">In the console</td>
       <td class="m sub">@frontierjs/auth/console holds commands for an app&#39;s db/repl.js, which</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Connecting a tenant&#39;s account</td>
+      <td class="m sub">A provider declared purpose: &#39;grant&#39; connects a third-party account to a row</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -5720,6 +5935,31 @@ try {
       <td class="m"></td>
       <td class="m">Tests</td>
       <td class="m sub">bun test</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m">@frontierjs/claude</td>
+      <td class="m">Claude Code control protocol (stream-json)</td>
+      <td class="m sub">What a host says to one long-lived claude process over stdin/stdout, as Claude Code 2.1.325 speaks it.</td>
+      <td class="m sub">packages/claude/docs/control-protocol.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">What it exports</td>
+      <td class="m sub"></td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Reading Claude Code&#39;s own files</td>
+      <td class="m sub">The one reader of each file Claude Code keeps — transcripts, the session list, its configuration and its login — so Workbench, Lathe, fli git:history,…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The profiles</td>
+      <td class="m sub">- read-only (the default) — Read, Grep, Glob and an allow-listed Bash (bash replaces the list), dontAsk, hooks off, no MCP, $2 unless budget says…</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">The one-answer door</td>
+      <td class="m sub">claudeDoor(options) answers @frontierjs/toolbelt/ask&#39;s contract with the local claude: one</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m">@frontierjs/cli</td>
@@ -5953,8 +6193,18 @@ try {
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
+      <td class="m">The door</td>
+      <td class="m sub">anthropicDoor({ send }) is the Messages API as @frontierjs/toolbelt/ask&#39;s</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
       <td class="m">Streaming</td>
       <td class="m sub">streamMessage posts through conduit.stream(), which reads the</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Sending a turn back</td>
+      <td class="m sub">A host that keeps a conversation sends each assistant turn back next request,</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -6052,6 +6302,26 @@ try {
       <td class="m sub">Verification changes the address you print.</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
+      <td class="m">@frontierjs/conduit-esri</td>
+      <td class="m">What it covers</td>
+      <td class="m sub">import { createConduit } from &#39;@frontierjs/conduit&#39;</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Errors</td>
+      <td class="m sub">raw is never forwarded, and the key rides the URL only inside conduit&#39;s transport (FJS-D940).</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Ranges</td>
+      <td class="m sub">Past a source&#39;s max zoom the call is refused before any send.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Sources</td>
+      <td class="m sub">Where a primary page could not be read, the line says what was used instead.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
       <td class="m">@frontierjs/conduit-gmail</td>
       <td class="m">What it covers</td>
       <td class="m sub">send is bindSend(conduit): the connector never holds an app.</td>
@@ -6130,6 +6400,11 @@ try {
       <td class="m"></td>
       <td class="m">Cost, replay, and the cache</td>
       <td class="m sub">Every call is a READ that Google charges per request.</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
+      <td class="m">Static Maps</td>
+      <td class="m sub">One Maps Static API image per call, for an app&#39;s own image route (FJS-D2348,</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -6894,7 +7169,7 @@ try {
     </tr>,<tr data-row>
       <td class="m"></td>
       <td class="m">Service caching</td>
-      <td class="m sub">Add cache: true to any service to automatically cache find and get responses.</td>
+      <td class="m sub">Add cache: true to any service to automatically cache find and get responses for 30 seconds — a fixed default, not cache.defaultTtl, which is…</td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -7178,8 +7453,8 @@ try {
       <td class="m sub">packages/litestone/docs/testing.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
-      <td class="m">trail</td>
-      <td class="m sub">const entries = await sys.auditTrail.findMany({ where: { model: &#39;Widget&#39;, operation: &#39;update&#39; } })// three entries, each {…</td>
+      <td class="m">Audit Trail</td>
+      <td class="m sub">Litestone provides a field-level and model-level audit trail via the trail database driver.</td>
       <td class="m sub">packages/litestone/docs/trail.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
@@ -7452,6 +7727,9 @@ try {
       <td class="m sub"></td>
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
+        <td class="m">@frontierjs/map-kit</td>
+        <td class="m sub" colspan="3"><span class="chip c-stop">no docs/ and no README headings</span></td>
+      </tr>,<tr data-row>
       <td class="m">@frontierjs/mcp</td>
       <td class="m">Mounting it</td>
       <td class="m sub">import { mcp } from &#39;@frontierjs/mcp&#39;</td>
@@ -8013,6 +8291,11 @@ try {
       <td class="m sub">README.md</td>
     </tr>,<tr data-row>
       <td class="m"></td>
+      <td class="m">Pasting and dropping files</td>
+      <td class="m sub">@frontierjs/ui/paste reads the files a paste or a drop carries (FJS-D2364):</td>
+      <td class="m sub">README.md</td>
+    </tr>,<tr data-row>
+      <td class="m"></td>
       <td class="m">The platform does the work</td>
       <td class="m sub">Where the browser already has the behavior, these components use it instead</td>
       <td class="m sub">README.md</td>
@@ -8487,9 +8770,13 @@ try {
     <td class="m">verify:messages</td>
     <td class="m sub">bun web/test/verify-messages.mjs</td>
   </tr><tr data-row>
+    <td class="m">packages/workbench</td>
+    <td class="m">verify:prototypes</td>
+    <td class="m sub">bun web/test/verify-prototypes.mjs</td>
+  </tr><tr data-row>
     <td class="m">website</td>
     <td class="m">verify</td>
-    <td class="m sub">node tests/verify.mjs</td>
+    <td class="m sub">bun run build &amp;&amp; node tests/verify.mjs</td>
   </tr><tr data-row>
     <td class="m">website</td>
     <td class="m">verify:ask</td>
@@ -8497,7 +8784,7 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="proofs">
-  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">183 rows · 331 targets · 0 not found</span></div>
+  <div class="head"><h2>Which drive proves a change</h2><div class="rule"></div><span class="kicker">184 rows · 334 targets · 0 not found</span></div>
   <p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p><div class="panel scroll"><table><thead><tr><th>Changed</th><th>Run</th><th>Resolved</th></tr></thead><tbody><tr data-row>
       <td>the app prompt — junction/tools/call.ts, litestone/src/tools/repl.js, fli app:repl / deploy:repl, runAs(null, { operator }), or what an app declares as createApp({ system })</td>
       <td>example: verify:repl — the only thing that runs the prompt over a real app&#39;s gate; junction&#39;s call-tool.test.ts asks a fixture</td>
@@ -8943,6 +9230,10 @@ try {
       <td>packages/workbench: bun run test (api/test/capture.test.ts, over a temp file) + packages/workbench: verify:capture — the only place a setting reaches Capture&#39;s file through the real controls</td>
       <td><span class="tally"><b>packages/workbench</b>bun run test</span><span class="tally"><b>packages/workbench</b>verify:capture</span></td>
     </tr><tr data-row>
+      <td>the prototypes screen — workbench&#39;s api/src/domain/prototypes/, api/src/services/prototypes/, web/src/routes/prototypes/ or web/src/resources/Prototype.mesa</td>
+      <td>packages/workbench: bun run test (api/test/prototypes.test.ts, over a temp folder) + packages/workbench: verify:prototypes — the only place a record edit reaches CATALOG.json through the real controls</td>
+      <td><span class="tally"><b>packages/workbench</b>bun run test</span><span class="tally"><b>packages/workbench</b>verify:prototypes</span></td>
+    </tr><tr data-row>
       <td>a preview — basecamp&#39;s api/src/domain/workbench/workbench-preview.ts behind apps.preview and the peer door (core/hooks.ts peerCredential, apiKeys.enrollPeer, ApiKey.publicKey), workbench&#39;s dialer (api/src/peer.ts, domain/peer/) and its fork with preview, freeze, thaw and a preview&#39;s archive; a release that names a digest (deployments.create with builtImage); outpost&#39;s /route with a port, /static/activate with hosts, /static/retire</td>
       <td>packages/basecamp: api/test/peer.test.ts (enrollment, the door&#39;s refusals, a signed open filed as actorType: &#39;peer&#39;, the scope reaching the preview and nothing else) + api/test/inline-app.test.ts + verify:provision; packages/workbench: api/test/workbench.test.ts + api/test/peer-dialer.test.ts (signs the way the door verifies, a fresh nonce per call, refusals before dialing) — the unit files hold the settings, the marker, the port claimed at the cut, and a digest release&#39;s three steps and empty snapshot; the drive is the only place the rows are written by the real services, the machine is outpost&#39;s own server and static store on a TLS port, and the hostname is answered by the static origin with the Host the route sets: Open dials the dev server, Freeze serves the built page with FRONTIERPUBLICAPIURL in its bundle, Thaw dials back, Archive leaves the hostname unrouted and the files gone. Dropping the job&#39;s hosts reds the two serving checks. packages/outpost: bun run test for /route&#39;s port and the static routes, incl. a second app taking the same slug</td>
       <td><span class="tally"><b>packages/basecamp</b>api/test/peer.test.ts</span><span class="tally"><b>packages/workbench</b>api/test/workbench.test.ts</span><span class="tally"><b>packages/workbench</b>api/test/peer-dialer.test.ts</span><span class="tally"><b>packages/outpost</b>bun run test</span></td>
@@ -9219,7 +9510,7 @@ try {
       <td>website: verify</td>
       <td><span class="tally"><b>website</b>verify</span></td>
     </tr><tr data-row>
-      <td>the ask panel — core/vite-ask.js (its admission and Submit included), core/vite-ask-client.js, toolbelt&#39;s src/textedit/ (its text edit), ask-claude.js&#39;s edit mode, mesa-vite/inspect-client.js&#39;s onPick and pick mode</td>
+      <td>the ask panel — core/vite-ask.js (its admission and Submit included), core/vite-ask-client.js, toolbelt&#39;s src/textedit/ (its text edit), @frontierjs/claude&#39;s edit mode (packages/claude/src/argv.ts), edit-prompt.js, mesa-vite/inspect-client.js&#39;s onPick and pick mode</td>
       <td>website: verify:ask — and verify:ask --real once when the argv or the prompt moves, because the fake makes the edit itself and so agrees with any argv</td>
       <td><span class="tally"><b>website</b>verify:ask</span></td>
     </tr><tr data-row>
@@ -9229,7 +9520,7 @@ try {
     </tr><tr data-row>
       <td>a vendor connector — anything under packages/conduits/, the shared harness included</td>
       <td>packages/conduits/: drive — one connector&#39;s drive over the shared harness (lib/drive.ts in that folder), so the row names the connector you touched. Each is the vendor stood up as a stub: nothing a real vendor would answer is proved here</td>
-      <td><span class="tally"><b>packages/conduits/conduit-37signals</b>drive</span><span class="tally"><b>packages/conduits/conduit-airtable</b>drive</span><span class="tally"><b>packages/conduits/conduit-anthropic</b>drive</span><span class="tally"><b>packages/conduits/conduit-apns</b>drive</span><span class="tally"><b>packages/conduits/conduit-cloudflare</b>drive</span><span class="tally"><b>packages/conduits/conduit-dataforseo</b>drive</span><span class="tally"><b>packages/conduits/conduit-digitalocean</b>drive</span><span class="tally"><b>packages/conduits/conduit-easypost</b>drive</span><span class="tally"><b>packages/conduits/conduit-gmail</b>drive</span><span class="tally"><b>packages/conduits/conduit-google</b>drive</span><span class="tally"><b>packages/conduits/conduit-hetzner</b>drive</span><span class="tally"><b>packages/conduits/conduit-mailgun</b>drive</span><span class="tally"><b>packages/conduits/conduit-mattermost</b>drive</span><span class="tally"><b>packages/conduits/conduit-microsoft</b>drive</span><span class="tally"><b>packages/conduits/conduit-n8n</b>drive</span><span class="tally"><b>packages/conduits/conduit-oidc</b>drive</span><span class="tally"><b>packages/conduits/conduit-openai</b>drive</span><span class="tally"><b>packages/conduits/conduit-plausible</b>drive</span><span class="tally"><b>packages/conduits/conduit-postmark</b>drive</span><span class="tally"><b>packages/conduits/conduit-quo</b>drive</span><span class="tally"><b>packages/conduits/conduit-resend</b>drive</span><span class="tally"><b>packages/conduits/conduit-s3</b>drive</span><span class="tally"><b>packages/conduits/conduit-sendgrid</b>drive</span><span class="tally"><b>packages/conduits/conduit-slack</b>drive</span><span class="tally"><b>packages/conduits/conduit-stripe</b>drive</span><span class="tally"><b>packages/conduits/conduit-telnyx</b>drive</span><span class="tally"><b>packages/conduits/conduit-turnstile</b>drive</span><span class="tally"><b>packages/conduits/conduit-twilio</b>drive</span><span class="tally"><b>packages/conduits/conduit-zapier</b>drive</span></td>
+      <td><span class="tally"><b>packages/conduits/conduit-37signals</b>drive</span><span class="tally"><b>packages/conduits/conduit-airtable</b>drive</span><span class="tally"><b>packages/conduits/conduit-anthropic</b>drive</span><span class="tally"><b>packages/conduits/conduit-apns</b>drive</span><span class="tally"><b>packages/conduits/conduit-cloudflare</b>drive</span><span class="tally"><b>packages/conduits/conduit-dataforseo</b>drive</span><span class="tally"><b>packages/conduits/conduit-digitalocean</b>drive</span><span class="tally"><b>packages/conduits/conduit-easypost</b>drive</span><span class="tally"><b>packages/conduits/conduit-esri</b>drive</span><span class="tally"><b>packages/conduits/conduit-gmail</b>drive</span><span class="tally"><b>packages/conduits/conduit-google</b>drive</span><span class="tally"><b>packages/conduits/conduit-hetzner</b>drive</span><span class="tally"><b>packages/conduits/conduit-mailgun</b>drive</span><span class="tally"><b>packages/conduits/conduit-mattermost</b>drive</span><span class="tally"><b>packages/conduits/conduit-microsoft</b>drive</span><span class="tally"><b>packages/conduits/conduit-n8n</b>drive</span><span class="tally"><b>packages/conduits/conduit-oidc</b>drive</span><span class="tally"><b>packages/conduits/conduit-openai</b>drive</span><span class="tally"><b>packages/conduits/conduit-plausible</b>drive</span><span class="tally"><b>packages/conduits/conduit-postmark</b>drive</span><span class="tally"><b>packages/conduits/conduit-quo</b>drive</span><span class="tally"><b>packages/conduits/conduit-resend</b>drive</span><span class="tally"><b>packages/conduits/conduit-s3</b>drive</span><span class="tally"><b>packages/conduits/conduit-sendgrid</b>drive</span><span class="tally"><b>packages/conduits/conduit-slack</b>drive</span><span class="tally"><b>packages/conduits/conduit-stripe</b>drive</span><span class="tally"><b>packages/conduits/conduit-telnyx</b>drive</span><span class="tally"><b>packages/conduits/conduit-turnstile</b>drive</span><span class="tally"><b>packages/conduits/conduit-twilio</b>drive</span><span class="tally"><b>packages/conduits/conduit-zapier</b>drive</span></td>
     </tr></tbody></table></div>
 </section>
 <section id="ports">
@@ -9287,8 +9578,8 @@ try {
   </tr></tbody></table></div>
 </section>
 <section id="commands">
-  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">275 invokable commands</span></div>
-  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>19</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>utils</b>16</span><span class="tally" data-row><b>basecamp</b>15</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>project</b>6</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>outpost</b>3</span><span class="tally" data-row><b>profile</b>3</span><span class="tally" data-row><b>site</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>mesa</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
+  <div class="head"><h2>Command namespaces</h2><div class="rule"></div><span class="kicker">276 invokable commands</span></div>
+  <p class="note">A command is a markdown file compiled to JavaScript, so this count is the tree itself. Namespace modules (<code>_module.md</code>) and step files are not invokable and are not counted.</p><div class="tallies"><span class="tally" data-row><b>workspace</b>25</span><span class="tally" data-row><b>db</b>21</span><span class="tally" data-row><b>deploy</b>19</span><span class="tally" data-row><b>make</b>17</span><span class="tally" data-row><b>basecamp</b>16</span><span class="tally" data-row><b>utils</b>16</span><span class="tally" data-row><b>npm</b>14</span><span class="tally" data-row><b>tutor</b>14</span><span class="tally" data-row><b>register</b>12</span><span class="tally" data-row><b>fli</b>9</span><span class="tally" data-row><b>test</b>9</span><span class="tally" data-row><b>env</b>8</span><span class="tally" data-row><b>git</b>8</span><span class="tally" data-row><b>dev</b>7</span><span class="tally" data-row><b>frontier</b>7</span><span class="tally" data-row><b>auth</b>6</span><span class="tally" data-row><b>cloudflare</b>6</span><span class="tally" data-row><b>project</b>6</span><span class="tally" data-row><b>completion</b>4</span><span class="tally" data-row><b>server</b>4</span><span class="tally" data-row><b>tell</b>4</span><span class="tally" data-row><b>app</b>3</span><span class="tally" data-row><b>github</b>3</span><span class="tally" data-row><b>outpost</b>3</span><span class="tally" data-row><b>profile</b>3</span><span class="tally" data-row><b>site</b>3</span><span class="tally" data-row><b>ai</b>2</span><span class="tally" data-row><b>api</b>2</span><span class="tally" data-row><b>desktop</b>2</span><span class="tally" data-row><b>extension</b>2</span><span class="tally" data-row><b>fetch</b>2</span><span class="tally" data-row><b>haven</b>2</span><span class="tally" data-row><b>ports</b>2</span><span class="tally" data-row><b>release</b>2</span><span class="tally" data-row><b>widgets</b>2</span><span class="tally" data-row><b>admin</b>1</span><span class="tally" data-row><b>backfill</b>1</span><span class="tally" data-row><b>browser</b>1</span><span class="tally" data-row><b>cli</b>1</span><span class="tally" data-row><b>crypto</b>1</span><span class="tally" data-row><b>literate</b>1</span><span class="tally" data-row><b>mcp</b>1</span><span class="tally" data-row><b>mesa</b>1</span><span class="tally" data-row><b>notifications</b>1</span><span class="tally" data-row><b>outbox</b>1</span><span class="tally" data-row><b>web</b>1</span></div>
 </section>
 <section id="root-docs">
   <div class="head"><h2>Which file answers which question</h2><div class="rule"></div><span class="kicker">each one holds a single kind of statement</span></div>

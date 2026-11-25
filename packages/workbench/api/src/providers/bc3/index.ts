@@ -20,7 +20,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import {
-  authorization, authorizeUrl, basecampSignInTargets, basecampTargets, basecampTokenResolver, bindBasecamp,
+  readAuthorization, authorizeUrl, basecampSignInTargets, basecampTargets, basecampTokenResolver, bindBasecamp,
   createTodo, exchangeCode, pkcePair, project, projects, registerClient, todolists, translate,
   type BasecampFailure, type BasecampSend, type GrantStore,
 } from '@frontierjs/conduit-37signals'
@@ -186,7 +186,7 @@ export async function landSignIn (app: App, params: URLSearchParams): Promise<La
   const out = await exchangeCode(bc, { clientId: p.clientId, code, redirectUri: p.redirectUri, codeVerifier: p.verifier })
   if ('ended' in out) return ended(out.ended, 400)
   if ('error' in out) return ended(kindOf(out.error), 400)
-  const who = await authorization(bc, { accessToken: out.grant.accessToken, ...(s.origins.apiOrigin ? { apiOrigin: s.origins.apiOrigin } : {}) })
+  const who = await readAuthorization(bc, { accessToken: out.grant.accessToken, ...(s.origins.apiOrigin ? { apiOrigin: s.origins.apiOrigin } : {}) })
   if (!who.row) return ended(kindOf(who.error), 400)
   // `api` addresses one account; with several, which one to-dos go to is the owner's call and nothing here guesses.
   const bc3 = who.row.accounts.filter(a => a.product === 'bc3')

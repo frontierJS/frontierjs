@@ -26,9 +26,9 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-29 package(s) · 4871 source file(s) read
-376 entry point(s), 37 imported by nothing outside their package, 14 emitted
-1978 value export(s), 714 reached by nothing outside, 204 emitted
+32 package(s) · 4881 source file(s) read
+384 entry point(s), 37 imported by nothing outside their package, 14 emitted
+1981 value export(s), 714 reached by nothing outside, 204 emitted
 571 type export(s), 398 reached by nothing outside
 ```
 
@@ -40,7 +40,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `sierra` | 49 | 5 | 206 | 87 | 20 | 0 | 0 |
 | `toolbelt` | 94 | 1 | 354 | 44 | 16 | 0 | 0 |
 | `auth` | 7 | 2 | 59 | 42 | 4 | 20 | 17 |
-| `ui` | 18 | 0 | 57 | 36 | 3 | 0 | 0 |
+| `ui` | 20 | 0 | 60 | 36 | 3 | 0 | 0 |
 | `jetty` | 14 | 4 | 44 | 29 | 4 | 0 | 0 |
 | `outpost` | 26 | 2 | 70 | 21 | 4 | 0 | 0 |
 | `claude` | 1 | 0 | 71 | 20 | 2 | 97 | 52 |
@@ -57,6 +57,9 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `testing` | 2 | 0 | 10 | 1 | 0 | 16 | 13 |
 | `basecamp` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `cli` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-37signals` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-cloudflare` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-plausible` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `config` | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `create-frontier` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `frontierjs-vscode` | 1 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -119,6 +122,30 @@ Every entry is imported and every name reached.
 **Unreached values (11):** `assertBrokerReceiver` `assertClaim` `assertReceiver` `CONDUIT_ERROR_KINDS` `createMemoryStore` `createNullResolver` `createTestConduit` `createTraceContext` `CredentialError` `RECEIVE_RESULTS` `traceIdFrom`
 
 **Unreached types (32):** `BreakerState` `BrokerGap` `BrokerHandler` `BrokerHealth` `BrokerKeepalive` `BrokerLink` `BrokerReceiver` `ClaimedModel` `ConduitErrorKind` `ConduitErrorResponse` `ConduitObservers` `ConduitResponse` `ConduitStats` `ConduitStore` `CredentialRefusal` `MirrorRow` `MirrorVerb` `ReceiveResult` `RefusedAnswer` `ResilienceOptions` `ResponseMeta` `SignInput` `SignOutput` `StubMocks` `TargetAuth` `TargetInput` `TargetKind` `TargetResilience` `TestConduit` `TestConduitOptions` `TraceContextOptions` `VerifyContext`
+
+## `@frontierjs/conduit-37signals`
+
+`packages/conduit-37signals` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
+
+## `@frontierjs/conduit-cloudflare`
+
+`packages/conduit-cloudflare` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
+
+## `@frontierjs/conduit-plausible`
+
+`packages/conduit-plausible` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
 
 ## `@frontierjs/config`
 
@@ -342,11 +369,11 @@ Every entry is imported and every name reached.
 
 ## `@frontierjs/ui`
 
-`packages/ui` · 18 entry point(s) · 57 value, 0 type export(s)
+`packages/ui` · 20 entry point(s) · 60 value, 0 type export(s)
 
 **Entries emitted (4):** `./dnd` `./drag` `./selection` `./rowlist`
 
-**Entries not source (8, not graded):** `./utils` `./dnd` `./drag` `./resize` `./nav` `./selection` `./rowlist` `./controls`
+**Entries not source (9, not graded):** `./utils` `./dnd` `./drag` `./resize` `./nav` `./selection` `./paste` `./rowlist` `./controls`
 
 **Unreached values (36):** `bandIndex` `createSelection` `defaultControlProps` `defaultDisplayProps` `defaultFilterProps` `displayComponent` `fileNameOf` `filePreviews` `filterComponent` `fitDropdown` `formControl` `lockedBy` `menuWalk` `nativeValidationGuard` `optionsNote` `placeAgainst` `plotRuns` `plotValue` `RECENT_GROUP` `registeredDisplayComponents` `registeredFilterComponents` `registeredFormControls` `resolveError` `resolveRule` `REST_GROUP` `ruleLabel` `sectionFor` `SHADOW_ITEM_MARKER` `SHADOW_PLACEHOLDER_ITEM_ID` `sizeClass` `splitRecent` `truncationNote` `unregisterDisplayComponent` `unregisterFilterComponent` `unregisterFormControl` `withheldBy`
 

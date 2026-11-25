@@ -18,8 +18,11 @@
 // in the bundled build.
 //
 // A release build reads neither variable, so a shipped app cannot be scripted
-// or repointed from its environment. Its one command is tray_unread, which
-// only sets the tray's label.
+// or repointed from its environment. Its commands are tray_unread, which only
+// sets the tray's label, and set_titlebar, which only paints the title bar.
+//
+// On Linux the title bar is the app's own (with_titlebar) and takes the page's
+// theme colors through set_titlebar, sent by web/src/lib/titlebar.js.
 //
 // A webview with no new-window handler drops every target=_blank link without
 // a sound, so each one goes to the system browser instead.
@@ -93,6 +96,74 @@ fn open_in_browser(url: &tauri::Url) {
     }
 }
 
+// The window's title bar in the theme's colors. On GNOME the bar is the window
+// manager's, drawn outside the app, and no stylesheet reaches it; a GTK header
+// bar is the app's own, so the window gets one (client-side decorations) and
+// set_titlebar paints it. GTK still drags, snaps, resizes, maximizes on a
+// double-click and opens the window menu on a right-click. The window is built
+// hidden and shown here, so GTK never maps it with the manager's bar first.
+#[cfg(target_os = "linux")]
+fn with_titlebar(w: &tauri::WebviewWindow) {
+    use gtk::prelude::*;
+    let Ok(gtk_window) = w.gtk_window() else { return };
+    if gtk_window.titlebar().is_none() {
+        let bar = gtk::HeaderBar::new();
+        bar.set_show_close_button(true);
+        bar.style_context().add_class("workbench-titlebar");
+        bar.set_title(gtk_window.title().as_deref());
+        bar.show();
+        gtk_window.set_titlebar(Some(&bar));
+    }
+    TITLEBAR_CSS.with(|css| {
+        if let Some(screen) = GtkWindowExt::screen(&gtk_window) {
+            gtk::StyleContext::add_provider_for_screen(&screen, css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
+    });
+    gtk_window.show_all();
+}
+
+#[cfg(target_os = "linux")]
+thread_local! {
+    static TITLEBAR_CSS: gtk::CssProvider = gtk::CssProvider::new();
+}
+
+// Only `#rrggbb` reaches the stylesheet: the page's colors are data, never CSS.
+fn hex_color(s: &str) -> Result<&str, String> {
+    let ok = s.len() == 7 && s.starts_with('#') && s[1..].chars().all(|c| c.is_ascii_hexdigit());
+    if ok { Ok(s) } else { Err(format!("not a #rrggbb color: {s}")) }
+}
+
+// The page's theme, sent on load and on every switch (web/src/lib/titlebar.js).
+#[tauri::command]
+fn set_titlebar(window: tauri::WebviewWindow, background: String, foreground: String, rule: String) -> Result<(), String> {
+    let (bg, fg, rule) = (hex_color(&background)?.to_owned(), hex_color(&foreground)?.to_owned(), hex_color(&rule)?.to_owned());
+    #[cfg(target_os = "linux")]
+    {
+        let css = format!(
+            "headerbar.workbench-titlebar {{ background: {bg}; background-image: none; color: {fg}; \
+               border-bottom: 1px solid {rule}; box-shadow: none; min-height: 32px; padding: 0 6px; }}\n\
+             headerbar.workbench-titlebar:backdrop {{ background: {bg}; color: alpha({fg}, 0.55); }}\n\
+             headerbar.workbench-titlebar .title {{ color: inherit; font-weight: 600; }}\n\
+             headerbar.workbench-titlebar button.titlebutton {{ color: inherit; background: none; border: none; \
+               box-shadow: none; min-height: 24px; min-width: 24px; padding: 0; margin: 0 2px; }}\n\
+             headerbar.workbench-titlebar button.titlebutton:hover {{ background: alpha({fg}, 0.12); }}\n\
+             headerbar.workbench-titlebar button.titlebutton.close:hover {{ background: #e81123; color: #ffffff; }}\n"
+        );
+        window
+            .run_on_main_thread(move || {
+                TITLEBAR_CSS.with(|p| {
+                    if let Err(e) = gtk::prelude::CssProviderExt::load_from_data(p, css.as_bytes()) {
+                        eprintln!("workbench: the title bar's colors did not load — {e}");
+                    }
+                })
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (window, bg, fg, rule);
+    Ok(())
+}
+
 fn main() {
     let probe = probe_script();
     let dev = dev_url();
@@ -117,18 +188,20 @@ fn main() {
     // invoke_handler replaces, never adds, so each build names its full list.
     #[cfg(debug_assertions)]
     let builder = if probe.is_some() {
-        builder.invoke_handler(tauri::generate_handler![probe_report, probe_done, tray::tray_unread])
+        builder.invoke_handler(tauri::generate_handler![probe_report, probe_done, tray::tray_unread, set_titlebar])
     } else {
-        builder.invoke_handler(tauri::generate_handler![tray::tray_unread])
+        builder.invoke_handler(tauri::generate_handler![tray::tray_unread, set_titlebar])
     };
     #[cfg(not(debug_assertions))]
-    let builder = builder.invoke_handler(tauri::generate_handler![tray::tray_unread]);
+    let builder = builder.invoke_handler(tauri::generate_handler![tray::tray_unread, set_titlebar]);
 
     builder
         .setup(move |app| {
             let mut window = WebviewWindowBuilder::new(app, "main", page)
                 .title("Workbench")
                 .inner_size(1280.0, 900.0)
+                // Shown by with_titlebar on Linux, once the header bar is set.
+                .visible(!cfg!(target_os = "linux"))
                 .on_new_window(|url, _| {
                     open_in_browser(&url);
                     NewWindowResponse::Deny
@@ -136,7 +209,9 @@ fn main() {
             if let Some(script) = &probe {
                 window = window.initialization_script(script);
             }
-            window.build()?;
+            let _built = window.build()?;
+            #[cfg(target_os = "linux")]
+            with_titlebar(&_built);
             tray::build(app.handle())?;
             Ok(())
         })

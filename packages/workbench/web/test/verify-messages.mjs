@@ -416,7 +416,7 @@ try {
   ok('the answer swaps the faded copy for the real post, once')
   const doomed = `to delete ${Date.now()}`
   await typeAndEnter('[data-composer="post"] textarea', doomed)
-  await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].some(e => e.textContent.includes(${sel(doomed)}))`, v => v, 'the post to delete never drew')
+  await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].some(e => e.textContent.includes(${sel(doomed)}) && !e.closest('[data-post-sending]'))`, v => v, 'the post to delete never drew')
   const doomedSink = await sinkPostBy(doomed)
   await menuPick(`[data-post="${doomedSink.id}"]`, '[data-post-more]', 'Delete')
   await until(`!!document.querySelector('[data-confirm-panel]')`, v => v, 'Delete never asked to confirm')
@@ -424,6 +424,27 @@ try {
   await evaluate(`document.querySelector('[data-confirm-panel] .btn.danger').click()`)
   await until(`!document.querySelector('[data-post="${doomedSink.id}"]')`, v => v, 'the confirmed delete never took the post off the screen', 15_000)
   check('the sink no longer lists it', !(await sinkPostBy(doomed)))
+  // An edit saved empty asks to delete, as Mattermost does: Esc goes back to the box, Enter deletes.
+  const emptied = `to empty ${Date.now()}`
+  await typeAndEnter('[data-composer="post"] textarea', emptied)
+  await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].some(e => e.textContent.includes(${sel(emptied)}) && !e.closest('[data-post-sending]'))`, v => v, 'the post to empty never drew')
+  const emptiedSink = await sinkPostBy(emptied)
+  await menuPick(`[data-post="${emptiedSink.id}"]`, '[data-post-more]', 'Edit')
+  await until(`!!document.querySelector('[data-post-editor] textarea')`, v => v, 'Edit never opened the editor')
+  const asked = `!!document.querySelector('dialog[data-post-delete-confirm]')?.open && document.activeElement?.matches('[data-post-delete-yes]')`
+  await typeAndEnter('[data-post-editor] textarea', '')
+  await until(asked, v => v, 'an emptied edit never asked to delete, with Delete focused')
+  check('an emptied edit asks to delete and shows no error', !(await exists('[data-post-editor] [role=alert]')) && !!(await sinkPostBy(emptied)))
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await until(`!document.querySelector('dialog[data-post-delete-confirm]')?.open && document.activeElement === document.querySelector('[data-post-editor] textarea')`, v => v, 'Esc never went back to the emptied editor')
+  check('Esc keeps the post and returns to the editor', !!(await sinkPostBy(emptied)))
+  await typeAndEnter('[data-post-editor] textarea', '')
+  await until(asked, v => v, 'the second Enter never asked again')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 })
+  await until(`!document.querySelector('[data-post="${emptiedSink.id}"]')`, v => v, 'Enter on the question never took the post off the screen', 15_000)
+  check('Enter on the question deletes it on the sink', !(await sinkPostBy(emptied)))
 
   // ── Pins ──
   console.log('\n  Pins')

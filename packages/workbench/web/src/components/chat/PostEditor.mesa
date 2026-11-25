@@ -1,10 +1,11 @@
 <script>
   // components/chat/PostEditor.mesa -- a post's text, edited in place. Enter saves,
   // Shift+Enter breaks a line, Esc puts it back; Esc is taken here so the thread pane
-  // around it stays open. Saving an unchanged text is a cancel. An empty text is
-  // refused: taking a post back is Delete's. The author alone may edit, and the
-  // server says so (403) rather than this box guessing at a window.
+  // around it stays open. Saving an unchanged text is a cancel. Saving an empty one
+  // asks to delete the post, as Mattermost does, and Enter there deletes it. The author
+  // alone may edit, and the server says so (403) rather than this box guessing at a window.
   import { posts } from '../../resources/Post.mesa'
+  import Modal from '@frontierjs/ui/components/overlay/Modal.mesa'
   import MentionList from './MentionList.mesa'
   import { applyMention, getLists, mentionAt, pickerKey, watchMembers } from '../../lib/chat.js'
 
@@ -16,6 +17,7 @@
   let saving = false
   let error  = null
   let picker = null   // the @ picker, drawn under the box so it never covers Save
+  let asking = false  // the box was emptied and saved: is the post to go?
 
   const lists = getLists()
   const members = watchMembers(post.channelExternalId)
@@ -47,13 +49,27 @@
     const message = text.trim()
     if (saving) return
     if (message === (post.message ?? '').trim()) { ondone?.(); return }
-    if (!message) { error = 'A post says something. To take it back, delete it.'; return }
+    if (!message) { error = null; asking = true; return }
     saving = true
     error = null
     try {
       await posts.service.patch(post.id, { message })
       ondone?.()
     } catch (e) { error = e.message } finally { saving = false }
+  }
+  async function remove() {
+    asking = false
+    saving = true
+    try {
+      await posts.service.remove(post.id)
+      ondone?.()
+    } catch (e) { error = e.message } finally { saving = false }
+  }
+  // Cancel, Esc or the backdrop: back to the box, still empty, to type into or Esc out of.
+  function keep() {
+    if (saving) return
+    asking = false
+    requestAnimationFrame(() => box?.focus())
   }
   function onKey(e) {
     if (picker) {
@@ -76,6 +92,14 @@
     <span class="text-xs text-muted">Enter saves · Esc cancels</span>
   </div>
 </div>
+
+<Modal bind:open={asking} title="Delete message" size="sm" onclose={keep} data-post-delete-confirm>
+  <p>Are you sure you want to delete this message? There is no undo.</p>
+  {#snippet footer()}
+    <button type="button" class="btn ghost" onclick={keep}>Cancel</button>
+    <button type="button" class="btn danger" autofocus onclick={remove} data-post-delete-yes>Delete</button>
+  {/snippet}
+</Modal>
 
 <style>
   .post-edit-text { resize: none; min-block-size: 0; inline-size: 100%; }
