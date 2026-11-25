@@ -34,7 +34,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createConduit, type IConduit } from '@frontierjs/conduit'
-import { anthropicTarget, bindSend, type Send } from '@frontierjs/conduit-anthropic'
+import type { Send } from '@frontierjs/conduit-anthropic'
 import { claudeConfigDir, read, unreadable, readJsonObject, type Read } from './read.ts'
 
 export type Meter = {
@@ -227,9 +227,12 @@ const conduits = new Map<string, { conduit: IConduit, ready: Promise<void> }>()
 /**
  * `conduit-anthropic`'s `Send` signed in as the login, one conduit per config
  * folder and address. The timeout is the usage read's: a count answers in well
- * under it, and the connector's two minutes are a completion's.
+ * under it, and the connector's two minutes are a completion's. The connector
+ * is passed in: it is an optional dependency, loaded only by the count.
  */
-export function loginSend(opts: LoginSendOptions = {}): Send {
+export function loginSend(
+  { anthropicTarget, bindSend }: typeof import('@frontierjs/conduit-anthropic'), opts: LoginSendOptions = {},
+): Send {
   const configDir = claudeConfigDir({ configDir: opts.configDir })
   const key = `${configDir} ${opts.address ?? ''}`
   let held = conduits.get(key)

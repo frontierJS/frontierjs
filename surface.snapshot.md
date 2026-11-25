@@ -26,8 +26,8 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-32 package(s) · 4882 source file(s) read
-384 entry point(s), 37 imported by nothing outside their package, 14 emitted
+33 package(s) · 4888 source file(s) read
+386 entry point(s), 37 imported by nothing outside their package, 14 emitted
 1981 value export(s), 714 reached by nothing outside, 204 emitted
 571 type export(s), 398 reached by nothing outside
 ```
@@ -58,6 +58,7 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `basecamp` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `cli` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-37signals` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-anthropic` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-cloudflare` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-plausible` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `config` | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -126,6 +127,14 @@ Every entry is imported and every name reached.
 ## `@frontierjs/conduit-37signals`
 
 `packages/conduit-37signals` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
+
+## `@frontierjs/conduit-anthropic`
+
+`packages/conduit-anthropic` · 2 entry point(s) · 0 value, 0 type export(s)
 
 **Entries not source (2, not graded):** `.` `./sink`
 

@@ -135,8 +135,8 @@ function sourceOfRoot(root, names) {
   for (const m of releasableMembers(root)) add(m)
   for (const name of names) { const m = memberByName(root, name); if (m) add(m) }
   // The held-out members (packages/conduits/*) are not packed for sharing a
-  // scope, but one a packed package depends on must be -- `@frontierjs/claude`
-  // needs `conduit-anthropic`, and an image that installs claude from the tree
+  // scope, but one a packed package depends on must be -- workbench needs
+  // `conduit-hetzner`, and an image that installs workbench from the tree
   // would otherwise ask npm for a connector that was never published.
   const held = packageMembers(root).filter(m => isHeldOut(m) && m.manifest.name && !found.has(m.dir))
     .map(m => ({ name: m.manifest.name, dir: m.dir, private: !!m.manifest.private }))

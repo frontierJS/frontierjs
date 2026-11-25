@@ -294,6 +294,9 @@ export type AccountSend = (req: {
    *  question, and for a machine read the difference between 404 and 400 is
    *  *the vendor no longer has it* against *we asked wrongly*. */
   status?: number
+  /** The answer's headers, lower-cased. GitHub's primary rate limit is a 403
+   *  that only `x-ratelimit-remaining: 0` tells from a missing grant. */
+  headers?: Record<string, string>
   error?:  { kind: string; message?: string }
 }>
 

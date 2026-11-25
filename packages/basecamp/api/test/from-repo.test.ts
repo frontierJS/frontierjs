@@ -25,7 +25,7 @@ import { buildBasecampApp }       from '../src/app.ts'
 import { grantsFor }              from '../src/core/capabilities.ts'
 import { parseAppSource, summarizeSource, DOCKERFILE_BYTES } from '../src/domain/release/app-source.ts'
 import { readRepoDockerfile, rawDockerfileUrls, forgeRepo, fjsDockerfileTemplate } from '../src/domain/release/dockerfile-template.ts'
-import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
+import { startGhSink, NO_HOOKS_TOKEN } from '@frontierjs/conduit-github/sink'
 import { registerAccount }    from '../src/providers/compute/accounts.ts'
 import { connectRepository }  from '../src/services/apps/apps.service.ts'
 
@@ -364,7 +364,7 @@ describe('readRepoDockerfile', () => {
 })
 
 describe('fromRepo `isConnecting` writes at GitHub (FJS-D1571)', () => {
-  const sink = startGhSink(0)
+  const sink = startGhSink({ port: 0 })
   const repo = 'git@github.com:sink-owner/app.git'
   const made: any[] = []
   afterAll(async () => {

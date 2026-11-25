@@ -106,6 +106,18 @@ describe('connector admission', () => {
     for (const name of ADMITTED) expect(released.has(`packages/conduits/${name}`)).toBe(true)
   })
 
+  // The tree half of ws:pub's held-out-dependency refusal: it fires at
+  // release time, this fires the day the dependency is written (FJS-4639). A
+  // private member is skipped by ws:pub, and its image packs held connectors.
+  test('no published member depends on a held-out connector (FJS-D2375)', () => {
+    const held = new Set(members.filter(isHeldOut).map(m => m.manifest.name))
+    const found = releasableMembers(repo).filter(m => !m.manifest.private).flatMap(m => {
+      const deps = { ...m.manifest.dependencies, ...m.manifest.optionalDependencies, ...m.manifest.peerDependencies }
+      return Object.keys(deps).filter(d => held.has(d)).map(d => `${m.manifest.name} → ${d}`)
+    })
+    expect(found).toEqual([])
+  })
+
   test('a connector not admitted stays held', () => {
     const held = members.filter(m => isConnector(m) && !ADMITTED.includes(m.folder))
     expect(held.length).toBeGreaterThan(0)

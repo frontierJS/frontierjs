@@ -36,7 +36,7 @@
 
 import { closeSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { countTokens, type AnthropicFailure, type Message, type Tool } from '@frontierjs/conduit-anthropic'
+import type { AnthropicFailure, Message, Tool } from '@frontierjs/conduit-anthropic'
 import { loginProblem, loginSend, type LoginSendOptions } from './quota.ts'
 import { claudeConfigDir, read, unreadable, type Read } from './read.ts'
 import { encodeCwd } from './sessions.ts'
@@ -280,6 +280,10 @@ export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read
 /** One request to count: the parts of a Messages request that cost input tokens. */
 export type CountBody = { system?: string, tools?: unknown[], messages: unknown[] }
 
+const CONNECTOR = '@frontierjs/conduit-anthropic'
+type Connector = typeof import('@frontierjs/conduit-anthropic')
+const loadConnector = (): Promise<Connector> => import(CONNECTOR)
+
 function countRefused(f: AnthropicFailure): string {
   if (f.kind === 'rate_limited') return 'rate limited by the count endpoint'
   if (f.kind === 'auth_failed' || f.kind === 'forbidden') return `count endpoint refused the login (${f.status ?? f.kind}); run claude to refresh it`
@@ -292,13 +296,21 @@ function countRefused(f: AnthropicFailure): string {
  * `conduit-anthropic`'s `countTokens`; the only tokenizer for these models is
  * the API's (`FJS-D1734`). One refusal fails the lot: a caller subtracts counts
  * from each other, and a partial answer would subtract a missing one. Never throws.
+ *
+ * The connector is an optional dependency (`FJS-D2375`), so it is imported
+ * here and nowhere else; an install without it reads every other file.
  */
-async function countLogin(model: string, bodies: CountBody[], opts: LoginSendOptions = {}): Promise<Read<number[]>> {
+export async function countLogin(
+  model: string, bodies: CountBody[], opts: LoginSendOptions & { load?: () => Promise<Connector> } = {},
+): Promise<Read<number[]>> {
+  let connector: Connector
+  try { connector = await (opts.load ?? loadConnector)() }
+  catch (e) { return unreadable(`${CONNECTOR} could not be loaded (${(e as Error).message}); install it to count the parts`) }
   const problem = loginProblem({ configDir: opts.configDir })
   if (problem) return unreadable(problem)
-  const send = loginSend(opts)
+  const send = loginSend(connector, opts)
   const one = async (body: CountBody): Promise<Read<number>> => {
-    const r = await countTokens(send, { model, ...body, tools: body.tools as Tool[] | undefined, messages: body.messages as Message[] })
+    const r = await connector.countTokens(send, { model, ...body, tools: body.tools as Tool[] | undefined, messages: body.messages as Message[] })
     return r.count ? read(r.count.input_tokens) : unreadable(countRefused(r.error!))
   }
   const counts = await Promise.all(bodies.map(one))

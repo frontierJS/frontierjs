@@ -1,108 +1,80 @@
 // src/providers/source/github.ts
-// GitHub's dialect, and the only file in this app that knows it.
+// GitHub as Basecamp says it: an adapter over `@frontierjs/conduit-github`
+// (`FJS-D2367`), which owns the REST dialect — the target's headers, the calls,
+// and the one reading of a refusal (`translate`). What stays here is what a
+// screen shows and what git does: the sentences each refusal reaches an
+// operator as, `RepoUnseen`, and git's own credential path (`gitCredential`,
+// `FJS-D2108`), which is not a REST call.
 //
-// The token is a fine-grained personal access token (`FJS-D1571`), and each
-// call needs one grant on the repository: a deploy key is Administration
-// write, a webhook is Webhooks write, a file is Contents read, and a site's
-// draft pushed over git is Contents write (`gitCredential`). GitHub answers a
-// repository the token was not given as 404, the same as one that does not
-// exist, so a 404 here names both — and a missing FILE is a 404 too, which is
-// why `readFile` asks for the repository before its paths.
+// A 403 is two things at GitHub: a grant the token lacks, and a rate limit
+// (the primary limit answers 403, not 429). Read as one, a busy token tells an
+// operator to change a grant that is already right, so a limit is its own
+// sentence and says to wait.
 //
-// ─── A deploy key is unique across GitHub ────────────────────────────────
-//
-// One public key may be a deploy key on one repository only; a second answers
-// 422 *key is already in use*. An App's key is its own, so this is an App moved
-// to another repository with its old key still on the first — the refusal says
-// to remove it there.
+// A deploy key is unique across GitHub: an App moved to another repository
+// with its old key still on the first is refused by name, and the sentence
+// says to remove it there.
 
 import { env }                    from '../../core/env.ts'
 import { createSecretResolver }   from '../../core/credentials.ts'
 import { targetFor }              from '../compute/index.ts'
-import type { TargetDescriptor }  from '@frontierjs/conduit'
+import type { ConduitResult }     from '@frontierjs/conduit'
+import * as gh                    from '@frontierjs/conduit-github'
 import type { AccountSend }       from '../compute/index.ts'
 import { RepoUnseen }             from './index.ts'
-import type { SourceConnector, SourceRepo, DeployKey, PushHook } from './index.ts'
+import type { SourceConnector, SourceRepo } from './index.ts'
 import type { App }               from '@frontierjs/junction'
 
-/** Where GitHub is. Overridden by `GITHUB_URL` for the dev sink. */
-const GH_API = 'https://api.github.com'
+/** Is this token live? One name here, so a rename in the connector is one line. */
+const verifyToken = gh.verify
 
-/** The REST version every call is pinned to; unpinned, GitHub answers in
- *  whatever it defaults to that year. */
-const API_VERSION = '2022-11-28'
-
-/** A list is read at its largest page. A repository with more deploy keys or
- *  hooks than this is not one this app wrote most of, and a key past the page
- *  is added again and refused by name as in use. */
-const PER_PAGE = 100
-
-type Row = Record<string, unknown>
-
-const str = (v: unknown): string => typeof v === 'string' ? v : typeof v === 'number' ? String(v) : ''
-
-const repoPath = (r: SourceRepo) => `/repos/${encodeURIComponent(r.owner)}/${encodeURIComponent(r.name)}`
-
-/** `<type> <base64>`: GitHub drops the comment from a key it stores, so two
- *  spellings of one key compare equal only without it. */
-const material = (key: string) => key.trim().split(/\s+/).slice(0, 2).join(' ')
-
-/** What the grant a call needs is called on the token's settings page, and
- *  the level it is set to there. */
-type Grant = 'Administration' | 'Webhooks' | 'Contents'
-const LEVEL: Record<Grant, string> = { Administration: 'Read and write', Webhooks: 'Read and write', Contents: 'Read-only' }
-
-/**
- * The answer's body, or a throw saying in GitHub's terms why there is none.
- * The cause is the whole message: a connect that fails on screen as
- * `client_error (HTTP 403)` tells an operator nothing about which grant the
- * token is missing.
- */
-function unwrap(res: Awaited<ReturnType<AccountSend>>, repo: SourceRepo, grant: Grant): unknown {
-  if (!res.error) return res.data
-  const body   = (res.data ?? {}) as Row
-  const said   = str(body.message)
-  const detail = Array.isArray(body.errors) ? str((body.errors as Row[])[0]?.message) : ''
-  const where  = `${repo.owner}/${repo.name}`
-
-  if (res.status === 401)
-    throw new Error('GitHub refused the token — it was revoked or has expired; paste a new one on the account')
-  if (res.status === 403)
-    throw new Error(`GitHub: the token may not do this on ${where} — give it ${grant} › ${LEVEL[grant]}`
-      + `${said ? ` (${said})` : ''}`)
-  if (res.status === 404)
-    throw new RepoUnseen(`GitHub: ${where} was not found, or the token was not given it`)
-  if (res.status === 422 && /already in use/i.test(detail))
-    throw new Error(`GitHub: this App's deploy key is already on another repository — GitHub allows one; remove it there`)
-  throw new Error(`GitHub: ${res.error.kind}${res.status ? ` (HTTP ${res.status})` : ''}`
-    + `${detail || said ? ` — ${detail || said}` : ''}`)
-}
-
-const list = (data: unknown): Row[] => Array.isArray(data) ? data as Row[] : []
-
-function toKey(k: Row): DeployKey {
-  return { id: str(k.id), title: str(k.title), key: str(k.key), readOnly: k.read_only === true }
-}
-
-function toHook(h: Row): PushHook {
-  const config = (h.config ?? {}) as Row
-  return {
-    id:     str(h.id),
-    url:    str(config.url),
-    events: Array.isArray(h.events) ? (h.events as unknown[]).map(str) : [],
-    active: h.active === true,
+/** Basecamp's spend-guarded send, as the connector's `send`. On a refusal the
+ *  account's `data` is the vendor's body, which is what `translate` reads when
+ *  the error carries no `raw` of its own. */
+function asSend(send: AccountSend): gh.Send {
+  return async <T>(req: Parameters<gh.Send>[0]) => {
+    const res = await send({
+      method: req.method as Parameters<AccountSend>[0]['method'],
+      path:   req.path ?? '',
+      ...(req.body === undefined ? {} : { body: req.body }),
+    })
+    const meta = { status: res.status, headers: res.headers }
+    if (!res.error) return { data: res.data, meta } as unknown as ConduitResult<T>
+    const error = { retryable: false, ...res.error, raw: (res.error as { raw?: unknown }).raw ?? res.data }
+    return { data: null, error, meta } as unknown as ConduitResult<T>
   }
 }
 
-/** The body a push hook is written with. `content_type: json` because
- *  `plugins/git-push.ts` reads a JSON body, and the form encoding signs the same
- *  bytes but delivers them as `payload=`. */
-function hookBody(url: string, secret: string) {
-  return {
-    active: true,
-    events: ['push'],
-    config: { url, content_type: 'json', secret, insecure_ssl: '0' },
+const minutes = (ms: number) => {
+  const m = Math.max(1, Math.ceil(ms / 60_000))
+  return `${m} minute${m === 1 ? '' : 's'}`
+}
+
+/** The connector's refusal as the sentence a screen shows. Anything that is not
+ *  a GitHub refusal (a guard, a bug) passes through as it was thrown. */
+function said(err: unknown, repo?: SourceRepo): unknown {
+  if (!(err instanceof gh.GithubError)) return err
+  const f     = err.failure
+  const where = repo ? `${repo.owner}/${repo.name}` : 'this repository'
+  switch (f.kind) {
+    case 'auth_failed':
+      return new Error('GitHub refused the token — it was revoked or has expired; paste a new one on the account')
+    case 'rate_limited':
+      return new Error(`GitHub: this token is over GitHub's request limit — wait ${minutes(f.retryAfterMs ?? gh.DEFAULT_WAIT_MS)} and try again`)
+    case 'refused_grant':
+      return new Error(`GitHub: the token may not do this on ${where}`
+        + `${f.grant ? ` — give it ${f.grant} › ${f.level}` : ''}${f.message ? ` (${f.message})` : ''}`)
+    case 'unseen':
+      return new RepoUnseen(`GitHub: ${where} was not found, or the token was not given it`)
+    case 'key_in_use':
+      return new Error(`GitHub: this App's deploy key is already on another repository — GitHub allows one; remove it there`)
+    default:
+      return new Error(`GitHub: ${f.kind}${f.message ? ` — ${f.message}` : ''}`)
   }
+}
+
+async function speak<T>(repo: SourceRepo | undefined, call: () => Promise<T>): Promise<T> {
+  try { return await call() } catch (err) { throw said(err, repo) }
 }
 
 export const github: SourceConnector = {
@@ -111,71 +83,20 @@ export const github: SourceConnector = {
 
   // A getter, for digitalocean.ts's reason: a value is captured at import and a
   // test pointing this at a stand-in afterwards would reach the real vendor.
-  get address() { return env.GITHUB_URL || GH_API },
+  get address() { return env.GITHUB_URL || gh.GITHUB_ADDRESS },
 
-  descriptor({ accountId, ref, address }): TargetDescriptor {
-    return {
-      id:            targetFor('github', accountId),
-      kind:          'provider',
-      protocol:      'http',
-      address:       address || github.address,
-      auth:          { type: 'bearer', ref },
-      // GitHub refuses a request with no User-Agent.
-      headers:       {
-        'accept':               'application/vnd.github+json',
-        'x-github-api-version': API_VERSION,
-        'user-agent':           'basecamp',
-      },
-      registered_at: Date.now(),
-      last_seen_at:  null,
-    } as TargetDescriptor
+  descriptor({ accountId, ref, address }) {
+    return gh.githubTarget({ accountId, ref, address: address || github.address, userAgent: 'basecamp' })
   },
 
-  async verify(send): Promise<boolean> {
-    // `/user` needs no grant, so it says the token is live and nothing about
-    // which repositories it opens — a token given none verifies here and is
-    // refused by name at the connect that names one.
-    const res = await send({ method: 'GET', path: '/user' })
-    if (res.error) {
-      if (res.status && res.status < 500) return false
-      throw new Error(`GitHub: ${res.error.kind}`)
-    }
-    return Boolean((res.data as Row | null)?.login)
-  },
+  verify: send => speak(undefined, () => verifyToken(asSend(send))),
 
-  async setDeployKey(send, repo, { title, key }): Promise<DeployKey> {
-    const path = `${repoPath(repo)}/keys`
-    const want = material(key)
-    const have = list(unwrap(await send({ method: 'GET', path: `${path}?per_page=${PER_PAGE}` }), repo, 'Administration'))
-      .map(toKey).find(k => material(k.key) === want)
-    if (have) return have
-    const made = unwrap(await send({ method: 'POST', path, body: { title, key: want, read_only: true } }), repo, 'Administration')
-    return toKey((made ?? {}) as Row)
-  },
+  setDeployKey: (send, repo, key) => speak(repo, () => gh.setDeployKey(asSend(send), repo, key)),
 
-  async readFile(send, repo, { paths, ref }): Promise<{ path: string; content: string } | null> {
-    unwrap(await send({ method: 'GET', path: repoPath(repo) }), repo, 'Contents')
-    const at = ref ? `?ref=${encodeURIComponent(ref)}` : ''
-    for (const path of paths) {
-      const res = await send({ method: 'GET', path: `${repoPath(repo)}/contents/${path.split('/').map(encodeURIComponent).join('/')}${at}` })
-      if (res.status === 404) continue
-      // A directory answers a list, and a file over 1 MB answers no content.
-      const file = unwrap(res, repo, 'Contents') as Row | null
-      if (file?.type !== 'file' || file.encoding !== 'base64') continue
-      return { path, content: Buffer.from(str(file.content), 'base64').toString('utf8') }
-    }
-    return null
-  },
+  setPushHook: (send, repo, hook) => speak(repo, () => gh.setPushHook(asSend(send), repo, hook)),
 
-  async setPushHook(send, repo, { url, secret }): Promise<PushHook> {
-    const path = `${repoPath(repo)}/hooks`
-    const have = list(unwrap(await send({ method: 'GET', path: `${path}?per_page=${PER_PAGE}` }), repo, 'Webhooks'))
-      .map(toHook).find(h => h.url === url)
-    const res = have
-      ? await send({ method: 'PATCH', path: `${path}/${encodeURIComponent(have.id)}`, body: hookBody(url, secret) })
-      : await send({ method: 'POST',  path, body: { name: 'web', ...hookBody(url, secret) } })
-    return toHook((unwrap(res, repo, 'Webhooks') ?? {}) as Row)
-  },
+  readFile: (send, repo, { paths, ref }) =>
+    speak(repo, () => gh.readFile(asSend(send), repo, { paths, ...(ref ? { ref } : {}) })),
 }
 
 // ─── git over https ──────────────────────────────────────────────────────

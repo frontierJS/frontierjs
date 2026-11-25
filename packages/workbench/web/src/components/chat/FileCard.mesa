@@ -49,7 +49,7 @@
     <button type="button" class="chat-image" class:sized style={sized ? `--w: ${file.width}; --h: ${file.height}` : null} onclick={openFull} aria-label={`Open ${file.name}`} data-file-card="image" data-file={file.id}>
       {#if src}<img {src} alt={file.name} />{:else}<span class="skeleton chat-image-wait" aria-hidden="true"></span>{/if}
     </button>
-    <Modal bind:open={viewing} title={file.name} size="full" data-file-viewer={file.id}>
+    <Modal bind:open={viewing} title={file.name} size="full" class="glass chat-viewer-frame" data-file-viewer={file.id}>
       <div class="chat-viewer" class:actual>
         {#if full}
           <img src={full} alt={file.name} class:zoomable={larger && !actual} class:zoomed={actual} onload={measure} onclick={zoom} data-file-viewer-image />
@@ -78,8 +78,25 @@
   .chat-image.sized { inline-size: min(100%, calc(var(--w) * 1px), calc(var(--space-2xl) * 10 * var(--w) / var(--h))); aspect-ratio: var(--w) / var(--h); }
   .chat-image.sized img, .chat-image.sized .chat-image-wait { inline-size: 100%; block-size: 100%; max-block-size: none; object-fit: contain; }
   .chat-file { inline-size: fit-content; max-inline-size: 100%; }
+  /* A frosted frame that hugs the image rather than a window-wide panel: the photo is
+     the content, so the header and footer float over the same glass without rules. */
+  :global(.chat-viewer-frame) {
+    --glass-alpha: 55%;
+    --glass-blur: 28px;
+    inline-size: fit-content;
+    min-inline-size: min(calc(24 * var(--rem)), 100%);
+    border-radius: calc(var(--card-radius) * 2);
+    box-shadow: 0 calc(var(--space-xl) * 1) calc(var(--space-2xl) * 2) color-mix(in srgb, black 45%, transparent);
+  }
+  :global(.chat-viewer-frame)::backdrop {
+    background: color-mix(in srgb, black 40%, transparent);
+    backdrop-filter: blur(10px) saturate(1.2);
+  }
+  :global(.chat-viewer-frame) > :global(.surface-header),
+  :global(.chat-viewer-frame) > :global(.surface-footer) { background: transparent; border-color: transparent; }
+  :global(.chat-viewer-frame) > :global(.surface-header h2) { font-size: var(--text-lg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chat-viewer { display: grid; place-items: center; }
-  .chat-viewer img { display: block; max-inline-size: 100%; max-block-size: 64vh; }
+  .chat-viewer img { display: block; max-inline-size: 100%; max-block-size: 64vh; border-radius: var(--card-radius); box-shadow: var(--shadow-lg); }
   .chat-viewer.actual { place-items: start; }
   .chat-viewer.actual img { max-inline-size: none; max-block-size: none; }
   .chat-viewer .zoomable { cursor: zoom-in; }

@@ -349,8 +349,8 @@ name when it declares none.
 
 ### `laptop` · model `laptop`
 
-- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`
-- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`
+- **methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `docker`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`, `clearDockerImages`, `clearDockerCache`
+- **custom methods** — `disk`, `keys`, `globalEnv`, `profiles`, `profileList`, `commands`, `ping`, `running`, `services`, `setup`, `vitals`, `builds`, `docker`, `clear`, `removeLane`, `fixMode`, `setGlobalEnv`, `unsetGlobalEnv`, `createProfile`, `setProfileKey`, `unsetProfileKey`, `setPing`, `probeService`, `clearBuild`, `clearDockerImages`, `clearDockerCache`
 - **who may call** —
   - `disk` — standing 5 or above — declared `gate: 5`
   - `keys` — standing 5 or above — declared `gate: 5`
@@ -364,6 +364,7 @@ name when it declares none.
   - `setup` — standing 5 or above — declared `gate: 5`
   - `vitals` — standing 5 or above — declared `gate: 5`
   - `builds` — standing 5 or above — declared `gate: 5`
+  - `docker` — standing 5 or above — declared `gate: 5`
   - `clear` — standing 5 or above — declared `gate: 5`
   - `removeLane` — standing 5 or above — declared `gate: 5`
   - `fixMode` — standing 5 or above — declared `gate: 5`
@@ -375,6 +376,8 @@ name when it declares none.
   - `setPing` — standing 5 or above — declared `gate: 5`
   - `probeService` — standing 5 or above — declared `gate: 5`
   - `clearBuild` — standing 5 or above — declared `gate: 5`
+  - `clearDockerImages` — standing 5 or above — declared `gate: 5`
+  - `clearDockerCache` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

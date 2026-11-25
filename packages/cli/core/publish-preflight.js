@@ -172,6 +172,21 @@ export function movedDependencies(planned = [], members = [], stateOf = () => ({
 }
 
 /**
+ * Each released package that names a held-out connector (`FJS-D2375`). The
+ * caller passes the held names because `members` is the releasable set, so
+ * `movedDependencies` cannot see a held dependency and skips it.
+ * `devDependencies` are never installed and do not count.
+ */
+export function heldOutDependencies(planned = [], held = new Set()) {
+  const out = []
+  for (const p of planned) {
+    const deps = { ...p.pkg?.dependencies, ...p.pkg?.optionalDependencies, ...p.pkg?.peerDependencies }
+    for (const dep of Object.keys(deps)) if (held.has(dep)) out.push({ by: p.name, dep })
+  }
+  return out
+}
+
+/**
  * The exact sibling versions each tarball will pin, as `bun pm pack` writes
  * them from the commit it packs.
  *
@@ -287,8 +302,22 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ drift = [], moved = [], unheld = [], cycles = [], heldBack = [], leftBehind = [], force = {} } = {}) {
+export function publishRefusals({ drift = [], moved = [], heldOut = [], unheld = [], cycles = [], heldBack = [], leftBehind = [], force = {} } = {}) {
   const out = []
+
+  if (heldOut.length) {
+    // No override: no host carries a held connector, so the published
+    // package fails at install, after its version is spent.
+    const deps = [...new Set(heldOut.map(h => h.dep))]
+    out.push({
+      check:   'held-out-dependency',
+      message: `${heldOut.length} package(s) in this release depend on a connector held out of releases: ${deps.join(', ')}`,
+      because: 'a held-out connector is published to no host, so an install of the package resolving it finds nothing',
+      fix:     'admit the connector (ADMITTED in packages/cli/core/workspace-members.js) by a ruling, or drop the dependency',
+      override: null,
+      detail:  heldOut.map(h => `${h.by} → ${h.dep}`),
+    })
+  }
 
   if (unheld.length) {
     // No override: every install of the tarball fails resolving the pin, and

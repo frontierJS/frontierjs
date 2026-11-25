@@ -141,7 +141,7 @@ children.push(spawn('bun', ['api/src/providers/storage/s3-sink.ts'], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, S3_SINK_PORT: String(S3_PORT) },
 }))
-children.push(spawn('bun', ['api/src/providers/source/github-sink.ts'], {
+children.push(spawn('bun', [fileURLToPath(import.meta.resolve('@frontierjs/conduit-github/sink'))], {
   cwd: PKG, stdio: 'ignore', detached: true,
   env: { ...process.env, GH_SINK_PORT: String(GH_PORT) },
 }))

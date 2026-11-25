@@ -115,6 +115,7 @@ Match the file you are in first. The code rules load from `.claude/rules/code-st
 | conduit-apns | API / D4 | Apple Push Notification service: a minted ES256 provider token, the send, the unregistered-device reading | Prototyped. 14 drive rows green from this tree. | conduits |
 | conduit-cloudflare | API / D4 | Cloudflare DNS: zones, records, one all-or-nothing batch | Prototyped. 12 drive rows green from this tree. | conduits |
 | conduit-dataforseo | API / D4 | DataForSEO: HTTP Basic per account, a task array per post, the standard queue and live endpoints, cost in micros | Stub from two callers. 12 drive rows green from this tree. | conduits |
+| conduit-github | API / D4 | GitHub REST: the bearer target, deploy keys, push hooks, file reads, a 403 split into rate limit or missing grant, the push signature | Extracted, sink-only. 57 drive rows green from this tree. | conduits |
 | conduit-digitalocean | API / D4 | DigitalOcean compute: catalog, droplets, money as minor units | Prototyped. 13 drive rows green from this tree. | conduits |
 | conduit-easypost | API / D4 | EasyPost: address verification, rates, label purchase, trackers, webhook signature | Prototyped. 15 drive rows green from this tree. | conduits |
 | conduit-gmail | API / D4 | Gmail: read, watch, send | Prototyped. 41 drive rows green from this tree. | conduits |

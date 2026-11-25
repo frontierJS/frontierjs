@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-25 publishable package(s) · 0 problem(s)
+26 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -40,7 +40,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 - `assertHeaderValue` — `@frontierjs/junction:./mail` · `@frontierjs/conduit-gmail:.`
 - `authorizeUrl` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-microsoft:.` (FJS-D2366)
 - `batch` — `@frontierjs/mesa:./runtime` · `@frontierjs/conduit-cloudflare:.`
-- `bindSend` — `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-esri:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
+- `bindSend` — `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-esri:.` · `@frontierjs/conduit-github:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
 - `bindStream` — `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-openai:.`
 - `cacheKey` — `@frontierjs/mcp:./client` · `@frontierjs/conduit-google:./maps`
 - `catalog` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
@@ -104,9 +104,9 @@ lists the pair, and a rename that removes one drops it on the next write.
 - `toMinor` — `@frontierjs/toolbelt:./units` · `@frontierjs/conduit-hetzner:.`
 - `TONES` — `@frontierjs/toolbelt:./tty` · `@frontierjs/ui:./utils`
 - `toSize` — `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
-- `translate` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-apns:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-esri:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-google:./maps` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-microsoft:.` · `@frontierjs/conduit-n8n:.` · `@frontierjs/conduit-oidc:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
+- `translate` — `@frontierjs/conduit-37signals:.` · `@frontierjs/conduit-airtable:.` · `@frontierjs/conduit-anthropic:.` · `@frontierjs/conduit-apns:.` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-dataforseo:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-easypost:.` · `@frontierjs/conduit-esri:.` · `@frontierjs/conduit-github:.` · `@frontierjs/conduit-gmail:.` · `@frontierjs/conduit-google:./maps` · `@frontierjs/conduit-hetzner:.` · `@frontierjs/conduit-mailgun:.` · `@frontierjs/conduit-mattermost:.` · `@frontierjs/conduit-microsoft:.` · `@frontierjs/conduit-n8n:.` · `@frontierjs/conduit-oidc:.` · `@frontierjs/conduit-openai:.` · `@frontierjs/conduit-plausible:.` · `@frontierjs/conduit-postmark:.` · `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-resend:.` · `@frontierjs/conduit-s3:.` · `@frontierjs/conduit-sendgrid:.` · `@frontierjs/conduit-stripe:.` · `@frontierjs/conduit-telnyx:.` · `@frontierjs/conduit-turnstile:.` · `@frontierjs/conduit-twilio:.` · `@frontierjs/conduit-zapier:.`
 - `UNREGISTERED_CODES` — `@frontierjs/conduit-quo:.` · `@frontierjs/conduit-twilio:.`
-- `verify` — `@frontierjs/litestone:./migrations` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-hetzner:.`
+- `verify` — `@frontierjs/litestone:./migrations` · `@frontierjs/conduit-cloudflare:.` · `@frontierjs/conduit-digitalocean:.` · `@frontierjs/conduit-github:.` · `@frontierjs/conduit-hetzner:.`
 - `walk` — `@frontierjs/sierra:./scanner` · `@frontierjs/conduit-37signals:.`
 
 ## `@frontierjs/auth`
@@ -179,6 +179,17 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./sink` | `sink.ts` | yes |
 
 - peers — `@frontierjs/conduit`: `^0.1.0`
+
+## `@frontierjs/conduit-anthropic`
+
+`packages/conduit-anthropic` · ships `README.md` `package.json` `sink.ts` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `src/index.ts` | yes |
+| exports | `./sink` | `sink.ts` | yes |
+
+- peers — `@frontierjs/conduit`: `^0.1.0` · `@frontierjs/toolbelt`: `^0.1.15`
 
 ## `@frontierjs/conduit-cloudflare`
 

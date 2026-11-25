@@ -48,7 +48,7 @@ import { stripeTarget, stripeDialect, STRIPE_WEBHOOK_PATH } from './providers/st
 // The env override is what lets a drive start an app of its own on the TEST row
 // (7110) instead of needing one hand-started on the dev row, which is the
 // difference between `verify:cart` and every drive with a preamble.
-// FRONTIER_PORT_BE is what `fli dev` hands a second checkout (18110 in branch 1).
+// FRONTIER_PORT_BE is what `fli dev` hands a second checkout (12610 in branch 1).
 // core/sink-ports.ts owns the reading, so the sinks follow the same port.
 const PORT = API_PORT
 

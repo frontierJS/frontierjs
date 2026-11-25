@@ -10,7 +10,7 @@ import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, packedPaths, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps,
-         releaseSet, siblingPins, unheldPins, pinsLeftBehind } from '../core/publish-preflight.js'
+         releaseSet, siblingPins, unheldPins, pinsLeftBehind, heldOutDependencies } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -122,6 +122,26 @@ describe('a workspace dependency that moved past its tag', () => {
     expect(movedDependencies(both, members, state({ commits: [{}] }))).toEqual([])
     const dev = { name: '@frontierjs/outpost', pkg: { devDependencies: { '@frontierjs/litestone': 'workspace:*' } } }
     expect(movedDependencies([dev], members, state({ commits: [{}] }))).toEqual([])
+  })
+
+  // FJS-4639: claude named conduit-anthropic, a connector no release carried,
+  // and movedDependencies never saw it -- its lookup is the releasable members.
+  test('a dependency on a held-out connector is refused with no override (FJS-D2375)', () => {
+    const claude = { name: '@frontierjs/claude', pkg: {
+      dependencies:         { '@frontierjs/toolbelt': 'workspace:*' },
+      optionalDependencies: { '@frontierjs/conduit-anthropic': 'workspace:*' },
+      peerDependencies:     { '@frontierjs/conduit-x': '^0.1.0' },
+      devDependencies:      { '@frontierjs/conduit-y': 'workspace:*' } } }
+    const held = new Set(['@frontierjs/conduit-anthropic', '@frontierjs/conduit-x', '@frontierjs/conduit-y'])
+    const found = heldOutDependencies([claude], held)
+    expect(found).toEqual([
+      { by: '@frontierjs/claude', dep: '@frontierjs/conduit-anthropic' },
+      { by: '@frontierjs/claude', dep: '@frontierjs/conduit-x' },
+    ])
+    const [r] = publishRefusals({ heldOut: found })
+    expect(r).toMatchObject({ check: 'held-out-dependency', override: null })
+    expect(r.detail).toEqual(['@frontierjs/claude → @frontierjs/conduit-anthropic', '@frontierjs/claude → @frontierjs/conduit-x'])
+    expect(heldOutDependencies([claude], new Set(['@frontierjs/conduit-y']))).toEqual([])
   })
 
   test('only commits under the packed paths count (FJS-4251)', () => {

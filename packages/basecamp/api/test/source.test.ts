@@ -16,7 +16,7 @@ import { createTestEnv, sessionContext } from '@frontierjs/testing'
 import { GatePlugin }    from '@frontierjs/litestone'
 import { basecampGateLevel }       from '../src/core/gate.ts'
 import { buildBasecampApp }        from '../src/app.ts'
-import { startGhSink, NO_HOOKS_TOKEN } from '../src/providers/source/github-sink.ts'
+import { startGhSink, NO_HOOKS_TOKEN } from '@frontierjs/conduit-github/sink'
 import { sourceConnectorFor }      from '../src/providers/source/index.ts'
 import { gitCredential }          from '../src/providers/source/index.ts'
 import { anthropicKey }           from '../src/providers/model/anthropic.ts'
@@ -27,7 +27,7 @@ import { registerAccount, sendVia, accountConnectorFor } from '../src/providers/
 const SCHEMA     = join(import.meta.dir, '..', '..', 'db', 'schema.lite')
 const MIGRATIONS = join(import.meta.dir, '..', '..', 'db', 'migrations')
 const ENC_KEY    = '0'.repeat(64)
-const sink       = startGhSink(0)
+const sink       = startGhSink({ port: 0 })
 const GH_SINK    = `http://localhost:${sink.port}`
 const GH_TOKEN   = 'github_pat_devtoken'
 
@@ -116,6 +116,14 @@ describe('GitHub dialect', () => {
     await expect(github.readFile(refused(404), REPO, { paths: ['Dockerfile'] })).rejects.toThrow('was not found, or the token was not given it')
   })
 
+  test('a 403 that is a rate limit says to wait, never to change a grant', async () => {
+    const limited = async () => ({ data: { message: 'API rate limit exceeded' }, status: 403, error: { kind: 'auth_failed' },
+      headers: { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 600) } })
+    const refusal = github.setPushHook(limited, REPO, { url: 'https://x/hooks', secret: 's' })
+    await expect(refusal).rejects.toThrow(/wait \d+ minutes/)
+    await expect(github.setPushHook(limited, REPO, { url: 'https://x/hooks', secret: 's' })).rejects.not.toThrow('give it')
+  })
+
   test('verify: a 4xx is a bad token, anything else is not knowing', async () => {
     expect(await github.verify(refused(401))).toBe(false)
     await expect(github.verify(refused(503))).rejects.toThrow('server_error')
@@ -175,6 +183,14 @@ describe('a GitHub account', () => {
     const send = sendVia(app, await registerAtSink(await ghAccount('gh-nohooks', NO_HOOKS_TOKEN)))
     await expect(github.setPushHook(send, REPO, { url: 'https://basecamp.test/hooks/git/a2', secret: 's' }))
       .rejects.toThrow('give it Webhooks')
+  })
+
+  test('the primary limit, a 403 off the wire, reaches the screen as a wait', async () => {
+    const send = sendVia(app, await registerAtSink(account))
+    await fetch(`${GH_SINK}/_sink/arm`, { method: 'POST', body: JSON.stringify({ primaryLimit: { resetInSeconds: 120 } }) })
+    const err = await github.setPushHook(send, REPO, { url: 'https://basecamp.test/hooks/git/a3', secret: 's' }).catch((e: Error) => e)
+    expect(err.message).toMatch(/request limit — wait 2 minutes/)
+    expect(err.message).not.toContain('give it')
   })
 
   test('a repository the token cannot see is refused by name', async () => {

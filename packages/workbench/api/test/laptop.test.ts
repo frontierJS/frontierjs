@@ -20,6 +20,7 @@ import { servicesList, probeService } from '../src/domain/laptop/services.ts'
 import { setup, stateOf } from '../src/domain/laptop/setup.ts'
 import { vitals } from '../src/domain/laptop/vitals.ts'
 import { builds, clearBuild } from '../src/domain/laptop/builds.ts'
+import { docker, clearDockerImages, clearDockerCache, size } from '../src/domain/laptop/docker.ts'
 import { DEV_ENCRYPTION_KEY, DEV_WORKBENCH_KEY } from '../src/core/env.ts'
 import { createHash } from 'node:crypto'
 import { realpathSync } from 'node:fs'
@@ -605,5 +606,99 @@ describe('builds', () => {
     expect(clearBuild('a/target', { root: code, listProcs: none })).toEqual({ freed: 1000 })
     expect(existsSync(join(code, 'a', 'target'))).toBe(false)
     expect(existsSync(join(code, 'a', 'Cargo.toml'))).toBe(true)
+  })
+})
+
+describe('docker', () => {
+  type Img = { ID: string, Repository: string, Tag: string, UniqueSize: string, Containers: string }
+  const img = (ID: string, Repository: string, Tag: string, UniqueSize: string, Containers = '0'): Img => ({ ID, Repository, Tag, UniqueSize, Containers })
+
+  // A docker that holds `images` and a build cache, and forgets what `image rm` and `builder prune` name.
+  function fake(images: Img[], cacheMB = 500) {
+    const calls: string[][] = []
+    const run = async (args: string[]) => {
+      calls.push(args)
+      const total = () => images.reduce((t, i) => t + size(i.UniqueSize), 0) / 1e6
+      if (args[0] === 'system' && args.includes('-v')) {
+        return { ok: true, err: '', out: JSON.stringify({ Images: images.map(i => ({ ...i, CreatedAt: '2026-11-24 14:34:41 -0700 MST' })) }) }
+      }
+      if (args[0] === 'system') {
+        return { ok: true, err: '', out: [
+          { Type: 'Images', TotalCount: String(images.length), Size: `${total()}MB`, Reclaimable: `${total()}MB (100%)` },
+          { Type: 'Local Volumes', TotalCount: '2', Size: '1.5GB', Reclaimable: '1.5GB (100%)' },
+          { Type: 'Build Cache', TotalCount: '7', Size: `${cacheMB}MB`, Reclaimable: `${cacheMB}MB` },
+        ].map(r => JSON.stringify(r)).join('\n') }
+      }
+      if (args[0] === 'image' && args[1] === 'rm') {
+        for (const ref of args.slice(2)) {
+          const at = images.findIndex(i => i.ID === ref || `${i.Repository}:${i.Tag}` === ref)
+          if (at >= 0) images.splice(at, 1)
+        }
+        return { ok: true, out: '', err: '' }
+      }
+      if (args[0] === 'builder') { cacheMB = 0; return { ok: true, out: 'Total reclaimed space: 500MB', err: '' } }
+      return { ok: false, out: '', err: `unexpected: ${args.join(' ')}` }
+    }
+    return { run, calls }
+  }
+
+  const stock = () => [
+    img('sha256:a1', 'fjs-app', 'old', '80MB'),
+    img('sha256:a2', 'fjs-app', 'live', '90MB', '1'),
+    img('sha256:a2', 'fjs-app', 'also-live', '90MB', '1'),
+    img('sha256:b1', 'cypress/included', '7.2.0', '2.9GB'),
+    img('sha256:c1', '<none>', '<none>', '10MB'),
+  ]
+
+  test('sizes are Docker\'s decimal units', () => {
+    expect(size('995MB')).toBe(995_000_000)
+    expect(size('76.86kB')).toBe(76_860)
+    expect(size('25.78GB (82%)')).toBe(25_780_000_000)
+    expect(size('0B')).toBe(0)
+    expect(size(undefined)).toBe(0)
+  })
+
+  test('images group by repository, a twice-tagged image counts once, and an image in use is not reclaimable', async () => {
+    const out = await docker({ run: fake(stock()).run })
+    expect(out.available).toBe(true)
+    expect(out.images.groups.map(g => g.repo)).toEqual(['cypress/included', 'fjs-app', '<none>'])
+    expect(out.images.groups[1]).toMatchObject({ app: true, images: 2, inUse: 1, bytes: 80_000_000 })
+    expect(out.images.groups[1].newest).toBe('2026-11-24T21:34:41.000Z')
+    expect(out.cache).toEqual({ bytes: 500_000_000, reclaimable: 500_000_000, records: 7 })
+    expect(out.volumes).toEqual({ bytes: 1_500_000_000, count: 2 })
+  })
+
+  test('a docker that does not answer is not available, with its last line as the reason', async () => {
+    const out = await docker({ run: async () => ({ ok: false, out: '', err: 'warn\nCannot connect to the Docker daemon\n' }) })
+    expect(out).toMatchObject({ available: false, reason: 'Cannot connect to the Docker daemon' })
+    expect(await clearDockerCache({ run: async () => ({ ok: false, out: '', err: 'docker is not installed' }) })).toEqual({ refused: 'docker is not installed' })
+  })
+
+  test('clearDockerImages removes one repository\'s unused images by tag and leaves the one a container uses', async () => {
+    const d = fake(stock())
+    expect(await clearDockerImages('fjs-app', { run: d.run })).toEqual({ freed: 80_000_000 })
+    expect(d.calls.find(c => c[0] === 'image')).toEqual(['image', 'rm', 'fjs-app:old'])
+  })
+
+  test('clearDockerImages refuses a repository Docker does not list and one with nothing unused', async () => {
+    const d = fake(stock())
+    expect(await clearDockerImages('fjs-app; rm -rf /', { run: d.run })).toHaveProperty('refused')
+    expect(await clearDockerImages('', { run: d.run })).toHaveProperty('refused')
+    await clearDockerImages('fjs-app', { run: d.run })
+    expect(await clearDockerImages('fjs-app', { run: d.run })).toEqual({ refused: "every image in 'fjs-app' is in use by a container" })
+    expect(d.calls.filter(c => c[0] === 'image')).toHaveLength(1)
+  })
+
+  test('clearDockerImages with no repository removes every unused image, an untagged one by id', async () => {
+    const d = fake(stock())
+    expect(await clearDockerImages(null, { run: d.run })).toEqual({ freed: 2_990_000_000 })
+    expect(d.calls.find(c => c[0] === 'image')).toEqual(['image', 'rm', 'fjs-app:old', 'cypress/included:7.2.0', 'sha256:c1'])
+    expect((await docker({ run: d.run })).images.groups.map(g => g.repo)).toEqual(['fjs-app'])
+  })
+
+  test('clearDockerCache answers what the cache gave back', async () => {
+    const d = fake(stock())
+    expect(await clearDockerCache({ run: d.run })).toEqual({ freed: 500_000_000 })
+    expect(d.calls.find(c => c[0] === 'builder')).toEqual(['builder', 'prune', '--all', '--force'])
   })
 })

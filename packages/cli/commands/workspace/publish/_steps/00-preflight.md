@@ -33,6 +33,14 @@ function packedFrom(shipping, members, { resume, releaseTag }) {
   })
 }
 
+// The names of the connectors no release carries; `members` is the releasable
+// set, so they are read from the whole workspace.
+async function heldConnectors(wsRoot) {
+  if (!wsRoot) return new Set()
+  const { packageMembers, isHeldOut } = await import(new URL('file://' + global.fliRoot + '/core/workspace-members.js'))
+  return new Set(packageMembers(wsRoot).filter(isHeldOut).map(m => m.manifest.name))
+}
+
 // npm's answer for each pinned version this run does not publish itself.
 async function npmHolds(pins, received, hosts) {
   const keys = [...new Set(pins.map(p => `${p.dep}@${p.version}`))].filter(k => !received.has(k))
@@ -48,7 +56,7 @@ async function npmHolds(pins, received, hosts) {
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { peerDrift, movedDependencies, siblingPins, unheldPins, pinsLeftBehind, publishOrder, publishRefusals, formatRefusals } =
+const { peerDrift, movedDependencies, heldOutDependencies, siblingPins, unheldPins, pinsLeftBehind, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 const { hosts } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
@@ -56,6 +64,7 @@ const stateOf = (name, dir, paths, opts) => $.git.pkgState(name, dir, paths, opt
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const moved  = movedDependencies(packedFrom(planned, members ?? [], $.config),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
+const heldOut = heldOutDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })), await heldConnectors($.config.wsRoot))
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 const behind = pinsLeftBehind((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })),
                               planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
@@ -78,7 +87,7 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  drift, moved, unheld, cycles: sorted.cycles, heldBack, leftBehind: behind,
+  drift, moved, heldOut, unheld, cycles: sorted.cycles, heldBack, leftBehind: behind,
   force: { peers: flag['allow-peer-drift'] },
 })
 

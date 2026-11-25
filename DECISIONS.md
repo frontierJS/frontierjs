@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2371"></a>2026-11-25 · `FJS-D2371` — Q6 — Whether `bindSend`, `translate` and `verify` keep their names in `@frontierjs/conduit-github` — Three shared export names are one job each, kept: `bindSend`, `translate` and `verify` in `@frontierjs/conduit-github` beside `@frontierjs/conduit-airtable`, `@frontierjs/conduit-37signals` and `@frontierjs/litestone`.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (Rename them in this package: `bindGithubSend`, `translateGithub` and `verifyGithub`).
+
+The paper's recommendation, taken as written: `bindSend` and `translate` are the connector contract's names (C2, C3), kept for `conduit-esri` by `FJS-D2366`, and `verify(send)` is the account check `conduit-cloudflare`, `conduit-digitalocean` and `conduit-hetzner` already export beside litestone's migration `verify`.
+
 ### <a id="fjs-d2366"></a>2026-11-25 · `FJS-D2366` — Four shared export names are one job each, kept: `authorizeUrl` and `exchangeCode` in `@frontierjs/conduit-37signals` beside `@frontierjs/conduit-microsoft`, `@frontierjs/conduit-oidc` and `@frontierjs/auth`; `bindSend` and `translate` in `@frontierjs/conduit-esri` beside `@frontierjs/conduit-airtable` and `@frontierjs/conduit-37signals`
 
 The `FJS-D2278` ratchet refused them when `FJS-D2365` released the first connectors. The OAuth pair builds a consent URL and spends a code in each package, and `bindSend`/`translate` are the connector contract every connector exports, so a reader never meets two meanings. conduit-37signals' `authorization`, a different thing from junction's bearer source of that name, was renamed `readAuthorization` instead (`FJS-D1314`'s rule: the narrower side gives way). As recommended.
@@ -14915,6 +14921,48 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2379"></a>2026-11-25 · `FJS-D2379` — Q7 — No: any assignment target — `=`, `+=`, `++` — is a write and never a trigger.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (yes: the read half counts, and the runtime suppresses the self-fire).
+
+The paper's recommendation, taken as written: B makes the block its own trigger; Q2 already rules a write is not one.
+
+### <a id="fjs-d2378"></a>2026-11-25 · `FJS-D2378` — Q6 — No: destructuring is property reads like any other, and `var` is the one spelling of "once"; both `const` forms are warned. Amends Q3.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (yes, as Q3 says).
+
+The paper's recommendation, taken as written: two spellings of the same read should not differ in whether the bug is named.
+
+### <a id="fjs-d2377"></a>2026-11-25 · `FJS-D2377` — Q5 — Yes, in a template and in a `const`: `{items.filter(i => i.price < max)}` re-runs on `max`, and `const save = debounce(() => send(query))` is derived on `query`; once is `var save = …`, as RULE 2 already says.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (no: only names outside every arrow are triggers).
+
+The paper's recommendation, taken as written: the arrow is in the line read, so its names are visible triggers; the repo has no `const` over a debounce, throttle or timer for A to break.
+
+### <a id="fjs-d2376"></a>2026-11-25 · `FJS-D2376` — Q4 — Warned: for a local helper the compiler names each reactive read its body makes that the expression does not; an import keeps Q3's dev runtime check. Amends Q3's "a partial declaration is trusted as meant" for local helpers.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (see-through: a local function's reads join the triggers of any expression that calls it; only an import is opaque. Amends Q1), **C** (as Q3 rules: trusted, silent).
+
+The paper's recommendation, taken as written: the compiler sees a local helper's reads exactly, so a miss it could name is never silent, and a template call stays a pure function of what it is passed. B moves triggers from the line to the file; C ships DatePicker's bug.
+
+### <a id="fjs-d2374"></a>2026-11-25 · `FJS-D2374` — Q3 — When a call reads state and the expression names nothing reactive: compile time for a local helper, a dev runtime check for an imported one; `var` or destructuring clears it.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (whenever a helper reads state the expression does not name), **C** (never, as Svelte 3).
+
+The paper's recommendation, taken as written: a call-only binding that names nothing can never update, so it is always a bug; a partial declaration is trusted as meant. B fires on every intended partial trigger, and C leaves the failure to be seen on screen.
+
+### <a id="fjs-d2373"></a>2026-11-25 · `FJS-D2373` — Q2 — The names and paths in its text, like every other expression; a write-only target is not a trigger.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (stays auto-tracked, the one explicit "whatever I touch" form).
+
+The paper's recommendation, taken as written: B is a second model in the same file; RULES 60 and 62 exist only because blocks discover their dependencies by running.
+
+### <a id="fjs-d2372"></a>2026-11-25 · `FJS-D2372` — Q1 — Declared: names and property paths written in the text are tracked; a call's body is not.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (Tracked: everything read is tracked, through calls (Solid, Svelte 5)).
+
+The paper's recommendation, taken as written: every trigger is visible in the line read, a call site can limit what re-runs, and it is `FJS-D381`'s own principle. B keeps `FJS-D404`'s coarse import rule anyway, since signals cannot see into a function reading a plain object.
+
 ### <a id="fjs-d2364"></a>2026-11-25 · `FJS-D2364` — An image pasted or dropped into a message box is read by `@frontierjs/ui/paste`, and ui's `Composer` hands the files to `onfiles(files)`.
 
 Asked in chat, through AskUserQuestion. Before this, each app and prototype had its own version: Workbench's chat (`lib/pasted-images.js`), Workbench Messages (`lib/files.js`, a second `pastedImages` with a different signature), the cli's `vite-ask-client.js`, Lathe's `ClaudePanel.mesa`, serpgrid, chat and capture. They disagreed on when to fall back to the async clipboard. **A** (the ui helper plus a `Composer` prop) was picked over **B** (the helper only), **C** (wait for `ClaudeComposer` in [`IDEAS/claude-chat.md`](IDEAS/claude-chat.md), which leaves the boxes that are not Claude uncovered) and **D** (file the duplicates and build later). As recommended.
@@ -23388,6 +23436,36 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2370"></a>2026-11-25 · `FJS-D2370` — Q5 — Whether fli's `github:*` commands move onto the connector — Not in this plan. fli's raw `fetch` with a classic token stays a second GitHub REST path. It reopens when fli sends through conduit at all, which it does nowhere today.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (Yes, as the second caller).
+
+The paper's recommendation, taken as written: putting conduit under fli is its own decision, bigger than this connector.
+
+### <a id="fjs-d2369"></a>2026-11-25 · `FJS-D2369` — Q4 — How much of the API v1 covers — Basecamp's runtime calls only: user, repository, deploy keys, hooks, contents, and `translate`. Advisories and multi-page lists wait for a runtime caller.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (A plus `advisories()` and a paged `listAll` with ETags, with `verify-advisories.mjs` as their caller. It is a test drive, and `lookupFor` has no runtime target), **C** (B plus PRs, issues, releases and checks, the surface fli's `github:*` commands and a CI view would want).
+
+The paper's recommendation, taken as written: a method with no caller is untested surface (`cut-one-level-simpler`), and a test drive is not a caller. Today's lists read one page of 100.
+
+### <a id="fjs-d2368"></a>2026-11-25 · `FJS-D2368` — Q3 — Where the `X-Hub-Signature-256` check lives — `conduit-github` exports a pure verifier (C8) and the push parse. Basecamp's `forgeDialect` calls it, and Basecamp keeps its receiver, `tokenDialect` and `apply`.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (It stays in `plugins/git-push.ts`, because the same header serves Forgejo and Gitea).
+
+The paper's recommendation, taken as written: the scheme is GitHub's and the other two copy it byte for byte. Every connector that receives already exports its pure verifier (`conduit-stripe`, `conduit-slack`, `conduit-resend`, `conduit-quo`, `src/verify.ts`), and conduit's core has no HMAC helper to put it in instead.
+
+### <a id="fjs-d2367"></a>2026-11-25 · `FJS-D2367` — Q1 — Who is the first caller, and does Basecamp move onto the package in the same change — Basecamp moves. `providers/source/github.ts` becomes an adapter over the connector (Basecamp's `AccountSend`, `RepoUnseen` and its UI sentences), the sink moves into the package, and Basecamp's copy is deleted.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (Build the connector alone and leave Basecamp's copy in place. This is what Basecamp does today: `providers/edge/cloudflare.ts` sits beside `conduit-cloudflare`, the compute connectors beside `conduit-digitalocean` and `conduit-hetzner`, and Basecamp depends on no `@frontierjs/conduit-*` package. `FJS-D1185` chose B over a recommended A).
+
+The paper's recommendation, taken as written: two copies of one dialect drift with nothing failing. The reason `FJS-D1185` gave (connector packages were not yet committed in this tree) is gone since `FJS-D1559` and `FJS-D2365`. One condition is unproven until 4.1: that `vendor.js` packs a held-out connector Basecamp depends on into the image (`FJS-D1559` condition a). If 4.1 fails, the plan falls back to B, and Phase 4 may become its own session as `FJS-D1559` allowed.
+
+### <a id="fjs-d2375"></a>2026-11-25 · `FJS-D2375` — `conduit-anthropic` is admitted to releases and becomes an `optionalDependency` of `@frontierjs/claude`, loaded only when context parts are counted; `fli ws:pub` refuses to release a package that depends on a connector still held out
+
+Rules `FJS-4639`. `@frontierjs/claude` counts a session's context through `conduit-anthropic`'s `countTokens`, signed with the claude.ai login (`context.ts`, `quota.ts`): the API's count endpoint is the only tokenizer for these models (`FJS-D1734`), and the connector is the one owner of that dialect, so claude keeps the dependency rather than a second client. Under `FJS-D2365` the connector was held out, so a released claude named a package no registry had. `conduit-anthropic` joins `ADMITTED`.
+
+The count is the only thing in claude that needs the connector; transcripts, sessions and the usage read do not. So it moves to `optionalDependencies` and is reached by a dynamic `import()` at the count, never a static value import (a type-only import is erased and stays). An install without it answers the parts with the character split, `basis: 'estimated'`, and a reason naming the missing package, the path a refused count already takes; nothing in claude throws for its absence. A test proves the fallback with the import failing. A release list that carries a member whose `dependencies`, `optionalDependencies` or `peerDependencies` name a member `isHeldOut` answers true for is refused, naming both, with no override. The refusal is a `held-out-dependency` entry in `publishRefusals` (`packages/cli/core/publish-preflight.js`), the one refusal owner `ws:pub`'s preflight calls; `movedDependencies` builds its lookup from releasable members only, so it skipped a held one in silence. The next connector a released package starts to depend on therefore fails at preflight, before a version is spent, and not at install. `devDependencies` are never installed and do not count. Admitted but left out of claude's release, `conduit-anthropic` is still refused by `workspace-dep-moved`, which is correct. Holding claude back until later (**B**) was refused: claude is already meant to publish before the next cli release. The owner picked admission (A).
 
 ### <a id="fjs-d2365"></a>2026-11-25 · `FJS-D2365` — `conduit-37signals`, `conduit-cloudflare` and `conduit-plausible` are admitted to releases, first at 0.1.0 — the admission is an `ADMITTED` list beside the connector prefix in `packages/cli/core/workspace-members.js`, and an admitted connector keeps its own CI lane and atlas ring
 

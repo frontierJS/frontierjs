@@ -24,11 +24,14 @@
 //   GET  /laptop         ping        the ntfy topic Claude Code's Stop hook pings, from ~/.claude/ntfy-topic -> { path, topic, url }
 //   POST /laptop         setPing     { topic } write it; empty removes the file and turns the ping off -> { path, topic, url }
 //   GET  /laptop         services    every account fli signs in to: how, present or not (names only), setup pointer, vendor page, and the commands that use it
-//   POST /laptop         probeService    { id } run that CLI service's login check -> { ok, who, ms }; the one verb that shells out, and only on a press
+//   POST /laptop         probeService    { id } run that CLI service's login check -> { ok, who, ms }; shells out, and only on a press
 //   GET  /laptop         setup       what this laptop can and cannot do, by goal: { goals: [{ id, label, why, required, state, rows }] }; each failing row's fix is a copy, a url or a go, never a verb that shells
 //   GET  /laptop         running     fli dev sessions with their ports and which answer, and the tree holds -> { sessions, holds }
 //   GET  /laptop         builds      the Rust build folders (target/ beside a Cargo.toml) under the code root, each with size, last built and the cargo pid holding it -> { root, exists, builds, bytes, walkMs }; a walk, so the page asks on a press
 //   POST /laptop         clearBuild  { id } remove one of those folders unless cargo or rustc is working in it -> { freed }
+//   GET  /laptop         docker      Docker's images by repository (count, in use, bytes only that repository holds), build cache and volumes, in `docker system df`'s figures -> { available, reason, images, cache, volumes, ms }; shells out, so the page asks on a press
+//   POST /laptop         clearDockerImages { repo } or { all: true } remove the images no container uses -> { freed }
+//   POST /laptop         clearDockerCache  remove the build cache -> { freed }
 //   GET  /laptop         vitals      the machine itself: free disk per drive, memory and swap, load, heat, battery, uptime, a pending reboot and queued updates
 
 import { createService, BadRequest, $ } from '@frontierjs/junction'
@@ -42,10 +45,11 @@ import { servicesList, probeService }  from '../../domain/laptop/services.ts'
 import { setup }                      from '../../domain/laptop/setup.ts'
 import { vitals }                     from '../../domain/laptop/vitals.ts'
 import { builds, clearBuild }         from '../../domain/laptop/builds.ts'
+import { docker, clearDockerImages, clearDockerCache } from '../../domain/laptop/docker.ts'
 
-const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services', 'setup', 'vitals', 'builds']
+const READS  = ['disk', 'keys', 'globalEnv', 'profiles', 'profileList', 'commands', 'ping', 'running', 'services', 'setup', 'vitals', 'builds', 'docker']
 // probeService shells out to a CLI, so it is a write: a keyed retry must run it again.
-const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService', 'clearBuild']
+const WRITES = ['clear', 'removeLane', 'fixMode', 'setGlobalEnv', 'unsetGlobalEnv', 'createProfile', 'setProfileKey', 'unsetProfileKey', 'setPing', 'probeService', 'clearBuild', 'clearDockerImages', 'clearDockerCache']
 
 export default createService({
   name: 'laptop',
@@ -171,6 +175,24 @@ export default createService({
     const { id } = ($.data ?? {}) as { id?: unknown }
     if (typeof id !== 'string') throw new BadRequest('clearBuild takes { id } as a string')
     const out = clearBuild(id)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async docker() {
+    return docker()
+  },
+
+  async clearDockerImages() {
+    const { repo, all } = ($.data ?? {}) as { repo?: unknown, all?: unknown }
+    if (all !== true && typeof repo !== 'string') throw new BadRequest('clearDockerImages takes { repo } as a string, or { all: true }')
+    const out = await clearDockerImages(all === true ? null : repo as string)
+    if ('refused' in out) throw new BadRequest(out.refused)
+    return out
+  },
+
+  async clearDockerCache() {
+    const out = await clearDockerCache()
     if ('refused' in out) throw new BadRequest(out.refused)
     return out
   },

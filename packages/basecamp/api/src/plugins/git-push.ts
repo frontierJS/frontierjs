@@ -16,10 +16,11 @@
 // A refusal is conduit's one 401 sentence, so a wrong secret, a wrong token and
 // an App with push off read alike to a stranger.
 
-import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { Conflict } from '@frontierjs/junction'
 import type { App } from '@frontierjs/junction'
 import type { Delivery, Dialect, Receiver, ReceivedEvent } from '@frontierjs/conduit'
+import { parsePush as parseForgePush, verifyGithubSignature } from '@frontierjs/conduit-github'
 
 export const PUSH_PROVIDER = 'git'
 export const PUSH_PATH     = '/hooks/git/{appId}'
@@ -57,30 +58,9 @@ const same = (a: string, b: string) => {
 
 // ─── Dialects ──────────────────────────────────────────────────────────
 
-const header = (d: Delivery, ...names: string[]) => names.map(n => d.headers[n]).find(Boolean)
-
-function parsePush(d: Delivery): PushEvent | null {
-  // A forge's ping and every non-push event is answered 200 and ignored: a
-  // 4xx would be retried and shown red for an event nobody asked us to act on.
-  const kind = header(d, 'x-github-event', 'x-forgejo-event', 'x-gitea-event')
-  if (kind && kind !== 'push') return null
-  const body = (d.body && typeof d.body === 'object' ? d.body : {}) as Record<string, any>
-  const after = typeof body.after === 'string' ? body.after : null
-  const head  = body.head_commit && typeof body.head_commit === 'object' ? body.head_commit : {}
-  const str   = (v: unknown) => typeof v === 'string' && v ? v : null
-  return {
-    id:   header(d, 'x-github-delivery', 'x-forgejo-delivery', 'x-gitea-delivery') ?? randomUUID(),
-    type: 'push',
-    payload: {
-      ref:           str(body.ref),
-      after,
-      deleted:       body.deleted === true || (after != null && /^0+$/.test(after)),
-      defaultBranch: str(body.repository?.default_branch),
-      author:        str(head.author?.name) ?? str(head.author?.username) ?? str(head.author?.email) ?? str(body.pusher?.name),
-      message:       str(head.message),
-    },
-  }
-}
+// A forge ping and every non-push event parse to null and are answered 200:
+// a 4xx would be retried and shown red for an event nobody asked us to act on.
+const parsePush = (d: Delivery): PushEvent | null => parseForgePush({ headers: d.headers, body: d.body })
 
 /** The branch a push names, as the Releases tab shows it: `main`, not `refs/heads/main`. */
 const branchOf = (ev: PushEvent, source: { branch?: string }) =>
@@ -97,15 +77,15 @@ const signedKey = (d: Delivery, _ev: PushEvent) =>
 // its credential, and the delivery id stays its dedupe.
 const deliveryKey = (d: Delivery, ev: PushEvent) => `${d.route.appId}:${ev.id}`
 
-/** The forge's HMAC over the exact bytes it sent, keyed by the App's `pushSecret`. */
+/**
+ * The forge's HMAC over the exact bytes it sent, keyed by the App's
+ * `pushSecret`. Forgejo and Gitea deliveries are checked by the GitHub
+ * connector too: they send GitHub's `X-Hub-Signature-256` over the same
+ * scheme, so a second verifier here would be a copy that drifts.
+ */
 export const forgeDialect: Dialect<string, PushEvent> = {
-  verify(d, secret) {
-    const sent = header(d, 'x-hub-signature-256')
-    if (!sent?.startsWith('sha256=')) return { ok: false, reason: 'no X-Hub-Signature-256' }
-    const want = createHmac('sha256', secret).update(d.rawBody).digest('hex')
-    return same(sent.slice('sha256='.length), want) ? { ok: true } : { ok: false, reason: 'signature does not match' }
-  },
-  parse:  parsePush,
+  verify:    (d, secret) => verifyGithubSignature({ rawBody: d.rawBody, header: d.headers['x-hub-signature-256'], secret }),
+  parse:     parsePush,
   dedupeKey: signedKey,
 }
 

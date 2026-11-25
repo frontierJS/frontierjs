@@ -257,6 +257,7 @@ export function sendVia(app: App, target: string): AccountSend {
     return {
       data:   res.error ? vendorSaid((res.error as { raw?: unknown }).raw) : res.data as unknown,
       status: res.meta?.status,
+      ...(res.meta?.headers ? { headers: res.meta.headers } : {}),
       error:  res.error as { kind: string; message?: string } | undefined,
     }
   }

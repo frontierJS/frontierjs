@@ -698,7 +698,23 @@ t('seed.isReadOffTheProjectsOwnPackageJson', await probe(`
 // The empty state names the TENANT, not the seed, because with no tenant open
 // the seed is the wrong advice: the rows exist, in a file this Studio is not
 // looking at. Both halves — the sentence, and a way through.
+//
+// The registry is pinned to flagship alone for this row and the next.
+// `example`'s database is shared, and its own drive keeps a `verifydrive` shop
+// there on purpose (`FJS-4053`), which turns the button into the
+// several-tenants one and reds both rows for a peer's write (`FJS-4633`); that
+// branch is graded below with the registry pinned the other way. The pin is on
+// the /tenants ANSWER, not on the snapshot: the tenantClose above leaves a
+// registry reload in flight that lands mid-render and writes the real list
+// back. A fresh load is awaited first so that one has landed.
 t('empty.saysWhichDatabaseIsOpenAndOffersTheOtherOne', await probe(`
+  window.__unpinnedApi = api;
+  api = async (p, b, m) => {
+    const r = await window.__unpinnedApi(p, b, m);
+    return p === '/tenants' && r?.tenants ? { ...r, tenants: r.tenants.filter(t => t.id === 'flagship') } : r;
+  };
+  await loadTenants();
+  if (!_tenantSnapshot?.tenants?.length) return 'flagship is not in the registry';
   selectTable('Product'); showTool('browse');
   // The loading spinner carries the same class, so the first match is the wrong
   // one — this waits for the state that is not the loader.
@@ -731,12 +747,37 @@ t('empty.saysWhichDatabaseIsOpenAndOffersTheOtherOne', await probe(`
 // A handler that throws is caught by `consoleErrors` at the foot of this file
 // as well, since the click happens first — so the broken button reds two rows.
 t('empty.theWayThroughIsAButtonThatWorks', await probe(`
-  document.querySelector('#dataGrid .empty button').click();
-  await new Promise(r => setTimeout(r, 1200));
-  const opened = activeTenantId;
-  await tenantClose(); await new Promise(r => setTimeout(r, 1200));
-  return { opened, back: activeTenantId };
+  try {
+    document.querySelector('#dataGrid .empty button').click();
+    await new Promise(r => setTimeout(r, 1200));
+    const opened = activeTenantId;
+    await tenantClose(); await new Promise(r => setTimeout(r, 1200));
+    return { opened, back: activeTenantId };
+  } finally {
+    if (window.__unpinnedApi) { api = window.__unpinnedApi; delete window.__unpinnedApi }
+    await loadTenants();
+  }
 `), { opened: 'flagship', back: null })
+
+// With several tenants there is no one to open, so the way through is the
+// panel that lists them — and it too is pressed, not read.
+t('empty.withSeveralTenantsTheWayThroughIsThePanel', await probe(`
+  const realSnap = _tenantSnapshot;
+  try {
+    _tenantSnapshot = { ...realSnap, activeTenant: null, tenants: [{ id: 'flagship' }, { id: 'second' }] };
+    const box = document.createElement('div');
+    box.innerHTML = emptyTableState();
+    const said = box.textContent.replace(/\\s+/g, ' ');
+    const button = box.querySelector('button');
+    const label = button?.textContent.trim();
+    button?.click();
+    return {
+      namesTheCount: /each of the 2 tenants/.test(said),
+      button: label,
+      panelShown: !document.getElementById('panelTenants').hidden,
+    };
+  } finally { _tenantSnapshot = realSnap; showTool('browse') }
+`), { namesTheCount: true, button: 'Choose a tenant →', panelShown: true })
 
 // The three cases, decided by calling the renderer rather than by arranging a
 // database for each: an unseeded app with a seed, the same app once it has

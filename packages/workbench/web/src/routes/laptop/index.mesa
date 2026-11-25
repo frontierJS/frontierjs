@@ -5,7 +5,8 @@ title: Laptop
   // What fli keeps on this laptop. Disk draws the four roots of fli's home and
   // Workbench's own folder the way macOS Storage draws a drive — one bar of what
   // takes the space, then each folder as a group of rows with Clear on a cache
-  // entry and Remove on an idle lane. Keys lists every secret file with its mode
+  // entry and Remove on an idle lane, then Build output and Docker, each read on
+  // a press. Keys lists every secret file with its mode
   // and mends a wrong one (chmod 600), under a card of who this laptop is on the
   // Frontier network. Running lists the dev servers `fli dev` has started in any
   // project and the tree holds a drive or a loop is taking, read only. Services
@@ -126,6 +127,48 @@ title: Laptop
 
   const buildSub = (b) => b.held ? `cargo is running (pid ${b.held})`
     : `Rust build · ${b.mtime ? `last built ${ago(b.mtime)}` : 'last built unknown'}`
+
+  // Docker is asked for on a press too: every figure is a `docker` call, and nothing shells out on load.
+  let dockerReport  = null
+  let dockerError   = null
+  let dockerLoading = false
+
+  async function scanDocker() {
+    dockerLoading = true
+    try {
+      dockerReport = await laptop.service.invoke('docker')
+      dockerError  = null
+    } catch (err) {
+      dockerError = err.message
+    } finally {
+      dockerLoading = false
+    }
+  }
+
+  async function clearDocker(key, verb, body, label) {
+    pressed = { ...pressed, [key]: true }
+    try {
+      const out = await laptop.service.invoke(verb, null, body)
+      toasts.success(`${label}: freed ${bytes(out.freed)}`)
+      await scanDocker()
+    } catch (err) {
+      toasts.error(err.message)
+    } finally {
+      pressed = { ...pressed, [key]: false }
+    }
+  }
+
+  const clearImages    = (g) => clearDocker(`d:${g.repo}`, 'clearDockerImages', { repo: g.repo }, `Cleared ${g.repo}`)
+  const clearAllImages = ()  => clearDocker('d:*', 'clearDockerImages', { all: true }, 'Cleared unused images')
+  const clearCache     = ()  => clearDocker('d:cache', 'clearDockerCache', {}, 'Cleared the build cache')
+
+  const unused   = (g) => g.images - g.inUse
+  const imageSub = (g) => [
+    g.app ? 'App image' : g.repo === '<none>' ? 'Untagged' : 'Image',
+    `${g.images} ${g.images === 1 ? 'build' : 'builds'}`,
+    g.inUse ? `${g.inUse} in use by a container` : null,
+    g.newest ? `newest ${ago(g.newest)}` : null,
+  ].filter(Boolean).join(' · ')
 
   // Keys loads when its tab first opens; the walk is cheap but a tab nobody opens costs nothing.
   let keysReport  = null
@@ -578,6 +621,86 @@ title: Laptop
             {#if buildsReport && buildsReport.exists}{bytes(buildsReport.bytes)} in {buildsReport.builds.length} · Scanned in {(buildsReport.walkMs / 1000).toFixed(1)} s{/if}
           </span>
           <Button size="sm" treatment="outlined" id="builds-scan" loading={buildsLoading} onclick={scanBuilds}>{buildsReport ? 'Rescan' : 'Scan'}</Button>
+        </footer>
+      </section>
+
+      <!-- ─── Docker ───────────────────────────────────────────────────── -->
+      <section class="lp-pane" id="laptop-docker" aria-labelledby="laptop-docker-title">
+        <header class="pane-head builds-head">
+          <div class="pane-title">
+            <h2 class="h6" id="laptop-docker-title">Docker</h2>
+            <span class="text-sm text-muted">Images and build cache a local deploy leaves behind</span>
+          </div>
+        </header>
+
+        {#if dockerError}
+          <p class="row-sub pane-empty">{dockerError}</p>
+        {:else if !dockerReport}
+          <p class="row-sub pane-empty">Not scanned: the figures come from running docker.</p>
+        {:else if !dockerReport.available}
+          <p class="row-sub pane-empty" id="docker-missing">Docker did not answer: {dockerReport.reason}</p>
+        {:else}
+          <ul class="rows-list">
+            <li class="lp-row" data-docker="cache">
+              <div class="row-main">
+                <div class="row-name">Build cache</div>
+                <div class="row-sub">{dockerReport.cache.records} records · the next build of each image starts cold</div>
+              </div>
+              <div class="row-size num">{bytes(dockerReport.cache.bytes)}</div>
+              <div class="row-act">
+                <ConfirmationPopover inline title={`Remove ${bytes(dockerReport.cache.reclaimable)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={clearCache}>
+                  {#snippet trigger()}
+                    <Button size="sm" treatment="outlined" tone="danger" disabled={!dockerReport.cache.reclaimable} loading={!!pressed['d:cache']}>Clear</Button>
+                  {/snippet}
+                </ConfirmationPopover>
+              </div>
+            </li>
+            <li class="lp-row" data-docker="images">
+              <div class="row-main">
+                <div class="row-name">Unused images</div>
+                <div class="row-sub">{dockerReport.images.count} images in {dockerReport.images.groups.length} repositories · Clear all removes each one no container uses</div>
+              </div>
+              <div class="row-size num">{bytes(dockerReport.images.reclaimable)}</div>
+              <div class="row-act">
+                <ConfirmationPopover inline title={`Remove ${bytes(dockerReport.images.reclaimable)}?`} confirmLabel="Yes" cancelLabel="No" onconfirm={clearAllImages}>
+                  {#snippet trigger()}
+                    <Button size="sm" treatment="outlined" tone="danger" disabled={!dockerReport.images.reclaimable} loading={!!pressed['d:*']}>Clear all</Button>
+                  {/snippet}
+                </ConfirmationPopover>
+              </div>
+            </li>
+            {#each dockerReport.images.groups as g (g.repo)}
+              <li class="lp-row" data-image={g.repo}>
+                <div class="row-main">
+                  <div class="row-name">{g.repo}</div>
+                  <div class="row-sub">{imageSub(g)}</div>
+                </div>
+                <div class="row-size num">{bytes(g.bytes)}</div>
+                <div class="row-act">
+                  <ConfirmationPopover inline title={`Remove ${unused(g)} unused?`} confirmLabel="Yes" cancelLabel="No" onconfirm={() => clearImages(g)}>
+                    {#snippet trigger()}
+                      <Button size="sm" treatment="outlined" tone="danger" disabled={!unused(g)} loading={!!pressed[`d:${g.repo}`]}>Clear</Button>
+                    {/snippet}
+                  </ConfirmationPopover>
+                </div>
+              </li>
+            {/each}
+            <li class="lp-row" data-docker="volumes">
+              <div class="row-main">
+                <div class="row-name">Volumes</div>
+                <div class="row-sub">{dockerReport.volumes.count} volumes · they hold databases, so nothing here removes one</div>
+              </div>
+              <div class="row-size num">{bytes(dockerReport.volumes.bytes)}</div>
+              <div class="row-act"></div>
+            </li>
+          </ul>
+        {/if}
+
+        <footer class="pane-foot">
+          <span class="text-sm text-muted" id="laptop-docker-walk">
+            {#if dockerReport && dockerReport.available}A repository's size is what only its unused images hold; shared layers are in the Unused images total · Read in {(dockerReport.ms / 1000).toFixed(1)} s{/if}
+          </span>
+          <Button size="sm" treatment="outlined" id="docker-scan" loading={dockerLoading} onclick={scanDocker}>{dockerReport ? 'Rescan' : 'Scan'}</Button>
         </footer>
       </section>
     </div>

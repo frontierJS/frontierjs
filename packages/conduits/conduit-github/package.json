@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-github",
+  "version": "0.0.1",
+  "description": "GitHub's REST dialect over @frontierjs/conduit — deploy keys, push hooks, file reads, a 403 told apart as a rate limit or a missing grant, and the push webhook's signature.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
+    "drive": "bun test/github.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}
