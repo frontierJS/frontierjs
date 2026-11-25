@@ -114,6 +114,15 @@ Read on 2026-11-25:
   - **A** — `translate` re-kinds a 403 by its `error` text: `plan_refused` (the plan has no API access), `units_exhausted` (no units left, or this key's monthly cap reached), or `auth_failed`. The patterns come from what 0.3 captures.
   - **B** — Every 403 stays `auth_failed`, and the sentence carries Ahrefs' `error` text.
   - **Recommend A if 0.3 can tell the cases apart, else B.** The drive asserts that each body 0.3 captured maps to its kind. A body that matches no pattern falls back to `auth_failed` with the vendor's text, so if Ahrefs changes a message, that case drops to B's behavior with nothing else changed. Before coining `plan_refused`, check whether conduit's `forbidden` already means it. TPM's message today, *Ahrefs refused the key*, is the wrong advice when the key is fine and the month's units are spent: the owner would remake a working key. If 0.3 finds one undifferentiated message, the plan falls back to B and records that here.
+- ~~**Q4 — Whether `verify` keeps its name in `@frontierjs/conduit-ahrefs` beside `@frontierjs/litestone`.**~~ **Answered 2026-11-25 (`FJS-D2385`): A — Keep `verify` in `@frontierjs/conduit-ahrefs` beside `@frontierjs/litestone`. `verify(send)` is the account check that `conduit-github` (`FJS-D2371`), `conduit-cloudflare`, `conduit-digitalocean` and `conduit-hetzner` export. Here it answers the plan, the key's expiry, and units used and left. Litestone's `verify` checks a migration, which is a different job.** The `FJS-D2278` ratchet refuses a name that two packages export until a ruling names it. Asked 2026-11-25, after Phase 2. Ahrefs' `projects` was renamed `listProjects`, to match `findProject`, `addProject` and `removeProject`, so it no longer clashes with `conduit-37signals`.
+  - **A** — Keep `verify` in `@frontierjs/conduit-ahrefs` beside `@frontierjs/litestone`. `verify(send)` is the account check that `conduit-github` (`FJS-D2371`), `conduit-cloudflare`, `conduit-digitalocean` and `conduit-hetzner` export. Here it answers the plan, the key's expiry, and units used and left. Litestone's `verify` checks a migration, which is a different job.
+  - **B** — Rename it `checkKey` or `limits` in this package.
+  - **Recommend A** — the owner's answer: keep a name where it matches the job. One verb across connectors is what lets a caller check any vendor's account the same way.
+- ~~**Q5 — Whether `conduit-ahrefs` is admitted to releases (`FJS-D2365`'s path), and when it is first released.**~~ **Answered 2026-11-25 (`FJS-D2386`): B — Admit it now by adding `conduit-ahrefs` to `ADMITTED` in `packages/cli/core/workspace-members.js`, and hold the first 0.1.0 release until the owner runs or approves it.** Asked 2026-11-25 at step 3.1.
+  - **A** — Admit it and release 0.1.0 now.
+  - **B** — Admit it now by adding `conduit-ahrefs` to `ADMITTED` in `packages/cli/core/workspace-members.js`, and hold the first 0.1.0 release until the owner runs or approves it.
+  - **C** — Keep it held out, so Phase 4 waits.
+  - **Recommend B** — the owner's answer. Admission is what Q1's TPM move needs (TPM installs only published tarballs). A release is outward-facing, so its timing is the owner's.
 
 ---
 
@@ -182,30 +191,37 @@ Done when: each question carries its ruling, and 0.2–0.4 record what they meas
 Goal: `packages/conduits/conduit-ahrefs/` exists, with a target builder and the one reader of `error.raw`.
 Done when: `bun run drive` passes the error rows against the sink, including the negative control, and `fli ws:atlas` draws the package in its ring.
 
-- [ ] 1.1 Copy `conduit-plausible`'s layout: `src/index.ts`, `src/errors.ts`, `src/types.ts`, `sink.ts`, `test/ahrefs.drive.ts`, and scripts `test`, `drive` and `typecheck`. Add a row to the Packages table in the root `CLAUDE.md`, then run `fli ws:atlas`, `ws:exports`, `ws:deps` and `ws:surface`.
-- [ ] 1.2 Write `ahrefsTarget({ ref?, address?, id? })` and `bindSend`. The target is a `bearer` target with `Accept: application/json`.
-- [ ] 1.3 Write `translate(error, meta)` (C3). It answers:
+- [x] 1.1 Copy `conduit-plausible`'s layout: `src/index.ts`, `src/errors.ts`, `src/types.ts`, `sink.ts`, `test/ahrefs.drive.ts`, and scripts `test`, `drive` and `typecheck`. Add a row to the Packages table in the root `CLAUDE.md`, then run `fli ws:atlas`, `ws:exports`, `ws:deps` and `ws:surface`.
+  - Built 2026-11-25. `fli ws:atlas`, `ws:deps` and `ws:surface` take the package. **`fli ws:exports` refuses two new duplicate names, `projects` (with conduit-37signals) and `verify` (with litestone and the other connectors): rename one or cite a DECISIONS ruling. Left as the plan names them; the owner's call.** `test` keeps the sibling form (`tmp-run.mjs 'bun run drive'`).
+- [x] 1.2 Write `ahrefsTarget({ ref?, address?, id? })` and `bindSend`. The target is a `bearer` target with `Accept: application/json`.
+- [x] 1.3 Write `translate(error, meta)` (C3). It answers:
   - `auth_failed` for a 401
   - for a 403, `quota` when the `error` text says *units limit reached*, else `auth_failed` with Ahrefs' text. The body arrives in two shapes, an array and `{ error }`, and both are read.
   - `rate_limited` for a 429, with `retryAfterMs` from `Retry-After`, else 60 s
-  - `bad_request` with Ahrefs' `error` text for a 400
+  - `refused` with Ahrefs' `error` text for a 400
   - conduit's own kinds otherwise
+  - `translate(error, { status, headers }, { quota? })`: the third argument is the negative control's seam. A 400 is `refused`, the word 19 sibling connectors use; the plan first said `bad_request`, a coinage.
 
   The drive has one row for each body 0.3 captured. Its negative control drops the *units limit* match, and the `quota` row then reads `auth_failed`.
-- [ ] 1.4 Write `costOf(meta)`, which reads the `x-api-*` headers into `{ rows, perRow, total, actual, cache }`. Every call's answer carries it.
-- [ ] 1.5 Write the sink (C10): projects state for each instance, the cost headers, and fault arms for `lost`, a 429, a 403 for each case 0.3 recorded, and a 401.
+- [x] 1.4 Write `costOf(meta)`, which reads the `x-api-*` headers into `{ rows, perRow, total, actual, cache }`. Every call's answer carries it.
+  - The refusal carries the cost too (`failure.cost`), and a header Ahrefs did not send is `null`, not 0. A call of several requests reports the last one's cost.
+- [x] 1.5 Write the sink (C10): projects state for each instance, the cost headers, and fault arms for `lost`, a 429, a 403 for each case 0.3 recorded, and a 401.
+  - The sink's 429 has no `Retry-After` by default (none was captured); `{ rateLimit: n, retryAfter? }` arms it. A wrong key is a second target on the same sink.
 
 ### Phase 2 — The calls
 
 Goal: every call TPM makes goes through `send` (C2), and so does the read for TPM's *Final review* step.
 Done when: the drive covers each call, a lost add is settled by its C6 read, and the fixture rows pass against the real API on free targets.
 
-- [ ] 2.1 Write `verify(send)` over limits-and-usage. It answers the plan, the key's expiry, and units used and left.
-- [ ] 2.2 Write `projects(send)` and `findProject(send, domain)`, matching on the bare host.
-- [ ] 2.3 Write `addProject(send, { domain, name, access?, mode? })`. It finds the project first and creates it only when none exists, without a key. The drive proves that an add whose answer was lost is found by the list.
-- [ ] 2.4 Write `removeProject(send, domain)`. A domain with no project is `null`, not a failure.
-- [ ] 2.5 Write `siteAudit(send, projectId)` over `/site-audit/projects`. It answers the health score and the date of the last crawl, and `null` when the project has no audit yet.
-- [ ] 2.6 Add fixture rows (C11) that run the free calls against the real API: limits-and-usage, `domain-rating` on `ahrefs.com` through the raw `send`, and checks on the cost headers. A project add and delete on the real API is not in the fixture, because it would change the owner's workspace.
+- [x] 2.1 Write `verify(send)` over limits-and-usage. It answers the plan, the key's expiry, and units used and left.
+  - Answers `{ plan, expiresAt, resetsAt, key, workspace }`, each balance `{ limit, used, left }`. A bad key throws `auth_failed` rather than answering false.
+- [x] 2.2 Write `projects(send)` and `findProject(send, domain)`, matching on the bare host.
+- [x] 2.3 Write `addProject(send, { domain, name, access?, mode? })`. It finds the project first and creates it only when none exists, without a key. The drive proves that an add whose answer was lost is found by the list.
+- [x] 2.4 Write `removeProject(send, domain)`. A domain with no project is `null`, not a failure.
+- [x] 2.5 Write `siteAudit(send, projectId)` over `/site-audit/projects`. It answers the health score and the date of the last crawl, and `null` when the project has no audit yet.
+  - The list's envelope is `healthscores`, not `projects`. A row for a never-audited project has `date`, `status` and every count `null`.
+- [x] 2.6 Add fixture rows (C11) that run the free calls against the real API: limits-and-usage, `domain-rating` on `ahrefs.com` through the raw `send`, and checks on the cost headers. A project add and delete on the real API is not in the fixture, because it would change the owner's workspace.
+  - Six fixture rows, run 2026-11-25 against api.ahrefs.com. The real list answers 81 projects slower than the sink's 800 ms patience, so the fixture has its own conduit at 20 s. The POST and DELETE answers are read from the spec and the sink; they were never sent.
 
 ### Phase 3 — Admission and release
 

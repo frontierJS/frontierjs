@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/conduit-ahrefs",
+  "version": "0.0.1",
+  "description": "Ahrefs API v3 over @frontierjs/conduit — the projects TPM adds and removes, the Site Audit health score, the cost of every call, and a 403 told apart as a spent allowance or a bad key.",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sink": "./sink.ts"
+  },
+  "files": [
+    "src",
+    "sink.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
+    "drive": "bun test/ahrefs.drive.ts",
+    "typecheck": "node ../../../scripts/typecheck.mjs"
+  },
+  "peerDependencies": {
+    "@frontierjs/conduit": "^0.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
+  }
+}

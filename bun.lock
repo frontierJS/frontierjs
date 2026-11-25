@@ -159,6 +159,16 @@
         "@frontierjs/conduit": "^0.1.0",
       },
     },
+    "packages/conduits/conduit-ahrefs": {
+      "name": "@frontierjs/conduit-ahrefs",
+      "version": "0.0.1",
+      "devDependencies": {
+        "bun-types": "^1.3.14",
+      },
+      "peerDependencies": {
+        "@frontierjs/conduit": "^0.1.0",
+      },
+    },
     "packages/conduits/conduit-airtable": {
       "name": "@frontierjs/conduit-airtable",
       "version": "0.0.1",
@@ -1122,6 +1132,8 @@
     "@frontierjs/conduit": ["@frontierjs/conduit@workspace:packages/conduit"],
 
     "@frontierjs/conduit-37signals": ["@frontierjs/conduit-37signals@workspace:packages/conduits/conduit-37signals"],
+
+    "@frontierjs/conduit-ahrefs": ["@frontierjs/conduit-ahrefs@workspace:packages/conduits/conduit-ahrefs"],
 
     "@frontierjs/conduit-airtable": ["@frontierjs/conduit-airtable@workspace:packages/conduits/conduit-airtable"],
 

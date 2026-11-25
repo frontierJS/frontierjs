@@ -23457,6 +23457,18 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d2386"></a>2026-11-25 · `FJS-D2386` — Q5 — Whether `conduit-ahrefs` is admitted to releases (`FJS-D2365`'s path), and when it is first released — Admit it now by adding `conduit-ahrefs` to `ADMITTED` in `packages/cli/core/workspace-members.js`, and hold the first 0.1.0 release until the owner runs or approves it.
+
+Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **B** was picked over **A** (Admit it and release 0.1.0 now), **C** (Keep it held out, so Phase 4 waits).
+
+The paper's recommendation, taken as written: the owner's answer. Admission is what Q1's TPM move needs (TPM installs only published tarballs). A release is outward-facing, so its timing is the owner's.
+
+### <a id="fjs-d2385"></a>2026-11-25 · `FJS-D2385` — Q4 — Whether `verify` keeps its name in `@frontierjs/conduit-ahrefs` beside `@frontierjs/litestone` — Keep `verify` in `@frontierjs/conduit-ahrefs` beside `@frontierjs/litestone`. `verify(send)` is the account check that `conduit-github` (`FJS-D2371`), `conduit-cloudflare`, `conduit-digitalocean` and `conduit-hetzner` export. Here it answers the plan, the key's expiry, and units used and left. Litestone's `verify` checks a migration, which is a different job.
+
+Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **A** was picked over **B** (Rename it `checkKey` or `limits` in this package).
+
+The paper's recommendation, taken as written: the owner's answer: keep a name where it matches the job. One verb across connectors is what lets a caller check any vendor's account the same way.
+
 ### <a id="fjs-d2382"></a>2026-11-25 · `FJS-D2382` — Q3 — What happens on a 403 — A if 0.3 can tell the cases apart, else B.
 
 Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **A** was picked as the recommendation qualifies it (*A if 0.3 can tell the cases apart, else B*) over **B** (Every 403 stays `auth_failed`, and the sentence carries Ahrefs' `error` text).
