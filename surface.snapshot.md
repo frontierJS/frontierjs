@@ -26,8 +26,8 @@ Only crossings are recorded — no importer, no reach — so the file moves when
 surface gains an unreached export or loses its last caller, and not on every import.
 
 ```
-33 package(s) · 4893 source file(s) read
-386 entry point(s), 37 imported by nothing outside their package, 14 emitted
+35 package(s) · 4893 source file(s) read
+390 entry point(s), 37 imported by nothing outside their package, 14 emitted
 1981 value export(s), 714 reached by nothing outside, 204 emitted
 571 type export(s), 398 reached by nothing outside
 ```
@@ -58,8 +58,10 @@ surface gains an unreached export or loses its last caller, and not on every imp
 | `basecamp` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `cli` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-37signals` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-ahrefs` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-anthropic` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-cloudflare` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
+| `conduit-github` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `conduit-plausible` | 2 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `config` | 3 | 0 | 0 | 0 | 0 | 0 | 0 |
 | `create-frontier` | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
@@ -132,6 +134,14 @@ Every entry is imported and every name reached.
 
 Every entry is imported and every name reached.
 
+## `@frontierjs/conduit-ahrefs`
+
+`packages/conduit-ahrefs` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
+
 ## `@frontierjs/conduit-anthropic`
 
 `packages/conduit-anthropic` · 2 entry point(s) · 0 value, 0 type export(s)
@@ -143,6 +153,14 @@ Every entry is imported and every name reached.
 ## `@frontierjs/conduit-cloudflare`
 
 `packages/conduit-cloudflare` · 2 entry point(s) · 0 value, 0 type export(s)
+
+**Entries not source (2, not graded):** `.` `./sink`
+
+Every entry is imported and every name reached.
+
+## `@frontierjs/conduit-github`
+
+`packages/conduit-github` · 2 entry point(s) · 0 value, 0 type export(s)
 
 **Entries not source (2, not graded):** `.` `./sink`
 

@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2387"></a>2026-11-25 · `FJS-D2387` — Q7 — Whether `conduit-github` is admitted for publishing — `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path): Basecamp is its runtime caller, and the owner tested connect and Import from repository on 2026-11-25. The release itself stays the owner's.
+
+Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (It stays held out until the missing-grant refusal (step 0.3) is measured against real GitHub).
+
+Against the recommendation (**B**): the owner tested Basecamp on the connector on 2026-11-25 and chose to admit it; step 0.3 stays open in the plan.
+
 ### <a id="fjs-d2371"></a>2026-11-25 · `FJS-D2371` — Q6 — Whether `bindSend`, `translate` and `verify` keep their names in `@frontierjs/conduit-github` — Three shared export names are one job each, kept: `bindSend`, `translate` and `verify` in `@frontierjs/conduit-github` beside `@frontierjs/conduit-airtable`, `@frontierjs/conduit-37signals` and `@frontierjs/litestone`.
 
 Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (Rename them in this package: `bindGithubSend`, `translateGithub` and `verifyGithub`).
@@ -14920,6 +14926,24 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d2390"></a>2026-11-25 · `FJS-D2390` — Q12 — No: a path is a trigger when its root is reactive, a watched import path, or a handle (a resource, `presence()`, the router, the session — Q8's list); a plain import is not.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (yes: a property read is tracked, whatever it is read through; these never fire).
+
+The paper's recommendation, taken as written: the rule's first sentence already lists the roots, and Q8's dev check catches an import the list misses.
+
+### <a id="fjs-d2389"></a>2026-11-25 · `FJS-D2389` — Q11 — A value, like `function f`: creating it reads nothing and its body is a call boundary. Q5 covers an arrow handed to a call. `const f = (p) => …` is a local helper, so the spelling stops mattering (`FJS-4637`), and a callback prop has no triggers.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (Q5's letter: its free names are triggers).
+
+The paper's recommendation, taken as written: under B, 444 callback props in this repo re-create on a row variable and step 2.6 warns on each.
+
+### <a id="fjs-d2388"></a>2026-11-25 · `FJS-D2388` — Q10 — No: only a helper called while the expression evaluates is warned; an arrow in a handler or callback-prop position runs later, when every read is fresh. An arrow handed to a call (`items.filter(i => inRange(i))`) is still warned, since it may run now.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (yes, wherever the helper is called).
+
+The paper's recommendation, taken as written: under B about 600 of this repo's 1,143 warning sites are callback props naming a read that cannot go stale.
 
 ### <a id="fjs-d2384"></a>2026-11-25 · `FJS-D2384` — Q9 — None: a read subscribes only to watches this component declares.
 

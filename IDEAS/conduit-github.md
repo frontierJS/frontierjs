@@ -100,6 +100,10 @@ Read from GitHub's REST docs on 2026-11-25:
   - **A** — Three shared export names are one job each, kept: `bindSend`, `translate` and `verify` in `@frontierjs/conduit-github` beside `@frontierjs/conduit-airtable`, `@frontierjs/conduit-37signals` and `@frontierjs/litestone`.
   - **B** — Rename them in this package: `bindGithubSend`, `translateGithub` and `verifyGithub`.
   - **Recommend A** — `bindSend` and `translate` are the connector contract's names (C2, C3), kept for `conduit-esri` by `FJS-D2366`, and `verify(send)` is the account check `conduit-cloudflare`, `conduit-digitalocean` and `conduit-hetzner` already export beside litestone's migration `verify`.
+- ~~**Q7 — Whether `conduit-github` is admitted for publishing.**~~ **Answered 2026-11-25 (`FJS-D2387`): A — `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path): Basecamp is its runtime caller, and the owner tested connect and Import from repository on 2026-11-25. The release itself stays the owner's.**
+  - **A** — `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path): Basecamp is its runtime caller, and the owner tested connect and Import from repository on 2026-11-25. The release itself stays the owner's.
+  - **B** — It stays held out until the missing-grant refusal (step 0.3) is measured against real GitHub.
+  - **Recommend B** — Basecamp's image packs the connector from the tree either way, and 0.3 is the one branch of `translate` built from documentation.
 
 ---
 
@@ -168,7 +172,7 @@ Done when: Basecamp's `source.test.ts`, `from-repo.test.ts` and the push-hook te
 - [x] 4.3 Point `forgeDialect.verify` at `verifyGithubSignature`. Comment there that Forgejo and Gitea deliveries go through the GitHub connector on purpose, because they send GitHub's header. `tokenDialect`, the receiver and `apply` stay Basecamp's.
 - [x] 4.4 Retire `github-sink.ts`. Port 8126 and `GH_SINK_TOKEN`/`NO_HOOKS_TOKEN` move onto the package's sink, or `verify-screens.mjs` starts the package's sink. Record which, here.
   - Went the second way: `verify-screens.mjs` spawns the package's sink, resolved as `@frontierjs/conduit-github/sink`, on `GH_SINK_PORT` (API_PORT + 3). The dev stand-in on 8126 is the same file, `GH_SINK_PORT=8126 bun packages/conduits/conduit-github/sink.ts` (`docs/PORTS.md`). The tests import `startGhSink` and `NO_HOOKS_TOKEN` from the package. `verify-screens.mjs` against it is not yet run.
-- [ ] 4.6 Run `API_PORT=7120 UI_PORT=7020 bun run verify:screens` in `packages/basecamp` on a disk with 10% free. On 2026-11-25 it stopped 40/41 at the hub backup (`FJS-4467`, disk 96% full), so its connect and Import from repository checks never ran against the package's sink. `verify:provision` passed 110/110 and `bun run test` 1446/0.
+- [x] 4.6 The owner ran it and it passed, 2026-11-25. Run `API_PORT=7120 UI_PORT=7020 bun run verify:screens` in `packages/basecamp` on a disk with 10% free. On 2026-11-25 it stopped 40/41 at the hub backup (`FJS-4467`, disk 96% full), so its connect and Import from repository checks never ran against the package's sink. `verify:provision` passed 110/110 and `bun run test` 1446/0.
 - [~] 4.5 Point `verify-advisories.mjs`' GitHub leg at `advisories()` — dropped with 2.5 (`FJS-D2369`).
 
 ### Phase 5 — Admission
@@ -176,7 +180,7 @@ Done when: Basecamp's `source.test.ts`, `from-repo.test.ts` and the push-hook te
 Goal: the connector ships, or is ruled held out.
 Done when: a ruling names it in `ADMITTED` or says why not.
 
-- [ ] 5.1 Ask whether `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path), and release it at 0.1.0 if it does.
+- [x] 5.1 Ask whether `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path), and release it at 0.1.0 if it does.
 
 ---
 

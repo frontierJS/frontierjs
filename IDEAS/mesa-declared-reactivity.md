@@ -96,10 +96,34 @@ Goal: every binding whose triggers change, by file and line, before any code mov
 Done when: a list over this repo and the linked prototype repos, each row naming
 today's triggers and the rule's.
 
-- [ ] 0.1 Compile every `.mesa` file (992 here) under both classifications and diff
+- [x] 0.1 Compile every `.mesa` file (992 here) under both classifications and diff
   the trigger sets
-- [ ] 0.2 The same over the 22 prototype repos that link this tree
-- [ ] 0.3 Per live app (ELA, TPM): the rows that would go stale
+- [x] 0.2 The same over the 22 prototype repos that link this tree
+- [x] 0.3 Per live app (ELA, TPM): the rows that would go stale
+
+The list is regenerated, never kept: `cd packages/mesa && bun run corpus --
+--triggers [--root <repo>]…` writes `.cache/mesa-triggers/<repo>/rows.txt`, each
+row naming today's triggers and the rule's (`src/triggers.js` is the rule's
+analyzer, `scripts/triggers.js` the comparison). Today's set is a static
+estimate. Measured 2026-11-25, before Q10–Q12 are ruled:
+
+| Class | This repo (992 files) | ELA (344) | TPM (92) | 58 outside repos |
+| ----- | ---: | ---: | ---: | ---: |
+| `goes-static` — live today, no trigger under the rule | 299 | 101 | 8 | 325 |
+| `loses-trigger` — a helper or an import watch read it | 683 | 520 | 108 | 1,874 |
+| `gains-trigger` | 477 | 376 | 87 | 1,526 |
+| `goes-live` | 53 | 32 | 17 | 254 |
+| `const-becomes-derived` (4.7) | 32 | 48 | 10 | 387 |
+| `arrow-only-triggers` (2.6) | 493 | 382 | 84 | 1,331 |
+| `block` (4.5) | 33 | 22 | 8 | 112 |
+| `helper-unnamed-read` (2.1) | 1,143 | 520 | 130 | 2,372 |
+| `var-assigned-after-init` (2.4) | 2 | 0 | 0 | 1 |
+| `let-mutated-in-place` (2.5) | 5 | 2 | 1 | 22 |
+
+A row that would go stale is `goes-static` or `loses-trigger`. Callback props
+(`onpick={() => remove(k)}`) are 444 of this repo's 493 `arrow-only-triggers`,
+445 of its 477 `gains-trigger` and 602 of its 1,143 `helper-unnamed-read`: Q10
+and Q11 decide whether those are rows at all.
 
 ### Phase 1 — Compiler
 
@@ -296,3 +320,33 @@ Done when: each app's drive passes on the new Mesa.
   - **Recommend A** — B makes a binding's triggers depend on what mounted first,
     which no reading of the file can show, and dev and production can mount in a
     different order.
+- ~~**Q10**~~ **Answered 2026-11-25 (`FJS-D2388`): A — no: only a helper called while the expression evaluates is warned; an arrow in a handler or callback-prop position runs later, when every read is fresh. An arrow handed to a call (`items.filter(i => inRange(i))`) is still warned, since it may run now.** — Whether step 2.1 warns on a local helper called inside an inline
+  callback, as in `onclick={() => rollback()}` where `rollback` reads `busy`.
+  **Recommend A.**
+  - **A** — no: only a helper called while the expression evaluates is warned;
+    an arrow in a handler or callback-prop position runs later, when every read is
+    fresh. An arrow handed to a call (`items.filter(i => inRange(i))`) is still
+    warned, since it may run now
+  - **B** — yes, wherever the helper is called
+  - **Recommend A** — under B about 600 of this repo's 1,143 warning sites are
+    callback props naming a read that cannot go stale.
+- ~~**Q11**~~ **Answered 2026-11-25 (`FJS-D2389`): A — a value, like `function f`: creating it reads nothing and its body is a call boundary. Q5 covers an arrow handed to a call. `const f = (p) => …` is a local helper, so the spelling stops mattering (`FJS-4637`), and a callback prop has no triggers.** — What a function literal that IS the whole expression is: `const f =
+  (p) => … n …`, and `onpick={() => remove(k)}`. Q5's letter makes the first a
+  `const` derived on `n` and the second a prop re-created on `k`. **Recommend A.**
+  - **A** — a value, like `function f`: creating it reads nothing and its body is
+    a call boundary. Q5 covers an arrow handed to a call. `const f = (p) => …` is
+    a local helper, so the spelling stops mattering (`FJS-4637`), and a callback
+    prop has no triggers
+  - **B** — Q5's letter: its free names are triggers
+  - **Recommend A** — under B, 444 callback props in this repo re-create on a row
+    variable and step 2.6 warns on each.
+- ~~**Q12**~~ **Answered 2026-11-25 (`FJS-D2390`): B — no: a path is a trigger when its root is reactive, a watched import path, or a handle (a resource, `presence()`, the router, the session — Q8's list); a plain import is not.** — Whether a property path through an unwatched import or a plain
+  object is a trigger: `{config.title}`, `const lifecycle =
+  orders.fields.status.enum`. **Recommend B.**
+  - **A** — yes: a property read is tracked, whatever it is read through; these
+    never fire
+  - **B** — no: a path is a trigger when its root is reactive, a watched import
+    path, or a handle (a resource, `presence()`, the router, the session — Q8's
+    list); a plain import is not
+  - **Recommend B** — the rule's first sentence already lists the roots, and Q8's
+    dev check catches an import the list misses.

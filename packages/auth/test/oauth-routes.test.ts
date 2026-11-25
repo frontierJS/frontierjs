@@ -9,6 +9,7 @@
 // attributes — and a JSON body anywhere in here would be the defect.
 
 import { describe, test, expect, beforeAll, afterAll, afterEach } from 'bun:test'
+import { Database } from 'bun:sqlite'
 import { createTestApp, request } from '@frontierjs/junction'
 import { auth } from '../plugin.ts'
 import { defineProvider, OAUTH_STATE_COOKIE } from '../oauth.ts'
@@ -152,6 +153,35 @@ describe('GET /auth/oauth/{provider}', () => {
     // `:provider` would register as a literal segment and 404 forever, which is
     // the shape that is silent until somebody clicks the button.
     expect((await request(app).get('/auth/oauth/google')).status).toBe(302)
+  })
+
+  // FJS-4643: a missing oauth_flow column answered `unavailable` and logged
+  // nothing, so it read as an unconfigured provider.
+  test('a database fault still redirects, and is logged where an unknown provider is not', async () => {
+    const broken = await makeAuth({
+      oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
+    })
+    const logged: unknown[][] = []
+    const realError = console.error
+    console.error = (...args: unknown[]) => { logged.push(args) }
+    try {
+      const faulty = await createTestApp({ auth: broken.auth as any, config: { publicUrl: PUBLIC_URL } as any })
+      faulty.setAuth(broken.auth as any)
+      faulty.configure(auth({ auth: broken.auth, cookieAuth: true, oauth: { errorRedirect: '/sign-in' } }))
+
+      await request(faulty).get('/auth/oauth/faceboook')
+      expect(logged).toEqual([])
+
+      broken.db.$db.run('DROP TABLE oauth_flow')
+      const res = await request(faulty).get('/auth/oauth/google')
+      expect(res.status).toBe(302)
+      expect(String(res.headers['location'])).toBe('/sign-in?oauth_error=unavailable')
+      expect(logged.length).toBe(1)
+      expect(String(logged[0][0])).toContain('google')
+    } finally {
+      console.error = realError
+      broken.cleanup()
+    }
   })
 })
 

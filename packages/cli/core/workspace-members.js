@@ -86,7 +86,7 @@ const CONNECTORS = 'packages/conduits/'
 // A connector admitted to releases (`FJS-D2365`) keeps its lane and ring; only
 // the hold lifts. A name here that is not a connector member fails
 // workspace-members.test.js, so a typo cannot leave one silently held.
-export const ADMITTED = ['conduit-37signals', 'conduit-ahrefs', 'conduit-anthropic', 'conduit-cloudflare', 'conduit-plausible']
+export const ADMITTED = ['conduit-37signals', 'conduit-ahrefs', 'conduit-anthropic', 'conduit-cloudflare', 'conduit-github', 'conduit-plausible']
 
 /** True for a member under `packages/conduits/` -- the CI lane and ring test, which admission never changes. */
 export function isConnector(member) { return member.path.startsWith(CONNECTORS) }

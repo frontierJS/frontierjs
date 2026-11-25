@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-26 publishable package(s) · 0 problem(s)
+28 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -180,6 +180,17 @@ lists the pair, and a rename that removes one drops it on the next write.
 
 - peers — `@frontierjs/conduit`: `^0.1.0`
 
+## `@frontierjs/conduit-ahrefs`
+
+`packages/conduit-ahrefs` · ships `README.md` `package.json` `sink.ts` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `src/index.ts` | yes |
+| exports | `./sink` | `sink.ts` | yes |
+
+- peers — `@frontierjs/conduit`: `^0.1.0`
+
 ## `@frontierjs/conduit-anthropic`
 
 `packages/conduit-anthropic` · ships `README.md` `package.json` `sink.ts` `src/`
@@ -194,6 +205,17 @@ lists the pair, and a rename that removes one drops it on the next write.
 ## `@frontierjs/conduit-cloudflare`
 
 `packages/conduit-cloudflare` · ships `README.md` `package.json` `sink.ts` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `src/index.ts` | yes |
+| exports | `./sink` | `sink.ts` | yes |
+
+- peers — `@frontierjs/conduit`: `^0.1.0`
+
+## `@frontierjs/conduit-github`
+
+`packages/conduit-github` · ships `README.md` `package.json` `sink.ts` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

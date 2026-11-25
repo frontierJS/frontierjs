@@ -164,10 +164,12 @@ describe('an extract is taken as the caller, or not at all', () => {
     try {
       expect((await get(port, '/exports/Order')).status).toBe(401)
       expect((await get(port, '/exports')).status).toBe(401)
-      // `?system=true` is not an escape — it is not a parameter at all, so the
-      // extract is still this caller's.
+      // `?system=true` is no escape: it reads as an unknown column and is
+      // refused, so a line count of its body counts the error JSON.
       const forged = await get(port, '/exports/Order?system=true', 'tok-other')
-      expect((await lines(forged)).length).toBe(1)
+      expect(forged.status).toBe(400)
+      expect(await forged.text()).toContain(`Unknown field 'system'`)
+      expect((await lines(await get(port, '/exports/Order', 'tok-other'))).length).toBe(1)
     } finally { await app.stop() }
   })
 
