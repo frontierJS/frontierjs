@@ -119,6 +119,11 @@ function wantsStartFirst(
     && Boolean(runtime.port) && runtime.healthCheck != null && (hosts.length > 0 || paths.length > 0)
 }
 
+/** What a release sweeps on its own machine once it has shipped (`FJS-D2048`). */
+export const RELEASE_SWEEP = ['dangling_images', 'unused_images']
+/** Newest images kept per repository: the one running and two to roll back to. */
+export const RELEASE_KEEP_IMAGES = 3
+
 function runner(app: App) {
 
   // No client here (`FJS-384`). A deploy runs as whoever asked for it, so the
@@ -375,10 +380,25 @@ function runner(app: App) {
     if (service?.replicaDestinationId && deploy.toImage)
       await afterward('export image', () => app.jobs.dispatch(releaseImageExport,
         { deploymentId, serverId: executor.serverId }, { id: `image-export:${deploymentId}` }))
+    // Every release leaves the image it replaced on the machine, and nothing
+    // else ever asks for them back (`FJS-4136`, `FJS-D2048`).
+    await afterward('sweep old images', () => sweepImages(executor.serverId))
     log.info('deployment succeeded', { id: deploymentId, durationMs: Date.now() - startedAt,
       ...(siteFailed ? { site: siteFailed } : {}), ...(webFailed ? { web: webFailed } : {}) })
     await afterward('notify', () => tellThem('DeploySuccess', deploy, service,
       { ...(siteFailed ? { siteFailed } : {}), ...(webFailed ? { webFailed } : {}) }))
+
+    // Queued through `maintenanceRuns.run`, so it is the deployer's sweep: the
+    // same gate, row, event and job a press on Cleanup gets. Images only — the
+    // default targets include `build_cache`, and clearing that after every
+    // release makes the next build of the same app start cold. A sweep still
+    // waiting for this machine already covers this release's leftovers.
+    async function sweepImages(serverId: string): Promise<void> {
+      const runs    = app.service('maintenanceRuns')
+      const waiting = await runs.find({ serverId, status: 'pending' }) as { data?: unknown[] } | unknown[]
+      if ((Array.isArray(waiting) ? waiting : waiting?.data ?? []).length) return
+      await runs.call('run', null, { serverId, targets: RELEASE_SWEEP, keepImages: RELEASE_KEEP_IMAGES })
+    }
 
     async function afterward(what: string, fn: () => Promise<unknown>): Promise<void> {
       try { await fn() } catch (err) {

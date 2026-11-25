@@ -34,7 +34,9 @@ scratch harness is not kept.
 
 ## The rule
 
-**An expression re-runs when a name or property path written in its text changes.
+**An expression re-runs when a reactive name or property path written in its text
+changes — a `let`, a prop, a derived `const`, or an import path a `$:` here watches
+(RULE 44: written is not enough).
 A property read is tracked, getters included. A call is a boundary: its receiver
 and arguments are tracked and its body is not** — `{myValue.toFixed()}` re-runs
 on `myValue`; `{here.get()}` does not, since `here` never changes and the live
@@ -71,6 +73,14 @@ What follows from it:
   through a watched import, which is what Q3's runtime half uses.
 - **Moving code into a helper changes what re-runs** unless the dependency is
   passed. This is the cost the rule accepts; Q3's warning is what keeps it loud.
+- **Moving a callback into a named function is how it stops re-running.** A
+  function passed by name is a value, not a call: `svc.on('*', onServer)` and
+  `{@attach zone(rosterZone)}` have no triggers from the body, and Q4 warns only
+  on a helper the expression CALLS. Inline, the same callback's names are triggers
+  (Q5), so `const off = svc.on('*', (m, row) => …rows…)` re-subscribes on every
+  change and leaks the old listener, and `{@attach zone(() => ({ items: roster }))}`
+  re-attaches. Step 2.6 warns where the arrow holds the only triggers; in the
+  script `var off = …` is the other spelling.
 
 **Supersedes** `FJS-D404` (a call follows import watches), the `FJS-1439` rule (a
 `const` calling a local function is derived on the strength of the call) and
@@ -101,7 +111,9 @@ compiler tests parse their output (Invariant 15).
   prop and `$:`, on the `$: deps, handler` untrack machinery. A free name inside
   an inline arrow is a trigger (Q5). `new X(a)`, a tagged template and `a?.()` are
   calls; `{@render s(x)}` is not, since the snippet's own bindings track. A getter
-  must not run twice per render when the triggers are read apart from the value
+  must not run twice per render when the triggers are read apart from the value.
+  The boundary is decided on the SOURCE AST: a call the compiler emits —
+  `$$ctxRead` for `$context`, a prop accessor, `$async` — is never one
 - [ ] 1.2 A property read in a `const` initializer derives it; `warnHandleReads`
   goes
 - [ ] 1.3 Each binding gated on its own reads inside a shared `render()`
@@ -110,18 +122,38 @@ compiler tests parse their output (Invariant 15).
 - [ ] 1.5 Delete `WATCHED_CALLS`, `opaqueLocalCall` and `_isReactive`'s text guesses
 - [ ] 1.6 Flip `watch-follows-calls.test.js` and its siblings
 
-### Phase 2 — The warning
+### Phase 2 — The warnings
 
-Goal: Q3's ruling as amended by Q4 and Q6 (`FJS-D2376`, `FJS-D2378`), both halves.
-Done when: a compiler test and a runtime dev-check test each see a call-only
-binding that names nothing reactive, and the compiler names a local helper's
-missed reads even when the expression names other reactive values.
+Goal: Q3's ruling as amended by Q4, Q6 and Q8 (`FJS-D2376`, `FJS-D2378`,
+`FJS-D2383`), both halves, and a warning for each shape the rule leaves silent.
+Done when: a compiler test or a runtime dev-check test sees each step's shape
+warned and its fixed form quiet, and Phase 0's corpus names every site each new
+warning fires on.
 
 - [ ] 2.1 Compile time: a local helper reads state the expression does not name
-  (Q4) — each missed read is named, whether or not the expression names others
-- [ ] 2.2 Dev runtime: an imported helper read a watched path the expression
-  does not name, and the expression names nothing reactive
+  (Q4) — each missed read is named, whether or not the expression names others;
+  a helper passed by reference, not called, is never warned
+- [ ] 2.2 Dev runtime: an imported helper read a signal or watched path the
+  expression does not name, partial or not (Q8) — router, session, presence and
+  resources are signals
 - [ ] 2.3 `var` alone clears it for an intended one-time read; both `const` forms, destructuring included, are warned (Q6)
+- [ ] 2.4 Compile time: a top-level `var` assigned after init and read in a
+  binding or a derived `const` — always stale, since a binding re-runs only on its
+  own reads (1.3); the fix named is `let`
+- [ ] 2.5 Compile time: a `let` read in a binding is mutated in place — a method
+  that mutates (`push`, `splice`, `sort`, …) or a member write — with no `$:`
+  covering the path and no `x = x` in the same function (RULE 43)
+- [ ] 2.6 Compile time: an inline arrow whose names are its expression's only
+  triggers re-runs what it is handed — `{@attach zone(() => ({ items: roster }))}`
+  re-attaches, `const off = svc.on('*', () => …rows…)` re-subscribes. Q5 is
+  unchanged; the warning names the re-run and offers a named function or `var`.
+  `const cheap = items.filter(i => i.price < max)` is quiet: `items` is outside
+- [ ] 2.7 Dev runtime: a derived `const` re-derived and the value it dropped has
+  `destroy`, `dispose`, `close`, `disconnect`, `unsubscribe` or `abort` — the old
+  one leaked; the fix named is `var`, or a `$: deps, handler` returning cleanup
+
+Today's compiler is silent on all four shapes (probed 2026-11-25); it already
+warns on a `$:` that reads and writes one name.
 
 ### Phase 3 — Sierra handles
 
@@ -147,6 +179,12 @@ Done when: Phase 0's diff is empty and `fli done` is clear.
   `alone` — and the other `presence()` callers (workbench `chat-commands.js`,
   sierra `router/signals.js`, two sierra tests)
 - [ ] 4.5 The ~107 `$: {` blocks against Q2's ruling
+- [ ] 4.6 Callbacks that must not re-run under Q5, into a named function or a
+  `var`: the 7 `const off = <service>.on('*', …)` in basecamp's routes and the
+  23 `{@attach x(() => …)}` getters in 11 files, Haven's `keys` and the dnd zones
+  among them; RULE 64's options-getter idiom in VISION becomes the named getter
+- [ ] 4.7 Every `const` Phase 0 shows going from static to derived whose
+  initializer is `new` or a call: a re-derive never disposes the old value
 
 ### Phase 5 — Doctrine
 
@@ -239,3 +277,22 @@ Done when: each app's drive passes on the new Mesa.
   - **B** — yes: the read half counts, and the runtime suppresses the self-fire
   - **Recommend A** — B makes the block its own trigger; Q2 already rules a write
     is not one.
+- ~~**Q8**~~ **Answered 2026-11-25 (`FJS-D2383`): A — any signal or watched path an imported helper reads during a binding that the expression does not name is warned in dev, partial or not: Q4's runtime twin.** — What the dev runtime check on an imported helper covers. In
+  `{statusLabel(row)}`, an imported `statusLabel` reading `session.level` names
+  `row`, so step 2.2 as written — the expression names nothing, the read is a
+  watched path — stays silent, and Sierra's state is signals, not watched imports.
+  **Recommend A.**
+  - **A** — any signal or watched path an imported helper reads during a binding
+    that the expression does not name is warned in dev, partial or not: Q4's
+    runtime twin
+  - **B** — as step 2.2 is written
+  - **Recommend A** — router, session, presence and resources are signals, so B
+    misses the state an app reads most, and the check costs nothing in production.
+- ~~**Q9**~~ **Answered 2026-11-25 (`FJS-D2384`): A — none: a read subscribes only to watches this component declares.** — What is left of `FJS-D381`'s incidental cover, where a read through the
+  proxy subscribes to a watch another component declared, by mount order.
+  **Recommend A.**
+  - **A** — none: a read subscribes only to watches this component declares
+  - **B** — kept: it can add a render, never miss one asked for
+  - **Recommend A** — B makes a binding's triggers depend on what mounted first,
+    which no reading of the file can show, and dev and production can mount in a
+    different order.

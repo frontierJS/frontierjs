@@ -99,18 +99,18 @@ Read on 2026-11-25:
 
 ## Open questions
 
-- **Q1 — Who is the first caller, and does TPM move onto the connector in this plan?**
+- ~~**Q1 — Who is the first caller, and does TPM move onto the connector in this plan?**~~ **Answered 2026-11-25 (`FJS-D2380`): A — TPM moves. The connector covers TPM's three calls, gets a ruling adding it to `ADMITTED`, and is released at 0.1.0. TPM then adds `@frontierjs/conduit` and `@frontierjs/conduit-ahrefs`, and `ahrefs.ts` becomes an adapter that keeps TPM's sentences. TPM's raw `fetch` is deleted.**
   - **A** — TPM moves. The connector covers TPM's three calls, gets a ruling adding it to `ADMITTED`, and is released at 0.1.0. TPM then adds `@frontierjs/conduit` and `@frontierjs/conduit-ahrefs`, and `ahrefs.ts` becomes an adapter that keeps TPM's sentences. TPM's raw `fetch` is deleted.
   - **B** — Build the connector alone around TPM's calls and keep it held out. TPM stays on its raw `fetch` until a later plan moves it.
   - **C** — The first caller is a new SEO report (Site Explorer: Domain Rating, backlinks, organic keywords) for the monthly marketing audit. TPM is left alone.
   - **Recommend A.** It is the `FJS-D2367` reasoning: two copies of one dialect drift apart and nothing fails. B builds a package nobody calls, the `conduit-airtable` cost. C has no caller in code, only a manual step in a skill.
   - The price of A is a change to a live app that deploys on every push to main, plus a release before it. TPM adding conduit is new work for TPM: a target, a credential resolver and the plugin. Moving TPM's Plausible calls onto conduit at the same time is left out (see Not planned).
-- **Q2 — How much of the API does v1 cover?**
+- ~~**Q2 — How much of the API does v1 cover?**~~ **Answered 2026-11-25 (`FJS-D2381`): A — Only the calls that have a caller: projects (list, add, delete), `verify` through limits-and-usage, and `siteAudit(send, projectId)` reading `/site-audit/projects` for TPM's *Final review* step. All of them are free. Paid reads wait until something calls them.**
   - **A** — Only the calls that have a caller: projects (list, add, delete), `verify` through limits-and-usage, and `siteAudit(send, projectId)` reading `/site-audit/projects` for TPM's *Final review* step. All of them are free. Paid reads wait until something calls them.
   - **B** — A, plus a small set of paid Site Explorer reads: `domainRating`, `metrics` and `backlinksStats`. Each takes a caller-given `maxUnits`, and the connector refuses a call locally if its estimate exceeds that (C9). The estimate comes from a cost table of the chosen fields, taken from the spec. The reply's actual cost is reported.
   - **C** — A general `query(send, endpoint, { select, where, orderBy, limit, maxUnits })` that can reach any GET endpoint, with the full cost table generated from the spec.
   - **Recommend A.** A method with no caller is untested code (`cut-one-level-simpler`), and `FJS-D2369` made the same call for GitHub. The `/site-audit/projects` read is in because TPM's *Final review* step is a real caller: TPM can show the health score beside the checkbox. Moving to B later only adds code, and A's `cost` on every answer is what B's guard is built on.
-- **Q3 — What happens on a 403?**
+- ~~**Q3 — What happens on a 403?**~~ **Answered 2026-11-25 (`FJS-D2382`): A if 0.3 can tell the cases apart, else B.**
   - **A** — `translate` re-kinds a 403 by its `error` text: `plan_refused` (the plan has no API access), `units_exhausted` (no units left, or this key's monthly cap reached), or `auth_failed`. The patterns come from what 0.3 captures.
   - **B** — Every 403 stays `auth_failed`, and the sentence carries Ahrefs' `error` text.
   - **Recommend A if 0.3 can tell the cases apart, else B.** The drive asserts that each body 0.3 captured maps to its kind. A body that matches no pattern falls back to `auth_failed` with the vendor's text, so if Ahrefs changes a message, that case drops to B's behavior with nothing else changed. Before coining `plan_refused`, check whether conduit's `forbidden` already means it. TPM's message today, *Ahrefs refused the key*, is the wrong advice when the key is fine and the month's units are spent: the owner would remake a working key. If 0.3 finds one undifferentiated message, the plan falls back to B and records that here.
@@ -124,15 +124,58 @@ Read on 2026-11-25:
 Goal: the facts the connector branches on are measured, and Q1–Q3 are ruled.
 Done when: each question carries its ruling, and 0.2–0.4 record what they measured under their steps.
 
-- [ ] 0.1 Rule Q1–Q3 through the question tool, after `decision-rules` grades the recommendations.
-- [ ] 0.2 Owner: create an Ahrefs API key with a monthly unit cap (a few thousand units is enough), and say which plan the Kobami workspace is on. Put the key in the scratch env for the probes only, never in a committed file.
-- [ ] 0.3 Probe with that key, using free calls only. Record the status, headers and body of each answer:
+- [x] 0.1 Rule Q1–Q3 through the question tool, after `decision-rules` grades the recommendations. All three went as recommended (see each question).
+- [x] 0.2 Owner: create an Ahrefs API key with a monthly unit cap (a few thousand units is enough), and say which plan the Kobami workspace is on. Put the key in the scratch env for the probes only, never in a committed file.
+  - Given 2026-11-25. The plan is Lite (`"subscription": "Lite, billed monthly"`), with 200,000 units a month for the workspace and a reset date of 2026-12-25.
+  - The key has **no unit cap** (`units_limit_api_key: null`) and **expires 2026-12-19**. TPM's production key needs a later expiry date, and a cap.
+- [x] 0.3 Probe with that key, using free calls only. Record the status, headers and body of each answer:
   - limits-and-usage
   - `domain-rating` on `ahrefs.com`, for the cost headers on a free call
   - the same call with a wrong key, for the 401 body
   - `domain-rating` on a target that costs units with `select` set to one field, which costs 50 units (about $0.03 on Lite). On Starter this captures the 403 or other refusal Q3 depends on; on Lite and up it captures a billed call's headers. The owner approves the spend before it runs.
-- [ ] 0.4 Send 61 requests within a minute to limits-and-usage (free) to capture a real 429. Record whether it has `Retry-After` and what the body says.
-- [ ] 0.5 Read TPM's tests (`actions.test.ts`, `checklist.test.ts`, `preload.ts`) for how they stand in for Ahrefs today, and record which of them the adapter must keep passing.
+  - Measured 2026-11-25, free calls only. Every free answer carries all five `x-api-*` headers.
+    - A free test target **reports what the call would have cost and what it actually cost**: `x-api-units-cost-total: 50`, `x-api-units-cost-total-actual: 0`, `x-api-units-cost-row: 2`, `x-api-rows: 1`, `x-api-cache: no_cache`.
+    - So `costOf` returns both numbers, and a fixture row can check a call's estimated cost without spending units.
+  - **The 401 and 403 bodies are not the spec's `{ "error": string }`.** They are JSON arrays.
+    - A wrong key answers 401 `["Error","Unauthorized"]`.
+    - **No `Authorization` header answers 403 `["Error","Forbidden"]`.** So a 403 is not always the plan or units, and `translate` reads both shapes.
+    - A 400 does follow the spec: `{ "error": "missing argument 'date'" }`. `date` is required on `domain-rating`.
+  - `GET /management/projects` answers all 81 of the workspace's projects in one page (`x-api-rows: 81`). Each row has `project_id` (a string), `url` with a trailing slash (`kobami.com/`), `mode`, `protocol`, `access`, `verified`, `owned_by` and `keyword_count`. The existing projects use `mode: subdomains`, but TPM creates `domain`.
+  - **`GET /site-audit/projects` returns every project's health score and takes no project id.** Each row has `project_id`, `target_url`, `date`, `status` (`Completed`), `health_score` and the error, warning and notice counts. A project never audited has `null` in every field. So `siteAudit(send, projectId)` reads the whole list and picks one row, which is free.
+  - **Paid probe, run 2026-11-25 with the owner's approval.** The owner capped the key at 50 units. Two `domain-rating` calls on different targets, so the second could not be served from cache:
+    - `kobami.com` answered 200, with `x-api-units-cost-total-actual: 50`.
+    - `texmexcleaning.com` answered **403 `{ "error": "API units limit reached. The limit of this API key should be increased. Expected usage: 50, API units left: 0." }`**.
+    - Afterward, limits-and-usage read `units_usage_api_key: 50`. The refused call spent nothing: Ahrefs checks the estimate before it charges.
+  - **So Q3 is A: the cases are distinct.**
+    - 401 `["Error","Unauthorized"]` is a bad key.
+    - 403 `["Error","Forbidden"]` is no key.
+    - 403 `{ error: "API units limit reached…" }` means the allowance is spent.
+  - The plan refusal (a Starter key) cannot be captured on Lite. Neither can the workspace's own limit being reached, as opposed to a key's cap. Whether the workspace one shares the *units limit reached* wording is unknown.
+  - Kinds keep words that already exist, so none is coined:
+    - `quota` for a spent allowance, conduit-resend's and conduit-quo's word.
+    - `forbidden` for a plan refusal, conduit-s3's word. It is matched only once seen.
+    - Any other 403 is `auth_failed`, carrying Ahrefs' text.
+- [x] 0.4 Send 61 requests within a minute to limits-and-usage (free) to capture a real 429. Record whether it has `Retry-After` and what the body says.
+  - Measured 2026-11-25: **no 429 could be produced on free calls.** 65 serial calls to limits-and-usage and 80 concurrent free-target `domain-rating` calls (all within 2 s) all answered 200, at 0 units actual.
+  - The documented 60-a-minute limit is not enforced on free calls. A real 429 would need paid calls, at 50 units each, so it is not captured.
+  - So the sink's 429 arm has no `Retry-After`. `translate` waits 60 s by default, and uses `Retry-After` when Ahrefs sends one.
+- [x] 0.5 Read TPM's tests (`actions.test.ts`, `checklist.test.ts`, `preload.ts`) for how they stand in for Ahrefs today, and record which of them the adapter must keep passing.
+  - Read 2026-11-25. Only `actions.test.ts` § Ahrefs touches the vendor, in five rows:
+    - add a new domain: the POST body `{ project_name, url, mode: 'domain', protocol: 'both', access: 'shared' }`
+    - keep an existing domain, matching on `www` and the protocol
+    - remove by `project_ids`, where a missing domain answers `null`
+    - a 403 says *Ahrefs refused the key*
+    - `runAction`'s two messages
+  - They stand in for Ahrefs with an injected `fetchImpl` (`Deps.fetchImpl` in `actions.ts`), so 4.2 swaps that for a `send` or the package's sink. The message strings and the POST body must stay as they are.
+  - The *refused the key* row changes meaning: after 0.3, a 403 means no `Authorization` header was sent, and TPM's message for a bad key belongs on the 401.
+  - `checklist.test.ts`, `stages.test.ts` and `templates.test.ts` cover only the `dep-ahrefs` step's template row. `preload.ts` clears `AHREFS_API_KEY`. None of them calls Ahrefs.
+
+**Done 2026-11-25.** Every fact the connector depends on was measured with one key on Lite, for 50 units in all.
+- The 403 cases differ by their body, so Q3 is A.
+- Ahrefs' error bodies come in two shapes, not the spec's one.
+- No 429 can be produced on free calls.
+- The Site Audit health score is one free list covering every project.
+- TPM's tests stand in for Ahrefs with an injected `fetchImpl`.
 
 ### Phase 1 — The package and its errors
 
@@ -141,7 +184,14 @@ Done when: `bun run drive` passes the error rows against the sink, including the
 
 - [ ] 1.1 Copy `conduit-plausible`'s layout: `src/index.ts`, `src/errors.ts`, `src/types.ts`, `sink.ts`, `test/ahrefs.drive.ts`, and scripts `test`, `drive` and `typecheck`. Add a row to the Packages table in the root `CLAUDE.md`, then run `fli ws:atlas`, `ws:exports`, `ws:deps` and `ws:surface`.
 - [ ] 1.2 Write `ahrefsTarget({ ref?, address?, id? })` and `bindSend`. The target is a `bearer` target with `Accept: application/json`.
-- [ ] 1.3 Write `translate(error, meta)` (C3). It answers `auth_failed` (401), Q3's 403 split, `rate_limited` (429, with `retryAfterMs` taken from 0.4's finding or else 60 s), `bad_request` with Ahrefs' `error` text (400), and conduit's own kinds otherwise.
+- [ ] 1.3 Write `translate(error, meta)` (C3). It answers:
+  - `auth_failed` for a 401
+  - for a 403, `quota` when the `error` text says *units limit reached*, else `auth_failed` with Ahrefs' text. The body arrives in two shapes, an array and `{ error }`, and both are read.
+  - `rate_limited` for a 429, with `retryAfterMs` from `Retry-After`, else 60 s
+  - `bad_request` with Ahrefs' `error` text for a 400
+  - conduit's own kinds otherwise
+
+  The drive has one row for each body 0.3 captured. Its negative control drops the *units limit* match, and the `quota` row then reads `auth_failed`.
 - [ ] 1.4 Write `costOf(meta)`, which reads the `x-api-*` headers into `{ rows, perRow, total, actual, cache }`. Every call's answer carries it.
 - [ ] 1.5 Write the sink (C10): projects state for each instance, the cost headers, and fault arms for `lost`, a 429, a 403 for each case 0.3 recorded, and a 401.
 
@@ -171,7 +221,7 @@ Goal: TPM has no Ahrefs dialect of its own, only an adapter (Q1 A).
 Done when: TPM's `bun run check` passes, and the *Add to Ahrefs* and *Remove from Ahrefs* actions are driven in a browser against the package's sink.
 
 - [ ] 4.1 Add `@frontierjs/conduit` and `@frontierjs/conduit-ahrefs` to TPM, with tarball URLs and overrides like its other packages. Declare the Ahrefs target, and have its credential read `AHREFS_API_KEY`.
-- [ ] 4.2 Turn `ahrefs.ts` into an adapter. It keeps TPM's sentences, `ahrefsReady`, and the return values `actions.ts` and `integrations.service.ts` read. A `units_exhausted` refusal gets its own sentence.
+- [ ] 4.2 Turn `ahrefs.ts` into an adapter. It keeps TPM's sentences, `ahrefsReady`, and the return values `actions.ts` and `integrations.service.ts` read. A `quota` refusal gets its own sentence: the key's monthly units are spent, so raise its limit in Ahrefs. TPM's *refused the key* sentence moves to the 401.
 - [ ] 4.3 Show the Site Audit health score on the *Final review* step: what `siteAudit` returns, with a link to the audit.
 - [ ] 4.4 Drive both actions and the health score through TPM's UI against the package's sink, using `drive-browser`.
 - [ ] 4.5 Owner: push to TPM's main, which deploys to tpm.awe.dev. Then run *Add to Ahrefs* once on a real client, or on a scratch domain the owner deletes afterward.

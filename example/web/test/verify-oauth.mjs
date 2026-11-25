@@ -126,10 +126,27 @@ async function hop(url, j, { sendCookies = true } = {}) {
   return res
 }
 
+// A start the API could not begin redirects to its own error page: a relative
+// Location, which fetch throws on with the oauth_error nowhere in the stack.
+// The plugin answers `unavailable` for ANY throw inside oauthBegin and logs
+// none. One is a shop whose autoMigrate was blocked on data loss: it serves the
+// old shape, so OauthFlow lacks a column, and only the boot's warning says so.
+async function startFlow(j, query = '') {
+  const a = await hop(`${API}/api/auth/oauth/devidp${query}`, j)
+  const to = a.headers.get('location') ?? ''
+  if (!to.startsWith(IDP)) {
+    console.error(`  ✗ the API did not send the flow to the IdP — ${a.status} → ${to || '(no Location)'}`)
+    console.error('    oauth_error=unavailable is any throw inside oauthBegin. A shop db whose migration was blocked is one:')
+    console.error('    DEBUG=1 shows the api\'s "NOT on this build\'s schema" line, and `bun run reset` clears it')
+    stopAll()
+    process.exit(1)
+  }
+  return a
+}
+
 /** Walk the whole flow. `stopBefore` returns the callback URL unfollowed. */
 async function signIn(j, { returnTo, sendCookieToCallback = true } = {}) {
-  const startUrl = `${API}/api/auth/oauth/devidp` + (returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : '')
-  const a = await hop(startUrl, j)
+  const a = await startFlow(j, returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : '')
   const idpUrl = a.headers.get('location')
   const b = await fetch(idpUrl, { redirect: 'manual' })
   const cbUrl = b.headers.get('location')
@@ -244,8 +261,7 @@ console.log('\nrefusals')
   // Login CSRF: the callback URL, handed to a browser that never started a flow.
   await setNext({ sub: `s-csrf-${uniq}`, email: `csrf-${uniq}@shop.test`, verified: true, deny: false })
   const j = jar()
-  const startUrl = `${API}/api/auth/oauth/devidp`
-  const a = await hop(startUrl, j)
+  const a = await startFlow(j)
   const b = await fetch(a.headers.get('location'), { redirect: 'manual' })
   const victim = jar()                      // a different browser entirely
   const c = await hop(b.headers.get('location'), victim, { sendCookies: true })

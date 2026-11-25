@@ -775,6 +775,62 @@ describe('how the machine swapped, on the row', () => {
     })
   })
 
+  describe('the sweep a release queues (FJS-D2048)', () => {
+    const waiting = () => (env.system as any).maintenanceRun.findMany({ where: { serverId: box.id, status: 'pending' } })
+
+    /** One release on `box`, its machine answering, and the hub's queue answering as `dispatch` does. */
+    const release = async (dispatch: (job: any, data: any) => Promise<unknown>) => {
+      const { app, first, current } = await anAppWithHistory()
+      const sys = env.system as any
+      const replacement = await sys.deployment.create({ data: {
+        appId: app.id, workspaceId: ws.id, toImage: first.toImage, trigger: 'rollback',
+        previousDeploymentId: current.id, configSnapshot: first.configSnapshot } })
+      await sys.deploymentStep.create({ data: { deploymentId: replacement.id, position: 0, name: 'Start container' } })
+      // `maintenanceRuns.run` reads `$.app`, the real app and not a proxy of
+      // it, so the machine and the queue are answered on the app's own two.
+      const { conduit, jobs } = env.app
+      const real = { resolve: conduit.resolve, send: conduit.send, dispatch: jobs.dispatch }
+      conduit.resolve = async () => ({ pinned_cert: true })
+      conduit.send    = async () => ({ data: {} })
+      jobs.dispatch   = dispatch
+      try {
+        await env.app.runAs(admin.id, { tenant: ws.id }, () =>
+          (deploymentRun as any).handler({ app: env.app, data: { deployment_id: replacement.id } }))
+      } finally {
+        conduit.resolve = real.resolve; conduit.send = real.send; jobs.dispatch = real.dispatch
+      }
+      return (await sys.deployment.findUnique({ where: { id: replacement.id } })).status
+    }
+
+    test('a release queues an images-only sweep of its machine, as the deployer, and a second release adds none', async () => {
+      const sys = env.system as any
+      await sys.maintenanceRun.updateMany({ where: { serverId: box.id, status: 'pending' }, data: { status: 'success' } })
+      const dispatched: any[] = []
+      const record = async (job: any, data: any) => { dispatched.push({ name: job.name, data }); return {} }
+
+      expect(await release(record)).toBe('success')
+      const runs = await waiting()
+      expect(runs).toHaveLength(1)
+      expect(runs[0]).toMatchObject({ kind: 'cleanup', keepImages: 3, requestedBy: admin.id })
+      expect([...runs[0].targets].sort()).toEqual(['dangling_images', 'unused_images'])
+      expect(dispatched.filter(d => d.name === 'maintenance:run' && d.data.runId === runs[0].id)).toHaveLength(1)
+
+      expect(await release(record)).toBe('success')
+      expect((await waiting()).map((r: any) => r.id)).toEqual([runs[0].id])
+    })
+
+    test('a queue that refuses the sweep leaves the release a success', async () => {
+      const sys = env.system as any
+      await sys.maintenanceRun.updateMany({ where: { serverId: box.id, status: 'pending' }, data: { status: 'success' } })
+      let refused = 0
+      expect(await release(async (job: any) => {
+        if (job.name === 'maintenance:run') { refused++; throw new Error('queue is down') }
+        return {}
+      })).toBe('success')
+      expect(refused).toBe(1)
+    })
+  })
+
   test('a rollback onto the older schema is stop-first, and the row says why', async () => {
     const row = await startAgainst({ swap: 'stop-first', swap_reason: 'this release is a contract' })
     expect(row.status).toBe('success')

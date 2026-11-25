@@ -692,7 +692,7 @@ try {
   const secretPost = await postMessage(alice, { channelExternalId: ids.secret, message: 'private pin' })
   const bobPinSecret = await pinPost(bob, secretPost.row!.externalId)
   t('pin.anyMemberPinsAndTheFrameSays', {
-    patchIsTheAuthors: bobPatch.error ? translate(bobPatch.error, bobPatch.meta.status).kind : 'sent', pinned: pin.ok, listed: pinnedList.rows?.map(r => r.externalId), isPinnedOnTheRow: pinnedList.rows?.[0]?.isPinned,
+    patchIsTheAuthors: bobPatch.error ? translate(bobPatch.error, bobPatch.meta.status).kind : 'sent', pinned: pin.ok, listed: pinnedList.rows?.map(r => r.externalId === pinId), isPinnedOnTheRow: pinnedList.rows?.[0]?.isPinned,
     frame: lAlice.of('post_edited').filter(e => e.payload.post.externalId === pinId).map(e => e.payload.post.isPinned), unpinned: unpin.ok, listedAfter: (await listPinned(alice, ids.open)).rows?.length, gone: offRoomPin.error?.kind, notAMember: bobPinSecret.error?.kind,
   })
 
@@ -1006,7 +1006,7 @@ process.exit(report(got, {
   'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, uploadChannel: true, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
   'profile.imageOfAnyUser':                    { png: true, type: 'image/png', noUser: 'gone', notAnId: 'mattermost: profileImage takes a Mattermost user id' },
   'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsSentOnce:1},
-  'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2b00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
+  'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:[true],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},
   'thread.followUnfollowReadAll': {followed:[true,true],unfollowed:[true,true],frames:[true,false],allRead:true,readNamesNoThread:true,notYours:'forbidden'},
   'thread.everyFollowerHearsAReply': {follower:[true,[1]],earlierReplier:[true,[0,1]]},

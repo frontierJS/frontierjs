@@ -49,6 +49,9 @@ const REPORT  = !!process.env.DOC_EXAMPLES_REPORT
 const ONLY    = process.env.DOC_EXAMPLES_ONLY   // a substring of file:line
 const KEY     = 'a'.repeat(64)                  // any 32 bytes; @encrypted needs one
 const TIMEOUT = 15_000
+// The rerun's budget, so only a hang crosses it: at 15s on a box loaded by
+// other sessions' suites the rerun died too and blamed the example (FJS-4631).
+const RERUN_TIMEOUT = 90_000
 
 // ─── the corpus ───────────────────────────────────────────────────────────────
 
@@ -131,7 +134,7 @@ function moduleFor(block: Block) {
   return [...head, ...imports, 'try {', rest, '} catch (e) { process.exit(0) }', "console.error('expected the example to throw'); process.exit(3)"].join('\n')
 }
 
-async function runBlock(block: Block) {
+async function runBlock(block: Block, budget: number) {
   const dir = mkdtempSync(join(tmpdir(), 'ls-doc-example-'))
   try {
     if (block.schema) writeFileSync(join(dir, 'schema.lite'), block.schema)
@@ -139,12 +142,12 @@ async function runBlock(block: Block) {
     writeFileSync(file, moduleFor(block))
     const proc = Bun.spawn(['bun', file], { cwd: dir, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, NODE_ENV: 'test', S3_KEY: 'key', S3_SECRET: 'secret' } })
     let timedOut = false
-    const timer = setTimeout(() => { timedOut = true; proc.kill() }, TIMEOUT)
+    const timer = setTimeout(() => { timedOut = true; proc.kill() }, budget)
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
     clearTimeout(timer)
     // A kill reads as a bare `exit 143`, which looks like the example crashing. `host` marks it for runAll's rerun.
     if (timedOut || proc.signalCode)
-      throw Object.assign(new Error(timedOut ? `timed out after ${TIMEOUT}ms` : `killed by ${proc.signalCode}`), { host: true })
+      throw Object.assign(new Error(timedOut ? `timed out after ${budget}ms` : `killed by ${proc.signalCode}`), { host: true })
     if (code !== 0) throw new Error(stderr.trim() || `exit ${code}`)
     return stderr
   } finally {
@@ -179,10 +182,10 @@ for (const file of corpus())
 // and in series that is a minute and a half.
 const results = new Map<string, Error | null>()
 
-async function attempt(block: Block): Promise<(Error & { host?: boolean }) | null> {
+async function attempt(block: Block, budget = TIMEOUT): Promise<(Error & { host?: boolean }) | null> {
   try {
     if (block.lang === 'lite') await buildSchema(block.body)
-    else await runBlock(block)
+    else await runBlock(block, budget)
     return null
   } catch (e) { return e as Error }
 }
@@ -195,9 +198,9 @@ function verdict(block: Block, err: Error | null) {
 
 async function runAll() {
   // Eight wide beside other lanes' suites, the heaviest block (README's
-  // mutationScore, 3s alone) crossed the 15s kill and failed as the example
+  // mutationScore, 4-7s alone) crossed the 15s kill and failed as the example
   // (FJS-4042, FJS-4400). A clock or signal kill there is rerun once after the
-  // pool drains, and fails only if it dies again there.
+  // pool drains, under RERUN_TIMEOUT, and fails only if it dies again there.
   const again: typeof all = []
   let next = 0
   const worker = async () => {
@@ -210,14 +213,15 @@ async function runAll() {
   }
   await Promise.all(Array.from({ length: 8 }, worker))
   for (const { id, block } of again) {
-    const err = await attempt(block)
-    if (err?.host) err.message += ' in the pool and again run alone, so it is the example and not host load'
+    const err = await attempt(block, RERUN_TIMEOUT)
+    if (err?.host) err.message += ' run alone after dying in the pool, so it is the example and not host load'
     results.set(id, verdict(block, err))
   }
 }
 
 describe('every example in the docs runs', () => {
-  beforeAll(runAll, TIMEOUT * 10)
+  // The pool, then a rerun at RERUN_TIMEOUT for each of the two heavy fences.
+  beforeAll(runAll, TIMEOUT * 10 + RERUN_TIMEOUT * 2)
 
   for (const { id, block } of all)
     test(`${id} (${block.lang})`, () => {

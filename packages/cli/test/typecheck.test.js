@@ -155,20 +155,23 @@ describe('scripts/typecheck.mjs refuses to answer when it checked nothing', () =
     expect(r.stdout).not.toContain('clean')
   })
 
-  test('the workspace root is not a package: say so, name the packages', () => {
-    const r = run(ROOT)
+  // A bare run at the root typechecks every member, a minute or more of tsc,
+  // so the root is asked only what it refuses.
+  test('a baseline at the workspace root is refused: it is one package\'s ceiling', () => {
+    const r = run(ROOT, '--baseline', '3')
     expect(r.status).toBe(2)
     expect(r.stdout).not.toContain('clean')
-    expect(r.stderr).toContain('no package')
-    expect(r.stderr).toContain('packages/junction')
+    expect(r.stderr).toContain('--baseline')
   })
 
-  test('a directory with no package.json is not a package either', () => {
+  test('a directory with no package.json is not a package: say so, name the packages', () => {
     const dir = mkdtempSync(join(tmpdir(), 'fjs-965-'))
     try {
       const r = run(dir)
       expect(r.status).toBe(2)
       expect(r.stdout).not.toContain('clean')
+      expect(r.stderr).toContain('no package')
+      expect(r.stderr).toContain('packages/junction')
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 })

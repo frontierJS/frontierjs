@@ -190,13 +190,17 @@ console.log('\nthe cursor is a column the schema named')
 console.log('\nthe two flags that belong to the CLI')
 {
   // `--system` and `--include-protected` exist on `runExport` and must not be
-  // reachable from a URL. Asserted as a PAIR with the ordinary extract, or a
-  // route that had broken entirely would pass both.
+  // reachable from a URL. Neither is a route parameter, so each reads as a
+  // column filter and is refused by name; an ignored one would stream rows.
+  // Paired with the ordinary extract, or a route that refused everything
+  // would pass.
   const forged = await take('/exports/Order?system=true&includeProtected=true', shopperToken)
-  const forgedRows = (await rows(forged)).length
+  const forgedBody = await forged.text()
   const plain = (await rows(await take('/exports/Order', shopperToken))).length
-  check('neither flag is a query parameter — the extract is still this caller\'s',
-        [forgedRows, forgedRows === plain, forgedRows < staffCount], [plain, true, true])
+  check('neither flag is a query parameter — each is refused by name, and no row leaves',
+        [forged.status, forgedBody.includes('system') || forgedBody.includes('includeProtected'),
+         plain > 0 && plain < staffCount],
+        [400, true, true])
 
   check('an undeclared model is a 404 that names what IS exportable',
         await (async () => {

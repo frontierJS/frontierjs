@@ -14921,6 +14921,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2384"></a>2026-11-25 · `FJS-D2384` — Q9 — None: a read subscribes only to watches this component declares.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (kept: it can add a render, never miss one asked for).
+
+The paper's recommendation, taken as written: B makes a binding's triggers depend on what mounted first, which no reading of the file can show, and dev and production can mount in a different order.
+
+### <a id="fjs-d2383"></a>2026-11-25 · `FJS-D2383` — Q8 — Any signal or watched path an imported helper reads during a binding that the expression does not name is warned in dev, partial or not: Q4's runtime twin.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (as step 2.2 is written).
+
+The paper's recommendation, taken as written: router, session, presence and resources are signals, so B misses the state an app reads most, and the check costs nothing in production.
+
 ### <a id="fjs-d2379"></a>2026-11-25 · `FJS-D2379` — Q7 — No: any assignment target — `=`, `+=`, `++` — is a write and never a trigger.
 
 Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (yes: the read half counts, and the runtime suppresses the self-fire).
@@ -18512,6 +18524,14 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2048"></a>2026-11-25 · `FJS-D2048` — What triggers the disk sweep nobody runs by hand: a nightly fleet cron, a sweep after each release, or a disk-percent threshold — Queue the sweep from the end of `deployment-run.job.ts` for the release's server, as the person who deployed (`runsAsCaller` keeps working, actor and tenant are in scope). Reclaims exactly when disk is spent, but `build_cache` is a default target, so every release throws away the cache the next build wants; it would have to drop `build_cache` from the post-release set, leaving the largest figure (5.2 GB of 8.6 on yuma) to a manual run.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a nightly cron job (`cleanup-sweep.job.ts`, `runsAsApp`, the `server-reachability` shape) that reads every `online` server across workspaces and queues the default targets with `keepImages` 3 through one shared `queueSweep` the `run` method also calls; `maintenance-run.job.ts` gains the app-mode path `job-run.job.ts` has (`requestedBy` null, written as the app). Bounded cost (one sweep a night), deploys stay fast, but up to a day of builds (about 0.9 GB each) accumulate between sweeps), **C** (a threshold: `server-reachability`'s heartbeat path (or `platform-observe`) queues the sweep when `server.diskPercent` crosses a setting. Spends nothing on a quiet machine, but adds a setting and a hysteresis rule, and acts only after the disk is already high — the same place `FJS-3908`'s headroom check wants a warning, not a delete).
+
+Against the recommendation (**A**): the owner ruled it 2026-11-25: reclaim when disk is spent, and the flaw B names is removed by sweeping images only (dangling_images + unused_images, keepImages 3), so the build cache survives back-to-back releases; build cache stays a person's press until a cap is built (the owner named 10 GB), and C reopens only if rows show a machine still filling.
+
+**As built:** `deployment-run.job.ts` calls `maintenanceRuns.run` in an `afterward(...)` once the release is recorded, with `RELEASE_SWEEP` (`dangling_images`, `unused_images`) and `RELEASE_KEEP_IMAGES` 3, and skips a machine that already has a sweep `pending`. A sweep that cannot be queued is a log line and never a failed release (`FJS-3852`). `build_cache`, `stopped_containers` and `unused_volumes` stay a person's press.
 
 ### <a id="fjs-d2362"></a>2026-11-25 · `FJS-D2362` — Branch port blocks 3–5 sit in Linux's ephemeral range (32768–60999): reserve them from the kernel, cap branches at 2, re-map them, or keep `strictPort`'s refusal — Re-map branches 3–5 to a non-ephemeral offset. No 2000-wide block below 61000 is free past 28xxx, and 61000+ is inside the macOS range, so this breaks D841's "the parent's port with a leading digit".
 
@@ -23436,6 +23456,24 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2382"></a>2026-11-25 · `FJS-D2382` — Q3 — What happens on a 403 — A if 0.3 can tell the cases apart, else B.
+
+Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **A** was picked as the recommendation qualifies it (*A if 0.3 can tell the cases apart, else B*) over **B** (Every 403 stays `auth_failed`, and the sentence carries Ahrefs' `error` text).
+
+A only if Phase 0.3's captured refusals can be told apart by their error text; otherwise B (one auth_failed carrying Ahrefs' text) is recorded under 0.3. A body that matches no pattern falls back to auth_failed with the vendor's text.
+
+### <a id="fjs-d2381"></a>2026-11-25 · `FJS-D2381` — Q2 — How much of the API does v1 cover — Only the calls that have a caller: projects (list, add, delete), `verify` through limits-and-usage, and `siteAudit(send, projectId)` reading `/site-audit/projects` for TPM's *Final review* step. All of them are free. Paid reads wait until something calls them.
+
+Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **A** was picked over **B** (A, plus a small set of paid Site Explorer reads: `domainRating`, `metrics` and `backlinksStats`. Each takes a caller-given `maxUnits`, and the connector refuses a call locally if its estimate exceeds that (C9). The estimate comes from a cost table of the chosen fields, taken from the spec. The reply's actual cost is reported), **C** (A general `query(send, endpoint, { select, where, orderBy, limit, maxUnits })` that can reach any GET endpoint, with the full cost table generated from the spec).
+
+The paper's recommendation, taken as written: A method with no caller is untested code (`cut-one-level-simpler`), and `FJS-D2369` made the same call for GitHub. The `/site-audit/projects` read is in because TPM's *Final review* step is a real caller: TPM can show the health score beside the checkbox. Moving to B later only adds code, and A's `cost` on every answer is what B's guard is built on.
+
+### <a id="fjs-d2380"></a>2026-11-25 · `FJS-D2380` — Q1 — Who is the first caller, and does TPM move onto the connector in this plan — TPM moves. The connector covers TPM's three calls, gets a ruling adding it to `ADMITTED`, and is released at 0.1.0. TPM then adds `@frontierjs/conduit` and `@frontierjs/conduit-ahrefs`, and `ahrefs.ts` becomes an adapter that keeps TPM's sentences. TPM's raw `fetch` is deleted.
+
+Asked in [`IDEAS/conduit-ahrefs.md`](IDEAS/conduit-ahrefs.md) § Open questions. **A** was picked over **B** (Build the connector alone around TPM's calls and keep it held out. TPM stays on its raw `fetch` until a later plan moves it), **C** (The first caller is a new SEO report (Site Explorer: Domain Rating, backlinks, organic keywords) for the monthly marketing audit. TPM is left alone).
+
+The paper's recommendation, taken as written: It is the `FJS-D2367` reasoning: two copies of one dialect drift apart and nothing fails. B builds a package nobody calls, the `conduit-airtable` cost. C has no caller in code, only a manual step in a skill. - The price of A is a change to a live app that deploys on every push to main, plus a release before it. TPM adding conduit is new work for TPM: a target, a credential resolver and the plugin. Moving TPM's Plausible calls onto conduit at the same time is left out (see Not planned).
 
 ### <a id="fjs-d2370"></a>2026-11-25 · `FJS-D2370` — Q5 — Whether fli's `github:*` commands move onto the connector — Not in this plan. fli's raw `fetch` with a classic token stays a second GitHub REST path. It reopens when fli sends through conduit at all, which it does nowhere today.
 
