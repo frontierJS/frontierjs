@@ -359,6 +359,10 @@ describe('a git container App publishes its site/ after the release', () => {
       } }
     })
     try {
+      // The release runs as a queued job and createTestEnv starts no worker.
+      // Started here, not in beforeAll: the in-flight tests above need their
+      // releases to stay pending.
+      await env.app.jobs.start()
       const app: any = await aGitApp()
       await apps().patch(app.id, { volumePath: '/db' })
       await (env.system as any).variable.create({ data: { workspaceId: ws.id, environmentId: environment.id, appId: app.id, key: 'SITE_SECRET', isSecret: true, secretValue: 's3' } })

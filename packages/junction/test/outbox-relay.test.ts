@@ -379,7 +379,7 @@ describe('a restored database holds what its backup had not delivered', () => {
     const dir  = mkdtempSync(join(tmpdir(), 'outbox-restore-'))
     const live: any = await createClient({ db: join(dir, 'app.db'), schema: SCHEMA })
     const sent = await enqueue(live, 'mail.welcome')
-    await live.$backup(join(dir, 'backup.db'))
+    await live.asSystem().$backup(join(dir, 'backup.db'))
     // Delivered after the backup was taken — the mark the restore rewinds.
     await deliverOutbox({ db: live, jobs: goodQueue() } as unknown as App)
     live.$close()

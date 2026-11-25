@@ -41,7 +41,10 @@ const PACKAGES = resolve(HERE, '../../../../packages')
  * A `private` package is out of the walk by its own manifest and needs no entry
  * here; the first version of this list carried one and the check refused it.
  */
-export const HELD_BACK = {}
+export const HELD_BACK = {
+  '@frontierjs/claude':
+    'Published to packages.frontierjs.com for prototypes (FJS-D2323), not to npm, so a described page would print an npm install that fails.',
+}
 
 let cached = null
 

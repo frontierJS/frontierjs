@@ -52,16 +52,23 @@
 // minted from it is that person's, so `my/profile.json` answers their id and a
 // create is theirs. `{ revoke: <refresh token> }` ends one grant alone.
 //
-// Signing in is RFC 7591 and RFC 8628 on the same origin: `POST
-// /oauth/clients` (JSON) registers a public client that names the device_code
-// grant; `POST /oauth/device_authorizations` answers a device code for a
-// registered client, polled at `/oauth/tokens` as `authorization_pending`
-// until `/_sink/device` approves (`{ approve: <user code>, person? }`) or
-// refuses (`{ deny }`) it, and `expired_token` after `deviceLife` seconds.
-// An approved code answers once, with a refresh token the grants now hold.
+// Signing in is RFC 7591 and an authorization code with PKCE on the same
+// origin, refused as `app.basecamp.com` refuses it (measured 2026-11-24): `POST
+// /oauth/clients` (JSON) without `redirect_uris` is `400`
+// `invalid_redirect_uri`, and one naming any grant but authorization_code and
+// refresh_token is `400` `invalid_client_metadata`; the `201` names
+// `response_types: ["code"]`. `GET /oauth/authorizations/new` stands in for a
+// person already signed in who approves at once: a known client, a registered
+// `redirect_uri`, `response_type=code` and an S256 challenge are a `302` to the
+// redirect with `code`, `state` and `iss`, and anything else is a `400` that
+// redirects nowhere. `/_sink/arm` `{ authorize: 'deny' }` makes the next one
+// `error=access_denied`, and `{ authorize: { person } }` grants it as that
+// person. A code is good once for `codeLife` seconds (default 60), at
+// `/oauth/tokens` with its client, its redirect URI and the verifier whose
+// SHA-256 is the challenge; any miss is `invalid_grant`, as is a code spent.
+// The device_code grant is `unsupported_grant_type`.
 // `GET /authorization.json` names the bearer's identity and its accounts: 999,
-// plus `accounts` for a drive that needs more than one. Whether Basecamp lets
-// a registered client take the device grant is unmeasured.
+// plus `accounts` for a drive that needs more than one.
 //
 // The event feed (3.1) is `GET /events.json` over 0.2's replay, oldest first,
 // `feedPage` a page (default 100). A position token names the last event
@@ -96,13 +103,12 @@
 
 import { readFileSync } from 'node:fs'
 
-export interface BasecampSinkOptions { port?: number; token?: string; projects?: number; refreshToken?: string; people?: Record<string, number>; tokenLife?: number; feedPage?: number; ticketLife?: number; beatMs?: number; deviceInterval?: number; deviceLife?: number; accounts?: { product: string; id: number; name: string }[] }
+export interface BasecampSinkOptions { port?: number; token?: string; projects?: number; refreshToken?: string; people?: Record<string, number>; tokenLife?: number; feedPage?: number; ticketLife?: number; beatMs?: number; codeLife?: number; accounts?: { product: string; id: number; name: string }[] }
 type Answer = { status: number; body?: unknown; headers?: Record<string, string>; times?: number }
-type Armed = { answer?: Answer; deviceLife?: number; rateLimit?: { retryAfter: number }; failNext?: boolean; forbidden?: boolean; inactive?: boolean; lost?: boolean; expire?: boolean; refuseRefresh?: boolean; revoke?: string; rotate?: boolean; tokenLife?: number; epoch?: number; feedPage?: number; hangUp?: boolean; ticketLife?: number; beatMs?: number }
+type Armed = { answer?: Answer; codeLife?: number; authorize?: 'deny' | { person: number }; rateLimit?: { retryAfter: number }; failNext?: boolean; forbidden?: boolean; inactive?: boolean; lost?: boolean; expire?: boolean; refuseRefresh?: boolean; revoke?: string; rotate?: boolean; tokenLife?: number; epoch?: number; feedPage?: number; hangUp?: boolean; ticketLife?: number; beatMs?: number }
 type Json = Record<string, any>
 
 const ACCOUNT = '999'
-const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 const GEARS = [15, 30, 50, 100]
 const gear = (page: number) => GEARS[Math.min(page, GEARS.length) - 1]
 const NO_UA = 'Provide a User-Agent header in the following format: My App (https://example.com/myapp)\n'
@@ -153,10 +159,10 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
   const minted = new Map<string, { until: number; person: number | null }>()
   const profileOf = (person: number | null | undefined) => person ? { ...fixture('profile.json'), id: person } : fixture('profile.json')
   let mints = 0
-  /** Registered client ids, and each device code's sign-in, until it is spent or expires. */
-  const clients = new Set<string>()
-  const devices = new Map<string, { client: string; userCode: string; until: number; state: 'pending' | 'approved' | 'denied'; person: number | null }>()
-  let deviceLife = opts.deviceLife ?? 900, deviceSeq = 0
+  /** Registered client id → its redirect URIs, and each authorization code until it is spent or expires. */
+  const clients = new Map<string, string[]>()
+  const codes = new Map<string, { client: string; redirectUri: string; challenge: string; until: number; person: number | null }>()
+  let codeLife = opts.codeLife ?? 60, codeSeq = 0, authorize: Armed['authorize'] = undefined
   const hidden = new Set<number>()
   const hanging: (() => void)[] = []
   /** Rows made by a create or a seed, per list path. */
@@ -284,7 +290,7 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
       if (url.pathname === '/_sink/seen')    return Response.json({ requests: seen, cable: cableSent, open: cables.size })
       if (url.pathname === '/_sink/reset')   {
         seen.length = 0; answer = null; lost = false; inactive = false; hidden.clear(); rows = null; made.clear()
-        clients.clear(); devices.clear(); deviceSeq = 0; deviceLife = opts.deviceLife ?? 900
+        clients.clear(); codes.clear(); codeSeq = 0; codeLife = opts.codeLife ?? 60; authorize = undefined
         minted.clear(); regrant(); refuseRefresh = false; rotate = false; tokenLife = opts.tokenLife ?? 3600
         feed = null; epoch = 0; feedPage = opts.feedPage ?? 100
         cableSent.length = 0; ticketsMinted = 0; tickets.clear(); ticketLife = opts.ticketLife ?? 120; beatMs = opts.beatMs ?? 3000
@@ -299,7 +305,8 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
         if (a.refuseRefresh) refuseRefresh = true
         if (a.rotate) rotate = true
         if (a.tokenLife !== undefined) tokenLife = a.tokenLife
-        if (a.deviceLife !== undefined) deviceLife = a.deviceLife
+        if (a.codeLife !== undefined) codeLife = a.codeLife
+        if (a.authorize !== undefined) authorize = a.authorize
         if (a.epoch !== undefined) epoch = a.epoch
         if (a.feedPage !== undefined) feedPage = a.feedPage
         if (a.ticketLife !== undefined) ticketLife = a.ticketLife
@@ -346,13 +353,7 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
         if (row) Object.assign(row, patch)
         return Response.json({ ok: !!row })
       }
-      if (url.pathname === '/_sink/device') {
-        const { approve, deny, person = null } = (await req.json()) as { approve?: string; deny?: string; person?: number | null }
-        const d = [...devices.values()].find(v => v.userCode === (approve ?? deny))
-        if (d) { d.state = approve ? 'approved' : 'denied'; d.person = person }
-        return Response.json({ ok: !!d })
-      }
-      if (req.method === 'POST' && (url.pathname === '/oauth/clients' || url.pathname === '/oauth/device_authorizations')) {
+      if (req.method === 'POST' && url.pathname === '/oauth/clients') {
         const text = await req.text()
         const isJson = req.headers.get('content-type')?.startsWith('application/json')
         const body = (isJson ? JSON.parse(text || '{}') : Object.fromEntries(new URLSearchParams(text))) as Json
@@ -364,17 +365,37 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
           if (!a.times || --a.times <= 0) answer = null
           return reply(a.body, a.status)
         }
-        if (url.pathname === '/oauth/clients') {
-          if (!isJson) return reply({ error: 'invalid_client_metadata', error_description: 'Registration takes application/json.' }, 400)
-          if (body.token_endpoint_auth_method !== 'none' || !body.grant_types?.includes(DEVICE_GRANT) || !body.client_name) return reply({ error: 'invalid_client_metadata', error_description: 'A public client names itself, token_endpoint_auth_method none and the device_code grant.' }, 400)
-          const id = `bc_client_${clients.size + 1}`
-          clients.add(id)
-          return reply({ client_id: id, client_id_issued_at: Math.floor(Date.now() / 1000), client_name: body.client_name, grant_types: body.grant_types, token_endpoint_auth_method: 'none', scope: body.scope }, 201)
+        if (!isJson) return reply({ error: 'invalid_client_metadata', error_description: 'Registration takes application/json.' }, 400)
+        const uris = body.redirect_uris
+        if (!Array.isArray(uris) || !uris.length || !uris.every((u: unknown) => typeof u === 'string' && /^https?:\/\//.test(u))) return reply({ error: 'invalid_redirect_uri', error_description: 'redirect_uris is required' }, 400)
+        const grantTypes: string[] = body.grant_types ?? ['authorization_code']
+        if (!grantTypes.every(g => g === 'authorization_code' || g === 'refresh_token')) return reply({ error: 'invalid_client_metadata', error_description: 'Dynamically registered clients only support the authorization_code and refresh_token grants' }, 400)
+        if (body.token_endpoint_auth_method !== 'none' || !body.client_name) return reply({ error: 'invalid_client_metadata', error_description: 'A public client names itself and token_endpoint_auth_method none.' }, 400)
+        const id = `dcr_sink_${clients.size + 1}`
+        clients.set(id, uris)
+        return reply({ client_id: id, client_id_issued_at: Math.floor(Date.now() / 1000), client_name: body.client_name, redirect_uris: uris, grant_types: grantTypes, response_types: ['code'], token_endpoint_auth_method: 'none', scope: body.scope }, 201)
+      }
+      if (req.method === 'GET' && url.pathname === '/oauth/authorizations/new') {
+        const q = Object.fromEntries(url.searchParams)
+        seen.push({ method: req.method, path: url.pathname, userAgent: req.headers.get('user-agent'), authorization: null, ifNoneMatch: null, body: q, status: 0 })
+        const entry = seen.at(-1)!
+        // An unknown client or redirect is never redirected to (RFC 6749 4.1.2.1).
+        const registered = clients.get(q.client_id ?? '')
+        if (!registered || !registered.includes(q.redirect_uri ?? '')) { entry.status = 400; return new Response('Invalid client or redirect_uri', { status: 400 }) }
+        const back = new URL(q.redirect_uri)
+        const redirect = (params: Record<string, string>) => {
+          for (const [k, v] of Object.entries({ ...params, ...(q.state ? { state: q.state } : {}), iss: origin })) back.searchParams.set(k, v)
+          entry.status = 302
+          return new Response(null, { status: 302, headers: { location: back.toString(), 'cache-control': 'no-store' } })
         }
-        if (!clients.has(body.client_id)) return reply({ error: 'invalid_client' }, 401)
-        const n = ++deviceSeq, deviceCode = `bc_device_${n}`, userCode = `WDJB-MJH${n}`
-        devices.set(deviceCode, { client: body.client_id, userCode, until: Date.now() + deviceLife * 1000, state: 'pending', person: null })
-        return reply({ device_code: deviceCode, user_code: userCode, verification_uri: `${origin}/device`, verification_uri_complete: `${origin}/device?user_code=${userCode}`, expires_in: deviceLife, interval: opts.deviceInterval ?? 5 }, 200)
+        if (q.response_type !== 'code') return redirect({ error: 'unsupported_response_type' })
+        if (q.code_challenge_method !== 'S256' || !q.code_challenge) return redirect({ error: 'invalid_request', error_description: 'code_challenge with S256 is required' })
+        const armed = authorize
+        authorize = undefined
+        if (armed === 'deny') return redirect({ error: 'access_denied' })
+        const code = `bc_code_${++codeSeq}`
+        codes.set(code, { client: q.client_id, redirectUri: q.redirect_uri, challenge: q.code_challenge, until: Date.now() + codeLife * 1000, person: armed?.person ?? null })
+        return redirect({ code })
       }
       if (req.method === 'GET' && url.pathname === '/authorization.json') {
         const bearer = req.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1] ?? ''
@@ -398,17 +419,16 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
           if (!a.times || --a.times <= 0) answer = null
           return reply(a.body, a.status, a.headers)
         }
-        if (form.grant_type === DEVICE_GRANT) {
-          const d = devices.get(form.device_code)
-          if (!d) return reply({ error: 'invalid_grant' }, 400)
-          if (d.client !== form.client_id) return reply({ error: 'invalid_client' }, 401)
-          if (d.until <= Date.now()) { devices.delete(form.device_code); return reply({ error: 'expired_token' }, 400) }
-          if (d.state === 'pending') return reply({ error: 'authorization_pending' }, 400)
-          devices.delete(form.device_code)
-          if (d.state === 'denied') return reply({ error: 'access_denied' }, 400)
-          const access = `bc_minted_${++mints}`, refresh = form.device_code.replace('bc_device_', 'bc_refresh_device_')
-          minted.set(access, { until: Date.now() + tokenLife * 1000, person: d.person })
-          grants.set(refresh, d.person)
+        if (form.grant_type === 'authorization_code') {
+          const c = codes.get(form.code ?? '')
+          codes.delete(form.code ?? '')
+          const refused = (why: string) => reply({ error: 'invalid_grant', error_description: why }, 400)
+          if (!c || c.until <= Date.now()) return refused('The provided authorization grant is invalid, expired, revoked, or was issued to another client.')
+          if (c.client !== form.client_id || c.redirectUri !== form.redirect_uri) return refused('The provided authorization grant was issued to another client or redirect_uri.')
+          if (!form.code_verifier || new Bun.CryptoHasher('sha256').update(form.code_verifier).digest('base64url') !== c.challenge) return refused('The code_verifier does not match the code_challenge.')
+          const access = `bc_minted_${++mints}`, refresh = form.code.replace('bc_code_', 'bc_refresh_code_')
+          minted.set(access, { until: Date.now() + tokenLife * 1000, person: c.person })
+          grants.set(refresh, c.person)
           return reply({ access_token: access, token_type: 'Bearer', expires_in: tokenLife, refresh_token: refresh }, 200)
         }
         if (form.grant_type !== 'refresh_token') return reply({ error: 'unsupported_grant_type' }, 400)

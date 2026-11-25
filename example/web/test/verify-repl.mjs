@@ -1,8 +1,10 @@
 /**
  * web/test/verify-repl.mjs — the app prompt, as an operator runs it.
  *
- * **bun, and no server.** `fli app:repl -e` boots the app in its own process
- * (`FJS-D1535`), so there is nothing to start; the argv is built by
+ * **bun, and no server, but a seed.** `fli app:repl -e` boots the app in its
+ * own process (`FJS-D1535`), so there is no server to start; the member read
+ * needs `db:seed`'s `alex@shop.test` in tenant flagship, which a fresh lane
+ * worktree does not have (`FJS-4475`). The argv is built by
  * `app:repl`'s own `callArgv`, so this resolves junction and the app module the
  * way the command does.
  *

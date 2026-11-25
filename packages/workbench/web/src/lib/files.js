@@ -46,6 +46,28 @@ export function fileBlobUrl(id, size = 'preview') {
   return p
 }
 
+const pictures = new Map()
+const RETRY_MS = 60_000
+
+/**
+ * A blob URL for a person's chat picture, or '' when there is none to draw. The
+ * route answers only a signed-in caller, so it goes through `client.fetch` like a
+ * file. A failure is remembered for a minute: a room of one author's posts must
+ * not ask again for every post while the chat server is down.
+ */
+export function profileImageUrl(profileExternalId) {
+  if (!profileExternalId) return Promise.resolve('')
+  const kept = pictures.get(profileExternalId)
+  if (kept && (kept.ok || Date.now() - kept.at < RETRY_MS)) return kept.p
+  const entry = { ok: true, at: Date.now(), p: null }
+  entry.p = api().fetch(`/profiles/${encodeURIComponent(profileExternalId)}/image`)
+    .then((r) => r.blob())
+    .then((b) => URL.createObjectURL(b))
+    .catch(() => { entry.ok = false; return '' })
+  pictures.set(profileExternalId, entry)
+  return entry.p
+}
+
 /** Save a file: the bytes are fetched with the member's credentials, then handed to the browser as a download. */
 export async function downloadFile(file) {
   const blob = await (await fetchFile(file.id, 'full')).blob()
@@ -57,15 +79,6 @@ export async function downloadFile(file) {
   a.click()
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 10_000)
-}
-
-/** The files a paste or a drop carries; empty for plain text, which the field then takes as usual. */
-export function filesOf(transfer) {
-  if (!transfer) return []
-  const out = [...(transfer.files ?? [])]
-  if (out.length) return out
-  for (const item of transfer.items ?? []) if (item.kind === 'file') { const f = item.getAsFile(); if (f) out.push(f) }
-  return out
 }
 
 const pad = (n) => String(n).padStart(2, '0')

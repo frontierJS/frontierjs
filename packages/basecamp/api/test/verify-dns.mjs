@@ -74,6 +74,9 @@ const ENV = {
   CLOUDFLARE_URL:        CF,
   CF_SINK_PORT:          String(CF_PORT),
   BASECAMP_STUB_OUTPOST: '1',
+  // Checks read the API's log as text. `fli prove` hands every drive
+  // FORCE_COLOR, which paints each field key and leaves `appId=` unmatched.
+  NO_COLOR:              '1',
 }
 
 // ─── Harness ─────────────────────────────────────────────────────────────

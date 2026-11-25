@@ -162,7 +162,7 @@ export function tail(file: string): string[] {
 
 /**
  * The ports a running `fli dev` holds for an app, named — read off the
- * session lock it writes, so a branch's +N×10000 and a slot are what it
+ * session lock it writes, so a branch's +N×4500 and a slot are what it
  * really bound rather than a derivation that would have to agree with it.
  */
 export async function servedBy(appDir: string, lockFile?: string): Promise<Served[]> {

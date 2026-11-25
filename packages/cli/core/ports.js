@@ -9,8 +9,8 @@
  *   PROJECT  0-9  (assigned in PROJECTS below; every other app is 0)
  *   SERVICE  0-9  (project 0's dev slot — one per app, see § Dev slots)
  *
- * A second checkout of an app — a linked git worktree — puts a BRANCH digit in
- * front: branch N adds N×10000, so branch 1's 8120 is 18120 (§ Branches).
+ * A second checkout of an app — a linked git worktree — moves to a BRANCH
+ * block: branch N adds N×4500, so branch 1's 8120 is 12620 (§ Branches).
  *
  * A surface that is both WRITTEN against and SERVED as its own origin takes
  * two categories rather than two service slots. `widgets/` and `site/` are
@@ -147,8 +147,8 @@ export function port(category, { env, projectId, serviceId = 0 }) {
 
 /** Decode a port number back into its components */
 export function decode(p) {
-  const branch = Math.floor(p / BRANCH_STEP)
-  p = p % BRANCH_STEP
+  const branch = p < BRANCH_BASE + BRANCH_STEP ? 0 : Math.floor((p - BRANCH_BASE) / BRANCH_STEP)
+  p -= branch * BRANCH_STEP
   const envDigit     = Math.floor(p / 1000)
   const catDigit     = Math.floor((p % 1000) / 100)
   const projectDigit = Math.floor((p % 100) / 10)
@@ -928,20 +928,21 @@ async function freeSlot(sessions, appRoot, env, rowsAt, busy) {
 // one made by hand — and it runs beside the first. A slot cannot separate them:
 // a fixed project spends its service digit on its own servers (basecamp's 8121
 // mail sink), so the next digit is the parent's sink. So the whole block moves:
-// branch N adds N×10000 to every port a surface reads from its variable, and
-// every digit keeps its meaning — 18120 is 8120 in branch 1 (`FJS-D841`).
+// branch N adds N×4500, the width of the base span 5500–9999, to every port a
+// surface reads from its variable — 12620 is 8120 in branch 1 (`FJS-D841`,
+// `FJS-D2362`), and `decode` reads the base back.
 //
 // N is the lowest of 1–5 no other worktree of the same repository holds in the
 // lock, remembered per worktree like a slot, so every app in one worktree shares
-// it. Five is the ceiling: a sixth puts 8120 at 68120. 3–5 sit in Linux's
-// ephemeral range, where an outgoing socket can hold a port; `strictPort` then
-// refuses loudly, and lowest-free reaches them only when 1 and 2 are taken.
+// it. Five blocks fill 10000–32499: past 32767 is Linux's ephemeral range, where
+// an outgoing socket holds a lane's port and its drive refuses (`FJS-4314`).
 //
 // A port a surface writes as a literal does not move, and the app's drives do
 // (`FJS-2277`). A branch whose surfaces ignore the variable gets no number, so
 // the refusal names the port the server will really take.
 
-export const BRANCH_STEP = 10000
+const BRANCH_BASE        = 5500
+export const BRANCH_STEP = 4500
 export const MAX_BRANCH  = 5
 
 /**
@@ -1001,8 +1002,8 @@ function freeBranch(sessions, appRoot, tree, worktreeExists) {
  * `claimSession`, so a test and a dev server cannot disagree (`FJS-D858`); a
  * main checkout of a `PROJECTS` app never writes the lock.
  *
- *   await portFor(import.meta.url, 'be', { env: 'dev' })           // 8110 · 18110
- *   await portFor(import.meta.url, 'be', { service: 3 })           // 7123 · 17123
+ *   await portFor(import.meta.url, 'be', { env: 'dev' })           // 8110 · 12610
+ *   await portFor(import.meta.url, 'be', { service: 3 })           // 7123 · 11623
  *
  * @param {string} from
  * @param {string} category  a `CAT` key

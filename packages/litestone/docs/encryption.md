@@ -304,7 +304,7 @@ model Order {
 const newKey = 'b'.repeat(64)
 await db.user.create({ data: { id: 1, ssn: '123-45-6789' } })
 
-const stats = await db.$rotateKey(newKey)
+const stats = await db.asSystem().$rotateKey(newKey)
 // → { User: { rows: 1, fields: 1 }, Order: { rows: 0, fields: 2 } }
 if (stats.User.rows !== 1 || stats.User.fields !== 1) throw new Error(`unexpected stats ${JSON.stringify(stats)}`)
 ```
@@ -327,7 +327,7 @@ model User {
 ```js
 const newKey = 'b'.repeat(64)
 try {
-  await db.$rotateKey(newKey)
+  await db.asSystem().$rotateKey(newKey)
   throw new Error('expected the refusal')
 } catch (e) {
   if (!/orphan/.test(e.message)) throw e
@@ -337,7 +337,7 @@ try {
 //   User.legacy — @secret(rotate: false) — declared excluded from re-encryption
 // Pass { orphan: ['User.pw', 'User.legacy'] } to accept that deliberately.
 
-await db.$rotateKey(newKey, { orphan: ['User.pw', 'User.legacy'] })   // proceeds
+await db.asSystem().$rotateKey(newKey, { orphan: ['User.pw', 'User.legacy'] })   // proceeds
 ```
 
 `orphan` is a list of names rather than a boolean so that acknowledging one column cannot silently acknowledge a second one added later.

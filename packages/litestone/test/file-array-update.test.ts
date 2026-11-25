@@ -28,7 +28,7 @@ async function client() {
     async get() { return null },
     async delete(key: string) { deletes.push(key) },
   }
-  const stored = () => JSON.parse(db.$db.query('SELECT photos FROM "P" WHERE id = 1').get().photos)
+  const stored = () => JSON.parse(db.asSystem().$db.query('SELECT photos FROM "P" WHERE id = 1').get().photos)
   return { db, puts, deletes, stored }
 }
 

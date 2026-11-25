@@ -1917,6 +1917,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2363"></a>2026-11-25 · `FJS-D2363` — Does a client scoped by `$setAuth` refuse the ops methods without `asSystem()`, the way `$retain` already does — C, with root `$db` refused under `FJS-D52`'s condition.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C, with root `$db` refused under `FJS-D52`'s condition*) over **A** (Keep them as app trust: code holding any client is trusted with the file. Document it in `data-hazards` and leave the methods where they are. No junction route reaches them today), **B** (Refuse `$backup`, `$rotateKey`, `$attach`, `$detach` and `$db` on the `$setAuth` and `$scope` proxies with a `retainRefusal`-shaped message naming `db.asSystem().$X()`. `$walStatus`, `$backupStamp` and `$ping` stay readable. The root client keeps them, since rewriting root callers is a separate question).
+
+C as recommended, whole: the ops writes ($backup, $rotateKey, $attach, $detach) are refused on every client that is not asSystem(), root included, as $retain is; root $db is refused only under FJS-D52's condition (the schema declares access rules); $walStatus, $backupStamp, $ping and $schemaGaps stay readable; one systemOnly list read by every non-system trap, guarded by a test that walks the system target's keys; the four outside callers are rewritten to asSystem().
+
 ### <a id="fjs-d2316"></a>2026-11-23 · `FJS-D2316` — When a checkout names an address whose Customer is already linked to an account that is not the caller (a guest, or another signed-in account), does `carts.checkout` refuse it, mark the order with who placed it, or attach it as today — Refuse in `carts.checkout`, beside the account link: when `existing.userId` is set and is not `$.me?.id`, throw `bad('That address has an account — sign in to check out with it')`. No schema change, and guest checkout stays open for any address without an account. Cost: a signed-out returning shopper must sign in, and the refusal tells whoever typed an address that it has an account. That is little new, since the confirmation email already goes there, and WooCommerce uses the same wording.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Accept, but write who placed the order on `Order` (a `placedBy String? @system`) and narrow the read to `customer.userId == auth().id && (placedBy == auth().id || placedBy == null && createdAt < <link time>)`. Nothing is refused. Cost: this brings back a `userId`-style copy on `Order`, the kind `FJS-D1027`/`FJS-915` deleted two days ago, plus a link timestamp on `Customer` and a second read rule; and a real owner checking out signed-out no longer sees their own order), **C** (Accept as today (Shopify classic accounts attach orders by email): record that the stranger case is accepted along with late registration, and amend `FJS-4552` to a documented behavior. Zero code. Cost: a stranger can write into your order history, and nothing checks it).
@@ -14905,6 +14911,19 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2364"></a>2026-11-25 · `FJS-D2364` — An image pasted or dropped into a message box is read by `@frontierjs/ui/paste`, and ui's `Composer` hands the files to `onfiles(files)`.
+
+Asked in chat, through AskUserQuestion. Before this, each app and prototype had its own version: Workbench's chat (`lib/pasted-images.js`), Workbench Messages (`lib/files.js`, a second `pastedImages` with a different signature), the cli's `vite-ask-client.js`, Lathe's `ClaudePanel.mesa`, serpgrid, chat and capture. They disagreed on when to fall back to the async clipboard. **A** (the ui helper plus a `Composer` prop) was picked over **B** (the helper only), **C** (wait for `ClaudeComposer` in [`IDEAS/claude-chat.md`](IDEAS/claude-chat.md), which leaves the boxes that are not Claude uncovered) and **D** (file the duplicates and build later). As recommended.
+
+- **What the helper returns.** It gives back the same image files from a Chrome paste, a Firefox paste, a drop, a copy that holds both text and an image (the text still pastes), and an empty WebKitGTK paste event.
+- **When it reads the async clipboard.** Only when the event carries no files and no text, so Chrome never shows its prompt.
+- **The host fallback.** An optional `read` lets a desktop shell supply the image itself; Lathe's `invoke('clipboard_image')` plugs in this way, and ui knows nothing of Tauri.
+- **Refusals.** The helper throws a refused clipboard read and does not swallow it, so the caller can show it.
+- **`fitImage(file, { edge, maxBytes })`.** `maxBytes` is the size above which a PNG becomes a JPEG flattened onto white. The 1568px edge and 5MB limit are Claude's, and they stay with `@frontierjs/claude` and its callers.
+- **Workbench Messages.** Its own `chat/Composer.mesa` calls the helper. It is not rebuilt on ui's `Composer` (the owner's second answer, as recommended).
+- **The cli's ask panel.** `vite-ask-client.js` stays a plain-DOM copy until a probe shows the virtual module resolves `@frontierjs/ui`.
+- **The WebKitGTK case.** No CI run covers it; a Workbench webview drive proves it.
+
 ### <a id="fjs-d2349"></a>2026-11-23 · `FJS-D2349` — Q12 — Which imagery an account with both keys gets — A fixed order: Google, then Esri, then no map.
 
 Asked in [`IDEAS/map-kit.md`](IDEAS/map-kit.md) § Open questions. **A** was picked over **B** (a per-account setting), **C** (refuse a second active imagery `Integration`).
@@ -14975,7 +14994,8 @@ Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) step 2.5a, where the build r
 ### <a id="fjs-d2289"></a>2026-11-21 · `FJS-D2289` — A hydratable page adopts from `<div data-sierra-root>`, laid out as `display: contents` by a `<style id="sierra-root">` rule rather than a `style=` attribute, which a strict CSP drops. Written only on flagged pages.
 
 Asked in [`IDEAS/hydration.md`](IDEAS/hydration.md) step 2.5. The owner kept the wrapper over a comment-range root (no element, the root adopting a node range as blocks do). SvelteKit's default `app.html` wraps the body in `<div style="display: contents">`, and Astro writes `astro-island,astro-slot,astro-static-slot{display:contents}` as a rule; Next's Pages Router and Nuxt use a root div. The cost is that a `body > .x` selector misses on a flagged page. Reopen toward the comment range if that cost shows up in a real app.
-*Lives in:* `packages/sierra/src/build/prerender.js` (`HYDRATE_ROOT_STYLE`, `wrapDocument`).
+The rule now ships in the page's linked `sierra-shell` sheet beside the skip-link guard, not a `<style>` element, so a strict `style-src` without `'unsafe-inline'` keeps it too.
+*Lives in:* `packages/sierra/src/build/prerender.js` (`HYDRATE_ROOT_CSS`, `wrapDocument`).
 
 ### <a id="fjs-d2288"></a>2026-11-21 · `FJS-D2288` — Does a first interaction inside an unmounted `client:idle` or `client:visible` island mount it at once and replay the event — The loader adds one document capture listener (pointerdown, click, keydown, focusin). An interaction inside the range of an idle or visible island that has not mounted counts as its trigger: the loader mounts the island at once and replays the event on the matching node of the fresh render, found by child-index path from the open marker. Only the nearest island owns the event (Invariant 11), and `client:media` and `client:static` are unchanged. island-site's "a visible island fetches nothing" becomes "until it is visible or touched". Vue 3.5 `hydrateOnInteraction`, Angular `withEventReplay` and React 18 selective hydration all do this.
 
@@ -18441,6 +18461,18 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2362"></a>2026-11-25 · `FJS-D2362` — Branch port blocks 3–5 sit in Linux's ephemeral range (32768–60999): reserve them from the kernel, cap branches at 2, re-map them, or keep `strictPort`'s refusal — Re-map branches 3–5 to a non-ephemeral offset. No 2000-wide block below 61000 is free past 28xxx, and 61000+ is inside the macOS range, so this breaks D841's "the parent's port with a leading digit".
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (Reserve the blocks from the kernel's autobind with `net.ipv4.ip_local_reserved_ports=37000-38999,47000-48999,57000-58999`, an owner machine step in `/etc/sysctl.d`. Explicit binds still work. `ports.js` exports the ranges, computed from `BRANCH_STEP`/`MAX_BRANCH`. `fli doctor` warns on an unreserved machine and prints the fix line, and a drive's port refusal on a branch ≥3 port names it. The open half: macOS has no reservation list, and its range (49152–65535) covers branch 5), **B** (Cap `MAX_BRANCH` and fix-loop's `MAX_LANES` at 2, the only blocks below 32768. This halves the loop, which already runs four lanes, and refuses a third agent worktree), **D** (Keep D841 as is: the drive refuses or retries. An outgoing socket can hold a port for minutes, so the row's failure recurs with every lane batch).
+
+Against the recommendation (**A**): the owner wants five dedicated blocks in a range no machine hands to an outgoing socket, with no machine step: BRANCH_STEP shrinks from 10000 to 4500 (the base span 5500-9999), so branch N is base + N*4500 and branches 1-5 sit at 10000-32499, under Linux's 32768 and macOS's 49152. This amends FJS-D841: dropping the leading digit no longer gives the parent's port; decode() derives the branch from (p - 5500) / 4500. The red test: portFor for every branch 1..MAX_BRANCH lands below 32768.
+
+### <a id="fjs-d2047"></a>2026-11-25 · `FJS-D2047` — Who frees a branch port block when all five are held by worktrees that are checked out but idle — the lane, the claimant, or nobody — The lane frees its own: `scripts/lanes.mjs` calls `releaseSession(<lane path>)` when a row ends, so a lane holds a block only while a drive runs. The number is recomputed on the next claim; no change to `ports.js`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the claimant evicts: when `freeBranch` finds all five held, it takes the block of an entry whose recorded `pid` is dead (`isProcessAlive`), and that worktree is given a new number at its next claim. Covers agent and hand-made worktrees too, but a worktree's number then changes between runs), **C** (nobody: the refusal stays, its message names the holders, and `fli ports:status --clean` is the remedy).
+
+The paper's recommendation, taken as written: the lane is the one holder the loop itself creates and knows the end of, so it releases what it claimed (the owner of the claim is the owner of the release, as `fli dev` does); B moves a number under a worktree that did nothing wrong.
+
 ### <a id="fjs-d2361"></a>2026-11-24 · `FJS-D2361` — How Workbench's room view loads its posts' reactions and files — One Reaction tether and one FileInfo tether per room, over a `channelExternalId` copied onto both models from Mattermost (or from the post where a payload lacks it), held equal to the post's by a create rule on Reaction and by `attach` refusing another room's upload; a list spanning rooms (Saved, Search, Activity, Waiting, Catch-up) keeps a tether per post.
 
 One tether per post was ~100 requests per room opened, each landing alone and growing its post under the reader. **As recommended**, over a relation filter `post: { channelExternalId }` (no schema change, but `@frontierjs/toolbelt/match` answers null for a relation, so every push anywhere re-reads every open room), a `$in` over the window's ids (re-made as posts land), and a composed posts list with `include` (a reaction push is announced on the reactions service, so it would go stale). A room loads its whole history: measured 2026-11-24, the busiest room held 73 reactions and 77 files. Reopen when a room's history is large enough to show in the load. The cross-room lists stay per post: they are short and off the room-switch path. Lives in `packages/workbench/db/schema.lite` (Reaction, FileInfo), `conduit-mattermost/src/mirror.ts` (`channelOf`), `web/src/lib/chat.js` (`roomExtras`) and `components/chat/PostList.mesa`.
@@ -18496,6 +18528,8 @@ The paper's recommendation, taken as written: if Basecamp rotates refresh tokens
 The grant is one app-level row and Jordan's, so every member's to-do is authored as Jordan. That holds for a one-owner tool; once Workbench has a second Basecamp user who must appear as the author, this reopens as a `per_caller` target (`FJS-D1182`, `conduit-37signals` 4.1).
 
 **Amended the same day (owner): the grant comes from a device-code sign-in at `app.basecamp.com`, not through the OAuth app made for n8n.** That app is a Launchpad client, and a Launchpad token refreshes at Launchpad with a client secret, while `basecampTokenResolver` refreshes at `app.basecamp.com/oauth/tokens` with a client id alone. `app.basecamp.com`'s metadata (read 2026-11-23) advertises `device_authorization_endpoint`, `registration_endpoint` and `token_endpoint_auth_methods_supported: none`, so Workbench registers its own public client once and keeps no secret and no redirect route. Unmeasured: whether a registered client may use the `device_code` grant; the fallback is an authorization code with PKCE to a loopback redirect, on the same client.
+
+**Measured 2026-11-24: the fallback was taken.** `POST /oauth/clients` with the body Workbench sent (grant_types `device_code` + `refresh_token`, no `redirect_uris`) is `400 invalid_redirect_uri` ("redirect_uris is required"); with `redirect_uris` added and the device grant it is `400 invalid_client_metadata` ("Dynamically registered clients only support the authorization_code and refresh_token grants"). A client registered for `authorization_code` + `refresh_token` with `redirect_uris: ["http://127.0.0.1:5501/todos-connected"]` is `201`, so Workbench signs in by an authorization code with PKCE (S256) to that loopback redirect, landing on its own `GET /todos-connected`; `basecamp.json` also keeps the `redirectUri` the client was registered for.
 
 ### <a id="fjs-d2334"></a>2026-11-23 · `FJS-D2334` — Q18 — How long 9.2's release festival lasts — Until the next deploy: the bake compares the newest tag with the one the last bake saw, and a newer one is a festival in the square until the next bake.
 
@@ -23350,6 +23384,10 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2365"></a>2026-11-25 · `FJS-D2365` — `conduit-37signals`, `conduit-cloudflare` and `conduit-plausible` are admitted to releases, first at 0.1.0 — the admission is an `ADMITTED` list beside the connector prefix in `packages/cli/core/workspace-members.js`, and an admitted connector keeps its own CI lane and atlas ring
+
+Amends `FJS-D1913`'s *held out of `fli release` until a later ruling admits one* clause and nothing else. `isConnector` (the `packages/conduits/` prefix: the CI lane, the ring) is split from `isHeldOut` (a connector not on the list), because one predicate answered both and shrinking it would have moved an admitted connector into the default `tests` run. A per-package manifest field (**B**) was refused as a second origin beside the prefix; dropping the hold for all connectors (**C**) would release stubs at 0.0.1. `test/workspace-members.test.js` fails on an admitted name that is not a connector member. As recommended (A).
 
 ### <a id="fjs-d2354"></a>2026-11-23 · `FJS-D2354` — Q13 — How a URL-signing vendor signs through conduit — `SignOutput` gains URL parameters, which the transport sets and scrubs like an `api_key` query; the target is `signed`, `per_caller`, and its one stored value holds `{ key, secret }`; conduit-google's signer writes `key=`, signs, and appends `signature`.
 

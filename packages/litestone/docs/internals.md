@@ -677,16 +677,16 @@ carrying a second reading of it.
 What each `$`-method on a client answers, and why it exists.
 
 ```js fragment
-db.$backup('./backups/prod.db')
-db.$backup('./backups/prod.db', { vacuum: true })
+db.asSystem().$backup('./backups/prod.db')
+db.asSystem().$backup('./backups/prod.db', { vacuum: true })
 db.$transaction(async (tx) => { ... })
 db.$inTransaction         // is one open on this connection right now? Same answer
                           // on every flavor — one write connection, one counter.
                           // For a write whose meaning depends on rolling back
                           // with everything else (junction's outbox row)
-db.$attach('./other.db', 'other')
-db.$detach('other')
-db.$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; returns per-model stats
+db.asSystem().$attach('./other.db', 'other')
+db.asSystem().$detach('other')
+db.asSystem().$rotateKey(newKey)      // re-encrypt all @secret(rotate: true) fields; returns per-model stats
 await db.$audit({ operation: 'login.failed', model: 'User', recordId: String(id),
                  actorId: id, meta: { reason: 'bad-password' } })
                            // the ONE owner of putting a row in the audit trail.

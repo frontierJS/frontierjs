@@ -9,7 +9,7 @@
   // The hover bar is react, reply and More. More holds what the server decides:
   // Edit and Delete (the author's; a refusal comes back as its own words, never
   // a time window decided here), Pin, Mark unread (also Alt-click) and Follow.
-  import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
+  import PersonAvatar from './PersonAvatar.mesa'
   import Markdown from '@frontierjs/ui/components/display/Markdown.mesa'
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
@@ -40,6 +40,7 @@
   export let reactionRows = undefined   // its room's Reaction rows for it; a list across rooms passes none
   export let fileRows = undefined       // and its FileInfo rows
   export let onnudge = undefined   // () => void, after a reminder is set, for a screen that lists them
+  export let pending = false       // still on its way to the server: faded, with nothing to act on yet
 
   const lists = getLists()
   $: author = personName(post.profileExternalId, people)
@@ -97,13 +98,13 @@
   const drop   = () => act(() => posts.service.remove(post.id))
   // Alt-click marks unread, as Slack does; a click on a link or a button inside stays theirs.
   function onClick(e) {
-    if (!e.altKey || !inRoom || editing || e.target.closest?.('a, button, input, textarea')) return
+    if (pending ||!e.altKey || !inRoom || editing || e.target.closest?.('a, button, input, textarea, dialog')) return
     e.preventDefault()
     unread()
   }
 </script>
 
-<article class="post" class:continuation class:selected class:marked class:pinned={post.isPinned} class:named data-post-named={named ? 'true' : null} id={`post-${post.externalId}`} data-post={post.externalId} data-post-mine={mine ? 'true' : null} onclick={onClick} {@attach upToEdit}>
+<article class="post" class:continuation class:selected class:marked class:pending class:pinned={post.isPinned} class:named aria-busy={pending ? 'true' : null} data-post-sending={pending ? 'true' : null} data-post-named={named ? 'true' : null} id={`post-${post.externalId}`} data-post={post.externalId} data-post-mine={mine ? 'true' : null} onclick={onClick} {@attach upToEdit}>
   {#if post.isPinned}
     <p class="post-flag text-xs cluster gap-2xs" data-post-pinned><Icon name="pushpin" /> Pinned</p>
   {/if}
@@ -114,7 +115,7 @@
     {#if continuation}
       <time class="post-time text-muted" datetime={post.createdAt}>{time}</time>
     {:else}
-      <span class="post-avatar"><Avatar name={author} size="sm" />{#if presence}<Presence status={presence} badge />{/if}</span>
+      <span class="post-avatar"><PersonAvatar profile={post.profileExternalId} name={author} size="sm" />{#if presence}<Presence status={presence} badge />{/if}</span>
     {/if}
   </div>
   <div class="post-body stack gap-xs">
@@ -142,7 +143,7 @@
       </a>
     {/if}
   </div>
-  {#if !editing}
+  {#if !editing && !pending}
     <div class="post-bar card" role="toolbar" aria-label="Post actions">
       <ReactionPicker onpick={(name) => reactions?.toggle(name)}>
         {#snippet trigger()}<button type="button" class="btn ghost square xs" aria-label="Add a reaction" title="React" data-post-react><Icon name="smile" /></button>{/snippet}
@@ -180,6 +181,7 @@
 
 <style>
   .post { position: relative; display: grid; grid-template-columns: calc(var(--space-2xl) * 2) minmax(0, 1fr); column-gap: var(--space-lg); padding-block: var(--space-2xs); padding-inline: var(--space-lg); border-radius: var(--card-radius); transition: background-color var(--duration-fast, 0.12s); }
+  .post.pending { opacity: 0.55; }
   .post:not(.continuation) { margin-block-start: var(--space-lg); padding-block-start: var(--space-sm); }
   .post:hover, .post.selected, .post.marked { background: var(--surface-sunken); }
   /* A post that names the reader: a warm ground and a bar, the way the sidebar's pill is danger. */

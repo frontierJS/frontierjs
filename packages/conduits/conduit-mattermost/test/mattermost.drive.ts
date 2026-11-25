@@ -26,7 +26,7 @@ import type { ConduitError, CredentialResolver, Delivery } from '@frontierjs/con
 import { results, report, control, DRIVE_RESILIENCE } from '@frontierjs/conduit/testing'
 import { startMattermostSink } from '../sink.ts'
 import {
-  mattermostTargets, bindMattermost, uploadFile, fileBytes, postMessage, listPosts, listChannels, browseChannels, listTeams, listMembers, listProfiles, postsSince, me, translate,
+  mattermostTargets, bindMattermost, uploadFile, fileBytes, profileImage, postMessage, listPosts, listChannels, browseChannels, listTeams, listMembers, listProfiles, postsSince, me, translate,
   viewChannel, listThreads, getThread, markThreadRead,
   pinPost, unpinPost, listPinned, markUnread, muteChannel, joinChannel, leaveChannel, createDirectChannel, createGroupChannel,
   followThread, unfollowThread, markAllThreadsRead, listDrafts, saveDraft, deleteDraft,
@@ -637,6 +637,13 @@ try {
     posted: !!filed.row, emptyMessage: filed.row?.message, same: !!read.bytes && read.bytes.length === png.length && read.bytes.every((b, i) => b === png[i]),
     readType: read.type, thumb: !!thumb.bytes, claimedTwice: reclaim.error?.kind, notAMember: offRoom.error?.kind, noBytes,
   })
+  // A profile picture: any signed-in person reads another's, over the sink's
+  // PNG; a user that does not exist is gone, and a non-id throws before a call.
+  const pic = await profileImage(bob, ids.alice)
+  const noUser = await profileImage(bob, 'zzzzzzzzzzzzzzzzzzzzzzzzzz')
+  let notAnId = ''
+  try { await profileImage(bob, 'alice') } catch (e) { notAnId = (e as Error).message }
+  t('profile.imageOfAnyUser', { png: !!pic.bytes && pic.bytes[1] === 0x50, type: pic.type, noUser: noUser.error?.kind, notAnId })
   {
   // ─── A full client's verbs ───────────────────────────────────
   // Two people on raw sockets, each frame read through the dialect, so a row
@@ -997,6 +1004,7 @@ process.exit(report(got, {
   'backfill.channelsIncludeDirectAndArchived': { direct: 'direct', directTeam: null, archived: true, archivedHiddenByDefault: true },
   'backfill.metadataAndProfiles':              { reaction: true, files: true, profiles: ['alice', 'bob'], channelIsThePosts: true, olderServer: [true, null] },
   'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, uploadChannel: true, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
+  'profile.imageOfAnyUser':                    { png: true, type: 'image/png', noUser: 'gone', notAnId: 'mattermost: profileImage takes a Mattermost user id' },
   'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsSentOnce:1},
   'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2b00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},

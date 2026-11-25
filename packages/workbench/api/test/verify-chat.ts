@@ -68,7 +68,7 @@ async function until<T> (pred: () => Promise<T> | T, ms = 8000): Promise<T | nul
 
 const sink = startMattermostSink({ port: 0 })
 // Basecamp, the 37signals product: the connector's sink, never 3.basecampapi.com.
-const todoSink = startBasecampSink({ port: 0, deviceInterval: 1 })
+const todoSink = startBasecampSink({ port: 0 })
 const ids = sink.ids
 const sinkCall = async (path: string, token: string, init: { method?: string, body?: unknown } = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -780,20 +780,35 @@ try {
   const todoSeen = async () => ((await (await fetch(`${todoSink.url}/_sink/seen`)).json()) as any).requests as { method: string, path: string, body: any }[]
   const todoPosts = async () => (await todoSeen()).filter(r => r.method === 'POST')
   const todoArm = (a: unknown) => fetch(`${todoSink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify(a) })
-  // The owner's grant: a device-code sign-in on the sink, approved there as
-  // the person would in a browser, and kept in basecamp.json.
+  // The owner's grant: an authorization code with PKCE on the sink, whose
+  // authorize approves at once and redirects as the person's browser would, to
+  // this API's /todos-connected, and kept in basecamp.json.
   const grantPath = join(process.env.WORKBENCH_DIR!, 'basecamp.json')
   const offBefore = await call(ada, 'todoProjects', {})
   check((await call(ada, 'status', {}) as any).todos === false && codeOf(offBefore) === 503 && /not connected/.test(offBefore?.message ?? ''), 'before a sign-in, to-dos are off and a to-do call is a plain 503 not connected', offBefore?.message)
-  const todoShown = await call(ada, 'todoConnect', {}) as { userCode: string, verificationUri: string, expiresAt: number }
-  check(typeof todoShown.userCode === 'string' && /\/device$/.test(todoShown.verificationUri) && !('deviceCode' in todoShown), 'todoConnect answers the code and the link to show, and never the device code', todoShown)
-  check((await call(ada, 'todoConnect', {}) as any).userCode === todoShown.userCode, 'a second Connect while one waits shows the same code')
-  check((await call(ada, 'status', {}) as any).todoSignIn?.signIn?.userCode === todoShown.userCode && (await call(ada, 'status', {}) as any).todos === false, 'chat.status shows the waiting code, and to-dos stay off until it is approved')
-  await fetch(`${todoSink.url}/_sink/device`, { method: 'POST', body: JSON.stringify({ approve: todoShown.userCode }) })
-  check(await until(async () => (await call(ada, 'status', {}) as any).todos === true), 'once approved, the poll lands the grant and chat.status says to-dos are on')
+  const todoShown = await call(ada, 'todoConnect', {}) as { url: string, expiresAt: number }
+  const authUrl = new URL(todoShown.url ?? 'http://x')
+  const apiPort = new URL(env.url).port
+  check(authUrl.pathname === '/oauth/authorizations/new' && /^dcr_/.test(authUrl.searchParams.get('client_id') ?? '') && authUrl.searchParams.get('redirect_uri') === `http://127.0.0.1:${apiPort}/todos-connected` &&
+    !!authUrl.searchParams.get('state') && !!authUrl.searchParams.get('code_challenge') && authUrl.searchParams.get('code_challenge_method') === 'S256' && Object.keys(todoShown).sort().join() === 'expiresAt,url' && !/verifier|device/i.test(JSON.stringify(todoShown)),
+    'todoConnect answers the authorize URL with client_id, the loopback redirect_uri, state and an S256 challenge, and never the verifier', todoShown)
+  check((await call(ada, 'todoConnect', {}) as any).url === todoShown.url, 'a second Connect while one waits shows the same URL')
+  check((await call(ada, 'status', {}) as any).todoSignIn?.signIn?.url === todoShown.url && (await call(ada, 'status', {}) as any).todos === false, 'chat.status shows the waiting URL, and to-dos stay off until it lands')
+  const backTo = new URL((await fetch(todoShown.url, { redirect: 'manual' })).headers.get('location') ?? 'http://x')
+  const forged = new URL(backTo); forged.searchParams.set('state', 'not-the-state')
+  const forgedRes = await fetch(forged)
+  check(forgedRes.status === 400 && /not waiting/.test(await forgedRes.text()) && (!existsSync(grantPath) || !JSON.parse(readFileSync(grantPath, 'utf8')).refreshToken),
+    'a return with the wrong state is refused and lands nothing', forgedRes.status)
+  check((await call(ada, 'status', {}) as any).todoSignIn?.signIn?.url === todoShown.url, 'and the real sign-in is still waiting')
+  const landed = await fetch(backTo)
+  const landedPage = await landed.text()
+  check(landed.status === 200 && /Connected/.test(landedPage) && !landedPage.includes(backTo.searchParams.get('code') ?? '-') && landed.headers.get('cache-control') === 'no-store', 'the browser\'s return lands the grant and says so, without the code', { status: landed.status, landedPage })
+  check((await call(ada, 'status', {}) as any).todos === true, 'and chat.status says to-dos are on')
   const grantKept = JSON.parse(readFileSync(grantPath, 'utf8'))
-  check(/^bc_client_/.test(grantKept.clientId) && grantKept.accountId === Number(todoSink.account) && /^bc_refresh_device_/.test(grantKept.refreshToken) && (statSync(grantPath).mode & 0o777) === 0o600,
-    'basecamp.json holds the client id, the account derived from authorization.json and the refresh token, mode 0600', { ...grantKept, mode: (statSync(grantPath).mode & 0o777).toString(8) })
+  check(/^dcr_/.test(grantKept.clientId) && grantKept.redirectUri === authUrl.searchParams.get('redirect_uri') && grantKept.accountId === Number(todoSink.account) && /^bc_refresh_code_/.test(grantKept.refreshToken) && (statSync(grantPath).mode & 0o777) === 0o600,
+    'basecamp.json holds the client id, its redirect URI, the account derived from authorization.json and the refresh token, mode 0600', { ...grantKept, mode: (statSync(grantPath).mode & 0o777).toString(8) })
+  const replayed = await fetch(backTo)
+  check(replayed.status === 400, 'the same return again is refused: the sign-in it proved is spent', replayed.status)
   const registered = (await todoSeen()).find(r => r.path === '/oauth/clients')
   check(registered?.body?.token_endpoint_auth_method === 'none' && !JSON.stringify(registered).includes('secret'), 'the client registered is public: no secret is asked for or kept', registered?.body)
   const todoProjects = await call(ada, 'todoProjects', {}) as { projects: { id: number, name: string }[] }
@@ -838,6 +853,19 @@ try {
   check(/auth_failed/.test(lostTodo?.message ?? '') && !('refreshToken' in afterLost) && afterLost.clientId === grantKept.clientId, 'a refused refresh is auth_failed to the caller, and basecamp.json keeps the client but not the dead token', { message: lostTodo?.message, afterLost })
   check((await call(ada, 'status', {}) as any).todos === false && codeOf(await call(ada, 'todoProjects', {})) === 503, 'after a lost grant to-dos are off, so the card offers Connect again')
   await fetch(`${todoSink.url}/_sink/reset`)
+
+  // ── a profile picture ─────────────────────────────────────────────────
+  // The route is the only door to it: the browser never asks the chat server.
+  const picToken = await (env.app as any).auth.mint(ada.id)
+  const picOf = (id: string, bearer?: string) => fetch(`${env.url}/profiles/${id}/image`, { headers: bearer ? { authorization: `Bearer ${bearer}` } : {} })
+  const picUnsigned = await picOf(ids.bob)
+  const pic = await picOf(ids.bob, picToken.token)
+  const picBytes = new Uint8Array(await pic.arrayBuffer())
+  const picNobody = await picOf('zzzzzzzzzzzzzzzzzzzzzzzzzz', picToken.token)
+  check(picUnsigned.status === 401 && pic.status === 200 && /^image\//.test(pic.headers.get('content-type') ?? '') && picBytes[1] === 0x50 &&
+    pic.headers.get('cache-control') === 'private, max-age=3600' && pic.headers.get('x-content-type-options') === 'nosniff' && picNobody.status === 404,
+    'GET /profiles/{id}/image is 401 unsigned, the picture\'s bytes to a member, and 404 for a person the mirror does not hold',
+    { unsigned: picUnsigned.status, status: pic.status, type: pic.headers.get('content-type'), cache: pic.headers.get('cache-control'), nobody: picNobody.status })
 
   // ── unlink ────────────────────────────────────────────────────────────
   await as(ada).service('chat').call('disconnect', null, {})

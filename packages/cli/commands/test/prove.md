@@ -88,6 +88,8 @@ const procs = {
   stopRow:  id  => children.stopRow(id),
   childOf:  children.childOf,
   outputOf: children.outputOf,
+  alive:    children.alive,
+  kill:     children.kill,
 }
 
 const issues = readRegisters(root).issues

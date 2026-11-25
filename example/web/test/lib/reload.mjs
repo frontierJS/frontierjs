@@ -5,7 +5,7 @@
 // failure then reads as a bug on whatever screen the drive had reached
 // (`Inspected target navigated or closed`, a form that seems to submit
 // natively, a timeout), and nothing says the page reloaded. A drive navigates
-// the main frame only through Page.navigate (or `during`, for a navigation it
+// the main frame only through Page.navigate or browser.navigate (or `during`, for a navigation it
 // starts from inside the page), so a navigation arriving outside both is
 // somebody's edit. Page.navigate answers once the navigation has STARTED, and
 // its frameNavigated can arrive after the answer, so the drive's own document
@@ -52,6 +52,11 @@ export function watchReloads(browser) {
   // Wrapped in place: every drive destructures `cmd` from the browser once.
   const send = browser.cmd
   browser.cmd = (method, params) => method === 'Page.navigate' ? during(() => navigate(params)) : send(method, params)
+  // openChrome's navigate sends Page.navigate through the cmd its closure
+  // holds, so the wrap above never sees it; it returns once the new document
+  // has loaded, so its frameNavigated has arrived inside during().
+  const goto = browser.navigate
+  if (goto) browser.navigate = (...args) => during(() => goto(...args))
 
   const message = () => reloaded &&
     `the page was RELOADED under the drive (navigated to ${reloaded} with no navigation in flight) -- ` +

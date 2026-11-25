@@ -320,7 +320,7 @@ title: API keys
       <Select id="key-expiry" value={expiry} options={expiries}
               onchange={(e) => expiry = e.target.value} />
 
-      <fieldset>
+      <fieldset class="stack">
         <legend>Scopes</legend>
         <p class="field-hint">
           A key with no scopes is refused. Read is <code>find</code> and <code>get</code>;

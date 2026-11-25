@@ -98,7 +98,7 @@ import { dirname, join }            from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
 import { ROOT, LOG_DIR, logOf, runSession, printAttempt, appendLog, lastEntry, readLog, sentBack, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage, sourceOf, dayCapRefusal } from './headless.mjs'
-import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest, restoreOpen } from './lanes.mjs'
+import { LANES_DIR, LINKED, MAX_LANES, openLanes, syncLane, applyPatch, lanePatch, harvest, restoreOpen, releaseLane } from './lanes.mjs'
 
 // Not `LADDER`: frame-loop shares that one and starts low.
 const FIX_LADDER = [{ model: 'opus', effort: 'high' }]
@@ -181,7 +181,7 @@ async function worker(lane) {
     // A lane that cannot be synced or merged is out of the run; the others go on.
     try { await work(row, ++started, lane, tag) }
     catch (err) { console.log(`[${tag}] ${row.id} — ${err.message}`); if (lane) return }
-    finally { inFlight.delete(row.id); skipped.add(row.id); finish() }
+    finally { if (lane) releaseLane(lane); inFlight.delete(row.id); skipped.add(row.id); finish() }
   }
 }
 

@@ -50,6 +50,7 @@ import { HOLDS } from './runnables.js'
 const TAIL     = 30
 const POLLMS   = 250
 const HOLDPOLL = 1000
+const KILLMS   = 5000
 
 /**
  * Run every target the proof rows name, in order.
@@ -57,14 +58,14 @@ const HOLDPOLL = 1000
  * @param {object}   o
  * @param {object[]} o.proofs     `provesFor()`'s rows
  * @param {object[]} o.rows       `runnables()` — drive rows carry `needs`
- * @param {object}   o.procs      `{ startRow, stopRow, childOf, outputOf }` from `children.js`
+ * @param {object}   o.procs      `{ startRow, stopRow, childOf, outputOf, alive, kill }` from `children.js`
  * @param {Function} o.answering  `port → Promise<boolean>`
  * @param {Function} [o.skip]     `target → string[] | null` — the open rows a drive is skipped on
  * @param {Function} [o.hold]     `resource → { ok, release } | { ok: false, by }` — `treeHold(root)`
  * @param {Function} [o.say]      one progress line
  * @returns {Promise<{ ran: object[], skipped: object[], read: object[], gone: object[] }>}
  */
-export async function prove({ proofs, rows, procs, answering, skip = () => null, hold = () => ({ ok: true, release() {} }), say = () => {}, bootMs = 60_000, runMs = 600_000, holdMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
+export async function prove({ proofs, rows, procs, answering, skip = () => null, hold = () => ({ ok: true, release() {} }), say = () => {}, bootMs = 60_000, runMs = 600_000, stopMs = 15_000, holdMs = 600_000, sleep = ms => new Promise(r => setTimeout(r, ms)) }) {
   const byId = new Map(rows.map(r => [r.id, r]))
   const seen = new Set()
   const out  = { ran: [], skipped: [], read: [], gone: [] }
@@ -90,7 +91,7 @@ export async function prove({ proofs, rows, procs, answering, skip = () => null,
       const row   = { id: t.id ?? `script:${t.dir}/${t.name}`, name: t.name, dir: t.dir, kind: drive?.kind ?? 'script', argv }
 
       say(`▸ ${t.dir}: ${t.command}`)
-      out.ran.push(await one(row, drive?.needs ?? [], drive?.holds ?? [], { byId, procs, answering, hold, say, bootMs, runMs, holdMs, sleep }))
+      out.ran.push(await one(row, drive?.needs ?? [], drive?.holds ?? [], { byId, procs, answering, hold, say, bootMs, runMs, stopMs, holdMs, sleep }))
     }
   }
   return out
@@ -148,7 +149,7 @@ async function one(row, needs, holds, ctx) {
         }
         ctx.say(`  start ${need.script} → :${nrow.port}`)
         const up = await boot(nrow, ctx)
-        started.push(nrow.id)
+        started.push({ id: nrow.id, pid: up.pid })
         if (!up.ok) return result(false, { reason: up.reason, tail: up.tail })
         continue
       }
@@ -161,12 +162,22 @@ async function one(row, needs, holds, ctx) {
     const ran = await runToExit(row, ctx, ctx.runMs)
     return result(ran.code === 0, { code: ran.code, tail: ran.tail, ...(ran.code === 0 ? {} : { reason: ran.timedOut ? `no exit after ${ctx.runMs / 1000}s` : `exited ${ran.code}` }) })
   } finally {
-    for (const id of started.reverse()) ctx.procs.stopRow(id)
-    // The next drive starts the same ports; a server still releasing one would
-    // be refused as already answering.
-    for (const id of started) {
+    for (const { id } of started.reverse()) ctx.procs.stopRow(id)
+    // The next drive starts the same ports, so a stop is done when the process
+    // group is GONE, not when the row's port goes quiet: junction closes its
+    // listener first and holds every other port it bound -- the example's psp
+    // sink -- through its drain, and the next API died on that bind (FJS-4604).
+    // Past the grace it is killed, as an orchestrator would, and still waited
+    // on: a SIGKILLed group exits a beat later, and the next drive read its
+    // port as answering and refused to start (FJS-4498).
+    for (const { id, pid } of started) {
       const port = ctx.byId.get(id)?.port
-      for (let waited = 0; typeof port === 'number' && waited < 10_000 && await ctx.answering(port); waited += POLLMS) await ctx.sleep(POLLMS)
+      const holding = async () => (pid != null && ctx.procs.alive(pid)) || (typeof port === 'number' && await ctx.answering(port))
+      let waited = 0
+      for (; waited < ctx.stopMs && await holding(); waited += POLLMS) await ctx.sleep(POLLMS)
+      if (waited < ctx.stopMs || pid == null || !ctx.procs.alive(pid)) continue
+      ctx.procs.kill(pid)
+      for (let after = 0; after < KILLMS && await holding(); after += POLLMS) await ctx.sleep(POLLMS)
     }
     for (const h of held.taken.reverse()) h.release()
   }
@@ -195,12 +206,12 @@ async function boot(nrow, ctx) {
   const s = ctx.procs.startRow(nrow)
   if (!s.ok) return { ok: false, reason: s.error }
   for (let waited = 0; waited < ctx.bootMs; waited += POLLMS) {
-    if (await ctx.answering(nrow.port)) return { ok: true }
+    if (await ctx.answering(nrow.port)) return { ok: true, pid: s.pid }
     const exit = ctx.procs.childOf(nrow.id)?.exit
-    if (exit) return { ok: false, reason: `${nrow.name} exited ${exit.code ?? exit.signal} before :${nrow.port} answered`, tail: tail(ctx, nrow.id) }
+    if (exit) return { ok: false, pid: s.pid, reason: `${nrow.name} exited ${exit.code ?? exit.signal} before :${nrow.port} answered`, tail: tail(ctx, nrow.id) }
     await ctx.sleep(POLLMS)
   }
-  return { ok: false, reason: `${nrow.name} started and :${nrow.port} did not answer within ${ctx.bootMs / 1000}s`, tail: tail(ctx, nrow.id) }
+  return { ok: false, pid: s.pid, reason: `${nrow.name} started and :${nrow.port} did not answer within ${ctx.bootMs / 1000}s`, tail: tail(ctx, nrow.id) }
 }
 
 async function runToExit(row, ctx, limit) {

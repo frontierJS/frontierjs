@@ -18,7 +18,7 @@ import { appPorts, devPorts, scriptsRunBy, projectIdFor, toolingAppFor, PROJECTS
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort, guiPort, studioPort,
          apiContainerName, claimSession, getSessionStatus, releaseSession,
          readLock, slotFor, readsPortVar, decode, worktreeOf, portFor, composedSurfaces,
-         portStatus, parseDockerPorts, slotConflicts } from '../core/ports.js'
+         portStatus, parseDockerPorts, slotConflicts, BRANCH_STEP, MAX_BRANCH } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -425,11 +425,11 @@ describe('claimSession — a linked worktree takes a branch block', () => {
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-branch-')); lockFile = join(dir, 'sessions.lock') })
   afterEach(() => rmSync(dir, { recursive: true, force: true }))
 
-  test("branch 1 is the parent's ports with a leading 1", async () => {
+  test("branch 1 is the parent's ports one block up", async () => {
     const b = await claim('/t/one/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/one') })
     expect(b.branch).toBe(1)
-    expect(b.rows.map(r => r.port).sort()).toEqual([18020, 18120])
-    expect(b.vars).toEqual({ FRONTIER_PORT_FE: '18020', FRONTIER_PORT_BE: '18120' })
+    expect(b.rows.map(r => r.port).sort()).toEqual([12520, 12620])
+    expect(b.vars).toEqual({ FRONTIER_PORT_FE: '12520', FRONTIER_PORT_BE: '12620' })
     expect(readLock(lockFile)['/t/one/packages/basecamp']).toMatchObject({ branch: 1, repo: '/m/.git', worktree: '/t/one' })
   })
 
@@ -438,9 +438,9 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     const two = await claim('/t/two/packages/basecamp', { name: '@frontierjs/basecamp', worktree: wt('/t/two') })
     const ex  = await claim('/t/one/example', { name: '@frontierjs/example', worktree: wt('/t/one') })
     expect(two.branch).toBe(2)
-    expect(two.rows.map(r => r.port).sort()).toEqual([28020, 28120])
+    expect(two.rows.map(r => r.port).sort()).toEqual([17020, 17120])
     expect(ex.branch).toBe(1)
-    expect(ex.rows.map(r => r.port).sort()).toEqual([18010, 18110])
+    expect(ex.rows.map(r => r.port).sort()).toEqual([12510, 12610])
   })
 
   test('another repository counts from 1 again, and a number is remembered', async () => {
@@ -456,7 +456,7 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     await claim('/m/b', { name: 'b' })
     const b = await claim('/t/one/b', { name: 'b', worktree: wt('/t/one') })
     expect([b.slot, b.branch]).toEqual([1, 1])
-    expect(b.rows.map(r => r.port).sort()).toEqual([18001, 18101])
+    expect(b.rows.map(r => r.port).sort()).toEqual([12501, 12601])
   })
 
   test('an app whose configs ignore the variable gets no number, so the refusal names its real port', async () => {
@@ -503,10 +503,22 @@ describe('claimSession — a linked worktree takes a branch block', () => {
     expect(readLock(lockFile)[join(top(2), 'app')]).toBeUndefined()
   })
 
-  test('decode reads the branch digit and leaves the rest as the parent reads it', () => {
-    expect(decode(18120)).toEqual({ env: 'dev', category: 'be', projectId: 2, serviceId: 0, branch: 1 })
+  test('decode reads the branch and leaves the rest as the parent reads it', () => {
+    expect(decode(12620)).toEqual({ env: 'dev', category: 'be', projectId: 2, serviceId: 0, branch: 1 })
     expect(decode(8120).branch).toBe(0)
-    expect(apiContainerName('basecamp', 17120)).toBe('basecamp-api-test')
+    expect(apiContainerName('basecamp', 11620)).toBe('basecamp-api-test')
+  })
+
+  // FJS-4314, FJS-D2362: a block at 3x/4x/5xxxx sits in Linux's ephemeral range
+  // (32768-60999), where an outgoing socket holds a lane's port and its drive refuses.
+  test('every branch block of every base port lands below the ephemeral range and decodes back', () => {
+    for (let branch = 1; branch <= MAX_BRANCH; branch++) {
+      for (const base of [5500, 7000, 8120, 8128, 9999]) {
+        const p = base + branch * BRANCH_STEP
+        expect(p).toBeLessThan(32768)
+        expect(decode(p)).toEqual({ ...decode(base), branch })
+      }
+    }
   })
 })
 
@@ -566,16 +578,16 @@ describe('portFor — the port a test asks for', () => {
   test("a branch with no number claims the one fli dev would take, and fli dev's claim then agrees", async () => {
     const root = app(linked)
     const from = pathToFileURL(join(root, 'api', 'test', 'compute.test.ts')).href
-    expect(await portFor(from, 'be', { service: 3, lockFile })).toBe(17123)
+    expect(await portFor(from, 'be', { service: 3, lockFile })).toBe(11623)
     expect(readLock(lockFile)[root]).toMatchObject({ branch: 1, worktree: linked })
     const dev = await claimSession(root, { name: '@frontierjs/basecamp', lockFile })
-    expect(dev.vars.FRONTIER_PORT_BE).toBe('18120')
+    expect(dev.vars.FRONTIER_PORT_BE).toBe('12620')
   })
 
   test("a number the lock already holds is used as is, and a project the app does not own moves with it", async () => {
     const root = app(linked)
     writeFileSync(lockFile, JSON.stringify({ [root]: { branch: 2, repo: join(main, '.git'), worktree: linked } }))
-    expect(await portFor(root, 'be', { env: 'dev', project: 'outpost', lockFile })).toBe(28180)
+    expect(await portFor(root, 'be', { env: 'dev', project: 'outpost', lockFile })).toBe(17180)
     await expect(portFor(root, 'be', { project: 'outposts', lockFile })).rejects.toThrow(/Unknown project "outposts"/)
   })
 

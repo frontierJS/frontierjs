@@ -145,6 +145,9 @@ const refused = (what: string, kind: string, said?: { code?: string, message?: s
 /** Basecamp's refusal as this app's status; the kind is all the caller is told. */
 const todoRefused = (what: string, e: Parameters<typeof kindOf>[0]) => {
   const kind = kindOf(e)
+  const said = e as { code?: string, message?: string } | undefined
+  const why = [said?.code, said?.message].filter(Boolean).join(': ')
+  if (why) console.warn(`[chat] ${what}: Basecamp refused (${kind}): ${why}`)
   return fail(kind === 'forbidden' ? 403 : kind === 'gone' ? 404 : kind === 'refused' ? 400 : kind === 'rate_limited' ? 429 : 502, `chat.${what}: Basecamp refused (${kind})`)
 }
 const todosReady = (ctx: Ctx) => {

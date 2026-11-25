@@ -31,6 +31,32 @@ import { glyphOf } from './emoji.js'
 /** The channel on screen, so the sidebar marks it and a post arriving in it is read at once. */
 export const chat = watchProxy({ activeChannelId: null, held: {}, badge: null })
 
+// ── Sending ──
+// A post on its way to the chat server, drawn faded where it will land so Enter
+// answers at once; the round trip is the chat server's, about half a second.
+export const outbox = watchProxy({ posts: [] })
+let sends = 0
+
+/** Shows a post as sending; the answer is what takes it down again. */
+export function sendingPost({ channelExternalId, rootExternalId = null, message }) {
+  const key = `sending-${++sends}`
+  outbox.posts = [...outbox.posts, {
+    externalId: key, channelExternalId, rootExternalId, message, profileExternalId: me(),
+    createdAt: new Date().toISOString(), isPinned: false, replyCount: 0, props: {}, embeds: [],
+  }]
+  return () => { outbox.posts = outbox.posts.filter(p => p.externalId !== key) }
+}
+
+/**
+ * The posts still sending to one room's list (root null) or one thread. The real
+ * post's push can land a moment before the create answers, so one the list
+ * already holds -- the reader's, the same words, from the send on -- is not drawn twice.
+ */
+export function unsent(sending, rows, channelExternalId, rootExternalId = null) {
+  return sending.filter(p => p.channelExternalId === channelExternalId && (p.rootExternalId ?? null) === (rootExternalId ?? null)
+    && !rows.some(r => r.profileExternalId === p.profileExternalId && r.message === p.message && new Date(r.createdAt) >= new Date(p.createdAt) - 60_000))
+}
+
 /** The reader's own `profileExternalId`, or null when the member has not linked. */
 export const me = () => session.user?.profileExternalId ?? null
 
@@ -438,6 +464,15 @@ export const draftFor = (rows, channelExternalId, rootExternalId = null) =>
 
 /** A draft is a row with something typed; the server keeps no empty one. */
 export const liveDrafts = (rows) => rows.filter(d => String(d.message ?? '').trim())
+
+const DRAFT_STALE_MS = 30 * 24 * 60 * 60 * 1000
+/**
+ * The drafts the sidebar counts. Every client syncs every reply box, so stray keystrokes
+ * left months ago ('x', 'd') piled up into a badge that never meant anything; the Drafts
+ * page still lists them all so they can be cleared.
+ */
+export const pendingDrafts = (rows, now = Date.now()) => liveDrafts(rows).filter(d =>
+  String(d.message).trim().length >= 3 && now - new Date(d.updatedAt ?? 0).getTime() < DRAFT_STALE_MS)
 
 // ── Scheduled posts ──
 // Local to this laptop: a job on the API sends each row as the reader at its time.

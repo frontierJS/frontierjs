@@ -80,7 +80,7 @@ for (const k of Object.keys(env)) if (k.startsWith('CHAT_') || k.startsWith('BAS
 
 SCRATCH = mkdtempSync(join(tmpdir(), 'workbench-messages-'))
 sink = startMattermostSink({ port: 0 })
-todoSink = startBasecampSink({ port: 0, deviceInterval: 1 })
+todoSink = startBasecampSink({ port: 0 })
 const { ids, tokens } = sink
 const sinkCall = async (path, token, init = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -406,6 +406,14 @@ try {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
   await until(`!document.querySelector('[data-post-editor]') && document.activeElement === document.querySelector('[data-composer="post"] textarea')`, v => v, 'Esc never closed the editor and refocused the composer')
   ok('Up in an empty composer edits the newest own post, and Esc returns to the composer')
+  // A send answers Enter at once: the box empties and the post draws faded while the server takes its time.
+  await fetch(`${sink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify({ slowPost: 1500 }) })
+  const slow = `on its way ${Date.now()}`
+  await typeAndEnter('[data-composer="post"] textarea', slow)
+  const early = await until(`(() => { const s = [...document.querySelectorAll('[data-post-list] [data-post-sending]')]; return { box: document.querySelector('[data-composer="post"] textarea').value, sending: s.some(e => e.textContent.includes(${sel(slow)})) } })()`, v => v.sending, 'the post never drew faded while it was sending', 1_000)
+  check('Enter empties the box and draws the post faded before the server answers', early.box === '' && !(await sinkPostBy(slow)), early)
+  await until(`(() => { const all = [...document.querySelectorAll('[data-post-list] [data-post-text]')].filter(e => e.textContent.includes(${sel(slow)})); return all.length === 1 && !all[0].closest('[data-post-sending]') })()`, v => v, 'the faded copy was never swapped for exactly one real post', 15_000)
+  ok('the answer swaps the faded copy for the real post, once')
   const doomed = `to delete ${Date.now()}`
   await typeAndEnter('[data-composer="post"] textarea', doomed)
   await until(`[...document.querySelectorAll('[data-post-list] [data-post-text]')].some(e => e.textContent.includes(${sel(doomed)}))`, v => v, 'the post to delete never drew')
@@ -515,8 +523,23 @@ try {
   const mineEl = `[data-post="${filed?.id}"]`
   await until(`document.querySelector(${sel(mineEl + ' [data-file-card="image"] img')})?.naturalWidth ?? 0`, n => n > 0, 'the image never drew inline', 20_000)
   ok('the image draws inline from the preview route')
+  await click(`${mineEl} [data-file-card="image"]`)
+  await until(`(() => { const d = document.querySelector(${sel(mineEl + ' dialog[data-file-viewer]')}); return !!d?.open && (d.querySelector('[data-file-viewer-image]')?.naturalWidth ?? 0) > 0 })()`, v => v, 'a click on the image never opened it in the viewer')
+  ok('a click on an image opens the whole image in a viewer over the page')
+  await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 })
+  await until(`!document.querySelector(${sel(mineEl + ' dialog[data-file-viewer]')})?.open`, v => v, 'Escape never closed the image viewer')
+  ok('and Escape closes it')
   const card = await until(`document.querySelector(${sel(mineEl + ' [data-file-card="file"]')})?.textContent.replace(/\\s+/g, ' ').trim() ?? ''`, t => t.includes('notes.txt'), 'the text file never drew as a card', 20_000)
   check('the text file is a card with its name, size and a download', /notes\.txt/.test(card) && /15 B/.test(card) && /Download/.test(card) && await exists(`${mineEl} [data-file-download]`), card)
+
+  // The author's chat picture: the page asks our route with the member's bearer, never the chat server, and draws the bytes from a blob URL.
+  // A continuation line draws no avatar, so the first post of a run is the one to read.
+  const faceSel = '.post-avatar img.avatar'
+  await until(`document.querySelector(${sel(faceSel)})?.naturalWidth ?? 0`, n => n > 0, 'the author\'s avatar never drew a picture', 20_000)
+  const face = await evaluate(`document.querySelector(${sel(faceSel)})?.src ?? ''`)
+  const pictureAsks = ((await (await fetch(`${sink.url}/_sink/seen`)).json()).requests ?? []).filter(r => /^\/api\/v4\/users\/[a-z0-9]{26}\/image$/.test(r.path))
+  check('a post\'s avatar is the person\'s chat picture, fetched through the API as a blob URL', /^blob:/.test(face) && pictureAsks.length > 0 && pictureAsks.every(r => r.headers.authorization === `Bearer ${tokens.alice}`), { face, asks: pictureAsks.length })
 
   console.log('\n  @-mentions: the picker, the highlight')
   const typeInto = async (s, v) => { await fillSel(s, v); await evaluate(`document.querySelector(${sel(s)}).focus()`) }
@@ -1363,19 +1386,21 @@ try {
 
   console.log('\n  A post as a Basecamp to-do')
   {
-  // The grant is the owner's, made once on the Laptop screen: the sink approves the code the card shows.
+  // The grant is the owner's, made once on the Laptop screen: the sink's authorize approves at once,
+  // and its redirect is the browser's trip back to the API's /todos-connected.
   await goto('/laptop/')
   await until(`!!document.querySelector('[role=tab]')`, v => v, 'the Laptop tabs never rendered')
   await clickText('[role=tab]', 'Services')
   await until(`document.querySelector('[data-todos]')?.dataset.todos ?? null`, v => v === 'off', 'the Basecamp card never rendered unconnected', 15_000)
   await clickText('[data-todos] button', 'Connect Basecamp')
-  const shownCode = await until(`document.querySelector('[data-todo-code]')?.textContent.trim() ?? null`, v => !!v, 'the card never showed a code', 15_000)
-  const verifyHref = await evaluate(`document.querySelector('[data-todo-verify]')?.getAttribute('href') ?? null`)
-  check('the Basecamp card shows the code and a link to approve it', /^[A-Za-z0-9-]{4,}$/.test(shownCode) && /^https?:\/\/.+\/device/.test(verifyHref ?? '') && await evaluate(`document.querySelector('[data-todo-verify]').target`) === '_blank', { shownCode, verifyHref })
-  await fetch(`${todoSink.url}/_sink/device`, { method: 'POST', body: JSON.stringify({ approve: shownCode }) })
-  await until(`document.querySelector('[data-todos]')?.dataset.todos ?? null`, v => v === 'connected', 'the card never said connected after the code was approved', 30_000)
-  check('once the code is approved the card says connected', /connected/i.test(await textOf('[data-todo-state]') ?? ''), await textOf('[data-todos]'))
-  check('and the code is gone from it', !(await evaluate(`!!document.querySelector('[data-todo-code]')`)))
+  const verifyHref = await until(`document.querySelector('[data-todo-verify]')?.getAttribute('href') ?? null`, v => !!v, 'the card never showed the approve link', 15_000)
+  check('the Basecamp card links to Basecamp\'s authorize page in a new tab', /\/oauth\/authorizations\/new\?/.test(verifyHref ?? '') && /code_challenge=/.test(verifyHref ?? '') && await evaluate(`document.querySelector('[data-todo-verify]').target`) === '_blank', { verifyHref })
+  const backTo = (await fetch(verifyHref, { redirect: 'manual' })).headers.get('location')
+  const landing = await fetch(backTo)
+  check('Basecamp sends the browser back to the API, which says connected', landing.status === 200 && /Connected/.test(await landing.text()), { backTo, status: landing.status })
+  await until(`document.querySelector('[data-todos]')?.dataset.todos ?? null`, v => v === 'connected', 'the card never said connected after the sign-in landed', 30_000)
+  check('once the sign-in lands the card says connected', /connected/i.test(await textOf('[data-todo-state]') ?? ''), await textOf('[data-todos]'))
+  check('and the approve link is gone from it', !(await evaluate(`!!document.querySelector('[data-todo-verify]')`)))
   // The sink is the connector's, never 3.basecampapi.com. A direct message is the post that must not leak.
   const todoCall = (path, init = {}) => fetch(`${todoSink.url}${path}`, init).then(r => r.json())
   const todoSeen = async () => (await todoCall('/_sink/seen')).requests

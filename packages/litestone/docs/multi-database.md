@@ -73,12 +73,12 @@ if (entries.length !== 1) throw new Error(`expected the user create in the trail
 
 ```js
 const db = await createClient({ path: './schema.lite' })
-db.$attach('./archive.db', 'archive')   // synchronous; SQLite creates the file if it is absent
+db.asSystem().$attach('./archive.db', 'archive')   // synchronous; SQLite creates the file if it is absent
 await db.asSystem().sql`CREATE TABLE IF NOT EXISTS archive.user (id INTEGER PRIMARY KEY, email TEXT)`
 // asSystem(): raw SQL enforces no access rule, so on a schema that declares
 // one it is available through the documented bypass only.
 const rows = await db.asSystem().sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
-db.$detach('archive')
+db.asSystem().$detach('archive')
 ```
 
 `$attach` needs a client over files: an in-memory client (`db: ':memory:'`, `databases: ':memory:'`) refuses it with `database archive is already in use`, because its read and write handles are one connection and the alias is attached twice.

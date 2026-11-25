@@ -101,8 +101,8 @@ The full hazard catalog for `@frontierjs/cli`, moved out of `CLAUDE.md`. The doz
 - `core/ports.js` is the scheme itself — the formula, the category map, the
   `PROJECTS` registry, the dev slots `fli dev` gives every app the registry
   does not name (§ Dev slots), and the branch block a linked worktree takes —
-  +N×10000 on every port a surface reads from its variable (§ Branches,
-  `FJS-D841`). `packages/jetty/src/dev/fjs-ports.js` owns only the
+  +N×4500 on every port a surface reads from its variable (§ Branches,
+  `FJS-D841`, `FJS-D2362`). `packages/jetty/src/dev/fjs-ports.js` owns only the
   extension slice within it (8400–8499 dev, 7400–7499 test).
 - **`ws:exports` writes the published-surface snapshot, and it asks the packer.**
   `bun pm pack --dry-run` per publishable package, then every `exports` subpath,

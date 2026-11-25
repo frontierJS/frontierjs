@@ -35,7 +35,7 @@ export function introspect(db?: any): {
     __search: {
         sql: any;
     };
-    __joins: any;
+    __joins: {};
     __sql: {};
 };
 export function normalizeDdl(sql?: any): any;
@@ -57,7 +57,7 @@ export function buildPristine(db?: any, parseResult?: any): {
     __search: {
         sql: any;
     };
-    __joins: any;
+    __joins: {};
     __sql: {};
 };
 export function buildPristineForDatabase(db?: any, parseResult?: any, dbName?: any, ddl?: string): {
@@ -67,7 +67,7 @@ export function buildPristineForDatabase(db?: any, parseResult?: any, dbName?: a
     __search: {
         sql: any;
     };
-    __joins: any;
+    __joins: {};
     __sql: {};
 };
 export function diffSchemas(pristine?: any, live?: any, parseResult?: any, dbName?: string, { pluralize }?: {
@@ -75,6 +75,11 @@ export function diffSchemas(pristine?: any, live?: any, parseResult?: any, dbNam
 }): {
     newTables: any;
     newJoinTables: any[];
+    newJoinColumns: {
+        table: any;
+        name: any;
+        colDef: any;
+    }[];
     newMatViews: any;
     newViews: any;
     changedViews: any;

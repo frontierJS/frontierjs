@@ -62,7 +62,7 @@ DateTimeInput.mesa DayRangeFilter.mesa dnd.js drag.js Drawer.mesa DropdownMenu.m
 Fieldset.mesa FileField.mesa FileType.mesa FileUpload.mesa FilterBar.mesa FormField.mesa Form.mesa
 GeoField.mesa HoverCard.mesa HtmlFrame.mesa Input.mesa JsonInput.mesa Json.mesa Label.mesa
 Markdown.mesa Message.mesa Modal.mesa MoneyInput.mesa MultiSelect.mesa nav.js resize.js
-NumberInput.mesa Pagination.mesa Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa RangeInput.mesa Ring.mesa
+NumberInput.mesa Pagination.mesa paste.js Pill.mesa Popover.mesa Progress.mesa RadioGroup.mesa RangeInput.mesa Ring.mesa
 rowlist.js selection.js Select.mesa Shell.mesa SignaturePad.mesa SignatureView.mesa
 Skeleton.mesa Slider.mesa Sparkline.mesa Spinner.mesa StatCard.mesa Stat.mesa Steps.mesa
 Switch.mesa Table.mesa TabList.mesa Tab.mesa TabPanel.mesa Tabs.mesa Tag.mesa

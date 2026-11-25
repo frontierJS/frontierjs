@@ -36,6 +36,7 @@ import { fileURLToPath }       from 'node:url'
 import { portFor }             from '@frontierjs/cli/core/ports.js'
 import { PORTS, TEST_SINK_ENV }               from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { openChrome, createNetwork } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -67,7 +68,7 @@ function start(cmd, args, name, env) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -78,14 +79,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 160) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 for (const [port, what] of [[API_PORT, 'the API'], [Number(PORT), 'the preview server']]) {
   let busy = false
@@ -102,12 +95,12 @@ console.log('  building…')
 execFileSync('npx', ['vite', 'build', '-c', 'web/config/vite.config.js'], { cwd: ROOT, stdio: 'ignore' })
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT })
-start(process.execPath, [join(HERE, 'verify-preview.mjs')], 'preview',
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT })
+const previewProc = start(process.execPath, [join(HERE, 'verify-preview.mjs')], 'preview',
       { PREVIEW_PORT: PORT, FRONTIER_API_URL: API })
 
-if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
-if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }
+if (!await waitForServer(`${API}/api/products`, 'api', apiProc, { tries: 160 })) { stopAll(); process.exit(1) }
+if (!await waitForServer(UI, 'preview', previewProc, { tries: 160 }))            { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 

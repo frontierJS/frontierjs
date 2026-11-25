@@ -29,7 +29,7 @@ async function client() {
     async get() { return null },
     async delete(key: string) { deletes.push(key) },
   }
-  const ref = (col: string) => JSON.parse(db.$db.query(`SELECT ${col} FROM "P" WHERE id = 1`).get()[col])
+  const ref = (col: string) => JSON.parse(db.asSystem().$db.query(`SELECT ${col} FROM "P" WHERE id = 1`).get()[col])
   return { db, deletes, ref }
 }
 
@@ -43,7 +43,7 @@ describe('an update clearing a file column removes its object (FJS-3995)', () =>
     await db.asSystem().p.update({ where: { id: 1 }, data: { file: null } })
 
     expect(deletes).toEqual([old.key])
-    expect(db.$db.query('SELECT file FROM "P" WHERE id = 1').get().file).toBeNull()
+    expect(db.asSystem().$db.query('SELECT file FROM "P" WHERE id = 1').get().file).toBeNull()
     db.$close()
   })
 
@@ -78,7 +78,7 @@ describe('an update clearing a file column removes its object (FJS-3995)', () =>
     }).catch(() => {})
 
     expect(deletes).toEqual([])
-    expect(db.$db.query('SELECT file FROM "P" WHERE id = 1').get().file).not.toBeNull()
+    expect(db.asSystem().$db.query('SELECT file FROM "P" WHERE id = 1').get().file).not.toBeNull()
     db.$close()
   })
 })

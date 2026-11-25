@@ -18,6 +18,11 @@ export const name = 'now — one timer per resolution, parked while hidden'
 
 const text = (t, id) => t.evaluate(`return document.querySelector('#${id}').textContent;`)
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// One evaluate, so a tick cannot land between the two reads: under load the
+// gap between two calls crossed a whole second and read two instants (FJS-4390).
+const both = async (t) => (await t.evaluate(
+  `return [document.querySelector('#a').textContent, document.querySelector('#b').textContent];`,
+)).map(Number)
 const live = (t) => t.evaluate(`return window.kitIntervals.size;`)
 
 export async function run(t) {
@@ -39,14 +44,14 @@ export async function run(t) {
   `)
   await t.mount('now')
 
-  const first = Number(await text(t, 'a'))
+  const [first, second] = await both(t)
   t.ok(Math.abs(first - Date.now()) < 5000, 'the first read is the time now')
-  t.is(await text(t, 'b'), String(first), 'a second reader of 1000 ms reads the same instant')
+  t.is(second, first, 'a second reader of 1000 ms reads the same instant')
 
   await t.eventually(`document.querySelector('#a').textContent !== '${first}'`, true,
     'the value advances on its own', 2500)
-  const ticked = Number(await text(t, 'a'))
-  t.is(await text(t, 'b'), String(ticked), 'both readers move on the one tick')
+  const [ticked, moved] = await both(t)
+  t.is(moved, ticked, 'both readers move on the one tick')
   t.ok(ticked % 1000 < 250, `a tick lands on a whole second (${ticked % 1000} ms past)`)
   // the 60 s reader aligns to :00 then calls setInterval(60000), so only the 1000 ms calls are counted
   t.is(await t.evaluate(`return window.kitIntervalCalls.filter((ms) => ms === 1000).length;`), 1,

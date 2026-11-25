@@ -12,7 +12,7 @@ The tradeoffs are real but manageable:
 
 - **Single writer** — WAL mode + Litestone's dual read/write connections handle this. Reads and writes never block each other. Writes serialize naturally; for most web apps the write rate is low enough that this is never the bottleneck.
 - **No horizontal scaling** — true. SQLite is one file, one machine. This is a constraint, but it's also why you have zero ops: no cluster, no replication lag, no split-brain. Litestream handles disaster recovery.
-- **Backup complexity** — solved. `db.$backup()` is a single hot-backup call. Litestream streams WAL frames to S3 continuously.
+- **Backup complexity** — solved. `db.asSystem().$backup()` is a single hot-backup call. Litestream streams WAL frames to S3 continuously.
 
 SQLite is what Basecamp, Notion's early years, Shopify's single-store mode, and countless SaaS apps used to get to millions of users. The question isn't "can SQLite handle my app" — it's "what happens when I outgrow it." The answer is: you migrate. Most apps never get there.
 

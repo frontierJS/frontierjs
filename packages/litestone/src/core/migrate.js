@@ -328,11 +328,15 @@ export function introspect(db) {
   const searchRow = master.find(r => r.type === 'table' && r.name === SEARCH_TABLE)
   schema.__search = searchRow ? { sql: searchRow.sql } : null
 
-  // The underscore tables INTERNAL hides, by name only: an implicit m2m's join
-  // table is one, and `diffSchemas` asks whether each one the schema plans exists.
-  schema.__joins = master
-    .filter(r => r.type === 'table' && r.name.startsWith('_') && r.name !== SEARCH_TABLE)
-    .map(r => r.name)
+  // The underscore tables INTERNAL hides, each with its column names: an
+  // implicit m2m's join table is one, and `diffSchemas` asks whether each one
+  // the schema plans exists and holds every @edge column it plans. Names alone
+  // let an added @edge column compare equal (FJS-4612).
+  schema.__joins = {}
+  for (const r of master) {
+    if (r.type !== 'table' || !r.name.startsWith('_') || r.name === SEARCH_TABLE) continue
+    schema.__joins[r.name] = xinfoStmt.all(r.name).map(c => c.name)
+  }
 
   // Everything above reads a NAMED dimension. This reads the statements whole,
   // so the residue tripwire below has something to compare that no reader here
@@ -999,11 +1003,27 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   // (FJS-4569). Only a join the schema plans is asked about, and only its
   // absence: the migration creates it, and nothing here drops one. An
   // @edge/@scoped side table is one too (FJS-4601).
-  const pristineJoins = new Set(pristine.__joins ?? [])
-  const liveJoins     = new Set(live.__joins ?? [])
+  const pristineJoins = pristine.__joins ?? {}
+  const liveJoins     = live.__joins ?? {}
   const { pairs: plannedPairs, ownGroups: plannedSides } = planJoinStorage(parseResult.schema, dbName, pluralize)
-  const newJoinTables = [...new Set([...plannedPairs.map(p => p.joinTable), ...plannedSides.map(g => g.sideTable)])]
-    .filter(t => pristineJoins.has(t) && !liveJoins.has(t))
+  const plannedStorage = [
+    ...plannedPairs.map(p => ({ table: p.joinTable, colDefs: p.edgeColumns ?? [] })),
+    ...plannedSides.map(g => ({ table: g.sideTable, colDefs: g.cols })),
+  ]
+  const newJoinTables = [...new Set(plannedStorage.map(s => s.table))]
+    .filter(t => pristineJoins[t] && !liveJoins[t])
+
+  // Its CREATE is IF NOT EXISTS, so a join or side table that exists gains an
+  // @edge column only by ALTER. Only an add: an @edge removed leaves its column.
+  const newJoinColumns = []
+  for (const { table, colDefs } of plannedStorage) {
+    if (!pristineJoins[table] || !liveJoins[table]) continue
+    for (const colDef of colDefs) {
+      const name = colDef.match(/"([^"]+)"/)?.[1]
+      if (name && pristineJoins[table].includes(name) && !liveJoins[table].includes(name))
+        newJoinColumns.push({ table, name, colDef: colDef.trim() })
+    }
+  }
 
   const tableDiffs = []
 
@@ -1280,6 +1300,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   return {
     newTables,
     newJoinTables,
+    newJoinColumns,
     newMatViews,
     newViews,
     changedViews,
@@ -1295,7 +1316,8 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     searchPurges,
     residue,
     dbName,
-    hasChanges: newTables.length > 0 || newJoinTables.length > 0 || newMatViews.length > 0 ||
+    hasChanges: newTables.length > 0 || newJoinTables.length > 0 || newJoinColumns.length > 0 ||
+                newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
                 changedTriggers.length > 0 || droppedTriggers.length > 0 ||
@@ -1565,6 +1587,8 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
       lines.push(`-- ─── implicit m2m join tables (idempotent) ${'─'.repeat(24)}`)
       for (const pair of pairs) lines.push(generateJoinTableDDL(pair, true))
       for (const g of ownGroups) lines.push(generateEdgeSideTableDDL(g, true))
+      for (const c of diffResult.newJoinColumns ?? [])
+        lines.push(`ALTER TABLE ${quoteIdent(c.table)} ADD COLUMN ${c.colDef};`)
       lines.push(``)
     }
   }
@@ -1864,6 +1888,9 @@ export function summarizeDiff(diffResult) {
 
   for (const t of diffResult.newJoinTables ?? [])
     lines.push(`  + ${t}  (new join table)`)
+
+  for (const c of diffResult.newJoinColumns ?? [])
+    lines.push(`  ~ ${c.table}  [alter]\n      + col  ${c.name}  (@edge)`)
 
   for (const n of diffResult.droppedTables)
     lines.push(`  ? ${n}  (in db, not in schema)`)

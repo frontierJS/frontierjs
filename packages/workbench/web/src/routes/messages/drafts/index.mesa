@@ -25,11 +25,35 @@ title: Drafts
     error = null
     try { await deleteDraft(d) } catch (e) { error = e.message }
   }
+
+  // Deleted on the server, so every other client loses them too; hence the second press.
+  let confirming = false, clearing = false
+  async function clearAll() {
+    error = null; clearing = true
+    const failed = []
+    for (const d of rows.slice()) {
+      try { await deleteDraft(d) } catch (e) { failed.push(e.message) }
+    }
+    clearing = false; confirming = false
+    if (failed.length) error = `${failed.length} draft(s) were not deleted: ${failed[0]}`
+  }
 </script>
 
 <header class="drafts-head">
-  <h1 class="h4 cluster gap-xs"><Icon name="edit" /> Drafts</h1>
-  <p class="text-sm text-muted">What you typed and have not sent. It follows you to any window.</p>
+  <div class="drafts-title">
+    <h1 class="h4 cluster gap-xs"><Icon name="edit" /> Drafts</h1>
+    {#if rows.length > 1}
+      <div class="cluster gap-xs">
+        {#if confirming}
+          <button type="button" class="btn sm danger" data-drafts-clear-yes disabled={clearing} onclick={clearAll}>{clearing ? 'Deleting…' : `Delete all ${rows.length}`}</button>
+          <button type="button" class="btn ghost sm" disabled={clearing} onclick={() => { confirming = false }}>Cancel</button>
+        {:else}
+          <button type="button" class="btn ghost sm" data-drafts-clear onclick={() => { confirming = true }}>Delete all…</button>
+        {/if}
+      </div>
+    {/if}
+  </div>
+  <p class="text-sm text-muted">What you typed and have not sent. It follows you to any window. The sidebar counts only drafts of three characters or more from the last 30 days.</p>
 </header>
 
 <div class="drafts" data-drafts>
@@ -58,6 +82,7 @@ title: Drafts
   .drafts-head { padding-inline: var(--space-lg); padding-block: var(--space-lg); border-block-end: var(--border-width) solid var(--rule); }
   .drafts-head h1, .drafts-head p { margin: 0; }
   .drafts-head h1 { align-items: center; }
+  .drafts-title { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--space-sm); }
   .drafts { flex: 1; min-block-size: 0; overflow-y: auto; padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
   .draft-where { font-weight: var(--label-font-weight); }
   .draft-body { margin: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }

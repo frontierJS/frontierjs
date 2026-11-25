@@ -66,6 +66,9 @@ beforeAll(async () => {
   })
   app    = env.app
   runner = app.orion
+  // createTestEnv holds the queue (FJS-4584), and a run is a Caravan job: unstarted,
+  // every run stays pending.
+  await app.jobs.start()
 })
 
 afterAll(async () => {

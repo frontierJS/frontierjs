@@ -15,7 +15,7 @@
   "scripts": {
     "build": "bun run --filter '*' build",
     "test": "bun run --filter '*' test",
-    "typecheck": "bun run --filter '*' typecheck",
+    "typecheck": "node scripts/typecheck.mjs",
     "ci": "node scripts/ci.mjs",
     "ci:fast": "node scripts/ci.mjs --fast",
     "prep": "node scripts/prep.mjs",

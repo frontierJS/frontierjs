@@ -44,6 +44,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir }                                            from 'node:os'
 import { dirname, join, resolve }                            from 'node:path'
 import { fileURLToPath }                                     from 'node:url'
+import { desktopApiEnv }                                     from '@frontierjs/cli/core/desktop-surface.js'
 import { portFor }                                           from '@frontierjs/cli/core/ports.js'
 import { results, report }                                   from '../../web/test/lib/report.mjs'
 
@@ -71,6 +72,9 @@ if (missing.length) {
 
 // Set before importing the app: app.ts reads API_PORT at module scope. The
 // app's sinks would otherwise take the dev row's ports off a running server.
+// The Tauri origins are the ones fli's desktop:run names: without them the
+// socket upgrade refuses tauri://localhost with a 403 (FJS-D1207, FJS-3921).
+process.env.FRONTIER_CORS_ORIGINS = desktopApiEnv(API_PORT).FRONTIER_CORS_ORIGINS
 process.env.API_PORT      = String(API_PORT)
 process.env.MAIL_SINK_URL = 'http://localhost:9/unused'
 process.env.PSP_URL       = 'http://localhost:9/unused'

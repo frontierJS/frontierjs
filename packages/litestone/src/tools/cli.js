@@ -5208,7 +5208,7 @@ async function cmdRekey(cfg) {
   })
 
   let stats
-  try { stats = await db.$rotateKey(newKey, { orphan }) }
+  try { stats = await db.asSystem().$rotateKey(newKey, { orphan }) }
   catch (e) {
     if (e.orphaned) fatal(`${e.message.split('\nPass {')[0]}\n` +
       `     Pass ${cyan(`--orphan=${e.orphaned.join(',')}`)} to accept that deliberately.`)

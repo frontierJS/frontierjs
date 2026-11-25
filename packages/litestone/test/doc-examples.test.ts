@@ -142,8 +142,9 @@ async function runBlock(block: Block) {
     const timer = setTimeout(() => { timedOut = true; proc.kill() }, TIMEOUT)
     const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
     clearTimeout(timer)
-    // A kill reads as a bare `exit 143`, which looks like the example crashing; under a loaded host it is the clock.
-    if (timedOut) throw new Error(`timed out after ${TIMEOUT}ms (host load, not the example — it runs in seconds alone)`)
+    // A kill reads as a bare `exit 143`, which looks like the example crashing. `host` marks it for runAll's rerun.
+    if (timedOut || proc.signalCode)
+      throw Object.assign(new Error(timedOut ? `timed out after ${TIMEOUT}ms` : `killed by ${proc.signalCode}`), { host: true })
     if (code !== 0) throw new Error(stderr.trim() || `exit ${code}`)
     return stderr
   } finally {
@@ -177,22 +178,42 @@ for (const file of corpus())
 // Every block runs up front, eight wide: a process per block is the isolation,
 // and in series that is a minute and a half.
 const results = new Map<string, Error | null>()
+
+async function attempt(block: Block): Promise<(Error & { host?: boolean }) | null> {
+  try {
+    if (block.lang === 'lite') await buildSchema(block.body)
+    else await runBlock(block)
+    return null
+  } catch (e) { return e as Error }
+}
+
+function verdict(block: Block, err: Error | null) {
+  if (block.lang === 'lite' && block.words.has('throws')) err = err ? null : new Error('expected the schema to be refused')
+  if (block.words.has('failing')) err = err ? null : new Error('the example passes now — remove `failing` from its fence')
+  return err
+}
+
 async function runAll() {
+  // Eight wide beside other lanes' suites, the heaviest block (README's
+  // mutationScore, 3s alone) crossed the 15s kill and failed as the example
+  // (FJS-4042, FJS-4400). A clock or signal kill there is rerun once after the
+  // pool drains, and fails only if it dies again there.
+  const again: typeof all = []
   let next = 0
   const worker = async () => {
     while (next < all.length) {
-      const { id, block } = all[next++]
-      let err: Error | null = null
-      try {
-        if (block.lang === 'lite') await buildSchema(block.body)
-        else await runBlock(block)
-      } catch (e) { err = e as Error }
-      if (block.lang === 'lite' && block.words.has('throws')) err = err ? null : new Error('expected the schema to be refused')
-      if (block.words.has('failing')) err = err ? null : new Error('the example passes now — remove `failing` from its fence')
-      results.set(id, err)
+      const entry = all[next++]
+      const err = await attempt(entry.block)
+      if (err?.host) again.push(entry)
+      else results.set(entry.id, verdict(entry.block, err))
     }
   }
   await Promise.all(Array.from({ length: 8 }, worker))
+  for (const { id, block } of again) {
+    const err = await attempt(block)
+    if (err?.host) err.message += ' in the pool and again run alone, so it is the example and not host load'
+    results.set(id, verdict(block, err))
+  }
 }
 
 describe('every example in the docs runs', () => {

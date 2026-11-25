@@ -310,7 +310,7 @@ url: 'file:///backups/myapp'
 
 ## Backup vs replication
 
-| | `db.$backup()` | Litestream |
+| | `db.asSystem().$backup()` | Litestream |
 |---|---|---|
 | Frequency | Manual / scheduled | Continuous (seconds) |
 | RPO | Hours (if hourly) | Near-zero |
@@ -318,7 +318,7 @@ url: 'file:///backups/myapp'
 | Recovery | Copy file back | `litestone restore` |
 | Use case | Point-in-time snapshots, pre-migration | Production disaster recovery |
 
-Use both: `db.$backup()` before migrations, Litestream for continuous protection.
+Use both: `db.asSystem().$backup()` before migrations, Litestream for continuous protection.
 
 ## Pre-migration backup
 
@@ -329,7 +329,7 @@ import { apply } from '@frontierjs/litestone/migrations'
 // Always back up before running migrations
 mkdirSync('./backups', { recursive: true })
 mkdirSync('./migrations', { recursive: true })
-await db.$backup(`./backups/pre-migration-${Date.now()}.db`)   // → { path, size, vacuumed }
+await db.asSystem().$backup(`./backups/pre-migration-${Date.now()}.db`)   // → { path, size, vacuumed }
 await apply(db.$rawDbs.main, './migrations')                     // takes the SQLite handle — migrations.md
 ```
 

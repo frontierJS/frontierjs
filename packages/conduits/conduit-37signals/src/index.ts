@@ -28,6 +28,7 @@
 // `findCreated`, below the writes.
 
 import { MintError, errorBody, type ConduitRequest, type ConduitResult, type CredentialCaller, type CredentialResolver, type FrameDialect, type Material, type ReceivedEvent, type TargetDescriptor } from '@frontierjs/conduit'
+import { createHash, randomBytes } from 'node:crypto'
 import { translate, type BasecampFailure } from './errors.ts'
 import type { BasecampErrorBody, ChatLine, Comment, FeedEvent, FeedPage, Message, Person, Project, Recording, Todo, Todolist } from './types.ts'
 
@@ -196,93 +197,72 @@ export function basecampTokenResolver(bc: BasecampSend, opts: { clientId: string
   }
 }
 
-// ─── Signing in (device code) ─────────────────────────────────────────────
+// ─── Signing in (authorization code + PKCE) ───────────────────────────────
 // A public client registers once (RFC 7591, no secret) and signs a person in
-// by RFC 8628: the person approves a short code at `verification_uri` in any
-// browser while the app polls `token`. What the app keeps is the client id and
-// the refresh token, which `basecampTokenResolver` spends from then on.
-// `app.basecamp.com` advertises all three endpoints; whether a registered
-// client may take the device grant, and the registration body it requires,
-// are unmeasured, so these are the RFCs' words.
+// with an authorization code and PKCE (RFC 7636) to a loopback redirect: the
+// person approves at `authorizations/new` in a browser, which comes back to
+// `redirectUri` with `code` and `state`, and the app trades the code and its
+// verifier at `token`. What the app keeps is the client id, its redirect URI
+// and the refresh token, which `basecampTokenResolver` spends from then on.
+// Measured 2026-11-24 (`FJS-D2341`): registration without `redirect_uris` is
+// `invalid_redirect_uri`, and a dynamically registered client may take only
+// the authorization_code and refresh_token grants, so the device grant is out.
 
-export const BASECAMP_REGISTER_PATH = '/oauth/clients'
-export const BASECAMP_DEVICE_PATH   = '/oauth/device_authorizations'
-export const DEVICE_CODE_GRANT      = 'urn:ietf:params:oauth:grant-type:device_code'
+export const BASECAMP_REGISTER_PATH  = '/oauth/clients'
+export const BASECAMP_AUTHORIZE_PATH = '/oauth/authorizations/new'
 /** `full` writes; `offline_access` is what earns a refresh token. */
-export const BASECAMP_SIGN_IN_SCOPE = 'full offline_access'
+export const BASECAMP_SIGN_IN_SCOPE  = 'full offline_access'
 
 /**
- * Registers a public client and answers its id. Never resent: a lost answer
- * may have made a client nobody knows the id of, and a second one beside it
- * is harmless while a loop of them is not.
+ * Registers a public client for one redirect URI and answers its id. Never
+ * resent: a lost answer may have made a client nobody knows the id of, and a
+ * second one beside it is harmless while a loop of them is not.
  */
-export async function registerClient(bc: BasecampSend, opts: { clientName: string; scope?: string }): Promise<{ clientId?: string; error?: BasecampFailure }> {
+export async function registerClient(bc: BasecampSend, opts: { clientName: string; redirectUri: string; scope?: string }): Promise<{ clientId?: string; error?: BasecampFailure }> {
   if (!opts.clientName?.trim()) throw new TypeError('37signals: clientName is what the person sees when they approve; name the app')
+  if (!/^https?:\/\//.test(opts.redirectUri ?? '')) throw new TypeError('37signals: redirectUri is required -- Basecamp refuses a registration without redirect_uris')
   const r = await bc.register<{ client_id?: string }>({
     method: 'POST', path: BASECAMP_REGISTER_PATH,
-    body: { client_name: opts.clientName, grant_types: [DEVICE_CODE_GRANT, 'refresh_token'], token_endpoint_auth_method: 'none', scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE },
+    body: { client_name: opts.clientName, redirect_uris: [opts.redirectUri], grant_types: ['authorization_code', 'refresh_token'], token_endpoint_auth_method: 'none', scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE },
   })
   if (r.error) return { error: failure(r) }
   if (!r.data?.client_id) throw new TypeError('37signals: the registration endpoint answered no client_id')
   return { clientId: r.data.client_id }
 }
 
-/** What the person is shown, and what the app polls with. `deviceCode` stays on the server. */
-export interface DeviceSignIn { deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete?: string; expiresAt: number; intervalMs: number }
+/** A PKCE pair: the verifier stays on the server, the S256 challenge rides the authorize URL. */
+export function pkcePair(): { verifier: string; challenge: string } {
+  const verifier = randomBytes(32).toString('base64url')
+  return { verifier, challenge: pkceChallenge(verifier) }
+}
+export const pkceChallenge = (verifier: string) => createHash('sha256').update(verifier).digest('base64url')
 
-export async function startDeviceSignIn(bc: BasecampSend, opts: { clientId: string; scope?: string }): Promise<{ signIn?: DeviceSignIn; error?: BasecampFailure }> {
-  if (!opts.clientId) throw new TypeError('37signals: clientId is required — the client registerClient answered')
-  const r = await bc.token<{ device_code?: string; user_code?: string; verification_uri?: string; verification_uri_complete?: string; expires_in?: number; interval?: number }>({
-    method: 'POST', path: BASECAMP_DEVICE_PATH, body: { client_id: opts.clientId, scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE },
-  })
-  if (r.error) return { error: failure(r) }
-  const d = r.data
-  if (!d?.device_code || !d.user_code || !d.verification_uri || typeof d.expires_in !== 'number') throw new TypeError('37signals: the device authorization answered without device_code, user_code, verification_uri or expires_in')
-  return { signIn: {
-    deviceCode: d.device_code, userCode: d.user_code, verificationUri: d.verification_uri,
-    ...(d.verification_uri_complete ? { verificationUriComplete: d.verification_uri_complete } : {}),
-    expiresAt: Date.now() + d.expires_in * 1000,
-    // RFC 8628 3.2: absent, the client waits five seconds.
-    intervalMs: (d.interval ?? 5) * 1000,
-  } }
+/** Where the person approves the client; `state` is the caller's proof that the browser's return is its own. */
+export function authorizeUrl(opts: { clientId: string; redirectUri: string; state: string; codeChallenge: string; scope?: string; authorizeOrigin?: string }): string {
+  if (!opts.clientId || !opts.redirectUri || !opts.state || !opts.codeChallenge) throw new TypeError('37signals: authorizeUrl needs clientId, redirectUri, state and codeChallenge')
+  const url = new URL(BASECAMP_AUTHORIZE_PATH, (opts.authorizeOrigin ?? BASECAMP_TOKEN_ORIGIN).replace(/\/+$/, '') + '/')
+  url.search = new URLSearchParams({
+    response_type: 'code', client_id: opts.clientId, redirect_uri: opts.redirectUri, scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE,
+    state: opts.state, code_challenge: opts.codeChallenge, code_challenge_method: 'S256',
+  }).toString()
+  return url.toString()
 }
 
-export interface DeviceGrant { accessToken: string; refreshToken: string; expiresAt: number | null }
-/** `denied` and `expired` end the sign-in; the person starts another. */
-export type DeviceOutcome = { grant: DeviceGrant; polls: number } | { ended: 'denied' | 'expired' | 'cancelled' | 'no_refresh_token'; polls: number } | { error: BasecampFailure; polls: number }
+export interface SignInGrant { accessToken: string; refreshToken: string; expiresAt: number | null }
+export type CodeOutcome = { grant: SignInGrant } | { ended: 'no_refresh_token' } | { error: BasecampFailure }
 
-/**
- * Polls `token` until the person approves, refuses or the code expires.
- * `slow_down` adds five seconds to every later wait (RFC 8628 3.5), and a
- * throttled or failed poll waits and asks again: the code is the credential
- * and nothing was spent. `sleep` is the clock, for a drive.
- */
-export async function awaitDeviceGrant(bc: BasecampSend, opts: { clientId: string; signIn: DeviceSignIn; signal?: AbortSignal; sleep?: (ms: number) => Promise<void> }): Promise<DeviceOutcome> {
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>(res => setTimeout(res, ms)))
-  let wait = opts.signIn.intervalMs, polls = 0
-  for (;;) {
-    if (Date.now() >= opts.signIn.expiresAt) return { ended: 'expired', polls }
-    await sleep(wait)
-    if (opts.signal?.aborted) return { ended: 'cancelled', polls }
-    polls++
-    const r = await bc.token<{ access_token?: string; refresh_token?: string; expires_in?: number }>({
-      method: 'POST', path: BASECAMP_TOKEN_PATH,
-      body: { grant_type: DEVICE_CODE_GRANT, device_code: opts.signIn.deviceCode, client_id: opts.clientId },
-    })
-    if (!r.error) {
-      const t = r.data
-      if (!t?.access_token) throw new TypeError('37signals: the token endpoint answered no access_token')
-      if (!t.refresh_token) return { ended: 'no_refresh_token', polls }
-      return { grant: { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: typeof t.expires_in === 'number' ? Date.now() + t.expires_in * 1000 : null }, polls }
-    }
-    const code = errorBody<BasecampErrorBody>(r.error.raw)?.error
-    if (code === 'authorization_pending') continue
-    if (code === 'slow_down') { wait += 5000; continue }
-    if (code === 'access_denied') return { ended: 'denied', polls }
-    if (code === 'expired_token') return { ended: 'expired', polls }
-    const f = failure(r)
-    if (!f.retryable) return { error: f, polls }
-  }
+/** Trades the code the browser came back with, once; a refusal is the token endpoint's and is not retried. */
+export async function exchangeCode(bc: BasecampSend, opts: { clientId: string; code: string; redirectUri: string; codeVerifier: string }): Promise<CodeOutcome> {
+  if (!opts.clientId || !opts.code || !opts.redirectUri || !opts.codeVerifier) throw new TypeError('37signals: exchangeCode needs clientId, code, redirectUri and codeVerifier')
+  const r = await bc.token<{ access_token?: string; refresh_token?: string; expires_in?: number }>({
+    method: 'POST', path: BASECAMP_TOKEN_PATH,
+    body: { grant_type: 'authorization_code', code: opts.code, redirect_uri: opts.redirectUri, client_id: opts.clientId, code_verifier: opts.codeVerifier },
+  })
+  if (r.error) return { error: failure(r) }
+  const t = r.data
+  if (!t?.access_token) throw new TypeError('37signals: the token endpoint answered no access_token')
+  if (!t.refresh_token) return { ended: 'no_refresh_token' }
+  return { grant: { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: typeof t.expires_in === 'number' ? Date.now() + t.expires_in * 1000 : null } }
 }
 
 /** One account the signed-in person can reach; `product: 'bc3'` is the one `api` addresses. */

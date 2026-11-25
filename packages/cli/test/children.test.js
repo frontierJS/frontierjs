@@ -86,8 +86,15 @@ describe('what may be spawned', () => {
     // A lane's port is the branch block; an API started without the variable
     // binds its own default and the drive polls a port nothing holds.
     const spawnFn = fakeSpawn()
-    startRow(row({ id: 'surface:example/api', portEnv: 'FRONTIER_PORT_BE', port: 48110 }), { root: ROOT, fliRoot: FLI, spawnFn })
+    startRow(row({ id: 'surface:example/api', portVars: { FRONTIER_PORT_BE: '48110' }, port: 48110 }), { root: ROOT, fliRoot: FLI, spawnFn })
     expect(spawnFn.calls[0].opts.env.FRONTIER_PORT_BE).toBe('48110')
+  })
+
+  test('a web row is handed its API\'s port too, or its proxy reaches the main tree (FJS-4276)', () => {
+    const spawnFn = fakeSpawn()
+    const vars    = { FRONTIER_PORT_FE: '48010', FRONTIER_PORT_BE: '48110' }
+    startRow(row({ id: 'surface:example/web', portVars: vars, port: 48010 }), { root: ROOT, fliRoot: FLI, spawnFn })
+    expect(spawnFn.calls[0].opts.env).toMatchObject(vars)
   })
 
 })

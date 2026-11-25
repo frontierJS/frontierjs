@@ -14,7 +14,7 @@ import { byRef, conduit, createEnvResolver } from '@frontierjs/conduit'
 import type { CredentialCaller, CredentialResolver } from '@frontierjs/conduit'
 import {
   bindMattermost, browseChannels, createDirectChannel, createGroupChannel, fileBytes, followThread, getThread, listProfiles, markThreadRead, markUnread,
-  listTeams, me, mirror, muteChannel, pinPost, threadKey, unfollowThread, unpinPost, uploadFile, viewChannel,
+  listTeams, me, mirror, muteChannel, pinPost, profileImage, threadKey, unfollowThread, unpinPost, uploadFile, viewChannel,
   clearCustomStatus, deleteDraft, favoriteChannel, listSavedPosts, listStatuses, saveDraft, savePost, searchPosts, setCustomStatus, setStatus,
   unfavoriteChannel, unsavePost,
   createCategory, deleteCategory, editHistory, isCategoryId, listCategories, reorderCategories, setReminder, updateCategory,
@@ -257,6 +257,14 @@ export async function openDirectAs (app: App, profile: string, others: string[])
  */
 export async function fileOf (app: App, externalId: string, size: FileSize) {
   return fileBytes(asCaller(app), externalId, size)
+}
+
+/**
+ * A person's profile picture, read as the caller with their own token. The
+ * route checks the caller may read the Profile row first.
+ */
+export async function profileImageOf (app: App, externalId: string) {
+  return profileImage(asCaller(app), externalId)
 }
 
 /** Upload one file as the caller into a channel; a post naming it in `fileExternalIds` claims it. */

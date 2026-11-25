@@ -57,7 +57,7 @@ for (const c of CASES) {
     }
     const ref = (field: 'file' | 'photos') => {
       const col = c.col[field]
-      return JSON.parse(db.$db.query(`SELECT "${col}" FROM "${c.table}"`).get()[col])
+      return JSON.parse(db.asSystem().$db.query(`SELECT "${col}" FROM "${c.table}"`).get()[col])
     }
     return { db, deletes, ref }
   }

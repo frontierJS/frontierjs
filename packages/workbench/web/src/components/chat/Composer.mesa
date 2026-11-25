@@ -26,9 +26,10 @@
   import DropdownMenu from '@frontierjs/ui/components/overlay/DropdownMenu.mesa'
   import DropdownItem from '@frontierjs/ui/components/overlay/DropdownItem.mesa'
   import { posts } from '../../resources/Post.mesa'
-  import { applyMention, deleteDraft, draftFor, expandGroups, getLists, laterChoices, mentionAt, pickerKey, saveDraft, scheduleSend, watchMembers } from '../../lib/chat.js'
+  import { applyMention, deleteDraft, draftFor, expandGroups, getLists, laterChoices, mentionAt, pickerKey, saveDraft, scheduleSend, sendingPost, watchMembers } from '../../lib/chat.js'
   import { commandAt, runCommand } from '../../lib/chat-commands.js'
-  import { MAX_FILE_BYTES, MAX_FILES, fileSize, filesOf, uploadFile } from '../../lib/files.js'
+  import { MAX_FILE_BYTES, MAX_FILES, fileSize, uploadFile } from '../../lib/files.js'
+  import { filesOf, pastedFiles } from '@frontierjs/ui/paste'
 
   export let channelId = null
   export let rootExternalId = null   // a reply: the thread's root
@@ -102,11 +103,29 @@
   // field-sizing grows the box with its text; WebKitGTK (the desktop shell)
   // and Firefox lack it and hold every draft in one line. The CSS
   // max-block-size still caps what this sets.
+  //
+  // The height is read off a hidden copy, and the box is written only when it changes:
+  // collapsing the box itself to measure it lays the whole room out again twice a key,
+  // which in WebKitGTK is 40 ms a key with fifty posts on screen.
   const SIZES_ITSELF = typeof CSS === 'undefined' || CSS.supports('field-sizing', 'content')
+  let ruler = null
+  let fitted = 0
   function fit() {
-    if (SIZES_ITSELF || !box) return
-    box.style.blockSize = 'auto'
-    box.style.blockSize = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`
+    if (SIZES_ITSELF || !box || !box.offsetWidth) return
+    if (!ruler) {
+      ruler = box.cloneNode(false)
+      ruler.removeAttribute('aria-label')
+      ruler.setAttribute('aria-hidden', 'true')
+      ruler.tabIndex = -1
+      ruler.style.cssText = 'position:absolute;inset-block-start:0;inset-inline-start:0;visibility:hidden;pointer-events:none;block-size:auto;max-block-size:none;overflow:hidden'
+      box.parentNode.append(ruler)
+    }
+    ruler.style.inlineSize = `${box.offsetWidth}px`
+    ruler.value = box.value
+    const height = ruler.scrollHeight + ruler.offsetHeight - ruler.clientHeight
+    if (height === fitted) return
+    fitted = height
+    box.style.blockSize = `${height}px`
   }
   $: text, box, () => { requestAnimationFrame(fit) }
 
@@ -148,9 +167,8 @@
       }
     }))
   }
-  function onPaste(e) {
-    const got = filesOf(e.clipboardData)
-    if (got.length) { e.preventDefault(); take(got) }
+  async function onPaste(e) {
+    try { const got = await pastedFiles(e); if (got.length) take(got) } catch { error = 'The pasted image could not be read from the clipboard.' }
   }
   function onDrop(e) { e.preventDefault(); dragging = false; take(filesOf(e.dataTransfer)) }
   const dropFile = (key) => { files = files.filter(f => f.key !== key) }
@@ -175,6 +193,7 @@
     let message = text.trim()
     if ((!message && !ready.length) || !channelId || sending || uploading) return
     const typed = text
+    const fileIds = ready.map(f => f.id)
     sending = true
     error = null
     answer = null
@@ -188,16 +207,26 @@
         }
         if (ran?.literal != null) message = ran.literal
       }
-      // pendingPostId lets the server collapse a retried send into one post, should the first answer be lost.
-      await posts.service.create({
-        channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message: expandGroups(message, lists.groups.rows, people), pendingPostId: crypto.randomUUID(),
-        ...(ready.length ? { fileExternalIds: ready.map(f => f.id) } : {}),
-      })
-      // Words typed while the post was on its way are the next message, not this one.
-      const since = text === typed ? '' : text.startsWith(typed) ? text.slice(typed.length).trimStart() : text
+      // The box empties and the post shows as sending before the round trip; a
+      // refusal puts the words and files back, ahead of anything typed since.
+      const body = expandGroups(message, lists.groups.rows, people)
+      const sent = files
+      const shown = sendingPost({ channelExternalId: channelId, rootExternalId, message: body })
       clearBox()
-      text = since
-      onsent?.()
+      try {
+        // pendingPostId lets the server collapse a retried send into one post, should the first answer be lost.
+        await posts.service.create({
+          channelExternalId: channelId, ...(rootExternalId ? { rootExternalId } : {}), message: body, pendingPostId: crypto.randomUUID(),
+          ...(fileIds.length ? { fileExternalIds: fileIds } : {}),
+        })
+        onsent?.()
+      } catch (e) {
+        text = text.trim() ? `${typed}\n${text}` : typed
+        files = [...sent, ...files]
+        throw e
+      } finally {
+        shown()
+      }
     } catch (e) {
       error = e.message
     } finally {

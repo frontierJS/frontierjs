@@ -1,0 +1,28 @@
+<script>
+  // components/chat/PersonAvatar.mesa -- a person as their chat picture, or as initials
+  // until it lands and whenever it fails. The picture route answers only a signed-in
+  // caller and an <img src> sends no bearer, so the bytes come through lib/files.js as a
+  // blob URL; Avatar then draws it and falls back to the initials if the image errors.
+  import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
+  import { profileImageUrl } from '../../lib/files.js'
+
+  export let profile = null   // the person's Profile.externalId; null draws initials only
+  export let name = ''
+  export let size = 'md'
+  export let shape = 'circle'
+
+  let src = ''
+
+  async function load() {
+    src = ''
+    if (!profile) return
+    const asked = profile
+    const url = await profileImageUrl(asked)
+    // A reused row may name someone else by the time the bytes land.
+    if (asked === profile) src = url
+  }
+  $.onMount(load)
+  $: profile, () => load()
+</script>
+
+<Avatar {src} {name} {size} {shape} />

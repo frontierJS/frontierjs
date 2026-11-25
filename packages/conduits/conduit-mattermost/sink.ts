@@ -7,7 +7,7 @@
 // `X-Ratelimit-Reset` and no `Retry-After`, as the real one does.
 // Seeded: one team, an open channel every user is in, a private channel
 // only alice is in, two people and the service bot.
-// Chaos: `{ lost }`, `{ rateLimit: { reset } }`, `{ failNext }`, `{ deliverTwice }`.
+// Chaos: `{ lost }`, `{ rateLimit: { reset } }`, `{ failNext }`, `{ deliverTwice }`, `{ slowPost: ms }` (the next post create answers that late).
 //
 // The deliveries Mattermost makes are made here too, encoded by hand (C10):
 // `POST /api/v4/hooks/outgoing` registers an outgoing webhook, and a post
@@ -49,7 +49,7 @@
 // `file_ids` claim the caller's unclaimed uploads, and `GET /files/{id}`
 // answers the bytes to a member of the post's channel or to the uploader;
 // its `/preview` and `/thumbnail` are the same bytes, since no image is
-// resized here.
+// resized here. `GET /users/{id}/image` answers a one-pixel PNG for any user.
 //
 // What a person has read is kept as the real one keeps it: a channel counts
 // its posts and its root posts, a member what they have seen and been
@@ -84,6 +84,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
   let last = 0
   const now = () => (last = Math.max(Date.now(), last + 1))
   const users: Record<string, User> = {}
+  const PROFILE_PNG = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64'))
   const user = (username: string, extra: Partial<User> = {}): User => {
     const u: User = { id: mint(username), create_at: now(), update_at: now(), delete_at: 0, username, roles: 'system_user', email: `${username}@example.test`, ...extra }
     users[u.id] = u
@@ -153,7 +154,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
   const secret  = channel('ops', 'P', alice.id, [alice.id])
 
   const seen: { method: string; path: string; headers: Record<string, string>; body: string; status: number }[] = []
-  const armed = { lost: false, failNext: false, rateLimit: null as null | { reset: number }, deliverTwice: false, socketHeader: true, frameTwice: false, sinceLimit: SINCE_LIMIT }
+  const armed = { lost: false, failNext: false, rateLimit: null as null | { reset: number }, deliverTwice: false, socketHeader: true, frameTwice: false, sinceLimit: SINCE_LIMIT, slowPost: 0 }
   const hanging: Array<() => void> = []
 
   // ─── The socket ────────────────────────────────────────────
@@ -403,7 +404,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         return json({ ok: true })
       }
       if (path === '/_sink/seen')  return json({ requests: seen, posts: Object.values(posts).length, reactions: reactions.length, members: members.length, deliveries, replies, reminders, allPosts: Object.values(posts), sockets: socketLog })
-      if (path === '/_sink/reset') { seen.length = 0; deliveries.length = 0; replies.length = 0; Object.assign(armed, { lost: false, failNext: false, rateLimit: null, deliverTwice: false, socketHeader: true, frameTwice: false, sinceLimit: SINCE_LIMIT }); return json({ ok: true }) }
+      if (path === '/_sink/reset') { seen.length = 0; deliveries.length = 0; replies.length = 0; Object.assign(armed, { lost: false, failNext: false, rateLimit: null, deliverTwice: false, socketHeader: true, frameTwice: false, sinceLimit: SINCE_LIMIT, slowPost: 0 }); return json({ ok: true }) }
       if (path === '/_sink/arm')   {
         const { dropSockets, silenceSocket, skipSeq, ...rest } = await req.json() as { dropSockets?: boolean; silenceSocket?: string; skipSeq?: number } & Record<string, unknown>
         Object.assign(armed, rest)
@@ -455,6 +456,14 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (f.info.user_id !== caller && !(post && isMember(post.channel_id, caller))) return record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))
         if (x0[2] && !f.info.has_preview_image) return record(refuse(400, 'api.file.get_file_preview.no_preview.app_error', 'File doesn\'t have a preview image.'))
         return record(new Response(f.bytes, { headers: { 'content-type': f.info.mime_type } }))
+      }
+
+      // A profile picture: any signed-in person reads any user's, as on the
+      // real server. No one here uploads one, so every user answers the same
+      // one-pixel PNG; a user that does not exist is the real 404.
+      if ((x0 = path.match(/^\/api\/v4\/users\/([a-z0-9]{26})\/image$/)) && req.method === 'GET') {
+        if (!users[x0[1]]) return record(refuse(404, 'app.user.missing_account.const', 'Unable to find the user.'))
+        return record(new Response(PROFILE_PNG, { headers: { 'content-type': 'image/png' } }))
       }
 
       let body: Record<string, unknown> = {}
@@ -795,6 +804,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         return record(json({ order: list.map(p => p.id), posts: Object.fromEntries(list.map(p => [p.id, withMetadata(p)])), next_post_id: '', prev_post_id: '' }))
       }
       if (path === '/api/v4/posts' && req.method === 'POST') {
+        if (armed.slowPost) { const ms = armed.slowPost; armed.slowPost = 0; await new Promise(r => setTimeout(r, ms)) }
         const channel_id = String(body.channel_id ?? ''), message = String(body.message ?? ''), root_id = String(body.root_id ?? ''), pid = body.pending_post_id ? String(body.pending_post_id) : ''
         const c = channels[channel_id]
         if (!c || c.delete_at || !isMember(c.id, caller)) return record(refuse(403, 'api.context.permissions.app_error', 'You do not have the appropriate permissions.'))

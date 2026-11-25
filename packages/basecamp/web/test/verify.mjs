@@ -706,6 +706,16 @@ const hubAfterSetup = await apiCall('/hubConfig', { method: 'POST', header: { 'x
   .catch(e => ({ id: e.message }))
 check('setup wrote the hub settings', hubAfterSetup?.id, 'hub')
 
+// The machines here check in only when a step sends a heartbeat, and the
+// minute's reachability sweep moves one to `unreachable` 120s after its last.
+// A loaded run took longer than that between deploy-01's one heartbeat and the
+// second release, which was then refused (FJS-4273). The sweep is graded at a
+// stated instant in api/test/reachability.test.ts; in this drive it must not fire.
+await apiCall('/hubConfig', {
+  method: 'POST', header: { 'x-service-method': 'save' },
+  body: { heartbeatTimeoutSeconds: 3600, version: hubAfterSetup.version },
+})
+
 const firstWs = (await apiCall('/workspaces')).data[0]
 await apiCall('/projects', { method: 'POST', workspace: firstWs.id, body: { name: 'Website', slug: 'website' } })
 
@@ -2523,6 +2533,20 @@ check('reordering moves the card',
 // The point of this check is not the table. It is that the trail now records
 // ACTIONS: before 2026-08-06 the audit hook ran on create/patch/remove only,
 // so draining a server — the operator verb — was recorded nowhere.
+//
+// The feed shows the newest 100 audit rows, and by here the drive has written
+// more than that since §11's drain, so the drain this section reads is made
+// here. Leaning on §11's passed only while its undrain was row 99 or newer,
+// and how many rows the jobs write in between moves with the machine's speed.
+check('a server drains and undrains again for the feed to read',
+  await evaluate(`
+    (async () => {
+      const m = await import('/src/resources/Server.mesa')
+      const drained = await m.servers.service.invoke('drain', ${JSON.stringify(serverId)})
+      const back    = await m.servers.service.invoke('undrain', ${JSON.stringify(serverId)})
+      return drained.status + '→' + back.status
+    })()
+  `), 'draining→online')
 await goto('/activity/')
 check('the activity feed renders', await heading(), 'Activity')
 check('the trail records custom actions, not only CRUD',
@@ -2534,7 +2558,7 @@ check('…and an actor id is resolved to a person',
 
 // What changed, not only that something did. `AuditEvent.diff` was declared and
 // nothing wrote it, so the trail could say a server was drained and not what
-// state it was in (FJS-154). The drain in §11 is the row this reads.
+// state it was in (FJS-154).
 await evaluate(`
   (() => {
     const row = [...document.querySelectorAll('#activity-rows tr')]
@@ -3312,9 +3336,22 @@ await click('Use the FrontierJS template')
 check('the template seeds the box',
   await waitFor(`document.getElementById('dockerfile')?.value ?? ''`, t => t.length > 0),
   t => t.includes('FROM'))
+// The form picks a server by itself only when exactly one is online, and this
+// workspace holds two, so the drive names deploy-01.
+await evaluate(`
+  (() => {
+    const sel = document.getElementById('serverId')
+    if (![...sel.options].some(o => o.value === ${JSON.stringify(releaseServer.id)}))
+      throw new Error('deploy-01 is not offered on the create form')
+    sel.value = ${JSON.stringify(releaseServer.id)}
+    sel.dispatchEvent(new Event('input',  { bubbles: true }))
+    sel.dispatchEvent(new Event('change', { bubbles: true }))
+  })()
+`)
+await waitFor(`!!document.getElementById('deploy-on-push')`, Boolean, 5_000)
 await evaluate(`document.getElementById('create-submit').click()`)
-// The form picks the one online server by itself, and a placed App turns on
-// deploy on push, whose secret is shown once on this panel before the App page.
+// A placed App turns on deploy on push, whose secret is shown once on this
+// panel before the App page.
 check('fromRepo with a server shows the webhook once',
   await waitFor(`document.getElementById('connect-push-url')?.textContent ?? ''`, t => t.includes('/hooks/git/'), 20_000),
   t => t.includes('/hooks/git/'))

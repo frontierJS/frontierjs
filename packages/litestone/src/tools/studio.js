@@ -305,7 +305,7 @@ export async function cmdStudio(cfg) {
 
   const db     = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey(),
                                       ...(gatePlugins.length ? { plugins: gatePlugins } : {}) })
-  const rawDb  = db.$db
+  const rawDb  = db.asSystem().$db
   const rawDbs = db.$rawDbs
   const savedQueries = openSavedQueries(sidecarFor(rawDb.query('PRAGMA database_list').all().find(d => d.name === 'main')?.file))
 
@@ -1628,7 +1628,7 @@ export async function cmdStudio(cfg) {
             tapClient(tdb)   // tenant queries appear in the query log too
             activeTenant = id
             activeDb     = tdb
-            activeRawDb  = tdb.$db
+            activeRawDb  = tdb.asSystem().$db
             activeRawDbs = tdb.$rawDbs
             // A browser beyond loopback is a copy path too: the operator's terminal
             // says whose jurisdiction's rows it is now showing.
@@ -1657,7 +1657,7 @@ export async function cmdStudio(cfg) {
           const dest  = cfg.db
             ? resolve(dirname(resolve(cfg.db)), `backup-${stamp}${multi ? '' : '.db'}`)
             : resolve(process.cwd(), `backup-${stamp}`)
-          const result = await activeDb.$backup(dest, { vacuum })
+          const result = await activeDb.asSystem().$backup(dest, { vacuum })
           return json({ ok: true, dest, result })
         }
 
@@ -1741,7 +1741,7 @@ export async function cmdStudio(cfg) {
             return json({ error: 'newKey must be 64 hex characters (32 bytes)' }, 400)
           try {
             const t0    = performance.now()
-            const stats = await activeDb.$rotateKey(newKey)
+            const stats = await activeDb.asSystem().$rotateKey(newKey)
             return json({ ok: true, stats, ms: +(performance.now() - t0).toFixed(0),
                           note: 'Client now uses the new key. Update your ENCRYPTION_KEY env before restarting the app.' })
           } catch (e) { return json({ ok: false, error: e.message }, 400) }

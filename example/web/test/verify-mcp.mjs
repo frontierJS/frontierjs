@@ -42,6 +42,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { Client } from '@modelcontextprotocol/client'
 import { StreamableHTTPClientTransport, discoverOAuthProtectedResourceMetadata, discoverAuthorizationServerMetadata } from '@modelcontextprotocol/client'
 
@@ -65,7 +66,7 @@ function start(cmd, args, name) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -76,14 +77,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 120) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 {
   let busy = false
@@ -99,8 +92,8 @@ execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 // Built here rather than told to the reader, so a view served is one this tree
 // built: a drive over last week's `api/dist/mcp/` grades last week's forms.
 execFileSync('fli', ['mcp:build'], { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })
-start('bun', ['run', 'api/index.ts'], 'api')
-if (!await waitFor(`${BASE}/products`, 'api')) { stopAll(); process.exit(1) }
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api')
+if (!await waitForServer(`${BASE}/products`, 'api', apiProc)) { stopAll(); process.exit(1) }
 
 // ─── Assertions ────────────────────────────────────────────────────────────
 

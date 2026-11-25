@@ -599,11 +599,22 @@ describe('resource().record(id) after the row stops being readable', () => {
   it('a released view does not re-read on a reconnect', async () => {
     const c: any = client()
     const r = c.resource('pages', { model: 'Page' })
-    const ok = mockRow({ id: 1, title: 'D' })
-    const row = r.record(1)
+    // Counted by URL: a jittered re-read another test's client left pending
+    // fires into whatever fetch is mocked here (FJS-4610).
+    const original = globalThis.fetch
+    let calls = 0
+    globalThis.fetch = (async (url: unknown) => {
+      if (String(url).endsWith('/pages/4610')) calls++
+      return new Response(JSON.stringify({ id: 4610, title: 'D' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }) as unknown as typeof fetch
+    const ok = { restore: () => { globalThis.fetch = original }, calls: () => calls }
+    const row = r.record(4610)
     await row.ready
     row.release()
     const before = ok.calls()
+    expect(before).toBe(1)
 
     const realRandom = Math.random
     Math.random = () => 0

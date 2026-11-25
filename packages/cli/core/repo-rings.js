@@ -57,7 +57,7 @@ export const RINGS = [
     blurb: 'Optional pieces an app opts into, each with one owner and one seam.',
     why:   'Pick the one your task touches. Nobody needs all of them on day one.' },
   { id: 'conduits',  name: 'The conduits',
-    blurb: 'The third parties an app talks to, one connector each: prototyped against stubs and held out of releases until each is on npm.',
+    blurb: 'The third parties an app talks to, one connector each: prototyped against stubs and held out of releases until a ruling admits each.',
     why:   'Open the one for the vendor you are wiring; none is on the road to the others.' },
   { id: 'tooling',   name: 'The tooling',
     blurb: 'How an app is made, checked and shipped.',

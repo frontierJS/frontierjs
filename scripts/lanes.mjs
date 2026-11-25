@@ -41,6 +41,8 @@ import { basename, dirname, join }                                          from
 import { ROOT, LOG_DIR }  from './headless.mjs'
 import { fenceBunGlobal } from '../packages/cli/core/bun-fence.js'
 import { withRegisterGuard } from '../packages/cli/core/registers.js'
+import { releaseSession }    from '../packages/cli/core/ports.js'
+import { readProcs }         from '../packages/cli/core/hitlist.js'
 
 export const LANES_DIR = join(LOG_DIR, 'lanes')
 
@@ -114,6 +116,8 @@ export function openLane(n) {
       copyFileSync(join(ROOT, f), join(dir, f))
     }
   }
+  // A loop killed mid-row never reached its release.
+  releaseLane({ dir })
   // The global `fli` is the main tree's build, so a fix to the cli would be
   // proved with the code it replaced; the lane's own goes first on PATH.
   mkdirSync(bin, { recursive: true })
@@ -121,6 +125,43 @@ export function openLane(n) {
   chmodSync(join(bin, 'fli'), 0o755)
   return { n, dir, bin, env: laneEnv(bin, join(LANES_DIR, `bun-${n}`)) }
 }
+
+/**
+ * Give back the port block the lane's drives claimed (`FJS-D2047`). A lane
+ * stays checked out between runs, so `freeBranch` never sees it gone; five
+ * lanes and agent worktrees held every block and the next drive's `portFor`
+ * threw. Called when a row ends; the next claim gets a number afresh.
+ */
+export function releaseLane(lane, { lockFile } = {}) {
+  releaseSession(lane.dir, lockFile ? { lockFile } : {})
+}
+
+/**
+ * Stop every process whose working directory is inside the lane, and answer
+ * their pids. A server the last session left running keeps its port, and the
+ * next row's drive refuses a port that already answers (FJS-4625); a reset
+ * leaves it running, and so does removing the worktree, after which /proc
+ * spells its cwd `<dir> (deleted)`. This process and its ancestors are spared.
+ */
+export function stopLeftovers(lane, { graceMs = 2000 } = {}) {
+  let procs
+  try { procs = readProcs({ withDetail: true }) } catch { return [] } // no /proc to read
+  const spared = new Set()
+  for (let p = process.pid; p && !spared.has(p); p = procs.get(p)?.ppid) spared.add(p)
+  const inside = cwd => {
+    const d = cwd?.replace(/ \(deleted\)$/, '')
+    return d === lane.dir || !!d?.startsWith(`${lane.dir}/`)
+  }
+  const pids = [...procs.values()].filter(p => !spared.has(p.pid) && inside(p.cwd)).map(p => p.pid)
+  for (const pid of pids) signal(pid, 'SIGTERM')
+  const until = Date.now() + graceMs
+  while (pids.some(alive) && Date.now() < until) Atomics.wait(PAUSE, 0, 0, 50)
+  for (const pid of pids.filter(alive)) signal(pid, 'SIGKILL')
+  return pids
+}
+
+const PAUSE = new Int32Array(new SharedArrayBuffer(4))
+const signal = (pid, sig) => { try { process.kill(pid, sig) } catch { /* exited, or not ours */ } }
 
 /**
  * The lanes this checkout opened, each with who holds it and whether it is
@@ -156,6 +197,7 @@ export function removeLane(n) {
     if (laneDirty({ dir })) return { refused: `lane ${n} holds work since its last sync in ${dir}` }
     const parts = [dir, join(LANES_DIR, `bin-${n}`), join(LANES_DIR, `bun-${n}`)]
     const freed = parts.reduce((sum, p) => sum + bytesUnder(p), 0)
+    stopLeftovers({ dir })
     git(ROOT, 'worktree', 'remove', '--force', dir)
     git(ROOT, 'worktree', 'prune')
     for (const p of parts) rmSync(p, { recursive: true, force: true })
@@ -184,6 +226,7 @@ export function laneEnv(bin, fence, base = process.env) {
 export function syncLane(lane, { linked = true } = {}) {
   const { dir } = lane
   lane.linked = linked
+  stopLeftovers(lane)
   // Unlinked first: a reset must never write through a link into the main tree.
   for (const f of LINKED) if (isLink(join(dir, f))) unlinkSync(join(dir, f))
   // A linked run leaves the bit set, and a copy it hides never shows in a trial's diff.

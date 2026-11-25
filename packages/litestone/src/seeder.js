@@ -773,8 +773,8 @@ export class Seeder {
    * Records run history in _litestone_seeds table.
    */
   async once(db, key, fn) {
-    const raw = db.$db ?? db.$rawDbs?.main ?? null
-    if (!raw) throw new Error('once() requires a raw db connection via db.$db')
+    const raw = db.asSystem?.().$db ?? null
+    if (!raw) throw new Error('once() requires a litestone client, whose db.asSystem().$db it records into')
 
     raw.run(`CREATE TABLE IF NOT EXISTS "_litestone_seeds" (
       "key"    TEXT PRIMARY KEY,
@@ -799,8 +799,8 @@ export class Seeder {
    * from it unguarded throws rather than matching nothing.
    */
   async forget(db, key) {
-    const raw = db.$db ?? db.$rawDbs?.main ?? null
-    if (!raw) throw new Error('forget() requires a raw db connection via db.$db')
+    const raw = db.asSystem?.().$db ?? null
+    if (!raw) throw new Error('forget() requires a litestone client, whose db.asSystem().$db it records into')
 
     const table = raw.query(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_litestone_seeds'`).get()
     if (table) raw.run('DELETE FROM "_litestone_seeds" WHERE key = ?', key)

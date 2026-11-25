@@ -176,7 +176,7 @@ describe('the journal is its own client, not a second database block', () => {
 
     const before = statSync(deployDb)
     const dest   = join(root, 'backup')
-    const result = await app.$backup(dest)
+    const result = await app.asSystem().$backup(dest)
 
     expect(Object.keys(result).sort()).toEqual(['main', 'second'])
     expect(readdirSync(dest).sort()).toEqual(['main.db', 'second.db'])
@@ -212,7 +212,7 @@ model Release { id String @id  pivot String  @@db(deploy)  @@gate(8) }
 
     // and the app's own backup sweeps the journal into the backup set
     const dest   = join(root, 'backup')
-    const result = await app.$backup(dest)
+    const result = await app.asSystem().$backup(dest)
     expect(Object.keys(result)).toContain('deploy')
     expect(readdirSync(dest)).toContain('deploy.db')
   })

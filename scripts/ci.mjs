@@ -67,7 +67,7 @@ import { compare as benchCompare, format as benchFormat } from './bench-ab.mjs'
 // because the mechanism needs more explaining than the phase does.
 import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, pauseQueueCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 import { fenceThisProcess }                  from '../packages/cli/core/bun-fence.js'
-import { workspaceMembers, isHeldOut }      from '../packages/cli/core/workspace-members.js'
+import { workspaceMembers, isConnector as isConnectorMember } from '../packages/cli/core/workspace-members.js'
 import { sourceBytes, kb }                   from './package-size.mjs'
 
 // The deploy and tutor phases scaffold with `--source local`, which `bun link`s
@@ -1895,7 +1895,7 @@ async function tests() {
 }
 
 // ─── phase 8a · conduits ────────────────────────────────────
-// The connectors are set apart (FJS-D1913): held out of releases, and their own
+// The connectors are set apart (FJS-D1913): their own
 // lane. A connector's suite IS its drive (`bun run drive`) -- no credential, no
 // network -- so this runs each one, and only when a path under the connector
 // group or the engine they sit on changed against the base ref. The `tests`
@@ -1903,7 +1903,7 @@ async function tests() {
 // 26 drives, and a change to `packages/conduit/` cannot ship without them.
 const CONDUIT_PATHS = [/^packages\/conduits?\//]
 
-const isConnector = (dir) => isHeldOut({ path: dir })
+const isConnector = (dir) => isConnectorMember({ path: dir })
 
 async function conduits() {
   phase('conduits')

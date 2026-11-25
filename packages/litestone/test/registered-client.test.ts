@@ -527,6 +527,41 @@ describe('a generated Create takes a belongsTo key or its relation write (FJS-46
   })
 })
 
+// FJS-4617 -- createMany and upsertMany refuse a nested write at run time, so
+// their rows take columns only, and a belongsTo's key stays required there.
+// upsert's create half falls to create() and takes the relation write.
+const BULK_USAGE = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run(postId: number) {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    await db.comment.createMany({ data: [{ body: 'x', postId }] })
+    await db.comment.upsertMany({ data: [{ body: 'x', postId }] })
+    await db.post.createMany({ data: [{ title: 'p' }] })
+    await db.comment.upsert({ where: { id: 1 }, create: { body: 'x', post: { connect: { id: postId } } }, update: {} })
+    // @ts-expect-error -- createMany takes no nested writes
+    await db.comment.createMany({ data: [{ body: 'x', postId, post: { connect: { id: postId } } }] })
+    // @ts-expect-error -- the relation does not stand in for the key in a bulk row
+    await db.comment.createMany({ data: [{ body: 'x', post: { connect: { id: postId } } }] })
+    // @ts-expect-error -- nothing fills postId
+    await db.comment.createMany({ data: [{ body: 'x' }] })
+    // @ts-expect-error -- upsertMany takes no nested writes
+    await db.comment.upsertMany({ data: [{ body: 'x', post: { connect: { id: postId } } }] })
+    // @ts-expect-error -- a hasMany write is refused there too
+    await db.post.createMany({ data: [{ title: 'p', comments: { create: [{ body: 'x' }] } }] })
+    // @ts-expect-error -- asSystem() lifts access, not the bulk refusal
+    await db.asSystem().comment.createMany({ data: [{ body: 'x', post: { connect: { id: postId } } }] })
+  }
+`
+
+describe('createMany and upsertMany take columns only (FJS-4617)', () => {
+  test('a relation write in a bulk row is refused; the key stays required', () => {
+    const { ok, out } = compile('system', DOCUMENTED, BULK_USAGE)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
 // FJS-D2332 -- a select LIST is typed as the object it stands for: each entry
 // is checked where it is written, and the row is typed field by field, through
 // every hop of a path.

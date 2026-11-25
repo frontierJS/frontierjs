@@ -28,10 +28,12 @@
 // `auth_failed` that the grant store hears and no send repeats, a refresh that
 // failed in transit is sent once and keeps the grant, and a rotated
 // refresh token reaches the app before the next refresh spends it.
-// Signing in: a public client registers with a JSON body and no secret; a
-// device code is polled at its interval, `authorization_pending` until the
-// person approves and five seconds longer after each `slow_down`; a refusal
-// or an expiry ends it in one poll; the token it answers reads
+// Signing in: a public client registers with a JSON body, its redirect URI
+// and no secret, and the sink refuses a registration without one or naming
+// the device grant in Basecamp's measured words; the authorize URL carries an
+// S256 challenge and `state`, the browser comes back with a code good once,
+// which a wrong verifier, a stray redirect or a denial never turns into a
+// grant; the token it answers reads
 // `authorization.json` before any account is chosen, and its refresh token is
 // what the resolver spends from then on, with the registered client's id.
 // The feed (3.1): a poll enters by `since` and names FEED_TYPES and never
@@ -55,14 +57,14 @@
 // is never believed; bad filters never reach the wire.
 
 import { readdirSync, readFileSync } from 'node:fs'
-import { createConduit, withCache } from '@frontierjs/conduit'
+import { createConduit, errorBody, withCache } from '@frontierjs/conduit'
 import type { CredentialCaller, CredentialResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '@frontierjs/conduit/testing'
 import { startBasecampSink } from '../sink.ts'
 import { basecampTargets, bindBasecamp, translate, basecampTokenResolver, BASECAMP_API_TARGET, BASECAMP_PERSON_TARGET, type GrantStore, type BasecampSend, me, project, projects, recording, todolists, walk, nextLink, type DockEntry,
   createTodo, completeTodo, postMessage, comment, chatLine, findCreated, type RichText, pollEvents, FEED_TYPES, type FeedFrom, type FeedFilters, eventJobId, reread,
   basecampStreamDialect, BASECAMP_STREAM_TARGET, type StreamEvent,
-  basecampSignInTargets, registerClient, startDeviceSignIn, awaitDeviceGrant, authorization } from '../src/index.ts'
+  basecampSignInTargets, registerClient, pkcePair, pkceChallenge, authorizeUrl, exchangeCode, authorization } from '../src/index.ts'
 
 const { got, t } = results()
 const sink = startBasecampSink({ people: { bc_refresh_ana: 1000200, bc_refresh_ben: 1000201 } }), ctl = control(sink.url)
@@ -508,59 +510,69 @@ try {
     noStore: throws(() => basecampTokenResolver(send, { clientId: 'fjs-drive' })),
   })
 
-  // A conduit with no credential at all: registration and the device flow
+  // A conduit with no credential at all: registration and the code exchange
   // carry their own client id, and nothing here is a bearer.
   const signInTargets = basecampSignInTargets({ userAgent: UA, apiOrigin: sink.url, tokenOrigin: sink.url })
   const signing = createConduit({ credentials: { async get() { return null } }, ...DRIVE_RESILIENCE })
   await signing.register(signInTargets.token)
   await signing.register(signInTargets.register)
   const signer = bindBasecamp(signing)
-  const device = (body: Record<string, unknown>) => fetch(`${sink.url}/_sink/device`, { method: 'POST', body: JSON.stringify(body) })
-  /** The drive's clock: records each wait and acts at the nth, so no poll waits for real. */
-  const clock = (at: number, act: () => Promise<unknown>) => { const waits: number[] = []; return { waits, sleep: async (ms: number) => { waits.push(ms); if (waits.length === at) await act() } } }
-  const devicePolls = async () => (await refreshes()).filter(w => w.body?.grant_type === 'urn:ietf:params:oauth:grant-type:device_code').map(w => w.status)
+  const REDIRECT = 'http://127.0.0.1:5999/todos-connected'
+  /** The browser's trip: the sink's authorize answers a 302, whose query is what the redirect URI would be handed. */
+  const approve = async (url: string) => {
+    const res = await fetch(url, { redirect: 'manual' })
+    const to = res.headers.get('location')
+    return { status: res.status, to: to ? new URL(to) : null }
+  }
+  const registerRaw = async (body: Record<string, unknown>) => {
+    const r = await signer.register<{ error?: string }>({ method: 'POST', path: '/oauth/clients', body })
+    return [r.meta.status, errorBody<{ error?: string }>(r.error?.raw)?.error ?? null]
+  }
 
   await ctl.reset()
-  const client = await registerClient(signer, { clientName: 'Workbench drive' })
+  const client = await registerClient(signer, { clientName: 'Workbench drive', redirectUri: REDIRECT })
   const [registration] = await requests()
   t('signIn.registersAPublicClient', { clientId: client.clientId, path: registration?.path, body: registration?.body, bearer: registration?.authorization ?? null, ua: registration?.userAgent === UA })
-
-  const clientId = client.clientId!
-  const first1 = (await startDeviceSignIn(signer, { clientId })).signIn!
-  const pendingClock = clock(3, () => device({ approve: first1.userCode }))
-  const granted = await awaitDeviceGrant(signer, { clientId, signIn: first1, sleep: pendingClock.sleep })
-  t('signIn.pendingUntilApproved', {
-    shown: [first1.userCode, first1.verificationUri.endsWith('/device'), first1.intervalMs], waits: pendingClock.waits, polls: granted.polls,
-    statuses: await devicePolls(), refresh: 'grant' in granted ? granted.grant.refreshToken : granted,
+  t('signIn.theSinkRefusesAsBasecampDoes', {
+    noRedirect: await registerRaw({ client_name: 'x', grant_types: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'], token_endpoint_auth_method: 'none' }),
+    deviceGrant: await registerRaw({ client_name: 'x', redirect_uris: [REDIRECT], grant_types: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'], token_endpoint_auth_method: 'none' }),
+    noRedirectOption: await rejects(registerClient(signer, { clientName: 'x' } as any)),
   })
 
-  await ctl.reset()
-  const client2 = await registerClient(signer, { clientName: 'Workbench drive' })
-  const second = (await startDeviceSignIn(signer, { clientId: client2.clientId! })).signIn!
-  await ctl.arm({ answer: { status: 400, body: { error: 'slow_down' } } })
-  const slowClock = clock(3, () => device({ approve: second.userCode }))
-  const slowed = await awaitDeviceGrant(signer, { clientId: client2.clientId!, signIn: second, sleep: slowClock.sleep })
-  t('signIn.slowDownWaitsLonger', { waits: slowClock.waits, polls: slowed.polls, granted: 'grant' in slowed })
+  const clientId = client.clientId!
+  const pkce = pkcePair()
+  const url = new URL(authorizeUrl({ clientId, redirectUri: REDIRECT, state: 'st_1', codeChallenge: pkce.challenge, authorizeOrigin: sink.url }))
+  const back = await approve(url.toString())
+  const code = back.to?.searchParams.get('code') ?? ''
+  const granted = await exchangeCode(signer, { clientId, code, redirectUri: REDIRECT, codeVerifier: pkce.verifier })
+  t('signIn.anApprovedCodeTradesForAGrant', {
+    url: [url.pathname, ...['response_type', 'client_id', 'redirect_uri', 'scope', 'state', 'code_challenge_method'].map(k => url.searchParams.get(k)), url.searchParams.get('code_challenge') === pkceChallenge(pkce.verifier)],
+    back: [back.status, back.to?.origin + (back.to?.pathname ?? ''), back.to?.searchParams.get('state'), back.to?.searchParams.get('iss') === sink.url],
+    refresh: 'grant' in granted ? granted.grant.refreshToken : granted,
+    again: (r => 'error' in r ? r.error.kind : r)(await exchangeCode(signer, { clientId, code, redirectUri: REDIRECT, codeVerifier: pkce.verifier })),
+  })
 
-  const third = (await startDeviceSignIn(signer, { clientId: client2.clientId! })).signIn!
-  const denyClock = clock(1, () => device({ deny: third.userCode }))
-  const denied = await awaitDeviceGrant(signer, { clientId: client2.clientId!, signIn: third, sleep: denyClock.sleep })
-  const stranger = await startDeviceSignIn(signer, { clientId: 'bc_client_nobody' })
-  t('signIn.aRefusalEndsIt', { denied: 'ended' in denied ? denied.ended : denied, polls: denied.polls, stranger: [stranger.error?.kind, stranger.error?.retryable] })
-
-  await ctl.arm({ deviceLife: 1 })
-  const fourth = (await startDeviceSignIn(signer, { clientId: client2.clientId! })).signIn!
-  const expired = await awaitDeviceGrant(signer, { clientId: client2.clientId!, signIn: fourth, sleep: () => new Promise(res => setTimeout(res, 1_100)) })
-  t('signIn.anExpiredCodeEndsIt', { ended: 'ended' in expired ? expired.ended : expired, polls: expired.polls })
+  const other = pkcePair()
+  const code2 = (await approve(authorizeUrl({ clientId, redirectUri: REDIRECT, state: 'st_2', codeChallenge: other.challenge, authorizeOrigin: sink.url }))).to?.searchParams.get('code') ?? ''
+  const badVerifier = await exchangeCode(signer, { clientId, code: code2, redirectUri: REDIRECT, codeVerifier: pkce.verifier })
+  const strayRedirect = await approve(authorizeUrl({ clientId, redirectUri: 'http://127.0.0.1:1/elsewhere', state: 'st_3', codeChallenge: other.challenge, authorizeOrigin: sink.url }))
+  await ctl.arm({ authorize: 'deny' })
+  const denied = await approve(authorizeUrl({ clientId, redirectUri: REDIRECT, state: 'st_4', codeChallenge: other.challenge, authorizeOrigin: sink.url }))
+  t('signIn.aRefusalEndsIt', {
+    wrongVerifier: 'error' in badVerifier ? [badVerifier.error.kind, badVerifier.error.retryable] : badVerifier,
+    strayRedirect: [strayRedirect.status, strayRedirect.to],
+    denied: [denied.status, denied.to?.searchParams.get('error'), denied.to?.searchParams.get('state'), denied.to?.searchParams.has('code')],
+    deviceGrant: (r => [r.meta.status, errorBody<{ error?: string }>(r.error?.raw)?.error])(await signer.token({ method: 'POST', path: '/oauth/tokens', body: { grant_type: 'urn:ietf:params:oauth:grant-type:device_code', device_code: 'x', client_id: clientId } })),
+  })
 
   // After: the granted token reads which account it reaches, and its refresh
   // token is the one the resolver spends, under the registered client's id.
-  if (!('grant' in slowed)) throw new Error('drive: the slowed sign-in was never granted')
-  const authz = await authorization(signer, { accessToken: slowed.grant.accessToken, apiOrigin: sink.url })
+  if (!('grant' in granted)) throw new Error('drive: the approved sign-in was never granted')
+  const authz = await authorization(signer, { accessToken: granted.grant.accessToken, apiOrigin: sink.url })
   const bc3 = authz.row?.accounts.filter(a => a.product === 'bc3') ?? []
-  const kept = { refresh: slowed.grant.refreshToken }
+  const kept = { refresh: granted.grant.refreshToken }
   const signedIn = createConduit({
-    credentials: withCache(basecampTokenResolver(bindBasecamp({ send: req => signedIn.send(req) }), { clientId: client2.clientId!, grants: { refreshTokenFor: () => kept.refresh } }), { ttl_ms: Infinity }),
+    credentials: withCache(basecampTokenResolver(bindBasecamp({ send: req => signedIn.send(req) }), { clientId, grants: { refreshTokenFor: () => kept.refresh } }), { ttl_ms: Infinity }),
     ...DRIVE_RESILIENCE,
   })
   const accountTargets = basecampTargets({ accountId: bc3[0]?.id ?? 0, userAgent: UA, apiOrigin: sink.url, tokenOrigin: sink.url })
@@ -852,12 +864,14 @@ process.exit(report(got, {
   'person.aVerbIsTheCallersOwn':      { creator: 1000201, foundByBen: 1, foundByAna: 0 },
   'person.aLostGrantIsTheCallersAlone': { ana: ['auth_failed', false], lost: [['invalid_grant'], []], ben: 1000201, refreshed: ['bc_refresh_ana', 'bc_refresh_ben'], anaAgain: 'auth_failed' },
   'person.noCallerOrNoStoreFailsClosed': { nobody: 'auth_failed', requests: 0, noGrantsFor: 'TypeError', noStore: 'TypeError' },
-  'signIn.registersAPublicClient':    { clientId: 'bc_client_1', path: '/oauth/clients', body: { client_name: 'Workbench drive', grant_types: ['urn:ietf:params:oauth:grant-type:device_code', 'refresh_token'], token_endpoint_auth_method: 'none', scope: 'full offline_access' }, bearer: null, ua: true },
-  'signIn.pendingUntilApproved':      { shown: ['WDJB-MJH1', true, 5000], waits: [5000, 5000, 5000], polls: 3, statuses: [400, 400, 200], refresh: 'bc_refresh_device_1' },
-  'signIn.slowDownWaitsLonger':       { waits: [5000, 10000, 10000], polls: 3, granted: true },
-  'signIn.aRefusalEndsIt':            { denied: 'denied', polls: 1, stranger: ['auth_failed', false] },
-  'signIn.anExpiredCodeEndsIt':       { ended: 'expired', polls: 1 },
-  'signIn.theGrantRefreshesAfter':    { accounts: [999], identity: 1000133, id: 1000133, refreshed: [['bc_refresh_device_1', 'bc_client_1', 200]] },
+  'signIn.registersAPublicClient':    { clientId: 'dcr_sink_1', path: '/oauth/clients', body: { client_name: 'Workbench drive', redirect_uris: ['http://127.0.0.1:5999/todos-connected'], grant_types: ['authorization_code', 'refresh_token'], token_endpoint_auth_method: 'none', scope: 'full offline_access' }, bearer: null, ua: true },
+  'signIn.theSinkRefusesAsBasecampDoes': { noRedirect: [400, 'invalid_redirect_uri'], deviceGrant: [400, 'invalid_client_metadata'], noRedirectOption: 'TypeError' },
+  'signIn.anApprovedCodeTradesForAGrant': {
+    url: ['/oauth/authorizations/new', 'code', 'dcr_sink_1', 'http://127.0.0.1:5999/todos-connected', 'full offline_access', 'st_1', 'S256', true],
+    back: [302, 'http://127.0.0.1:5999/todos-connected', 'st_1', true], refresh: 'bc_refresh_code_1', again: 'refused',
+  },
+  'signIn.aRefusalEndsIt':            { wrongVerifier: ['refused', false], strayRedirect: [400, null], denied: [302, 'access_denied', 'st_4', false], deviceGrant: [400, 'unsupported_grant_type'] },
+  'signIn.theGrantRefreshesAfter':    { accounts: [999], identity: 1000133, id: 1000133, refreshed: [['bc_refresh_code_1', 'dcr_sink_1', 200]] },
   'feed.entersAtThePresent':          { events: [], position: 'string', next: null, since: 'now', types: 16, excludes: false },
   'feed.replayFollowsNextToTheEnd':   { ids: [1000504, 1000511, 1000518, 1000525, 1000532, 1000539, 1000546, 1000553, 1000560, 1000567, 1000574, 1000581], pages: 3, followedWhole: true },
   'feed.resumesAfterItsPosition':     { ids: [1000588], added: 1000588, next: null, after: 0 },

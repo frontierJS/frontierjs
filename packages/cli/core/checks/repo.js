@@ -365,6 +365,10 @@ export const CHECKS = {
         }
         return out
       }
+      // bun runs a file bunfig.toml preloads before every test, so it is
+      // imported though nothing in the directory names it.
+      let bunfig = ''
+      try { bunfig = readFileSync(join(dir, 'bunfig.toml'), 'utf8') } catch {}
       const orphans = []
       for (const d of dirs) {
         const files = bodiesOf(d)
@@ -374,7 +378,7 @@ export const CHECKS = {
           if (!isTest) {
             const stem = name.replace(RUNNABLE, '')
             // Imported by anything else in the directory → support code.
-            const imported = [...files].some(([other, body]) =>
+            const imported = bunfig.includes(`${d}/${name}`) || [...files].some(([other, body]) =>
               other !== name && new RegExp(String.raw`['"\./]${stem}(\.[cm]?[jt]sx?)?['"]`).test(body))
             if (imported) continue
           }

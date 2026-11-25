@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { copyIfPresent, lanePatch, laneDirty, markSynced, dropStaleDatabases } from '../../../scripts/lanes.mjs'
+import { copyIfPresent, lanePatch, laneDirty, markSynced, dropStaleDatabases, releaseLane, stopLeftovers } from '../../../scripts/lanes.mjs'
+import { readLock } from '../core/ports.js'
 
 let base
 beforeEach(() => { base = mkdtempSync(join(tmpdir(), 'fjs-lanes-test-')) })
@@ -35,6 +36,59 @@ describe('copyIfPresent', () => {
     writeFileSync(join(base, 'src.js'), 'x')
     writeFileSync(join(base, 'blocker'), 'a file where the destination needs a directory')
     expect(() => copyIfPresent(join(base, 'src.js'), join(base, 'blocker', 'dest.js'))).toThrow()
+  })
+})
+
+// FJS-3804, FJS-D2047: a lane is a worktree that stays checked out between
+// runs, so the branch block its drive claimed was never given back; five lanes
+// and agent worktrees held all five and the next drive's portFor threw.
+describe('releaseLane', () => {
+  test('forgets every app root inside the lane and nothing outside it', () => {
+    const lockFile = join(base, 'sessions.lock')
+    const lane = join(base, 'frontierjs-3')
+    const entry = (branch, worktree) => ({ branch, repo: '/m/.git', worktree, slot: 0, env: 'dev' })
+    writeFileSync(lockFile, JSON.stringify({
+      [join(lane, 'packages', 'basecamp')]:      entry(3, lane),
+      [join(lane, 'example')]:                   entry(3, lane),
+      [`${lane}-other/example`]:                 entry(4, `${lane}-other`),
+      '/m/example':                              { slot: 0, env: 'dev' },
+    }))
+
+    releaseLane({ dir: lane }, { lockFile })
+
+    expect(Object.keys(readLock(lockFile)).sort()).toEqual(['/m/example', `${lane}-other/example`])
+  })
+})
+
+// FJS-4625: a server the last session left running in a lane held 37110 for
+// a day, and every later row's drive refused the port it already answered.
+describe('stopLeftovers', () => {
+  // Orphaned through `sh`, so its death is reaped and never read as a zombie.
+  const startIn = cwd => {
+    mkdirSync(cwd, { recursive: true })
+    const out = spawnSync('sh', ['-c', 'sleep 60 >/dev/null 2>&1 & echo $!'], { cwd, encoding: 'utf8' })
+    return Number(out.stdout.trim())
+  }
+  const running = pid => {
+    try { return !/^\d+ \(.*\) Z/.test(readFileSync(`/proc/${pid}/stat`, 'utf8')) } catch { return false }
+  }
+  const pids = []
+  afterEach(() => { for (const p of pids.splice(0)) try { process.kill(p, 'SIGKILL') } catch {} })
+
+  test('stops what runs inside the lane, deleted or not, and nothing beside it', () => {
+    const lane = join(base, 'frontierjs-1')
+    const inside = startIn(join(lane, 'example'))
+    const gone = startIn(join(lane, 'scratch'))
+    const beside = startIn(join(base, 'frontierjs-10'))
+    pids.push(inside, gone, beside)
+    rmSync(join(lane, 'scratch'), { recursive: true, force: true })
+
+    const stopped = stopLeftovers({ dir: lane })
+
+    expect(stopped.sort()).toEqual([inside, gone].sort())
+    expect(running(inside)).toBe(false)
+    expect(running(gone)).toBe(false)
+    expect(running(beside)).toBe(true)
   })
 })
 

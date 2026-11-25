@@ -10,6 +10,7 @@
   import { posts } from '../../resources/Post.mesa'
   import { channelLabel, customOf, peerOf, personName, setFavorite, setMuted, statusOf } from '../../lib/chat.js'
   import Presence from './Presence.mesa'
+  import { profileImageUrl } from '../../lib/files.js'
 
   export let channel = null
   export let members = []   // ChannelMember rows of this channel
@@ -25,7 +26,16 @@
   $: isDm  = channel?.type === 'direct' || channel?.type === 'group'
   $: peer = people.find(p => p.externalId === peerOf(channel, self)) ?? null
   $: mood = customOf(peer)
-  $: users = members.map(m => ({ name: personName(m.profileExternalId, people) }))
+  // The group draws four faces, so only four pictures are asked for; one that fails stays initials.
+  let pics = {}
+  async function loadPics(rows) {
+    const shown = rows.slice(0, 4).map(m => m.profileExternalId)
+    const urls = await Promise.all(shown.map(profileImageUrl))
+    if (rows !== members) return
+    pics = Object.fromEntries(shown.map((id, i) => [id, urls[i]]))
+  }
+  $: members, () => loadPics(members)
+  $: users = members.map(m => ({ name: personName(m.profileExternalId, people), src: pics[m.profileExternalId] ?? '' }))
 
   // The channel's pinned posts, a tether of their own: another member's pin arrives as a push.
   let pins = null

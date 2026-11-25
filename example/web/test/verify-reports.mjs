@@ -37,6 +37,7 @@ import { watchReloads } from './lib/reload.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { SESSION_MODULE } from './lib/session.mjs'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -63,7 +64,7 @@ function start(cmd, args, name) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -88,20 +89,11 @@ for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']])
 // database every assertion here fails as *the row is not there*.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api')
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web')
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api')
+const webProc = start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web')
 
-async function waitForServer(url, label, tries = 160) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
-
-if (!await waitForServer(`${API}/api/health`, 'api')) { stopAll(); process.exit(1) }
-if (!await waitForServer(UI, 'web'))                 { stopAll(); process.exit(1) }
+if (!await waitForServer(`${API}/api/health`, 'api', apiProc, { tries: 160 })) { stopAll(); process.exit(1) }
+if (!await waitForServer(UI, 'web', webProc, { tries: 160 }))                 { stopAll(); process.exit(1) }
 
 // Health is not enough, and the gap is this drive's own finding. `/health`
 // answers as soon as the process is listening; what every screen here needs is

@@ -29,11 +29,18 @@ export const holds = ['ports', 'db']
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 import { watchReloads } from './lib/reload.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { openChrome, PAGE_AUDIT } from '../../../packages/mesa/src/drive.js'
 import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url))
+
+// A shop of its own, which under tenancy is a database of its own. A peer on
+// the dev shop that reprices PRO or moves SUB-3001 between this drive's write
+// and its read fails `planDetail.newWindowEmpty` for a change it never made
+// (`FJS-4053`). The seed and both servers inherit it from the environment.
+process.env.SHOP = 'verifydrive'
 
 // The drive reprices PRO and changes SUB-3001's seats, which opens a window and
 // issues an invoice on the seeded rows every run. Past fifty of either the
@@ -65,7 +72,7 @@ function start(cmd, args, name, env) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -77,15 +84,6 @@ const stopAll = () => {
 }
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
-
-async function waitFor(url, label, tries = 120) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 // Refuse a port that already answers rather than joining it. A dev server
 // serves the code it STARTED with, so a leftover from an earlier run would be
@@ -106,11 +104,11 @@ for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']])
 putSeedBack()
 
 const PORT_ENV = { API_PORT, UI_PORT, ...TEST_SINK_ENV }
-start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
+const api = start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+const web = start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
-if (!await waitFor(`${API}/api/health`, 'api')) { stopAll(); process.exit(1) }
-if (!await waitFor(UI, 'web'))                  { stopAll(); process.exit(1) }
+if (!await waitForServer(`${API}/api/health`, 'api', api)) { stopAll(); process.exit(1) }
+if (!await waitForServer(UI, 'web', web))                  { stopAll(); process.exit(1) }
 
 // A product minted per run, and the reason is a live hazard rather than
 // tidiness: `Product.name` and `Product.slug` are both `@unique` and the model

@@ -93,7 +93,12 @@ function surfaces(root) {
   for (const dir of findApps(root)) {
     const pkg  = readJson(join(dir, 'package.json'))
     const rel  = where(root, dir)
-    for (const s of appPorts(dir, { name: pkg?.name, scripts: pkg?.scripts })) {
+    const ports = appPorts(dir, { name: pkg?.name, scripts: pkg?.scripts })
+    // What `fli dev` hands every child (`claimSession`'s `vars`). A surface
+    // handed only its own reads a sibling's from its literal fallback, which in
+    // a lane is the main tree's: a web surface's /api proxy then answers 502.
+    const portVars = Object.fromEntries(ports.filter(s => s.env).map(s => [s.env, String(s.port)]))
+    for (const s of ports) {
       out.push({
         kind:   'surface',
         id:     `surface:${rel}/${s.surface}`,
@@ -102,9 +107,7 @@ function surfaces(root) {
         start:  s.script ? `bun run ${s.script}` : null,
         argv:   s.script ? ['bun', 'run', s.script] : null,
         port:   s.port,
-        // The variable the surface's config reads its port from, so whoever
-        // starts the row can hand it the port it will be polled on.
-        portEnv: s.env,
+        portVars,
         open:   `http://localhost:${s.port}`,
         // The same port under a name. Derived from the ports table, which
         // already knows this app's id — and additive: `open` stays the number,

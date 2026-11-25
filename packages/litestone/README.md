@@ -1147,7 +1147,7 @@ await db.user.findFirst({ where: { ssn: '123-45-6789' } })           // ✗ Vali
 ```
 
 Every `@encrypted` value, deterministic or not, is hidden from a non-system
-read; what `deterministic` adds is the filter. `db.$rotateKey(newKey)` re-keys
+read; what `deterministic` adds is the filter. `db.asSystem().$rotateKey(newKey)` re-keys
 every `@encrypted` and `@secret` column, and **refuses while a column it cannot
 carry forward exists** — `@hashed` has no plaintext to re-key, and
 `@secret(rotate: false)` opted out.
@@ -2500,15 +2500,15 @@ class BaseSeeder extends Seeder {
 
 ```js fragment
 // Hot backup — safe during writes
-await db.$backup('./backups/prod.db')
-await db.$backup('./backups/compact.db', { vacuum: true })
+await db.asSystem().$backup('./backups/prod.db')
+await db.asSystem().$backup('./backups/compact.db', { vacuum: true })
 
 // Cross-database queries
-db.$attach('./archive.db', 'archive')
+db.asSystem().$attach('./archive.db', 'archive')
 // asSystem(): raw SQL enforces no access rule, so a schema that declares one
 // reaches it through the documented bypass only.
 const rows = await db.asSystem().sql`SELECT * FROM user UNION ALL SELECT * FROM archive.user`
-db.$detach('archive')
+db.asSystem().$detach('archive')
 
 // Schema introspection
 db.$schema           // augmented parsed schema (includes auto-generated models)
@@ -2522,7 +2522,7 @@ db.$cacheSize        // { read: 24, write: 8 }
 db.$close()
 
 // Writes and the trail
-await db.$rotateKey(newKey)             // re-key every @encrypted/@secret; refused while @hashed or rotate: false exists
+await db.asSystem().$rotateKey(newKey)             // re-key every @encrypted/@secret; refused while @hashed or rotate: false exists
 await db.$audit({ operation, model, recordId, actorId, meta })
 const stop = db.$tapEvents(e => …)      // every write, announced
 db.$checkWhere('post', where)           // is this a valid filter?
@@ -2820,7 +2820,7 @@ the moment a schema has a typo. An error inside an imported file names that file
 
 ## Litestream
 
-Litestone sets the pragmas Litestream requires (`WAL`, `synchronous=NORMAL`, `busy_timeout=5000` — `createClient({ busyTimeout })` or `LITESTONE_BUSY_TIMEOUT` to change it; see [docs/concurrency.md](docs/concurrency.md)). Use `db.$backup()` for point-in-time snapshots before migrations. Use `litestone replicate config.js` for continuous WAL streaming to S3/R2.
+Litestone sets the pragmas Litestream requires (`WAL`, `synchronous=NORMAL`, `busy_timeout=5000` — `createClient({ busyTimeout })` or `LITESTONE_BUSY_TIMEOUT` to change it; see [docs/concurrency.md](docs/concurrency.md)). Use `db.asSystem().$backup()` for point-in-time snapshots before migrations. Use `litestone replicate config.js` for continuous WAL streaming to S3/R2.
 
 ---
 

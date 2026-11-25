@@ -98,13 +98,16 @@ title: Plan
     state: 'local', where: { planVersionId: { in: versions.map(v => v.id) } }, all: true,
   })
   $: {
-    // Counted into a local and ASSIGNED once. `held.set(…)` on the rendered
-    // Map is a mutation, and a mutation is not an assignment — the template
-    // keeps the empty Map it was handed and every count reads 0, which looks
-    // exactly like a plan nobody is subscribed to.
-    const counted = new Map()
-    for (const s of subList.rows) counted.set(s.planVersionId, (counted.get(s.planVersionId) ?? 0) + 1)
-    held = counted
+    // A new window rebuilds this list, and the rebuilt list holds no rows until
+    // its read answers; counting them meanwhile reads every window as 0, which
+    // looks exactly like a plan nobody is subscribed to. The last counts stand
+    // until then. Counted into a local and ASSIGNED once, since `held.set(…)`
+    // is a mutation the template never sees.
+    if (!subList.loading) {
+      const counted = new Map()
+      for (const s of subList.rows) counted.set(s.planVersionId, (counted.get(s.planVersionId) ?? 0) + 1)
+      held = counted
+    }
   }
 
   async function boot() {

@@ -349,6 +349,20 @@ export async function fileBytes(mm: MattermostSend, fileExternalId: MattermostId
   return { bytes: r.data, type: r.meta.headers?.['content-type'] ?? 'application/octet-stream' }
 }
 
+/**
+ * `GET /users/{id}/image`: a person's profile picture, as whoever the bundle
+ * was bound `as`. The server answers any signed-in user's picture, and a user
+ * with none set gets a generated default, so `gone` means only that the user
+ * does not exist.
+ */
+export async function profileImage(mm: MattermostSend, profileExternalId: MattermostId): Promise<{ bytes?: Uint8Array; type?: string; error?: MattermostFailure }> {
+  if (!/^[a-z0-9]{26}$/.test(profileExternalId)) throw new TypeError('mattermost: profileImage takes a Mattermost user id')
+  const r = await mm.api<Uint8Array>({ method: 'GET', path: `${API}/users/${profileExternalId}/image`, ...LIST })
+  if (r.error) return { error: translate(r.error, r.meta.status, r.meta.headers) }
+  if (!(r.data instanceof Uint8Array)) return { error: { kind: 'invalid_response', message: 'Mattermost answered a profile image with something that is not bytes', retryable: false } }
+  return { bytes: r.data, type: r.meta.headers?.['content-type'] ?? 'image/png' }
+}
+
 // ─── What a chat client does beyond the mirror ───────────────
 //
 // Every verb below is one person's, so each binds `as: 'user'`; the profile id

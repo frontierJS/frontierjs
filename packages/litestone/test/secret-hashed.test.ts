@@ -109,7 +109,7 @@ describe('@secret @hashed', () => {
   test('$rotateKey refuses it unless orphaned by name — a digest cannot be re-keyed', async () => {
     const db = await open()
     await db.asSystem().device.create({ data: { name: 'wall', token: 'tok-1' } })
-    await expect(db.$rotateKey('b'.repeat(64))).rejects.toThrow(/Device\.token/)
+    await expect(db.asSystem().$rotateKey('b'.repeat(64))).rejects.toThrow(/Device\.token/)
     db.$close()
   })
 })

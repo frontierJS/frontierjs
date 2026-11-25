@@ -26,29 +26,55 @@ function target(row, kind = 'row') {
   return { name: row.name, dir: row.dir, where: row.dir, kind, id: row.id, command: `bun run ${row.name}` }
 }
 
-/** Processes that exit with `codes[id]` (default 0); a server "answers" once started. */
-function world({ codes = {}, answeringAtStart = [] } = {}) {
+/**
+ * Processes that exit with `codes[id]` (default 0); a server "answers" once started.
+ * A stopped server's group stays alive for `lingers` more `alive` probes, its
+ * port already quiet, and a server started while one lingers dies on the bind.
+ */
+function world({ codes = {}, answeringAtStart = [], lingers = 0, killLingers = 0 } = {}) {
   const log  = []
   const up   = new Set(answeringAtStart)
   const live = new Map()
+  const left = new Map()   // pid → probes until the stopped group is gone
+  const names = new Map()  // pid → row name
+  const died = new Set()
+  let next = 1
   const procs = {
     startRow(row) {
       log.push(`start ${row.name}`)
-      live.set(row.id, row)
-      if (typeof row.port === 'number') up.add(row.port)
-      return { ok: true, pid: 1 }
+      const pid = next++
+      live.set(row.id, { row, pid })
+      names.set(pid, row.name)
+      if (typeof row.port === 'number') {
+        if ([...left.values()].some(n => n > 0)) died.add(row.id)
+        else up.add(row.port)
+      }
+      return { ok: true, pid }
     },
     stopRow(id) {
-      const row = live.get(id)
+      const { row, pid } = live.get(id) ?? {}
       log.push(`stop ${row?.name ?? id}`)
-      if (typeof row?.port === 'number') up.delete(row.port)
+      if (typeof row?.port === 'number') { up.delete(row.port); if (lingers) left.set(pid, lingers) }
       live.delete(id)
+      died.delete(id)
       return { ok: true }
     },
+    alive(pid) {
+      const n = left.get(pid) ?? 0
+      if (n > 0) left.set(pid, n - 1)
+      return n > 0
+    },
+    kill(pid) {
+      log.push(`kill ${names.get(pid)}`)
+      if (killLingers) left.set(pid, killLingers)
+      else left.delete(pid)
+    },
     childOf(id) {
-      const row = live.get(id)
-      if (!row) return null
-      return { exit: typeof row.port === 'number' ? null : { code: codes[id] ?? 0 } }
+      const got = live.get(id)
+      if (!got) return null
+      const { row, pid } = got
+      if (died.has(id)) return { pid, exit: { code: 1 } }
+      return { pid, exit: typeof row.port === 'number' ? null : { code: codes[id] ?? 0 } }
     },
     outputOf: id => [`\x1b[31moutput of ${id}\x1b[0m`],
   }
@@ -134,6 +160,37 @@ describe('prove', () => {
     expect(w.log).toEqual(['start verify:cart', 'stop verify:cart'])
     expect(out.ran.map(r => r.name)).toEqual(['verify:cart'])
     expect(out.skipped).toEqual([{ name: 'verify:values', dir: 'example', command: 'bun run verify:values', open: ['FJS-1366'] }])
+  })
+
+  // FJS-4604: junction closes the API listener first and holds the psp sink
+  // through its drain, so the port reads free while the process still binds a
+  // second one, and the next drive's API died on the sink.
+  test('the next drive starts its server only once the stopped one has exited, not when its port goes quiet', async () => {
+    const pay  = drive('verify:pay', [need(API, 'api')])
+    const live = drive('verify:live', [need(API, 'api')])
+    const w    = world({ lingers: 3 })
+    const out  = await run(w, [{ targets: [target(pay), target(live)] }], [API, pay, live])
+
+    expect(out.ran.map(r => r.ok)).toEqual([true, true])
+  })
+
+  test('a stopped server still running past the grace is killed', async () => {
+    const pay = drive('verify:pay', [need(API, 'api')])
+    const w   = world({ lingers: Infinity })
+    await prove({ proofs: [{ targets: [target(pay)] }], rows: [API, pay], procs: w.procs, answering: w.answering, sleep: async () => {}, stopMs: 1_000 })
+
+    expect(w.log.at(-1)).toBe('kill api')
+  })
+
+  // FJS-4498: a SIGKILLed group exits a beat later, and the next drive found
+  // its API port still answering and refused to start.
+  test('the next drive waits for a killed server to be gone', async () => {
+    const jobs = drive('verify:jobs', [need(API, 'api')])
+    const pay  = drive('verify:pay', [need(API, 'api')])
+    const w    = world({ lingers: Infinity, killLingers: 3 })
+    const out  = await prove({ proofs: [{ targets: [target(jobs), target(pay)] }], rows: [API, jobs, pay], procs: w.procs, answering: w.answering, sleep: async () => {}, stopMs: 1_000 })
+
+    expect(out.ran.map(r => r.ok)).toEqual([true, true])
   })
 
   test('a script target with no runnable row still runs, under an id of its own', async () => {

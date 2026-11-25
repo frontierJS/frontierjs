@@ -74,6 +74,7 @@ import { discountProblem, priceBasket } from '../../api/src/domain/shop/pricing.
 import { results, report } from './lib/report.mjs'
 import { PORTS, TEST_SINK_ENV }           from './lib/preflight.mjs'
 import { seedShop }                       from './lib/seed.mjs'
+import { keepTail, waitForServer }        from './lib/serve.mjs'
 
 seedShop()
 const sys = db.asSystem()
@@ -113,20 +114,14 @@ async function withApi(body) {
     `port ${API_PORT} already answers — an API is still running from an earlier run.\n` +
     `stop it first (\`bun run stop\`); this drive starts its own.`)
 
-  const proc = spawn('bun', ['run', 'api/index.ts'],
-    { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, ...TEST_SINK_ENV, API_PORT } })
-  proc.stdout.on('data', () => {})
+  const proc = keepTail(spawn('bun', ['run', 'api/index.ts'],
+    { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true, env: { ...process.env, ...TEST_SINK_ENV, API_PORT } }))
   proc.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[api] ${d}`) })
   const stop = () => { try { process.kill(-proc.pid, 'SIGTERM') } catch { try { proc.kill('SIGTERM') } catch {} } }
   process.on('exit', stop)
 
   try {
-    let up = false
-    for (let i = 0; i < 120 && !up; i++) {
-      try { up = (await fetch(`${API}/api/health`)).ok } catch {}
-      if (!up) await new Promise(r => setTimeout(r, 250))
-    }
-    if (!up) throw new Error(`the API never answered on ${API_PORT}`)
+    if (!await waitForServer(`${API}/api/health`, 'the API', proc)) throw new Error(`the API did not start on ${API_PORT}`)
 
     const auth = await (await fetch(`${API}/api/auth/login`, {
       method: 'POST', headers: { 'content-type': 'application/json' },

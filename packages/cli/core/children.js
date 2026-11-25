@@ -106,10 +106,9 @@ export function startRow(row, { root, fliRoot, spawnFn = spawn } = {}) {
   const child = spawnFn(cmd, args, {
     cwd:      row.dir === '.' ? root : join(root, row.dir),
     shell:    false,
-    // A surface started without its port variable binds its own default, which
-    // in a worktree lane is not the branch-shifted port the row reports and
-    // is the main tree's port.
-    env:      { ...process.env, FORCE_COLOR: '1', ...(row.portEnv && row.port ? { [row.portEnv]: String(row.port) } : {}) },
+    // A surface started without its app's port variables binds, and proxies to,
+    // the main tree's ports rather than the lane's the row reports.
+    env:      { ...process.env, FORCE_COLOR: '1', ...row.portVars },
     stdio:    ['ignore', 'pipe', 'pipe'],
     // Its own process group, so stopping it reaches what it started. Not
     // `unref`ed: it still dies with this process.
@@ -215,6 +214,20 @@ export function lastOf(id) {
   if (!h) return null
   const { lines, ...rest } = h
   return { ...rest, lineCount: lines.length }
+}
+
+/**
+ * Whether anything in the process group `pid` heads is still running. A row
+ * leaves this table at its stop, before its exit, and `bun run api`'s wrapper
+ * can exit while the app it spawned is still shutting down and holding ports.
+ */
+export function alive(pid) {
+  try { process.kill(-pid, 0); return true } catch (e) { return e.code === 'EPERM' }
+}
+
+/** SIGKILL the group `pid` heads — a stop that did not finish within its grace. */
+export function kill(pid) {
+  try { process.kill(-pid, 'SIGKILL') } catch {}
 }
 
 /** What this table knows about a row — `null` for one it never started. */

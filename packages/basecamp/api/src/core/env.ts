@@ -18,7 +18,7 @@ export const spec = {
   // ── Core ──────────────────────────────────────────────────
   NODE_ENV:     { default: 'development' },
   // No PORT: junction reads FRONTIER_PORT_BE (what `fli dev` hands a second
-  // checkout, 18120 in branch 1 — packages/cli/core/ports.js § Branches), else
+  // checkout, 12620 in branch 1 — packages/cli/core/ports.js § Branches), else
   // a bare PORT, itself; api/config/junction.config.js states 8120 for neither.
   HOST:         { default: '0.0.0.0' },
 

@@ -38,6 +38,17 @@ test('the drive\'s own navigation still counts as its own when the event trails 
   expect(reload.reloaded).toBe('http://x/')
 })
 
+test('browser.navigate is the drive\'s own, though it sends Page.navigate past browser.cmd', async () => {
+  // openChrome's navigate calls the cmd its closure holds, so wrapping
+  // browser.cmd alone read the drive's first page as a reload (FJS-4432).
+  const b = fakeBrowser()
+  const own = b.cmd
+  b.navigate = async (url) => { await own('Page.navigate', { url }) }
+  const reload = watchReloads(b)
+  await b.navigate('http://x/')
+  expect(reload.reloaded).toBe(null)
+})
+
 test('a navigation with none in flight is a reload, and names the page', () => {
   const b = fakeBrowser()
   const reload = watchReloads(b)

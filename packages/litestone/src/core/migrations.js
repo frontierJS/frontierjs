@@ -1190,6 +1190,7 @@ function onlyDrops(diffResult) {
   // case this exists for. The question is whether anything arrives.
   if (diffResult.newTables?.length)      return false
   if (diffResult.newJoinTables?.length)  return false
+  if (diffResult.newJoinColumns?.length) return false
   if (diffResult.newMatViews?.length)    return false
   if (diffResult.newViews?.length)       return false
   if (diffResult.changedViews?.length)   return false
@@ -1292,27 +1293,17 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     const liveSchema     = liveOf(dbName, rawDb, pristineSchema)
     const diffResult     = diffSchemas(pristineSchema, liveSchema, parseResult, dbName, { pluralize })
 
-    // Join tables (and @edge/@scoped side tables) are invisible to
-    // introspection — ensure they exist even when the model diff is in sync
-    // (e.g. an m2m or an @edge added to an existing DB).
+    // Join tables (and @edge/@scoped side tables) are built even when the model
+    // diff is in sync. An @edge column added to one that exists is the diff's
+    // `newJoinColumns`; ALTERed here too, the migration's own ALTER would then
+    // fail on a duplicate column.
     try {
       const scoped = schemaForDatabase(parseResult.schema, dbName)
       const m2mPairs = detectM2MPairs(scoped, pluralize)
-      // planEdgeStorage attaches @edge columns to their pairs and collects
-      // create-own side-table groups.
       const { ownGroups } = planEdgeStorage(scoped, m2mPairs, pluralize)
       for (const pair of m2mPairs) {
         for (const stmt of splitStatements(generateJoinTableDDL(pair, true)))
           if (stmt.trim()) rawDb.run(stmt)
-        // Add any @edge columns missing from an already-existing join table —
-        // CREATE IF NOT EXISTS is a no-op once the join exists.
-        if (pair.edgeColumns?.length) {
-          const have = new Set(rawDb.query(`PRAGMA table_info("${pair.joinTable}")`).all().map(c => c.name))
-          for (const colDef of pair.edgeColumns) {
-            const name = colDef.match(/"([^"]+)"/)?.[1]
-            if (name && !have.has(name)) rawDb.run(`ALTER TABLE "${pair.joinTable}" ADD COLUMN ${colDef.trim()}`)
-          }
-        }
       }
       for (const g of ownGroups) {
         for (const stmt of splitStatements(generateEdgeSideTableDDL(g, true)))

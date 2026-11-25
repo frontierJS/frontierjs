@@ -497,7 +497,7 @@ describe('--sidecar: the shell starts its own API', () => {
       '--moduleResolution', 'bundler', '--allowImportingTsExtensions', '--types', 'bun-types', '--typeRoots', join(EXAMPLE, '..', 'node_modules'),
       join(root, 'desktop', 'sidecar', 'make-sidecar.ts')], { encoding: 'utf8', timeout: 120000 })
     expect(r.stdout + r.stderr).toBe('')
-  })
+  }, 120_000)
 
   // FJS-4246: an API that states no prefix mounts /health, not /api/health.
   test('the shell polls where the API serves health, not at a guessed /api', () => {
@@ -538,7 +538,7 @@ describe('--sidecar: the shell starts its own API', () => {
     const nm = join(root, 'desktop', 'shell', 'sidecar', 'app', 'node_modules')
     for (const p of ['jpeg-js', 'inner-dep', '@sc/leaf']) expect(nodeFs.existsSync(join(nm, p, 'package.json')), p).toBe(true)
     expect(nodeFs.existsSync(join(nm, 'vite'))).toBe(false)
-  })
+  }, 120_000)
 
   // FJS-3970: a fresh copy has no node_modules; the copy step named no cause.
   test('a dependency that is not installed is refused by name, saying to install', () => {
@@ -549,7 +549,7 @@ describe('--sidecar: the shell starts its own API', () => {
     expect(r.stderr).toContain("make-sidecar: 'jpeg-js' is not installed")
     expect(r.stderr).toContain('bun install')
     expect(r.stderr).not.toContain('ENOENT')
-  })
+  }, 60_000)
 })
 
 describe('the shell builds on Windows', () => {

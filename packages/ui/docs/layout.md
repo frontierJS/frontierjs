@@ -39,6 +39,9 @@ drag.js       drag — one pointer drag, press to release or cancel, an {@attach
 resize.js     resizeHandle — the edge a person drags to size a pane, over drag, an {@attach}
 nav.js        the `src/lib/nav.js` contract (typedefs) and sectionFor · visible ·
               paletteItems; never decides CURRENT, which is Sierra's isActive
+paste.js      filesOf · pastedFiles · fitImage — the files a paste or drop carries
+              (WebKitGTK's empty paste event included) and an image fitted to a
+              size; ui's Composer `onfiles` is built on it (FJS-D2364)
 rowlist.js    rowlist — the keys of a list of rows (cursor, one tab stop, open,
               select), an {@attach} over toolbelt `/keys` tables (FJS-2009)
 selection.js  createSelection — the ticked KEYS of a list, signal-backed; the

@@ -46,6 +46,7 @@ Detail: `references/gates-policies-and-claims.md`
 - **A bare `check(rel)` over an optional parent is TRUE for a row naming no parent — beside another scope, that row is the other scope's** (`FJS-3130`)
 - **`asSystem()` does not bypass a `@check`, a `@@check` or an `@@arc`, and it bypasses everything else.**
 - **Raw SQL requires `asSystem()` once a schema declares access rules.**
+- **The ops writes (`$backup`, `$rotateKey`, `$attach`, `$detach`, `$retain`) run on `asSystem()` alone, root included, and root `$db` follows raw SQL's rule** (`FJS-D2363`)
 - **A field `@allow` is a PREDICATE and it is compiled into SQL, both ways** (`FJS-D129`)
 - **`@guarded` is not a level**
 - **A column your `getLevel` reads must not be writable by the caller being graded.**

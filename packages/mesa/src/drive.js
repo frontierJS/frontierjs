@@ -123,6 +123,26 @@ function killHolders(entry) {
   try { spawnSync('pkill', ['-KILL', '-f', `user-data-dir=${entry.profile}`]) } catch { /* no pkill */ }
 }
 
+const holdsProfile = (entry) => {
+  try { return spawnSync('pgrep', ['-f', `user-data-dir=${entry.profile}`]).status === 0 } catch { return false }
+}
+
+/** Kill every holder of these profiles and return once none is left, never
+ *  sooner than 300ms. One kill is not enough: a browser that just came up is
+ *  still forking helpers, and one forked after pkill read /proc outlives it and
+ *  keeps the profile (FJS-4264). So the kill repeats across the wait, which
+ *  runs on past 300ms while a holder remains, up to a bound. */
+function killAndWait(entries) {
+  const start = Date.now()
+  for (;;) {
+    for (const entry of entries) killHolders(entry)
+    sleepSync(50)
+    const waited = Date.now() - start
+    if (waited >= 3000) return
+    if (waited >= 300 && !entries.some(holdsProfile)) return
+  }
+}
+
 /** Remove what a launch made: its TMPDIR always, its profile unless the
  *  caller keeps it. */
 function removeLaunch(entry) {
@@ -133,14 +153,13 @@ function removeLaunch(entry) {
 
 function sweepLaunched() {
   if (!launched.size) return
-  for (const entry of launched) killHolders(entry)
-  // Every browser dies BEFORE any profile is removed, and then the thread
-  // waits. Removing straight after the kill does not fail — it SUCCEEDS, and
-  // Chrome, still shutting down, writes the directory back: measured, a
-  // profile removed at 0ms was on disk again 1.5s later with Default/ in it
-  // and 16MB, while 200ms was already enough for it to stay gone. `maxRetries`
-  // cannot cover that, because the removal is not what fails.
-  sleepSync(300)
+  // Every browser dies BEFORE any profile is removed. Removing straight after
+  // the kill does not fail — it SUCCEEDS, and Chrome, still shutting down,
+  // writes the directory back: measured, a profile removed at 0ms was on disk
+  // again 1.5s later with Default/ in it and 16MB, while 200ms was already
+  // enough for it to stay gone. `maxRetries` cannot cover that, because the
+  // removal is not what fails.
+  killAndWait([...launched])
   for (const entry of launched) removeLaunch(entry)
   launched.clear()
 }
@@ -188,8 +207,7 @@ function reapOrphanedProfiles() {
   }
   if (!orphans.length) return
   // Kill first, wait, then remove — the order sweepLaunched() explains.
-  for (const entry of orphans) killHolders(entry)
-  sleepSync(300)
+  killAndWait(orphans)
   for (const { profile } of orphans) {
     try { rmSync(profile, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 }) } catch { /* a concurrent drive got there first */ }
   }

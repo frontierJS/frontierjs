@@ -3733,7 +3733,7 @@ describe('client — $backup', () => {
   })
 
   test('$backup creates a readable db', async () => {
-    const result = await db.$backup(backupPath)
+    const result = await db.asSystem().$backup(backupPath)
     expect(result.path).toBe(backupPath)
     expect(result.size).toBeGreaterThan(0)
     expect(existsSync(backupPath)).toBe(true)
@@ -3747,7 +3747,7 @@ describe('client — $backup', () => {
 
   test('$backup with vacuum: true', async () => {
     const vPath = join(TMP, 'backup-vacuum.db')
-    await db.$backup(vPath, { vacuum: true })
+    await db.asSystem().$backup(vPath, { vacuum: true })
     expect(existsSync(vPath)).toBe(true)
     const v = new Database(vPath, { readonly: true })
     const rows = v.query('SELECT * FROM account').all()
@@ -3770,7 +3770,7 @@ describe('client — $backup', () => {
     const { createClient } = await import('../src/core/client.js')
     const before = new Date().toISOString()
     const vPath  = join(TMP, 'backup-stamped.db')
-    await db.$backup(vPath, { vacuum: true })
+    await db.asSystem().$backup(vPath, { vacuum: true })
 
     expect(db.$backupStamp()).toBeNull()
     const restored: any = await createClient({ db: vPath, schema: SCHEMA })
@@ -3808,7 +3808,7 @@ describe('client — $attach', () => {
   })
 
   test('$attach + cross-db query', async () => {
-    db.$attach(archivePath, 'archive')
+    db.asSystem().$attach(archivePath, 'archive')
     expect(db.$attached).toContain('archive')
 
     const rows = await db.sql`
@@ -3823,19 +3823,19 @@ describe('client — $attach', () => {
   })
 
   test('$detach removes the alias', async () => {
-    db.$detach('archive')
+    db.asSystem().$detach('archive')
     expect(db.$attached).not.toContain('archive')
     await expect(db.sql`SELECT * FROM archive.accounts`).rejects.toThrow()
   })
 
   test('duplicate attach throws', () => {
-    db.$attach(archivePath, 'arch2')
-    expect(() => db.$attach(archivePath, 'arch2')).toThrow()
-    db.$detach('arch2')
+    db.asSystem().$attach(archivePath, 'arch2')
+    expect(() => db.asSystem().$attach(archivePath, 'arch2')).toThrow()
+    db.asSystem().$detach('arch2')
   })
 
   test('detach non-existent throws', () => {
-    expect(() => db.$detach('nonexistent')).toThrow()
+    expect(() => db.asSystem().$detach('nonexistent')).toThrow()
   })
 })
 
@@ -5813,11 +5813,11 @@ describe("databases: ':memory:'", () => {
     const db = await makeDb(`
       model User { id Int @id; name String }
     `, 'inmem-attach', { databases: ':memory:' })
-    db.$attach(archivePath, 'archive')
+    db.asSystem().$attach(archivePath, 'archive')
     expect(db.$attached).toContain('archive')
     const rows = await db.sql`SELECT name FROM archive.accounts`
     expect(rows).toHaveLength(1)
-    db.$detach('archive')
+    db.asSystem().$detach('archive')
     expect(db.$attached).not.toContain('archive')
     db.$close()
   })
@@ -6833,7 +6833,7 @@ describe('@secret field attribute', () => {
   test('@secret field is encrypted at rest', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'secret-enc', { encryptionKey: ENC_KEY })
     await db.asSystem().secret.create({ data: { token: 'mysecret' } })
-    const raw = db.$db.query(`SELECT token FROM secret`).get() as any
+    const raw = db.asSystem().$db.query(`SELECT token FROM secret`).get() as any
     expect(parseEnvelope(raw.token)).toMatchObject({ version: 2, mode: 'enc' })   // AES-GCM
     db.$close()
   })
@@ -6862,13 +6862,13 @@ describe('@secret field attribute', () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-basic', { encryptionKey: ENC_KEY })
     await db.asSystem().secret.create({ data: { token: 'rotate-me' } })
 
-    const statsBefore = db.$db.query(`SELECT token FROM secret`).get() as any
+    const statsBefore = db.asSystem().$db.query(`SELECT token FROM secret`).get() as any
     expect(parseEnvelope(statsBefore.token)).toMatchObject({ version: 2, mode: 'enc' })
 
-    await db.$rotateKey(NEW_KEY)
+    await db.asSystem().$rotateKey(NEW_KEY)
 
     // Ciphertext should have changed (different IV → different output)
-    const statsAfter = db.$db.query(`SELECT token FROM secret`).get() as any
+    const statsAfter = db.asSystem().$db.query(`SELECT token FROM secret`).get() as any
     expect(parseEnvelope(statsAfter.token)).toMatchObject({ version: 2, mode: 'enc' })
     expect(statsAfter.token).not.toBe(statsBefore.token)
 
@@ -6896,7 +6896,7 @@ describe('@secret field attribute', () => {
     await sys.secret.create({ data: { id: 1, token: 'tok-abc' } })
     expect(((await sys.secret.findUnique({ where: { id: 1 } })) as any).token).toBe('tok-abc')
 
-    await db.$rotateKey(NEW_KEY)
+    await db.asSystem().$rotateKey(NEW_KEY)
 
     // The proxy handed out before the rotation, and a fresh one: asSystem() is
     // memoized in `_systemProxy`, so these are the same object and both used to
@@ -6914,7 +6914,7 @@ describe('@secret field attribute', () => {
     const before = db.$setAuth({ id: 'u1' })
     await db.asSystem().secret.create({ data: { id: 1, token: 'scoped-value' } })
 
-    await db.$rotateKey(NEW_KEY)
+    await db.asSystem().$rotateKey(NEW_KEY)
 
     expect(((await before.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('scoped-value')
     db.$close()
@@ -6934,9 +6934,9 @@ describe('@secret field attribute', () => {
     const sys = db.asSystem()
     await sys.secret.create({ data: { id: 1, email: 'a@b.co', note: 'N', token: 'T' } })
 
-    const before = db.$db.query(`SELECT email, note, token FROM secret`).get() as any
-    const stats  = await db.$rotateKey(NEW_KEY)
-    const after  = db.$db.query(`SELECT email, note, token FROM secret`).get() as any
+    const before = db.asSystem().$db.query(`SELECT email, note, token FROM secret`).get() as any
+    const stats  = await db.asSystem().$rotateKey(NEW_KEY)
+    const after  = db.asSystem().$db.query(`SELECT email, note, token FROM secret`).get() as any
 
     // All three ciphertexts moved — the assertion the old test made about one.
     expect(after.email).not.toBe(before.email)
@@ -6967,14 +6967,14 @@ describe('@secret field attribute', () => {
       { encryptionKey: ENC_KEY },
     )
     await db.asSystem().secret.create({ data: { id: 1, pw: 'secret-pw', token: 'T' } })
-    const before = db.$db.query(`SELECT pw, token FROM secret`).get() as any
+    const before = db.asSystem().$db.query(`SELECT pw, token FROM secret`).get() as any
 
-    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.pw/)
-    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/@hashed/)
+    await expect(db.asSystem().$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.pw/)
+    await expect(db.asSystem().$rotateKey(NEW_KEY)).rejects.toThrow(/@hashed/)
 
     // Nothing moved, and the key did not swap either — the client is exactly
     // where it was.
-    const after = db.$db.query(`SELECT pw, token FROM secret`).get() as any
+    const after = db.asSystem().$db.query(`SELECT pw, token FROM secret`).get() as any
     expect(after.token).toBe(before.token)
     expect(after.pw).toBe(before.pw)
     expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('T')
@@ -6993,14 +6993,14 @@ describe('@secret field attribute', () => {
     await db.asSystem().secret.create({ data: { id: 1, pw: 'p', kept: 'K', token: 'T' } })
 
     // Both named → refused, naming both.
-    await expect(db.$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.kept/)
+    await expect(db.asSystem().$rotateKey(NEW_KEY)).rejects.toThrow(/Secret\.kept/)
     // One named → still refused, and only the OTHER one is reported.
-    const err = await db.$rotateKey(NEW_KEY, { orphan: ['Secret.pw'] }).catch((e: Error) => e)
+    const err = await db.asSystem().$rotateKey(NEW_KEY, { orphan: ['Secret.pw'] }).catch((e: Error) => e)
     expect((err as Error).message).toContain('Secret.kept')
     expect((err as Error).message).not.toContain('Secret.pw —')
 
     // Both named → it proceeds, and the two orphans are left as declared.
-    const stats = await db.$rotateKey(NEW_KEY, { orphan: ['Secret.pw', 'Secret.kept'] })
+    const stats = await db.asSystem().$rotateKey(NEW_KEY, { orphan: ['Secret.pw', 'Secret.kept'] })
     expect(stats.Secret.fields).toBe(1)   // token alone
     expect(((await db.asSystem().secret.findUnique({ where: { id: 1 } })) as any).token).toBe('T')
     db.$close()
@@ -7011,7 +7011,7 @@ describe('@secret field attribute', () => {
     await db.asSystem().secret.create({ data: { token: 'a' } })
     await db.asSystem().secret.create({ data: { token: 'b' } })
 
-    const stats = await db.$rotateKey(NEW_KEY)
+    const stats = await db.asSystem().$rotateKey(NEW_KEY)
     expect(stats.Secret.rows).toBe(2)
     expect(stats.Secret.fields).toBe(1)
     db.$close()
@@ -7029,7 +7029,7 @@ describe('@secret field attribute', () => {
 
     const dbOld = await createClient({ parsed: r,  db: path, encryptionKey: ENC_KEY })
     await (dbOld as any).asSystem().secret.create({ data: { token: 'still-readable' } })
-    await dbOld.$rotateKey(NEW_KEY)
+    await dbOld.asSystem().$rotateKey(NEW_KEY)
     dbOld.$close()
 
     const dbNew = await createClient({ parsed: r,  db: path, encryptionKey: NEW_KEY })
@@ -7046,11 +7046,11 @@ describe('@secret field attribute', () => {
     )
     await db.asSystem().secret.create({ data: { fixed: 'stays', rotateable: 'changes' } })
 
-    const before = db.$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
+    const before = db.asSystem().$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
     // Skipped is not free: the key swap is global, so `fixed` is unreadable
     // after this, and rotation says so rather than doing it quietly (FJS-253).
-    await db.$rotateKey(NEW_KEY, { orphan: ['Secret.fixed'] })
-    const after = db.$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
+    await db.asSystem().$rotateKey(NEW_KEY, { orphan: ['Secret.fixed'] })
+    const after = db.asSystem().$db.query(`SELECT fixed, rotateable FROM secret`).get() as any
 
     // fixed stays the same ciphertext
     expect(after.fixed).toBe(before.fixed)
@@ -7064,7 +7064,7 @@ describe('@secret field attribute', () => {
     const row = (await db.asSystem().secret.findFirst({})) as any
     expect(row.fixed).toBe('stays')
     expect(row.rotateable).toBe('changes')
-    const dbPath = db.$db.filename
+    const dbPath = db.asSystem().$db.filename
     db.$close()
 
     // Where the accepted loss actually lands: a process that starts with the
@@ -7090,7 +7090,7 @@ describe('@secret field attribute', () => {
 
   test('$rotateKey with no @secret fields returns empty stats', async () => {
     const db = await makeDb(`model Plain { id Int @id; name String }`, 'rotate-empty')
-    const stats = await db.$rotateKey(ENC_KEY)
+    const stats = await db.asSystem().$rotateKey(ENC_KEY)
     expect(Object.keys(stats)).toHaveLength(0)
     db.$close()
   })
@@ -7100,21 +7100,21 @@ describe('@secret field attribute', () => {
     // Testing with a plain model: $rotateKey returns {} with no @secret fields regardless
     // of whether the client has an encryption key.
     const db = await makeDb(`model Plain { id Int @id; name String }`, 'rotate-no-key')
-    const stats = await db.$rotateKey(NEW_KEY)
+    const stats = await db.asSystem().$rotateKey(NEW_KEY)
     expect(Object.keys(stats)).toHaveLength(0)
     db.$close()
   })
 
   test('$rotateKey throws on bad key length', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String @secret }`, 'rotate-bad-key', { encryptionKey: ENC_KEY })
-    await expect(db.$rotateKey('tooshort')).rejects.toThrow('32 bytes')
+    await expect(db.asSystem().$rotateKey('tooshort')).rejects.toThrow('32 bytes')
     db.$close()
   })
 
   test('$rotateKey leaves null fields untouched', async () => {
     const db = await makeDb(`model Secret { id Int @id; token String? @secret  @@gate(0) }`, 'rotate-null', { encryptionKey: ENC_KEY })
     await db.secret.create({ data: {} })
-    const stats = await db.$rotateKey(NEW_KEY)
+    const stats = await db.asSystem().$rotateKey(NEW_KEY)
     expect(stats.Secret?.rows ?? 0).toBe(0)   // null field — nothing to update
     db.$close()
   })
@@ -9022,7 +9022,7 @@ describe('GatePlugin', () => {
         @@gate(2.4.4.6)
       }
     `, 'gate-read-ok', () => 3)   // level 3 >= read(2)
-    await db.$db.run('INSERT INTO post VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO post VALUES (1)')
     const rows = await db.$setAuth({ id: 1 }).post.findMany()
     expect(rows.length).toBe(1)
     db.$close()
@@ -9061,7 +9061,7 @@ describe('GatePlugin', () => {
         @@gate(2.4.5.6)
       }
     `, 'gate-update-deny', (_, model) => model === 'Post' ? 4 : 0)  // level 4 < update(5)
-    await db.$db.run("INSERT INTO post VALUES (1, 'x')")
+    await db.asSystem().$db.run("INSERT INTO post VALUES (1, 'x')")
     await expect(db.post.update({ where: { id: 1 }, data: { val: 'y' } })).rejects.toThrow(AccessDeniedError)
     db.$close()
   })
@@ -9074,7 +9074,7 @@ describe('GatePlugin', () => {
         @@gate(2.4.4.6)
       }
     `, 'gate-delete-deny', () => 5)   // level 5 < delete(6)
-    await db.$db.run('INSERT INTO post VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO post VALUES (1)')
     await expect(db.post.delete({ where: { id: 1 } })).rejects.toThrow(AccessDeniedError)
     db.$close()
   })
@@ -9088,7 +9088,7 @@ describe('GatePlugin', () => {
         @@gate(5.8.8.9)
       }
     `, 'gate-locked', () => 6)   // level 6 (OWNER) can't beat LOCKED (now 9)
-    await db.$db.run('INSERT INTO audit_log VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO audit_log VALUES (1)')
     await expect(db.auditLog.delete({ where: { id: 1 } })).rejects.toThrow('LOCKED')
     db.$close()
   })
@@ -9126,7 +9126,7 @@ describe('GatePlugin', () => {
     })
 
     const userDb = db.$setAuth({ id: 1, level: 4 })
-    await db.$db.run('INSERT INTO post VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO post VALUES (1)')
     await userDb.post.findMany()
     expect(capturedUser?.id).toBe(1)
     expect(capturedUser?.level).toBe(4)
@@ -9143,7 +9143,7 @@ describe('GatePlugin', () => {
     `, 'gate-setauth-pass', {
       plugins: [new GatePlugin({ getLevel: (user: any) => user?.level ?? 0 })]
     })
-    await db.$db.run('INSERT INTO post VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO post VALUES (1)')
     const userDb = db.$setAuth({ id: 1, level: 4 })
     const rows = await userDb.post.findMany()
     expect(rows.length).toBe(1)
@@ -9275,7 +9275,7 @@ describe('GatePlugin', () => {
         }
       })]
     })
-    await db.$db.run('INSERT INTO secret VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO secret VALUES (1)')
 
     // Regular admin (level 5) can't read — needs SYSADMIN (7)
     const admin = db.$setAuth({ id: 1, role: 'admin' })
@@ -9304,7 +9304,7 @@ describe('GatePlugin', () => {
         getLevel: () => 99   // tries to return 99 — clamped to 7 (SYSADMIN)
       })]
     })
-    await db.$db.run('INSERT INTO restricted VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO restricted VALUES (1)')
     // Clamped to 7, still < SYSTEM(8)
     await expect(db.$setAuth({}).restricted.findMany()).rejects.toThrow(AccessDeniedError)
     // asSystem() (8) passes
@@ -9325,8 +9325,8 @@ describe('GatePlugin', () => {
     `, 'gate-open-model', {
       plugins: [new GatePlugin({ getLevel: () => 0 })]  // stranger
     })
-    await db.$db.run('INSERT INTO open_table VALUES (1)')
-    await db.$db.run('INSERT INTO gated_table VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO open_table VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO gated_table VALUES (1)')
     const { AccessDeniedError } = await import('../src/core/plugin.js')
     await expect(db.openTable.findMany()).rejects.toThrow(/requires SYSTEM access/)
     expect(await db.asSystem().openTable.findMany()).toHaveLength(1)
@@ -9356,8 +9356,8 @@ describe('GatePlugin', () => {
         getLevel: (user: any, model: string) => ROLES[user?.role]?.[model] ?? 0
       })]
     })
-    await db.$db.run('INSERT INTO post VALUES (1)')
-    await db.$db.run('INSERT INTO billing VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO post VALUES (1)')
+    await db.asSystem().$db.run('INSERT INTO billing VALUES (1)')
 
     const fm = db.$setAuth({ id: 1, role: 'field-manager' })
 
@@ -9799,7 +9799,7 @@ describe('plugin system', () => {
         @@allow(all, true)
       }
     `, 'plugin-ctx-tables', { plugins: [new ReadBack()] })
-    await db.$db.run(`INSERT INTO secret VALUES (1, 1), (2, 2)`)
+    await db.asSystem().$db.run(`INSERT INTO secret VALUES (1, 1), (2, 2)`)
     await db.$setAuth({ id: 1 }).note.create({ data: { id: 1 } })
     await db.asSystem().note.create({ data: { id: 2 } })
     expect(seen).toEqual({ '1': [1], system: [1, 2] })
@@ -28632,7 +28632,7 @@ describe('@encrypted(deterministic) / @hashed — declaration', () => {
     const dbOld = await createClient({ parsed: r, db: path, encryptionKey: 'd'.repeat(64) })
     await (dbOld as any).asSystem().k.create({ data: { id: 1, label: 'k1', token: 'tok-abc' } })
     expect((await (dbOld as any).asSystem().k.findFirst({ where: { token: 'tok-abc' } }))?.label).toBe('k1')
-    await dbOld.$rotateKey('e'.repeat(64))
+    await dbOld.asSystem().$rotateKey('e'.repeat(64))
     dbOld.$close()
 
     // A fresh client, because the rotating one cannot read its own output — that is

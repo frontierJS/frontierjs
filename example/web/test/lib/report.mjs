@@ -51,7 +51,7 @@ export function results() {
  * every one of them reads as absent rather than as wrong.
  */
 export function report(got, expected, { stoppedEarly = null } = {}) {
-  let failed = 0
+  const failedKeys = []
 
   for (const [key, want] of Object.entries(expected)) {
     const have = got[key]
@@ -60,7 +60,7 @@ export function report(got, expected, { stoppedEarly = null } = {}) {
     const ok = typeof want === 'function'
       ? (have !== undefined && want(have) === true)
       : (have !== undefined && JSON.stringify(have) === JSON.stringify(want))
-    if (!ok) failed++
+    if (!ok) failedKeys.push(key)
     console.log(`${ok ? '  ok  ' : '  FAIL'} ${key}`)
     if (!ok) {
       if (typeof want === 'function') console.log(`         predicate rejected ${JSON.stringify(have)}`)
@@ -74,12 +74,18 @@ export function report(got, expected, { stoppedEarly = null } = {}) {
   // The half a per-drive loop cannot do. See the header.
   for (const key of Object.keys(got)) {
     if (key in expected) continue
-    failed++
+    failedKeys.push(key)
     console.log(`  FAIL ${key}`)
     console.log('         asserted and not listed in `expected` — add it, or the row is never graded')
   }
 
   if (stoppedEarly) console.error(`\nstopped early: ${stoppedEarly.message ?? stoppedEarly}`)
+
+  // fli prove keeps a drive's last 30 lines, and a FAIL printed in place among
+  // hundreds of rows falls out of them: a flake then records only its count and
+  // can never be chased (FJS-3167).
+  const failed = failedKeys.length
+  if (failed) console.log(`\nfailed: ${failedKeys.join(', ')}`)
 
   console.log(failed || stoppedEarly
     ? `\n${failed} assertion(s) failed`

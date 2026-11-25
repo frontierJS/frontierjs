@@ -11,7 +11,7 @@
   import Icon from '../Icon.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import { posts } from '../../resources/Post.mesa'
-  import { byPost, getLists, readThread, roomExtras, setFollowing } from '../../lib/chat.js'
+  import { byPost, getLists, readThread, roomExtras, setFollowing, outbox, unsent } from '../../lib/chat.js'
   import PostItem from './PostItem.mesa'
   import Composer from './Composer.mesa'
   import TypingLine from './TypingLine.mesa'
@@ -60,6 +60,8 @@
   $: root = rootList.rows.find(p => p.externalId === rootId) ?? null
   $: replies = replyList.rows.filter(p => !p.deletedAt).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
   $: loading = rootList.loading || replyList.loading
+  $: outbox.posts   // standalone: a read inside an expression is not a subscription to an import's field
+  $: sending = unsent(outbox.posts, replyList.rows, channel?.externalId, rootId)
   // Gone, or never in this channel: both read as one answer.
   $: missing = !loading && (!root || root.deletedAt || root.channelExternalId !== channel?.externalId)
   $: mine = lists.threads.rows.find(t => t.rootExternalId === rootId) ?? null
@@ -129,6 +131,9 @@
       {#if replies.length}<div class="divider-label" role="separator">{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</div>{/if}
       {#each replies as p, i (p.externalId)}
         <PostItem post={p} {people} reactionRows={reactionsBy.get(p.externalId) ?? NONE} fileRows={filesBy.get(p.externalId) ?? NONE} inThread continuation={continues(replies[i - 1], p)} />
+      {/each}
+      {#each sending as p, i (p.externalId)}
+        <PostItem post={p} {people} reactionRows={NONE} fileRows={NONE} inThread pending continuation={continues(i ? sending[i - 1] : replies.at(-1) ?? root, p)} />
       {/each}
     {:else}
       <p class="text-muted center thread-note">…</p>

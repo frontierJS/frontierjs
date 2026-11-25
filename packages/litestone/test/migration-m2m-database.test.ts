@@ -96,7 +96,9 @@ model Project { id Int @id; name String; tasks Task[] }
 `
   const BEFORE = BASE + `model Task { id Int @id; title String; projects Project[] }`
   const AFTER  = BASE + `model Task { id Int @id; title String; projects Project[]; isImportant Boolean @edge(ref: Project) @default(false); myFlag Boolean @scoped @default(false) }`
-  const sqlOf = (dir: string) => readdirSync(dir).filter(f => f.endsWith('.sql')).map(f => readFileSync(join(dir, f), 'utf8')).join('\n')
+  // In filename order, as the history applies them: a later file's ALTER
+  // collides with an earlier file's CREATE run after it.
+  const sqlOf = (dir: string) => readdirSync(dir).filter(f => f.endsWith('.sql')).sort().map(f => readFileSync(join(dir, f), 'utf8')).join('\n')
   const built = (sql: string) => {
     const db = new Database(':memory:')
     db.exec(sql)
@@ -124,6 +126,36 @@ model Project { id Int @id; name String; tasks Task[] }
       expect(two.summary).toContain('_task_user')
       const db = built(sqlOf(dir))
       expect(db.query(`PRAGMA table_info("_task_user")`).all().map((c: any) => c.name)).toContain('myFlag')
+      expect((create(null, parse(AFTER), 'three', dir) as any).created).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+})
+
+// FJS-4612 — the diff read underscore tables by name only, so an @edge column
+// added to a join or side table the history already builds compared equal and
+// no migration was written.
+describe('an @edge column added to storage that already exists', () => {
+  const BASE = `
+model User    { id Int @id; name String; @@auth }
+model Project { id Int @id; name String; tasks Task[] }
+`
+  const BEFORE = BASE + `model Task { id Int @id; title String; projects Project[]; myFlag Boolean @scoped @default(false) }`
+  const AFTER  = BASE + `model Task { id Int @id; title String; projects Project[]; myFlag Boolean @scoped @default(false); isImportant Boolean @edge(ref: Project) @default(false); isPinned Boolean @scoped @default(false) }`
+  const sqlOf = (dir: string) => readdirSync(dir).filter(f => f.endsWith('.sql')).sort().map(f => readFileSync(join(dir, f), 'utf8')).join('\n')
+  const colsOf = (db: Database, t: string) => db.query(`PRAGMA table_info("${t}")`).all().map((c: any) => c.name)
+
+  it('gets a migration that adds the column to the join and the side table, once', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ls-edge-col-'))
+    try {
+      expect((create(null, parse(BEFORE), 'one', dir) as any).created).toBe(true)
+      const two = create(null, parse(AFTER), 'two', dir) as any
+      expect(two.created).toBe(true)
+      expect(two.summary).toContain('isImportant')
+      expect(two.summary).toContain('isPinned')
+      const db = new Database(':memory:')
+      db.exec(sqlOf(dir))
+      expect(colsOf(db, '_project_task')).toContain('isImportant')
+      expect(colsOf(db, '_task_user')).toEqual(['taskId', 'userId', 'myFlag', 'isPinned'])
       expect((create(null, parse(AFTER), 'three', dir) as any).created).toBe(false)
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })

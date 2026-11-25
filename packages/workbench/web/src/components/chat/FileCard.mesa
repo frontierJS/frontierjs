@@ -4,6 +4,7 @@
   // name and size card with a download. Both go through the member's credentials
   // (lib/files.js), since the route answers nobody it cannot grade.
   import Icon from '../Icon.mesa'
+  import Modal from '@frontierjs/ui/components/overlay/Modal.mesa'
   import { downloadFile, fileBlobUrl, fileSize, isImage } from '../../lib/files.js'
 
   export let file = null   // { id, name, mime, size, preview, width, height }
@@ -25,10 +26,22 @@
     failed = false
     try { await downloadFile(file) } catch { failed = true }
   }
-  // The whole image, not the preview, opened in its own tab.
+  // The whole image, not the preview, in a viewer over the page: the desktop shell
+  // opens no tab for a blob URL. Fitted to the window first; a click on one larger
+  // than that shows it at its own size, scrolled inside the viewer.
+  let viewing = false
+  let full    = ''
+  let actual  = false
+  let larger  = false
   async function openFull() {
-    try { window.open(await fileBlobUrl(file.id, 'full'), '_blank', 'noopener') } catch { failed = true }
+    viewing = true; actual = false; larger = false
+    try { full = await fileBlobUrl(file.id, 'full') } catch { viewing = false; failed = true }
   }
+  function measure(e) {
+    const img = e.currentTarget
+    larger = img.naturalWidth > img.clientWidth || img.naturalHeight > img.clientHeight
+  }
+  const zoom = () => { if (larger || actual) actual = !actual }
 </script>
 
 {#if file}
@@ -36,6 +49,16 @@
     <button type="button" class="chat-image" class:sized style={sized ? `--w: ${file.width}; --h: ${file.height}` : null} onclick={openFull} aria-label={`Open ${file.name}`} data-file-card="image" data-file={file.id}>
       {#if src}<img {src} alt={file.name} />{:else}<span class="skeleton chat-image-wait" aria-hidden="true"></span>{/if}
     </button>
+    <Modal bind:open={viewing} title={file.name} size="full" data-file-viewer={file.id}>
+      <div class="chat-viewer" class:actual>
+        {#if full}
+          <img src={full} alt={file.name} class:zoomable={larger && !actual} class:zoomed={actual} onload={measure} onclick={zoom} data-file-viewer-image />
+        {:else}<span class="skeleton chat-image-wait" aria-hidden="true"></span>{/if}
+      </div>
+      {#snippet footer()}
+        <button type="button" class="btn ghost sm" onclick={save}><Icon name="link" /> Download</button>
+      {/snippet}
+    </Modal>
   {:else}
     <div class="item chat-file" data-file-card="file" data-file={file.id}>
       <span class="item-lead"><Icon name="attach" /></span>
@@ -55,4 +78,10 @@
   .chat-image.sized { inline-size: min(100%, calc(var(--w) * 1px), calc(var(--space-2xl) * 10 * var(--w) / var(--h))); aspect-ratio: var(--w) / var(--h); }
   .chat-image.sized img, .chat-image.sized .chat-image-wait { inline-size: 100%; block-size: 100%; max-block-size: none; object-fit: contain; }
   .chat-file { inline-size: fit-content; max-inline-size: 100%; }
+  .chat-viewer { display: grid; place-items: center; }
+  .chat-viewer img { display: block; max-inline-size: 100%; max-block-size: 64vh; }
+  .chat-viewer.actual { place-items: start; }
+  .chat-viewer.actual img { max-inline-size: none; max-block-size: none; }
+  .chat-viewer .zoomable { cursor: zoom-in; }
+  .chat-viewer .zoomed { cursor: zoom-out; }
 </style>

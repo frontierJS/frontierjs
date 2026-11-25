@@ -11,7 +11,7 @@ import { ssoFromEnv } from '../../api/src/core/sso-env.ts'
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
 // The literals are the dev slot, `API_PORT`/`UI_PORT` are what a drive sets, and
-// `FRONTIER_PORT_*` is what `fli dev` hands a second checkout (18020 in branch 1). A
+// `FRONTIER_PORT_*` is what `fli dev` hands a second checkout (12520 in branch 1). A
 // drive pinned to 8020/8120 cannot run while somebody's dev server holds them,
 // and one that refuses to run is one nobody runs.
 const API_PORT = process.env.API_PORT ?? process.env.FRONTIER_PORT_BE ?? '8120'

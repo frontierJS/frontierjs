@@ -23,12 +23,21 @@
   // buttons' content with an icon: the button turns square and keeps its name
   // as an `aria-label`.
   //
+  // `onfiles(files, error)` turns on file intake: a paste in the box goes through
+  // `pastedFiles` and a drop on the box through `filesOf` (both `@frontierjs/ui/paste`,
+  // which says why a paste is more than `clipboardData.files`), and the File[] is
+  // handed over. The caller decides what a file is (an image tray, an upload). Text
+  // on the clipboard still pastes into the box. A refused clipboard read calls
+  // `onfiles([], error)` so the caller can show it. With the prop unset the box
+  // listens for neither and never cancels a paste.
+  //
   // Enter while an input method is composing (`isComposing`) confirms the
   // composition, not the message, so a Japanese or Chinese reader is not
   // sent mid-word.
   //
   // Usage:
   //   <Composer onsend={(text) => ask(text)} disabled={waiting} />
+  //   <Composer onsend={ask} onfiles={(files, error) => error ? warn(error) : attach(files)} />
   //   <Composer bind:value={draft} busy={turn.busy} sending={turn.sending}
   //             inputLabel="Message the Companion" maxRows={10} onsend={ask} onstop={stop}>
   //     {#snippet send()}<IconSend />{/snippet}
@@ -37,6 +46,7 @@
   // bind:this exposes: focus()
 
   import Button from '../forms/Button.mesa'
+  import { filesOf, pastedFiles } from '../../paste.js'
 
   export let value       = ''
   export let placeholder = 'Write a message'
@@ -50,6 +60,7 @@
   export let onsend      = undefined
   export let onstop      = undefined
   export let ondraft     = undefined
+  export let onfiles     = undefined
   export let send        = null       // snippet — the Send button's icon
   export let stop        = null       // snippet — the Stop button's icon
 
@@ -83,6 +94,22 @@
     el?.focus()
   }
 
+  async function handlePaste(e) {
+    try {
+      const files = await pastedFiles(e)
+      if (files.length) onfiles?.(files)
+    } catch (error) { onfiles?.([], error) }
+  }
+
+  const carriesFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes('Files')
+  function handleDragOver(e) { if (carriesFiles(e)) e.preventDefault() }
+  function handleDrop(e) {
+    const files = filesOf(e.dataTransfer)
+    if (!files.length) return
+    e.preventDefault()
+    onfiles?.(files)
+  }
+
   function handleKey(e) {
     if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return
     e.preventDefault()
@@ -92,7 +119,8 @@
 
 <mesa:window onresize|throttle(200)={grow} />
 
-<div class="fjs-composer" {class} {...$attributes}>
+<div class="fjs-composer" {class} {...$attributes}
+     ondragover={onfiles ? handleDragOver : undefined} ondrop={onfiles ? handleDrop : undefined}>
   <textarea
     bind:this={el}
     class="field"
@@ -104,6 +132,7 @@
     style:max-block-size={`${maxRows}lh`}
     oninput={handleInput}
     onkeydown={handleKey}
+    onpaste={onfiles ? handlePaste : undefined}
     value={value}
   >{value}</textarea>
   {#if busy}

@@ -45,6 +45,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { authenticator } from './lib/authenticator.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -63,7 +64,7 @@ function start(cmd, args, name, env = {}) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -74,17 +75,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 120, method = 'GET') {
-  const init = method === 'POST'
-    ? { method, headers: { 'content-type': 'application/json' }, body: '{}' }
-    : undefined
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url, init)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 // ─── Assertions ────────────────────────────────────────────────────────────
 
@@ -161,12 +151,13 @@ console.log('\nverify:oauth — signing in with a provider\n')
 // The seeded admin marks § 7's account verified: this app mails no
 // verification, and only a verified account is linked to a provider.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
-start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
-if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, SHOP_COOKIE_AUTH: '1', API_PORT, IDP_SINK_PORT })
+if (!await waitForServer(`${API}/api/products`, 'api', apiProc)) { stopAll(); process.exit(1) }
 // Every real endpoint on the IdP answers 401 or 404 without a credential, so
 // the readiness probe is the control endpoint — the one thing that is 200 by
 // definition. Probing /userinfo printed a failure on every healthy run.
-if (!await waitFor(`${IDP}/_control/next`, 'idp', 60, 'POST')) { stopAll(); process.exit(1) }
+const idpInit = { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }
+if (!await waitForServer(`${IDP}/_control/next`, 'idp', apiProc, { tries: 60, init: idpInit })) { stopAll(); process.exit(1) }
 console.log('  servers up\n')
 
 const uniq = Date.now()

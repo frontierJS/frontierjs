@@ -32,6 +32,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -59,7 +60,7 @@ function start(cmd, args, name, env) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -71,15 +72,6 @@ const stopAll = () => {
 }
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
-
-async function waitFor(url, label, tries = 120) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 // Refuse a port that already answers rather than joining it. Vite hops to the
 // next free port in silence and a dev server serves the code it STARTED with,
@@ -102,11 +94,11 @@ for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']])
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 const PORT_ENV = { ...TEST_SINK_ENV, API_PORT, UI_PORT }
-start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+const webProc = start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
-if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
-if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
+if (!await waitForServer(`${API}/api/products`, 'api', apiProc)) { stopAll(); process.exit(1) }
+if (!await waitForServer(UI, 'web', webProc))                    { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 

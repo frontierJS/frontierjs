@@ -864,6 +864,7 @@ export interface LitestoneClient {
    * the moment it runs, `d` a flat 24 hours — with no calendar and no zone.
    */
   $retain(): Promise<RetainResult[]>
+  /** **`asSystem()` only** (`FJS-D2363`): it copies every row past every access rule, so every other flavor refuses it by name. */
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ size: number }>
   $walStatus(): { busy: boolean; frames: number; checkpointed: number } | Record<string, { busy: boolean; frames: number; checkpointed: number } | null>
   /** When a database this client opened came out of a backup, the instant the backup holds; otherwise null (`FJS-D665`). */
@@ -908,10 +909,12 @@ export interface LitestoneClient {
   query<T extends Record<string, unknown> = Record<string, unknown>>(
     spec: Record<string, { model?: string; [arg: string]: unknown }>
   ): Promise<T>
-  $attach(path: string, alias: string): void
-  $detach(alias: string): void
+  /** **`asSystem()` only** (`FJS-D2363`), as `$detach` is: raw SQL reads an attached file under no access rule. Returns the system client, so it chains. */
+  $attach(path: string, alias: string): this
+  $detach(alias: string): this
   /**
    * Re-encrypt every key-reversible column with `newKey`, then swap the client's key.
+   * **`asSystem()` only** (`FJS-D2363`); every other flavor refuses it by name.
    *
    * Throws BEFORE writing anything if the schema declares a column rotation cannot
    * carry — `@hashed` (one-way) or `@secret(rotate: false)` — naming each one.

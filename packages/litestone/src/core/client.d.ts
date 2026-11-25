@@ -18,10 +18,6 @@ export function createClient({ path: schemaFilePath, schema: schemaInline, parse
         _rank: any;
         _snippet: any;
     }[]>;
-    $backup: (destPath: any, { vacuum, only }?: {
-        vacuum?: boolean;
-        only?: any;
-    }) => Promise<{}>;
     $walStatus: () => any;
     $backupStamp: () => {
         takenAt: any;
@@ -34,12 +30,6 @@ export function createClient({ path: schemaFilePath, schema: schemaInline, parse
         table: string;
         missing: "table" | string[];
     }[]>;
-    $rotateKey: (rawNewKey: any, { orphan }?: {
-        orphan?: any[];
-    }) => Promise<{}>;
-    $attach: (filePath: any, alias: any) => any;
-    $detach: (alias: any) => any;
-    $db: import("./databases.js").RawDb;
     $hold: (h: {
         name?: string;
         commit?: () => any;

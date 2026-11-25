@@ -144,9 +144,9 @@ nowhere else, so every deploy had to copy the file and rewrite twenty-one hrefs.
 bun run dev       # site-kit dev on :8690 — the routes, client-routed
 bun run build     # prerender site/dist/ — one HTML file per route
 bun run serve     # serve site/dist/ on :8790, as it deploys
-bun run verify    # the drive: the files, then a real browser; exits 1 on a failure
+bun run verify    # the drive: builds, then the files, then a real browser; exits 1 on a failure
 bun run verify:ask  # shift+alt-click → ask Claude → edit → undo, on a scratch site; --real spends up to $2
-bun run test      # build, then verify — what CI runs
+bun run test      # verify under a temp dir of its own — what CI runs
 bun run clean     # rm -rf site/dist
 ```
 

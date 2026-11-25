@@ -172,6 +172,9 @@ describe('the graded set', () => {
   const root = process.cwd().includes('/packages/cli')
     ? join(process.cwd(), '..', '..')
     : process.cwd()
+  // One walk of the tree for every graded test; four took ~5 s each under a loaded suite (FJS-4156).
+  let scored
+  const score = () => scored ??= scoreQuestions({ root, questions: QUESTIONS })
 
   test('every citation in the answer key still resolves in the tree', () => {
     // The key is written against the tree, so a citation that stops resolving
@@ -194,12 +197,12 @@ describe('the graded set', () => {
   })
 
   test('every question classifies to the intent it was written for', () => {
-    expect(scoreQuestions({ root, questions: QUESTIONS }).intentHits).toBe(QUESTIONS.length)
+    expect(score().intentHits).toBe(QUESTIONS.length)
   })
 
   test('the citation is right for every question', () => {
     // Which DOCUMENT holds the answer is the part the router is good at.
-    const s = scoreQuestions({ root, questions: QUESTIONS })
+    const s = score()
     for (const r of s.rows) expect(r.got).toBe(r.cite)
   })
 
@@ -208,7 +211,7 @@ describe('the graded set', () => {
     // package: `caravan` and `ui` each had three headings, so every fact in
     // them lived in one block named after nothing. Four headings later it is
     // 24, with no change to the router or the key. A heading is an index entry.
-    const s = scoreQuestions({ root, questions: QUESTIONS })
+    const s = score()
     expect(s.hits).toBeGreaterThanOrEqual(24)
     expect(s.byIntent.recipe.hit).toBeGreaterThanOrEqual(4)
   })
@@ -217,7 +220,7 @@ describe('the graded set', () => {
     // The PAYLOAD, not the pointer. Counting what came back made `recipe` the
     // cheapest intent in the table at six tokens, for a path to a 39,000-token
     // file.
-    const s = scoreQuestions({ root, questions: QUESTIONS })
+    const s = score()
     expect(s.medianRead).toBeLessThan(1600)
   })
 })

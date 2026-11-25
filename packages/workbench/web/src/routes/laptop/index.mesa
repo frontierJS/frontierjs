@@ -286,9 +286,9 @@ title: Laptop
   }
   $: { if (tab === 'services' && !link && !linkError) loadLink() }
 
-  // The Basecamp to-do sign-in, beside it. The API polls Basecamp for the grant
-  // while the person approves the code in another tab, so this page only re-reads
-  // status while a sign-in is waiting, including one already waiting when it opens.
+  // The Basecamp to-do sign-in, beside it. The person approves in another tab,
+  // which Basecamp sends back to the API, so this page only re-reads status
+  // while a sign-in is waiting, including one already waiting when it opens.
   let todoBusy  = false
   let todoError = null
 
@@ -302,7 +302,9 @@ title: Laptop
 
   const todoEndedWords = {
     denied:           'Basecamp sign-in was denied.',
-    expired:          'The code expired before it was approved.',
+    expired:          'The sign-in expired before Basecamp sent it back. Connect again.',
+    refused:          'Basecamp did not approve the sign-in.',
+    failed:           'The sign-in failed on this laptop; the API log says why.',
     several_accounts: 'That Basecamp login has more than one Basecamp 3 or 4 account; Workbench takes exactly one.',
     no_account:       'That Basecamp login has no Basecamp 3 or 4 account.',
   }
@@ -770,6 +772,7 @@ title: Laptop
             {/if}
           </div>
         </header>
+        <div class="pane-body">
         {#if linkError}
           <article class="alert danger"><div class="alert-content">{linkError}</div></article>
         {/if}
@@ -784,6 +787,7 @@ title: Laptop
           </form>
           <p class="text-sm text-muted">The token is checked against the server, then kept encrypted on this laptop and never shown again.</p>
         {/if}
+        </div>
       </section>
 
       <section class="lp-pane" aria-labelledby="laptop-pane-basecamp" data-todos={!link ? 'loading' : link.todos ? 'connected' : link.todoSignIn?.signIn ? 'waiting' : 'off'}>
@@ -793,6 +797,7 @@ title: Laptop
             {#if link?.todos}<span class="text-sm text-muted" data-todo-state>connected</span>{/if}
           </div>
         </header>
+        <div class="pane-body">
         {#if todoError}
           <article class="alert danger"><div class="alert-content">{todoError}</div></article>
         {/if}
@@ -800,17 +805,16 @@ title: Laptop
           <p class="text-sm text-muted">Connected. A post becomes a to-do on this Basecamp login.</p>
           <Button size="sm" treatment="outlined" disabled={todoBusy} onclick={connectTodos}>Connect again</Button>
         {:else if link?.todoSignIn?.signIn}
-          <p class="text-sm">Approve this code in Basecamp:</p>
-          <p class="h5" data-todo-code>{link.todoSignIn.signIn.userCode}</p>
-          <p class="text-sm"><a href={link.todoSignIn.signIn.verificationUriComplete ?? link.todoSignIn.signIn.verificationUri} target="_blank" rel="noopener" data-todo-verify>Open Basecamp to approve it</a></p>
+          <p class="text-sm"><a href={link.todoSignIn.signIn.url} target="_blank" rel="noopener" data-todo-verify>Open Basecamp to approve Workbench</a></p>
           <p class="text-sm text-muted">This page checks every few seconds and says when it lands.</p>
         {:else if link}
           {#if link.todoSignIn?.ended}
             <article class="alert danger"><div class="alert-content" data-todo-ended>{todoEnded(link.todoSignIn.ended)}</div></article>
           {/if}
           <Button size="sm" disabled={todoBusy} onclick={connectTodos}>Connect Basecamp</Button>
-          <p class="text-sm text-muted">Turns a chat post into a Basecamp to-do. You approve a code in Basecamp once; Workbench keeps the grant on this laptop and never shows it.</p>
+          <p class="text-sm text-muted">Turns a chat post into a Basecamp to-do. You approve Workbench in Basecamp once; Workbench keeps the grant on this laptop and never shows it.</p>
         {/if}
+        </div>
       </section>
 
       {#if svcError}
@@ -974,6 +978,12 @@ title: Laptop
   }
   .pane-title { display: flex; align-items: center; gap: var(--space-sm); min-inline-size: 0; }
   .pane-title h2 { margin: 0; }
+  .pane-body {
+    display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-sm);
+    padding: var(--space-md) var(--space-xl);
+  }
+  .pane-body p { margin: 0; }
+  .pane-body .alert { align-self: stretch; }
   .pane-foot {
     display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);
     padding: var(--space-sm) var(--space-xl);

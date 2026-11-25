@@ -1,0 +1,27 @@
+<script>
+  // paste.mesa — the fixture for paste.js and Composer's `onfiles`.
+  //
+  // `window.__paste` hands the spec the three verbs. `#got` lists what the
+  // composer's `onfiles` was handed, `name:type` per file, and `#err` the
+  // message of a refusal; `#plain` is a Composer with no `onfiles`.
+  import Composer from '../../../components/display/Composer.mesa'
+  import { filesOf, pastedFiles, fitImage } from '../../../paste.js'
+
+  if (typeof window !== 'undefined') window.__paste = { filesOf, pastedFiles, fitImage }
+
+  let got = []
+  let err = ''
+  const onfiles = (files, error) => {
+    got = [...got, ...files.map(f => f.name + ':' + f.type)]
+    if (error) err = String(error.message ?? error)
+  }
+</script>
+
+<div id="box" style="inline-size: 20rem">
+  <Composer {onfiles} onsend={() => {}} />
+</div>
+<div id="plain" style="inline-size: 20rem">
+  <Composer onsend={() => {}} />
+</div>
+<output id="got">{got.join('|')}</output>
+<output id="err">{err}</output>

@@ -7,9 +7,8 @@
 // a cancel rather than a delete — deployment history is the audit surface for
 // "what is actually running", so it is never erased here.
 //
-// The join to app+environment is
-// `include: { app: { include: { environment: true } } }` — declared in the
-// schema rather than spelled out as SQL.
+// The join to app, environment and project is `WITH_APP` below — declared in
+// the schema rather than spelled out as SQL.
 
 import { revokedSecretsOf, pinnedToToday, RevokedSecret, type ReleaseVariables } from '../../domain/release/variables.ts'
 import { createService, NotFound, BadRequest, Conflict, parseWhere, $ } from '@frontierjs/junction'
@@ -27,8 +26,9 @@ import { refuseHubRelease } from '../../domain/host/host-machine.ts'
 import { frontsOf } from '../../domain/release/fronting.ts'
 
 // A release went to its app's environment, which is `@immutable`, so the app
-// is where a row reads it (`FJS-D1609`).
-const WITH_APP = { app: { include: { environment: true } } }
+// is where a row reads it (`FJS-D1609`). The project rides along because an
+// environment name like `development` repeats in every project.
+const WITH_APP = { app: { include: { environment: true, project: true } } }
 
 /**
  * The step list a deployment starts with.

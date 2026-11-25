@@ -359,6 +359,26 @@ apply. `mapErrors` replaces only the unwrapping. Neither turns the rest off.
 | `submitting` `dirty` `submitted` | the state machine |
 | `submit()` `reset()` `clearErrors()` | via `bind:this` |
 
+## Pasting and dropping files
+
+`@frontierjs/ui/paste` reads the files a paste or a drop carries (`FJS-D2364`):
+
+```js
+import { filesOf, pastedFiles, fitImage } from '@frontierjs/ui/paste'
+
+const files = filesOf(e.dataTransfer)                 // a drop; sync
+const files = await pastedFiles(e, { read })          // a paste; may throw
+const blob  = await fitImage(file, { edge: 1568, maxBytes: 1_000_000 })
+```
+
+`pastedFiles` returns the files on the event; for an empty event (a screenshot in
+WebKitGTK, the Tauri shell on Linux) it calls the host's `read()` or else reads
+`navigator.clipboard`. It never reads the clipboard when the paste has text, and it
+cancels the default only when there is no text, so text still pastes. A refused
+read throws. `fitImage` scales to `edge` and encodes PNG, or JPEG on white over
+`maxBytes`; the numbers are the caller's. `<Composer onfiles={(files, error) => …} />`
+does the wiring for a message box, and calls `onfiles([], error)` on a refusal.
+
 ## The platform does the work
 
 Where the browser already has the behavior, these components use it instead

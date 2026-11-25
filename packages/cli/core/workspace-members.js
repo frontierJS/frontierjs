@@ -78,13 +78,21 @@ export function packageMembers(root) {
   return all.filter(m => m.path.startsWith('packages/') && !all.some(o => o !== m && m.path.startsWith(`${o.path}/`)))
 }
 
-// The connectors are set apart (`FJS-D1913`): not released with the framework
-// until a later ruling adds one, so they carry no `private` flag -- they will be
-// published, and `private` would also hide them from `fli ws:exports`.
-const HELD_OUT = ['packages/conduits/']
+// The connectors are set apart (`FJS-D1913`): their own CI lane and atlas ring,
+// and not released with the framework until a ruling admits one. They carry no
+// `private` flag -- `private` would also hide them from `fli ws:exports`.
+const CONNECTORS = 'packages/conduits/'
+
+// A connector admitted to releases (`FJS-D2365`) keeps its lane and ring; only
+// the hold lifts. A name here that is not a connector member fails
+// workspace-members.test.js, so a typo cannot leave one silently held.
+export const ADMITTED = ['conduit-37signals', 'conduit-cloudflare', 'conduit-plausible']
+
+/** True for a member under `packages/conduits/` -- the CI lane and ring test, which admission never changes. */
+export function isConnector(member) { return member.path.startsWith(CONNECTORS) }
 
 /** True for a member held out of every release list. */
-export function isHeldOut(member) { return HELD_OUT.some(prefix => member.path.startsWith(prefix)) }
+export function isHeldOut(member) { return isConnector(member) && !ADMITTED.includes(member.path.slice(CONNECTORS.length)) }
 
 /**
  * The members a release names: `packageMembers` less the held-out ones. The

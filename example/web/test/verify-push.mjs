@@ -56,6 +56,7 @@ import { fileURLToPath }                  from 'node:url'
 import { portFor }                        from '@frontierjs/cli/core/ports.js'
 import { PORTS, TEST_SINK_ENV }                          from './lib/preflight.mjs'
 import { results, report }                from './lib/report.mjs'
+import { keepTail, waitForServer }        from './lib/serve.mjs'
 import { openChrome }                     from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -102,7 +103,7 @@ function start(cmd, args, name, env, stdio = ['ignore', 'pipe', 'pipe']) {
   const p = spawn(cmd, args, { cwd: ROOT, stdio, detached: true, env: { ...process.env, ...env } })
   p.stdout?.on('data', () => {})
   p.stderr?.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -114,16 +115,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 120) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).status < 500) return true } catch {}
-    await sleep(250)
-  }
-  console.error(`${label} never answered on ${url}`)
-  stopAll()
-  process.exit(1)
-}
-
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 execFileSync('npx', ['vite', 'build', '-c', 'web/config/vite.config.js'], { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })
 if (!existsSync(join(ROOT, 'web/dist/client/sw.js'))) {
@@ -131,12 +122,14 @@ if (!existsSync(join(ROOT, 'web/dist/client/sw.js'))) {
   process.exit(1)
 }
 
-start('bun', ['api/src/providers/push/sink.ts'], 'sink', { PUSH_SINK_PORT: SINK_PORT })
-start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT, PUSH_SINK_URL: SINK })
-start('node', ['web/test/verify-preview.mjs'], 'preview', { PREVIEW_PORT: UI_PORT, FRONTIER_API_URL: API })
-await waitFor(`${SINK}/outbox`, 'the push sink')
-await waitFor(`${API}/api/products`, 'the API')
-await waitFor(UI, 'the preview')
+const servers = [
+  [start('bun', ['api/src/providers/push/sink.ts'], 'sink', { PUSH_SINK_PORT: SINK_PORT }), `${SINK}/outbox`, 'the push sink'],
+  [start('bun', ['run', 'api/index.ts'], 'api', { ...TEST_SINK_ENV, API_PORT, PUSH_SINK_URL: SINK }), `${API}/api/products`, 'the API'],
+  [start('node', ['web/test/verify-preview.mjs'], 'preview', { PREVIEW_PORT: UI_PORT, FRONTIER_API_URL: API }), UI, 'the preview'],
+]
+for (const [proc, url, label] of servers) {
+  if (!await waitForServer(url, label, proc, { ready: r => r.status < 500 })) { stopAll(); process.exit(1) }
+}
 
 // ─── The desktop: a bus of its own, and the daemon on it ───────────────────
 

@@ -28,6 +28,10 @@
       "types": "./selection.d.ts",
       "default": "./selection.js"
     },
+    "./paste": {
+      "types": "./paste.d.ts",
+      "default": "./paste.js"
+    },
     "./rowlist": {
       "types": "./rowlist.d.ts",
       "default": "./rowlist.js"
@@ -89,6 +93,8 @@
     "nav.d.ts",
     "resize.js",
     "resize.d.ts",
+    "paste.js",
+    "paste.d.ts",
     "rowlist.js",
     "rowlist.d.ts",
     "selection.js",

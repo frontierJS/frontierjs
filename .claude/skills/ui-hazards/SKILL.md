@@ -31,6 +31,7 @@ Detail: `references/tethers-and-records.md`
 - **A tether over a `@zoned` day window one relation away loads that zone column, so its rows carry a relation nobody asked for.**
 - **`@version` is the revision a screen READ, and a push does not move it.**
 - **A watched record empties itself on its own delete, before the handler's next line.**
+- **A `tethered()` whose `where` reads a signal is a NEW list on every change of it, empty until its own read answers.**
 
 ## Resources and forms
 Detail: `references/resources-and-forms.md`

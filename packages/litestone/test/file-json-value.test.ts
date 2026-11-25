@@ -38,7 +38,7 @@ async function client() {
 }
 
 const dataUrl = (type: string, bytes: Buffer) => `data:${type};base64,${bytes.toString('base64')}`
-const stored  = async (db: any, id: number) => JSON.parse(db.$db.query('SELECT original FROM "Photo" WHERE id = ?').get(id).original ?? 'null')
+const stored  = async (db: any, id: number) => JSON.parse(db.asSystem().$db.query('SELECT original FROM "Photo" WHERE id = ?').get(id).original ?? 'null')
 
 describe('a File column takes its bytes inline over JSON (FJS-D666)', () => {
 

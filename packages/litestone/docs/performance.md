@@ -304,8 +304,8 @@ import { mkdirSync } from 'node:fs'
 mkdirSync('./backups', { recursive: true })
 
 // Safe to run during writes — the backup API, or VACUUM INTO, takes a consistent snapshot
-await db.$backup('./backups/prod.db')                        // → { path, size, vacuumed: false }
-await db.$backup('./backups/compact.db', { vacuum: true })   // VACUUM INTO — compacted, no free pages
+await db.asSystem().$backup('./backups/prod.db')                        // → { path, size, vacuumed: false }
+await db.asSystem().$backup('./backups/compact.db', { vacuum: true })   // VACUUM INTO — compacted, no free pages
 ```
 
 ## Page size

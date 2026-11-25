@@ -188,9 +188,14 @@ t('directory.everyCardNamesAPanelThatExists', await probe(`
   return bad;
 `), [])
 
+// The probe above opened every panel, so Overview refetches and rewrites its
+// body a microtask after showTool; a fixed sleep read the spinner on a loaded
+// machine (FJS-4278).
 t('directory.everyCardSaysWhatThePanelAnswers', await probe(`
   showTool('overview');
-  await new Promise(r => setTimeout(r, 1200));
+  await new Promise(r => setTimeout(r, 0));
+  const t0 = Date.now();
+  while (Date.now() - t0 < 15000 && !document.querySelector('#ovBody .ov-tool')) await new Promise(r => setTimeout(r, 100));
   const cards = [...document.querySelectorAll('.ov-tool')];
   return {
     some:    cards.length >= 12,

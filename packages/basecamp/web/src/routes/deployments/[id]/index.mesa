@@ -150,7 +150,8 @@ title: Deployment
   $: running  = !!cancelIt
   $: canRetry = deployment && (deployment.status === 'failed' || deployment.status === 'cancelled')
 
-  $: env = deployment?.app?.environment ?? null
+  $: env     = deployment?.app?.environment ?? null
+  $: project = deployment?.app?.project ?? null
 </script>
 
 {#if loading}
@@ -158,6 +159,7 @@ title: Deployment
 {:else if deployment}
   <nav class="breadcrumb" aria-label="Breadcrumb" id="deploy-breadcrumb">
     <ol>
+      {#if project}<li><a class="link" href={`/projects/${project.id}/`}>{project.name}</a></li>{/if}
       {#if env}<li><a class="link" href={`/environments/${env.id}/`}>{env.name}</a></li>{/if}
       {#if deployment.app}<li><a class="link" href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a></li>{/if}
       <li><a aria-current="page">Release <code>{deployment.id.slice(0, 8)}</code></a></li>
@@ -171,7 +173,7 @@ title: Deployment
         <span class="pill {DEPLOY_TONE[deployment.status] ?? ''}" id="deploy-status">{deployment.status}</span>
       </div>
       <p class="text-muted">
-        {words(deployment.trigger)} release{#if env} to {env.name}{/if}
+        {words(deployment.trigger)} release{#if env} to {env.name}{/if}{#if project} in {project.name}{/if}
         · <span title={at(deployment.startedAt ?? deployment.queuedAt)}>{ago(deployment.startedAt ?? deployment.queuedAt)}</span>
       </p>
     </div>

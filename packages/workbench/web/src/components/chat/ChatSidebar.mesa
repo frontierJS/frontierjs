@@ -14,11 +14,11 @@
   import { goto } from '@frontierjs/sierra/router'
   import Icon from '../Icon.mesa'
   import {
-    getLists, countsOf, channelLabel, me, liveDrafts, nameOf, peerOf, teamOf, statusOf, STATUS, statusLine,
+    getLists, countsOf, channelLabel, me, pendingDrafts, nameOf, peerOf, teamOf, statusOf, STATUS, statusLine,
     refreshStatuses, setStatus, setFavorite, createSection, renameSection, deleteSection, moveToSection, SECTION_NAME_MAX,
   } from '../../lib/chat.js'
   import Presence from './Presence.mesa'
-  import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
+  import PersonAvatar from './PersonAvatar.mesa'
   import NewDmDialog from './NewDmDialog.mesa'
   import NewRoomDialog from './NewRoomDialog.mesa'
   import SectionDialog from './SectionDialog.mesa'
@@ -66,7 +66,7 @@
   $: myStatus = statusOf(myProfile)
   // Threads the reader follows with something unread in them.
   $: threadsUnread = lists.threads.rows.filter(t => t.isFollowing && (t.unreadReplies > 0 || t.unreadMentions > 0)).length
-  $: drafts = liveDrafts(lists.drafts.rows)
+  $: drafts = pendingDrafts(lists.drafts.rows)
   $: draftRooms = new Set(drafts.map(d => d.channelExternalId))
   $: savedCount = lists.saved.rows.length
   $: waiting = lists.scheduled.rows.filter(r => r.status === 'scheduled').length
@@ -287,7 +287,7 @@
               {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
             </span>
             <span class="chat-tile" aria-hidden="true">
-              <Avatar name={label(c).slice(2)} size="sm" shape={isDm(c) ? 'circle' : 'square'} />
+              <PersonAvatar profile={peer?.externalId ?? null} name={label(c).slice(2)} size="sm" shape={isDm(c) ? 'circle' : 'square'} />
               {#if peer?.status}<Presence status={statusOf(peer)} badge />{/if}
             </span>
             <span class="chat-room-name">{label(c).slice(2)}</span>

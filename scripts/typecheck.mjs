@@ -6,6 +6,10 @@
 //   bun run typecheck -- --baseline N # fail only above N (a ratchet)
 //   bun run typecheck -- --update     # write an improvement back
 //
+// At the workspace root it checks every member, a third of the cores at a time
+// (`FRONTIER_CI_LANES`, as CI's typecheck phase). Each tsc loads the whole
+// workspace's source, so starting all ~60 at once took 11 cores and 9GB.
+//
 // Two halves, and only the second one lives here.
 //
 // **Which diagnostics are mine** is `packages/cli/core/typecheck.js`, because it
@@ -21,11 +25,14 @@
 // no ceiling to hold; it is either clean or it is not.
 // ============================================================
 
+import { spawn }                        from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { availableParallelism }         from 'node:os'
 import { basename, join, dirname }      from 'node:path'
 import { fileURLToPath }                from 'node:url'
 
 import { runTypecheck }                 from '../packages/cli/core/typecheck.js'
+import { workspaceMembers }             from '../packages/cli/core/workspace-members.js'
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -38,6 +45,7 @@ const quiet  = args.includes('--quiet')
 const update = args.includes('--update')
 
 const pkgDir  = process.cwd()
+if (isWorkspaceRoot(pkgDir)) process.exit(await checkEveryMember(args))
 refuseNonPackage(pkgDir)
 
 // The ceiling lives in scripts/typecheck-baselines.json, keyed by package
@@ -107,9 +115,55 @@ function refuseUnknownFlags(argv) {
   }
 }
 
+function isWorkspaceRoot(dir) {
+  return dir === REPO
+}
+
+// Every member with a typecheck script, each in its own process so tsc runs
+// side by side, and each one's output printed whole in member order.
+async function checkEveryMember(argv) {
+  if (argv.includes('--baseline')) {
+    console.error('[typecheck] --baseline N is one package\'s ceiling — run it from that package')
+    return 2
+  }
+  const lanes   = Number(process.env.FRONTIER_CI_LANES ?? Math.max(1, Math.floor(availableParallelism() / 3)))
+  const members = workspaceMembers(REPO).filter(m => m.manifest.scripts?.typecheck)
+  const results = new Array(members.length)
+  let next = 0, printed = 0, failed = []
+
+  const lane = async () => {
+    while (next < members.length) {
+      const i = next++
+      results[i] = await checkMember(members[i], argv)
+      while (printed < members.length && printed in results) report(members[printed], results[printed++])
+    }
+  }
+  const report = (member, run) => {
+    console.log(`\n── ${member.path} ${'─'.repeat(Math.max(0, 56 - member.path.length))}`)
+    if (run.output.trim()) console.log(run.output.trimEnd())
+    if (run.code !== 0) failed.push(member.path)
+  }
+
+  console.log(`[typecheck] ${members.length} package(s), ${lanes} at a time`)
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(lanes, members.length)) }, lane))
+
+  if (!failed.length) return 0
+  console.error(`\n[typecheck] failed: ${failed.join(' ')}`)
+  return 1
+}
+
+function checkMember(member, argv) {
+  return new Promise(done => {
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...argv], { cwd: member.dir })
+    let output = ''
+    child.stdout.on('data', chunk => { output += chunk })
+    child.stderr.on('data', chunk => { output += chunk })
+    child.on('error', error => done({ code: 2, output: `${output}${error.message}\n` }))
+    child.on('close', code => done({ code: code ?? 2, output }))
+  })
+}
+
 // A package is a directory with a package.json that is not the workspace root.
-// At the root there is nothing to check, and saying `clean` there reads as a
-// verdict on every package.
 function refuseNonPackage(dir) {
   let pkg = null
   try { pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) } catch {}

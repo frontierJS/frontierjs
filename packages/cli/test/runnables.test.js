@@ -109,8 +109,9 @@ describe('surfaces', () => {
     expect(api.start).toBe('bun run api')
     expect(api.open).toBe('http://localhost:8100')
     expect(api.dir).toBe('shop')
-    expect(api.portEnv).toBe('FRONTIER_PORT_BE')
-    expect(web.portEnv).toBe('FRONTIER_PORT_FE')
+    // Every surface of the app, on every row: a web surface proxies to its API (FJS-4276).
+    expect(web.portVars).toMatchObject({ FRONTIER_PORT_FE: '8000', FRONTIER_PORT_BE: '8100' })
+    expect(api.portVars).toEqual(web.portVars)
   })
 
   test('a surface with no script keeps its row and says so', () => {

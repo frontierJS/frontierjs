@@ -1,0 +1,3 @@
+# The suite reads its output as text, whatever color the runner asked for (FJS-4282).
+[test]
+preload = ["./test/no-ambient-color.js"]

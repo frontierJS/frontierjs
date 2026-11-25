@@ -39,6 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -70,7 +71,7 @@ function start(cmd, args, name, env) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 
@@ -84,14 +85,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 160) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server'], [WIDGETS, 'the widget origin'], [HOST, 'the host page']]) {
   let busy = false
@@ -119,8 +112,8 @@ await new Promise((res, rej) => {
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
 const PORT_ENV = { ...TEST_SINK_ENV, API_PORT, UI_PORT }
-start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+const webProc = start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
 // The widget origin is SIERRA'S OWN server — the one `sierra widgets --serve`
 // runs and the one widgets/deploy/serve.js runs in a container. A second server
@@ -151,8 +144,8 @@ const hostPage = createServer(async (req, res) => {
 await new Promise(r => hostPage.listen(HOST, r))
 servers.push(hostPage)
 
-if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
-if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
+if (!await waitForServer(`${API}/api/products`, 'api', apiProc, { tries: 160 })) { stopAll(); process.exit(1) }
+if (!await waitForServer(UI, 'web', webProc, { tries: 160 }))                    { stopAll(); process.exit(1) }
 
 // ─── Assertions ────────────────────────────────────────────────────────────
 
@@ -242,7 +235,7 @@ console.log('\n  widget — on somebody else\'s page')
 const browser = await openChrome({ windowSize: '1400,1000' }).catch((e) => {
   console.error(e.message); stopAll(); process.exit(1)
 })
-watchReloads(browser)
+const reload = watchReloads(browser)
 const { cmd } = browser
 // Asked as an EXPRESSION that answers a value; the driver evaluates a body.
 const evaluate = (expr) => browser.evaluate(`return (${expr})`)
@@ -379,10 +372,13 @@ check('and one that is not even the right shape never reaches the database',
 
 // ── The click, through the browser ────────────────────────────────────────
 
-await evaluate(`(document.querySelector('fjs-buy-button').shadowRoot.querySelector('[data-checkout]').click(), true)`)
-
-const landed = await until(async () => await evaluate(
-  `location.origin === '${UI}' ? location.href : null`))
+// The click navigates the page from inside it, so it runs under `during`;
+// otherwise the reload guard reads the landing as a reload and exits 1.
+const landed = await reload.during(async () => {
+  await evaluate(`(document.querySelector('fjs-buy-button').shadowRoot.querySelector('[data-checkout]').click(), true)`)
+  return until(async () => await evaluate(
+    `location.origin === '${UI}' && document.readyState === 'complete' ? location.href : null`))
+})
 check('clicking Checkout lands on the shop\'s own site', !!landed, true)
 
 // The fragment is stripped as soon as it is redeemed — belt and braces, since

@@ -14,6 +14,7 @@ import { tmpdir } from 'os'
 
 import { collect }                     from '../core/repo-map.js'
 import { cards, actions, renderAtlas } from '../core/repo-atlas.js'
+import { RULES }                       from '../core/checks.js'
 
 let ROOT
 
@@ -295,6 +296,11 @@ describe('files an open row names', () => {
 
 describe('invariants and their checks', () => {
 
+  // The rules are the live `checks.js` list, so a hardcoded "loose" number
+  // goes red the day someone writes a rule for it (FJS-4616: invariant 1).
+  const held  = new Set(RULES.map(r => r.invariant).filter(Boolean))
+  const loose = Array.from({ length: 100 }, (_, i) => i + 1).find(n => !held.has(n))
+
   const withInvariants = (name) => workspace(name, {
     'CLAUDE.md': [
       '# Map',
@@ -306,7 +312,7 @@ describe('invariants and their checks', () => {
       '## Invariants',
       '',
       '2. **Model names are PascalCase singular** — three resolvers agree.',
-      '5. **One owner per app thing** — no rule names it.',
+      `${loose}. **An invariant no rule names** — attention alone holds it.`,
       '',
       '---',
     ].join('\n'),

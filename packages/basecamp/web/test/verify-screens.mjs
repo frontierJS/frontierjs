@@ -2378,6 +2378,10 @@ try {
   await until(`!!document.getElementById('deploy-breadcrumb')`, v => v, 'the deployment screen never rendered')
   check('a release links its app from the breadcrumb', await evaluate(
     `!!document.querySelector('#deploy-breadcrumb a[href="/apps/${release?.appId}/"]')`))
+  // `development` names an environment in every project, so the breadcrumb
+  // alone did not say which product shipped.
+  check('and opens with its project', await evaluate(
+    `document.querySelector('#deploy-breadcrumb li:first-child a')?.getAttribute('href') === '/projects/${release?.app?.projectId}/'`))
   const facts = (await text('.deploy-details'))?.replace(/\s+/g, ' ') ?? ''
   // A release picked up at once has nothing to say about the queue.
   const waited = !!release?.startedAt && Date.parse(release.startedAt) - Date.parse(release.queuedAt) > 1000

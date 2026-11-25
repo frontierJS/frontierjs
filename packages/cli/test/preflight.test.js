@@ -242,4 +242,12 @@ describe('over this repo', () => {
     for (const d of withNeeds) for (const n of d.needs) expect(n.run.startsWith('bun run ')).toBe(true)
   })
 
+  test('the website drive builds the dist it reads (FJS-4308)', () => {
+    // verify.mjs reads site/dist, and `website` is no app, so no Start-first
+    // step there resolves: a drive that does not build first grades whatever
+    // half-build the tree holds and fails in 0s on a missing page.
+    const drive = runnables(REPO).find(r => r.id === 'drive:website/verify')
+    expect(drive.run.startsWith('bun run build && ')).toBe(true)
+  })
+
 })

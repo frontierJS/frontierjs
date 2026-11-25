@@ -29,7 +29,7 @@ async function client() {
     async get() { return null },
     async delete(key: string) { deletes.push(key) },
   }
-  const stored = (id: number) => JSON.parse(db.$db.query('SELECT photos FROM "P" WHERE id = ?').get(id).photos ?? 'null')
+  const stored = (id: number) => JSON.parse(db.asSystem().$db.query('SELECT photos FROM "P" WHERE id = ?').get(id).photos ?? 'null')
   return { db, deletes, stored }
 }
 
@@ -45,7 +45,7 @@ describe('a File[] never takes another row\'s stored ref (FJS-2308)', () => {
     await expect(db.p.create({ data: { id: 2, photos: [Buffer.from('b'), victim] } })).rejects.toThrow(/photos/)
     await expect(db.p.create({ data: { id: 2, photos: JSON.stringify(victim) } })).rejects.toThrow(/photos/)
     await expect(db.p.upsert({ where: { id: 2 }, create: { id: 2, photos: [victim] }, update: {} })).rejects.toThrow(/photos/)
-    expect(db.$db.query('SELECT id FROM "P" WHERE id = 2').get()).toBeNull()
+    expect(db.asSystem().$db.query('SELECT id FROM "P" WHERE id = 2').get()).toBeNull()
     db.$close()
   })
 

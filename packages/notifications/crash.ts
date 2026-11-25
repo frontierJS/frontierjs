@@ -5,9 +5,16 @@ import { ntfy } from './drivers/ntfy.ts'
 import type { App, PushMessage } from './types.ts'
 
 /**
- * The crash ping: one push when the app dies of an uncaught throw (`FJS-D2184`
+ * The crash ping: one alert when the app dies of an uncaught throw (`FJS-D2184`
  * to `FJS-D2187`). junction owns the crash and announces `app:crash`, waiting
  * up to 3 s for its listeners before the drain; this file owns the send.
+ *
+ * ── Where it goes ───────────────────────────────────────────────────────
+ * An app Basecamp deployed reports to Basecamp, which fans out to the channels
+ * the operator picked (`FJS-D2272`, `FJS-D2358`). The ntfy trio is the
+ * fallback for when Basecamp cannot take it, and the only destination for an
+ * app with no Basecamp. A 429 is not a failure: Basecamp already holds the
+ * crash loop, and a fallback push would page around its limit.
  *
  * ── Why a file and not memory or the database ───────────────────────────
  * `--restart unless-stopped` brings a crashed app straight back, so a counter
@@ -27,19 +34,36 @@ interface CrashRecord {
   since:    number
 }
 
+/** Half of the 3 s hold, so a Basecamp that never answers leaves the trio
+ *  time to send before junction drains. */
+export const RELAY_TIMEOUT_MS = 1_500
+
+export interface CrashRelay { base: string; endpoint: string }
+export interface CrashTrio  { url: string; token?: string; topic: string }
+
 export type CrashPingSettings =
-  | { on: true;  url: string; token?: string; topic: string }
+  | { on: true;  relay?: CrashRelay; trio?: CrashTrio }
   | { on: false; missing: string[] }
 
 /**
- * Both NTFY_BASE_URL and NTFY_TOPIC, or no ping. Basecamp and Workbench set
- * NTFY_BASE_URL for their own pushes and configure this package, so a half-set
- * pair turns the ping off and never refuses boot.
+ * BASECAMP_URL and BASECAMP_APP_ID, which a Basecamp release sets together,
+ * relay; NTFY_BASE_URL and NTFY_TOPIC send directly. Either pair alone is
+ * enough, and a half-set pair is ignored rather than refusing boot: Basecamp
+ * and Workbench set NTFY_BASE_URL for their own pushes and configure this
+ * package.
  */
 export function crashPingSettings(env: Record<string, string | undefined>): CrashPingSettings {
-  const missing = (['NTFY_BASE_URL', 'NTFY_TOPIC'] as const).filter(k => !env[k])
-  if (missing.length) return { on: false, missing }
-  return { on: true, url: env.NTFY_BASE_URL!, token: env.NTFY_TOKEN || undefined, topic: env.NTFY_TOPIC! }
+  const pairs = { relay: ['BASECAMP_URL', 'BASECAMP_APP_ID'], trio: ['NTFY_BASE_URL', 'NTFY_TOPIC'] } as const
+  const has   = (keys: readonly string[]) => keys.every(k => env[k])
+  if (!has(pairs.relay) && !has(pairs.trio))
+    return { on: false, missing: [...pairs.relay, ...pairs.trio].filter(k => !env[k]) }
+
+  const base = env.BASECAMP_URL?.replace(/\/+$/, '')
+  return {
+    on: true,
+    relay: has(pairs.relay) ? { base: base!, endpoint: `${base}/hooks/crash/${encodeURIComponent(env.BASECAMP_APP_ID!)}` } : undefined,
+    trio:  has(pairs.trio)  ? { url: env.NTFY_BASE_URL!, token: env.NTFY_TOKEN || undefined, topic: env.NTFY_TOPIC! } : undefined,
+  }
 }
 
 /** The main database's directory, else the working directory (`:memory:`, no client). */
@@ -67,8 +91,10 @@ function writeRecord(file: string, record: CrashRecord) {
   catch (err) { say(`crash ping: could not write ${file}: ${(err as Error).message}`) }
 }
 
+const asError = (err: unknown) => err instanceof Error ? err : new Error(String(err))
+
 function crashMessage(name: string, err: unknown, earlier: CrashRecord): PushMessage {
-  const e     = err instanceof Error ? err : new Error(String(err))
+  const e     = asError(err)
   const stack = (e.stack ?? '').split('\n').slice(1, 6).map(l => l.trim()).join('\n')
   const lines = [e.message || e.name]
   if (stack) lines.push(stack)
@@ -79,9 +105,30 @@ function crashMessage(name: string, err: unknown, earlier: CrashRecord): PushMes
   return { title: `${name} crashed on ${hostname()}`, body: lines.join('\n\n'), priority: 5, tags: ['rotating_light'] }
 }
 
+/**
+ * POSTs the report to Basecamp's crash route. Null when Basecamp has it, which
+ * a 2xx of either kind and a 429 both mean; otherwise the reason it did not,
+ * and the caller falls back.
+ */
+async function relayCrash(relay: CrashRelay, err: unknown, earlier: CrashRecord, deliver: typeof fetch): Promise<string | null> {
+  const e = asError(err)
+  const report = { message: e.message || e.name, stack: e.stack ?? '', host: hostname(), missed: earlier.since }
+  try {
+    const res = await deliver(relay.endpoint, {
+      method:  'POST',
+      headers: { 'content-type': 'application/json' },
+      body:    JSON.stringify(report),
+      signal:  AbortSignal.timeout(RELAY_TIMEOUT_MS),
+    })
+    return res.ok || res.status === 429 ? null : `Basecamp at ${relay.base} answered ${res.status}`
+  } catch (err) {
+    return `Basecamp at ${relay.base} did not answer: ${(err as Error).message}`
+  }
+}
+
 export interface CrashPingOptions {
   env?:     Record<string, string | undefined>
-  /** The test seam, handed to `ntfy()`. */
+  /** The test seam, used for the relay and handed to `ntfy()`. */
   deliver?: typeof fetch
   now?:     () => number
 }
@@ -97,14 +144,16 @@ export function listenForCrash(app: App, db: unknown, opts: CrashPingOptions = {
     app.logger?.info(`🔕 crash ping off`, { missing: settings.missing.join(', ') })
     return
   }
+  const { relay, trio } = settings
   // The topic is the address, and on a public server whoever knows it can read
-  // the pings, so the boot line names the server only.
-  app.logger?.info(`🔔 crash ping`, { server: settings.url })
+  // the pings, so the boot line names the servers only.
+  app.logger?.info(`🔔 crash ping`, { ...(relay && { basecamp: relay.base }), ...(trio && { ntfy: trio.url }) })
 
-  const file   = crashRecordPath(db)
-  const now    = opts.now ?? Date.now
-  const driver = ntfy({ url: settings.url, token: settings.token, deliver: opts.deliver })
-  const name   = app.config?.name || 'app'
+  const file    = crashRecordPath(db)
+  const now     = opts.now ?? Date.now
+  const deliver = opts.deliver ?? fetch
+  const driver  = trio && ntfy({ url: trio.url, token: trio.token, deliver: opts.deliver })
+  const name    = app.config?.name || 'app'
 
   app.events?.on('app:crash', async (data) => {
     const at     = now()
@@ -112,9 +161,19 @@ export function listenForCrash(app: App, db: unknown, opts: CrashPingOptions = {
     const missed = { pingedAt: before.pingedAt, since: before.since + 1 }
     if (before.pingedAt && at - before.pingedAt < CRASH_WINDOW_MS) return writeRecord(file, missed)
 
+    const error = (data as { error?: unknown } | undefined)?.error
+    if (relay) {
+      const failed = await relayCrash(relay, error, before, deliver)
+      if (!failed) return writeRecord(file, { pingedAt: at, since: 0 })
+      if (!driver) {
+        say(`crash ping not sent: ${failed}`)
+        return writeRecord(file, missed)
+      }
+      say(`crash ping: ${failed}; sending to ntfy instead`)
+    }
+
     try {
-      const error = (data as { error?: unknown } | undefined)?.error
-      await driver.send({ pushTopic: settings.topic }, crashMessage(name, error, before), app)
+      await driver!.send({ pushTopic: trio!.topic }, crashMessage(name, error, before), app)
       writeRecord(file, { pingedAt: at, since: 0 })
     } catch (err) {
       // Counted, not windowed: a ping that never left must not silence the

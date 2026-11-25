@@ -9,7 +9,7 @@
   // slice holds the newest NEWEST and never grows it, which is the case the
   // tether does take; "Load earlier" is the slice that owns that trade.
   import { posts } from '../../resources/Post.mesa'
-  import { byPost, roomExtras } from '../../lib/chat.js'
+  import { byPost, outbox, roomExtras, unsent } from '../../lib/chat.js'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import PostItem from './PostItem.mesa'
 
@@ -79,6 +79,8 @@
   $: reactionsBy = byPost(shown.reactions.rows)
   $: filesBy = byPost(shown.files.rows)
   const NONE = []
+  $: outbox.posts   // standalone: a read inside an expression is not a subscription to an import's field
+  $: sending = unsent(outbox.posts, shown.posts.rows, shownId)
 
   // ─── Scroll ─────────────────────────────────────────────────────────────
 
@@ -154,7 +156,10 @@
     <PostItem post={p} {people} reactionRows={reactionsBy.get(p.externalId) ?? NONE} fileRows={filesBy.get(p.externalId) ?? NONE}
               continuation={continues(rows[i - 1], p)} selected={p.externalId === threadId} marked={p.externalId === markId} />
   {:else}
-    <p class="text-muted center posts-empty">{ready ? 'Nothing yet. Say something.' : '…'}</p>
+    {#if !sending.length}<p class="text-muted center posts-empty">{ready ? 'Nothing yet. Say something.' : '…'}</p>{/if}
+  {/each}
+  {#each sending as p, i (p.externalId)}
+    <PostItem post={p} {people} reactionRows={NONE} fileRows={NONE} pending continuation={continues(i ? sending[i - 1] : rows.at(-1), p)} />
   {/each}
   </div>
   {/key}

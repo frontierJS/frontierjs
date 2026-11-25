@@ -17,7 +17,8 @@ import { standing }                           from './principal.ts'
 import { resolvePush }                        from './push.ts'
 import { notificationChannelName, CHAT_CHANNELS } from './core/channels.ts'
 import { chatProvider }                   from './providers/chat/index.ts'
-import { bc3Provider }                    from './providers/bc3/index.ts'
+import { bc3Provider, todosConnectedRoute, TODOS_CONNECTED_PATH } from './providers/bc3/index.ts'
+import { profileImageRoute, PROFILE_IMAGE_PATH } from './domain/chat/profiles.ts'
 import { fileRoute, uploadRoute, FILE_PATH, FILES_PATH, MAX_UPLOAD_BYTES } from './domain/chat/files.ts'
 import { connectedRoute, CONNECTED_PATH } from './domain/capture/connect.ts'
 import { captureFileRoute, FILE_PATH as CAPTURE_FILE_PATH } from './domain/capture/files.ts'
@@ -130,8 +131,11 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL, alongside: todos })
   app.configure(a => {
     a.get(FILE_PATH, fileRoute(app))
+    a.get(PROFILE_IMAGE_PATH, profileImageRoute(app))
     // The share app's browser lands here with no Workbench cookie; the pending state is its proof.
     a.get(CONNECTED_PATH, connectedRoute())
+    // Basecamp's sign-in lands here the same way; the waiting sign-in's state is its proof.
+    a.get(TODOS_CONNECTED_PATH, todosConnectedRoute(app))
     // A capture's bytes for an <img>, <video> or <audio> the page draws from a blob (graded on the member's bearer).
     a.get(CAPTURE_FILE_PATH, captureFileRoute(app))
     a.post(FILES_PATH, uploadRoute(app), { body: 'stream', maxBodySize: MAX_UPLOAD_BYTES } as any)

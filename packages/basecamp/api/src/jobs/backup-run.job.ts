@@ -134,8 +134,8 @@ async function archiveAll(app: App, dest: string, takenAt: string, installId: st
     if (driver === 'sqlite') {
       // The client's own backup, which stamps the copy as one (`FJS-D665`).
       await (app.db as unknown as {
-        $backup(dest: string, opts: { vacuum: boolean; only: string }): Promise<unknown>
-      }).$backup(join(dest, `${name}.db`), { vacuum: true, only: name })
+        asSystem(): { $backup(dest: string, opts: { vacuum: boolean; only: string }): Promise<unknown> }
+      }).asSystem().$backup(join(dest, `${name}.db`), { vacuum: true, only: name })
     } else cpSync(path, join(dest, name), { recursive: true })
   }
 

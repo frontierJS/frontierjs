@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url'
 import { portFor } from '@frontierjs/cli/core/ports.js'
 import { PORTS, TEST_SINK_ENV } from './lib/preflight.mjs'
 import { watchReloads } from './lib/reload.mjs'
+import { keepTail, waitForServer } from './lib/serve.mjs'
 import { openChrome } from '../../../packages/mesa/src/drive.js'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 
@@ -76,7 +77,7 @@ function start(cmd, args, name) {
   })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
-  procs.push(p)
+  procs.push(keepTail(p))
   return p
 }
 const stopAll = () => {
@@ -88,14 +89,6 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-async function waitFor(url, label, tries = 120) {
-  for (let i = 0; i < tries; i++) {
-    try { if ((await fetch(url)).ok) return true } catch {}
-    await new Promise(r => setTimeout(r, 250))
-  }
-  console.error(`${label} never answered on ${url}`)
-  return false
-}
 
 for (const [port, what] of [[API_PORT, 'the API'], [HOST_PORT, 'the host page'], [SANDBOX_PORT, 'the sandbox']]) {
   let busy = false
@@ -119,8 +112,8 @@ const hostScript = await bundle.outputs[0].text()
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 // Built here, so the view in the frame is one this tree built.
 execFileSync('fli', ['mcp:build'], { cwd: ROOT, stdio: process.env.DEBUG ? 'inherit' : 'ignore' })
-start('bun', ['run', 'api/index.ts'], 'api')
-if (!await waitFor(`${BASE}/products`, 'api')) { stopAll(); process.exit(1) }
+const apiProc = start('bun', ['run', 'api/index.ts'], 'api')
+if (!await waitForServer(`${BASE}/products`, 'api', apiProc)) { stopAll(); process.exit(1) }
 
 // ─── Assertions ────────────────────────────────────────────────────────────
 

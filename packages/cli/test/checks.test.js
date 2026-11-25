@@ -5504,6 +5504,13 @@ describe('test-files-run', () => {
     expect(check(root).findings).toEqual([])
   })
 
+  test('a file bunfig.toml preloads runs before every test, so it is support code', () => {
+    const root = pkg('preload', { test: 'bun test test/a.test.js test/b.test.js' },
+      { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/setup.js': '//\n',
+        'bunfig.toml': '[test]\npreload = ["./test/setup.js"]\n' })
+    expect(check(root).findings).toEqual([])
+  })
+
   test('a file no script runs and no test imports is dead, whatever it is called', () => {
     const root = pkg('dead', { test: 'node test/a.test.js && node test/b.test.js' },
       { 'test/a.test.js': '//\n', 'test/b.test.js': '//\n', 'test/hmr-fullflow.mjs': '//\n' })

@@ -52,7 +52,8 @@ title: Workbench
   import { page }      from '@frontierjs/sierra/router'
   import { getClient } from '@frontierjs/sierra/resource'
   import { workbench } from '../../resources/Workbench.mesa'
-  import { clipboardImages, pastedImages, shrinkImage } from '../../lib/pasted-images.js'
+  import { shrinkImage } from '../../lib/pasted-images.js'
+  import { pastedFiles } from '@frontierjs/ui/paste'
   import { providePageCommands } from '../../lib/commands.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -694,15 +695,10 @@ title: Workbench
   }
 
   function paste(p, e) {
-    const { files, only } = pastedImages(e)
-    // WebKitGTK sends an image paste with no clipboard types at all; the
-    // async read is the only way to reach the image there.
-    if (!files.length) {
-      if (!e.clipboardData?.types?.length) clipboardImages().then(fs => fs.forEach(f => addShot(p, f)), err => { error = `${p.name}: could not read the clipboard — ${err?.message ?? err}` })
-      return
-    }
-    if (only) e.preventDefault()
-    for (const f of files) addShot(p, f)
+    pastedFiles(e).then(
+      (files) => { for (const f of files) if (f.type.startsWith('image/')) addShot(p, f) },
+      (err)   => { error = `${p.name}: could not read the clipboard — ${err?.message ?? err}` },
+    )
   }
   const dropShot = (p, key) => { shots = { ...shots, [p.id]: (shots[p.id] ?? []).filter(s => s.key !== key) } }
 

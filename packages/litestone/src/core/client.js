@@ -139,6 +139,34 @@ function rawSqlRefusal(surface) {
   )
 }
 
+// ─── System-only ops ──────────────────────────────────────────────────────────
+// What each refuses and why, read by every trap that is not asSystem() — root,
+// $setAuth and $scopedBy (FJS-D2363). A method on the system client missing
+// here is handed to every scoped client: `test/system-only.test.ts` walks the
+// system client's keys and fails on one nobody has placed.
+const SYSTEM_ONLY = {
+  $retain:    `retention deletes rows and applies none of this schema's access rules.\n\n` +
+              `@@gate, @@allow/@@deny and @@softDelete are all enforced above SQLite, and a\n` +
+              `retention sweep is a DELETE against the base table`,
+  $backup:    `a backup copies every row of the file, and applies none of this schema's access rules`,
+  $rotateKey: `rotating the key rewrites every encrypted column of every row, under no access rule`,
+  $attach:    `an attached database is read by raw SQL on this connection, under no access rule`,
+  $detach:    `detaching changes what every client on this connection can reach`,
+}
+
+function systemOnlyRefusal(name) {
+  return () => {
+    throw new Error(`${name}() — ${SYSTEM_ONLY[name]}.\n\nSay the bypass:\n\n    db.asSystem().${name}(...)\n`)
+  }
+}
+
+function rawDbRefusal(surface) {
+  return new Error(
+    `${surface} — the raw connection applies none of this schema's access rules.\n\n` +
+    `Say the bypass:\n\n    db.asSystem().$db\n`
+  )
+}
+
 
 const RECURSIVE_KEYS = ['direction', 'maxDepth', 'nested', 'via']
 
@@ -6188,15 +6216,6 @@ export async function createClient({
     return out
   }
 
-  function retainRefusal() {
-    throw new Error(
-      `$retain() — retention deletes rows and applies none of this schema's access rules.\n\n` +
-      `@@gate, @@allow/@@deny and @@softDelete are all enforced above SQLite, and a\n` +
-      `retention sweep is a DELETE against the base table. Say the bypass:\n\n` +
-      `    db.asSystem().$retain()\n`
-    )
-  }
-
   const once = (key, deps, build) => derivedOnce(schema, key, deps, build)
   const _claimsKey = Array.isArray(claims) ? claims.join('\0') : null
   const jsonMap       = once('buildJsonMap', [], () => buildJsonMap(schema))
@@ -7989,7 +8008,7 @@ export async function createClient({
   // then swaps the client's key. One write transaction per affected database.
   //
   // Usage:
-  //   const stats = await db.$rotateKey(process.env.NEW_ENCRYPTION_KEY)
+  //   const stats = await db.asSystem().$rotateKey(process.env.NEW_ENCRYPTION_KEY)
   //   // → { users: { rows: 42, fields: 1 }, payments: { rows: 7, fields: 2 } }
   //
   // ── What it carries, and what it refuses to leave behind ───────────────────
@@ -8176,8 +8195,8 @@ export async function createClient({
   // Uses Bun's db.serialize() which reads the committed db state atomically.
   //
   // Usage:
-  //   await db.$backup('./backups/prod-2024-01-15.db')
-  //   await db.$backup('./backup.db', { vacuum: true })  // VACUUM INTO — compact first
+  //   await db.asSystem().$backup('./backups/prod-2024-01-15.db')
+  //   await db.asSystem().$backup('./backup.db', { vacuum: true })  // VACUUM INTO — compact first
 
   // Is every SQLite connection this client holds answering? True or a throw --
   // a probe reads the throw as unwell, and a closed client says so in its own
@@ -8290,9 +8309,9 @@ export async function createClient({
   // Both the write connection and read connection attach the same file.
   //
   // Usage:
-  //   await db.$attach('./archive.db', 'archive')
-  //   const rows = await db.sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
-  //   await db.$detach('archive')
+  //   const sys = db.asSystem().$attach('./archive.db', 'archive')
+  //   const rows = await sys.sql`SELECT * FROM users UNION ALL SELECT * FROM archive.users`
+  //   sys.$detach('archive')
 
   const _attached = new Set()
 
@@ -8307,7 +8326,7 @@ export async function createClient({
     rawWriteDb.prepare(`ATTACH DATABASE ? AS "${alias}"`).run(abs)
     if (rawReadDb !== rawWriteDb) rawReadDb.prepare(`ATTACH DATABASE ? AS "${alias}"`).run(abs)
     _attached.add(alias)
-    return clientProxy  // chainable: await db.$attach('a.db', 'a').$attach('b.db', 'b')
+    return clientProxy
   }
 
   function $detach(alias) {
@@ -8382,7 +8401,7 @@ export async function createClient({
     }
 
     const sysOwnProps = ['asSystem', '$close', '$schema', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$files', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $search: (q, opts) => $searchWith(sysTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach: (path, alias) => { $attach(path, alias); return proxy }, $detach: (alias) => { $detach(alias); return proxy }, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -8525,8 +8544,8 @@ export async function createClient({
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$files', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authOwnProps = ['$close', '$schema', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$files', '$tenancy', ...Object.keys(SYSTEM_ONLY)]
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $search: (q, opts) => $searchWith(authTables, q, opts), $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -8538,7 +8557,8 @@ export async function createClient({
         if (prop === '$inTransaction')  return txState.depth > 0
         if (prop === '$schema')         return schema
         if (prop === '$auth')           return user
-        if (prop === '$retain')         return retainRefusal
+        if (prop in SYSTEM_ONLY)        return systemOnlyRefusal(prop)
+        if (prop === '$db')             throw rawDbRefusal('db.$setAuth(user).$db')
         if (prop === '$checkWhere')     return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$trailMarks') return $trailMarks
@@ -8708,7 +8728,7 @@ export async function createClient({
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$files', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$search', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$files', '$tenancy', ...Object.keys(SYSTEM_ONLY)]
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -8716,7 +8736,7 @@ export async function createClient({
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
       $search: (q, opts) => $searchWith(tables, q, opts),
-      asSystem, $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      asSystem, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps,
       $hold: tx.hold, $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
@@ -8730,7 +8750,8 @@ export async function createClient({
         if (prop === '$schema') return schema
         if (prop === '$scope')  return overrides.scopedBy ?? {}
         if (prop === '$auth')   return overrides.auth ?? null
-        if (prop === '$retain')     return retainRefusal
+        if (prop in SYSTEM_ONLY)    return systemOnlyRefusal(prop)
+        if (prop === '$db')        throw rawDbRefusal('db.$scopedBy(bindings).$db')
         if (prop === '$checkWhere') return $checkWhere
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$trailMarks') return $trailMarks
@@ -8950,8 +8971,8 @@ export async function createClient({
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
-  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $backup, $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $rotateKey, $attach, $detach, $db: rawWriteDb, $hold: tx.hold, asSystem, $setAuth }, {
+  const rootOwnProps = ['$close', '$attached', '$schema', '$search', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$trailMarks', '$primaryKey', '$mirrorKey', '$tenantPath', '$declaresAccessRules', '$capabilitiesFor', '$claimsFor', '$readAs', '$checkWrite', '$readGrading', '$readReach', '$readColumns', '$fromColumns', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$madeAt', '$logStats', '$enums', '$plugins', '$files', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$inTransaction', ...Object.keys(SYSTEM_ONLY)]
+  clientProxy = new Proxy({ sql, query, $transaction, $search: (q, opts) => $searchWith(scopedTables, q, opts), $walStatus, $backupStamp, $clearBackupStamp, $ping, $schemaGaps, $hold: tx.hold, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
       if (prop === 'then')            return undefined
@@ -8979,7 +9000,7 @@ export async function createClient({
       if (prop === '$attached')       return $attachedDatabases()
       if (prop === '$schema')         return schema
       if (prop === '$relations')      return relationMap
-      if (prop === '$retain')     return retainRefusal
+      if (prop in SYSTEM_ONLY)        return systemOnlyRefusal(prop)
       if (prop === '$checkWhere')     return $checkWhere
       if (prop === '$protectedFields') return $protectedFields
       if (prop === '$trailMarks') return $trailMarks
@@ -9014,7 +9035,10 @@ export async function createClient({
       }
       if (prop === '$databases')      return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, { driver: v.driver, access: v.access, path: v.absPath, trailModel: v.trailModel }]))
       if (prop === '$rawDbs')         return Object.fromEntries(Object.entries(dbRegistry).map(([k, v]) => [k, v.rawWriteDb ?? null]))
-      if (prop === '$db')             return rawWriteDb
+      if (prop === '$db') {
+        if (_hasAccessRules) throw rawDbRefusal('db.$db')
+        return rawWriteDb
+      }
       if (prop === '$tapQuery')       return (fn) => { ctx._queryListeners.add(fn); return () => ctx._queryListeners.delete(fn) }
       // Subscribe to write events AFTER construction — the half `onEvent` does
       // not have. `onEvent` is fixed at createClient, so a layer handed a

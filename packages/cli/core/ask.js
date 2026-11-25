@@ -223,6 +223,23 @@ const SEAMS    = 'seams.snapshot.md'
 const DECISION = 'DECISIONS.md'
 const DRIVES   = 'DRIVES.md'
 
+// The register is megabytes and a graded run asks a status question several
+// times over one unchanged tree; re-parsing it each time put the graded tests
+// past bun's 5 s timeout under a loaded suite (FJS-4156).
+let issueCache = null
+
+function issueRows(layout, files, stats) {
+  const key = files.map((f, i) => `${f}:${stats[i].size}:${stats[i].mtimeMs}`).join('|')
+  if (issueCache?.key !== key) issueCache = {
+    key,
+    rows: readIssues(layout).map(r => ({
+      hay: `${r.pkg.join(' ')} ${r.title} ${r.body}`.slice(0, 600), cite: r.id,
+      line: `${r.id} — ${r.title.slice(0, 160)}`, payload: r.raw,
+    })),
+  }
+  return issueCache.rows
+}
+
 function rowsOf(text, re, make) {
   const out = []
   for (const m of text.matchAll(re)) { const r = make(m); if (r) out.push(r) }
@@ -304,11 +321,8 @@ const WALKS = {
     const layout = registerLayout(root)
     const files  = ['ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => join(layout.dir, f)).filter(existsSync)
     if (!files.length) return { status: 'missing', hits: [], scanned: 0 }
-    const rows = readIssues(layout).map(r => ({
-      hay: `${r.pkg.join(' ')} ${r.title} ${r.body}`.slice(0, 600), cite: r.id,
-      line: `${r.id} — ${r.title.slice(0, 160)}`, payload: r.raw,
-    }))
-    return { ...best(rows, tk), scanned: files.reduce((n, f) => n + statSync(f).size, 0) }
+    const stats  = files.map(f => statSync(f))
+    return { ...best(issueRows(layout, files, stats), tk), scanned: stats.reduce((n, s) => n + s.size, 0) }
   },
 
 

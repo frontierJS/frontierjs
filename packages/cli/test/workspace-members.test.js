@@ -9,7 +9,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join }   from 'node:path'
 
-import { workspaceMembers, memberByName, memberByPath, packageMembers, memberOfFile } from '../core/workspace-members.js'
+import { workspaceMembers, memberByName, memberByPath, packageMembers, memberOfFile,
+         releasableMembers, isConnector, isHeldOut, ADMITTED } from '../core/workspace-members.js'
 
 let root
 const put = (rel, body) => {
@@ -85,5 +86,29 @@ describe('workspaceMembers', () => {
     expect(memberOfFile(members, 'packages/a/src/x.js').path).toBe('packages/a')
     expect(memberOfFile(members, 'packages/group/loose.js')).toBeUndefined()
     expect(memberOfFile(members, 'packages/ab/x.js')).toBeUndefined()
+  })
+})
+
+// Against the real tree: an admitted name that matches no connector would leave
+// that connector held with no error (FJS-D2365).
+describe('connector admission', () => {
+  const repo    = join(import.meta.dir, '../../..')
+  const members = packageMembers(repo)
+
+  test('every admitted name is a connector member, released and still in its lane', () => {
+    for (const name of ADMITTED) {
+      const m = members.find(x => x.path === `packages/conduits/${name}`)
+      expect(m, name).toBeDefined()
+      expect(isConnector(m)).toBe(true)
+      expect(isHeldOut(m)).toBe(false)
+    }
+    const released = new Set(releasableMembers(repo).map(m => m.path))
+    for (const name of ADMITTED) expect(released.has(`packages/conduits/${name}`)).toBe(true)
+  })
+
+  test('a connector not admitted stays held', () => {
+    const held = members.filter(m => isConnector(m) && !ADMITTED.includes(m.folder))
+    expect(held.length).toBeGreaterThan(0)
+    for (const m of held) expect(isHeldOut(m)).toBe(true)
   })
 })

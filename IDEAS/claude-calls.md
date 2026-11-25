@@ -53,8 +53,9 @@ More facts the phases turn on:
 - Basecamp's `providers/model/anthropic.ts` owns a workspace's API key and verifies
   it; it sends no prompt. Site edit hands that key to the local program, so a job-B
   run can bill an API key rather than a subscription.
-- Out of scope: n8n workflows that call the API from n8n (ELA `docs/n8n/*`, Intake
-  `flow/`), and Chronicle's `mockup/` sketches.
+- Out of scope: ELA's n8n workflows (`docs/n8n/*`), Chronicle's `mockup/` sketches, and
+  my.maid.tech's `@anthropic-ai/sdk` call (`partners/lib/claude.js`; owner, 2026-11-25).
+  Intake's n8n clarify flow is in (owner, 2026-11-25): step 6.5, built after kos and ELA.
 
 ## Rulings this plan builds on
 
@@ -413,3 +414,7 @@ read one price table.
     and its person-facing error sentences, which belong in kos.
 - [ ] 6.3 kos onto the connector. It is live, so the owner picks when.
 - [ ] 6.4 ELA's Q&A chat onto the connector. It is live, so the owner picks when.
+- [ ] 6.5 Intake's clarify step off n8n's HTTP node onto `anthropicDoor`. It is Intake's
+  `PLAN.md` 2.3 (the flow ported to orion over `conduit-anthropic` + `conduit-37signals`),
+  so it lands after Intake's 2.1 schema and 2.2 `api/`. Chronicle needs no step: both its
+  doors are the framework's since 6.1.
