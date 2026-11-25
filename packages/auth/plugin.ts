@@ -667,7 +667,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
 
             setStateCookie(ctx, app, prefix, provider, state)
             return ctx.redirect!(authorizeUrl)
-          } catch {
+          } catch (err) {
+            reportOAuthFault('begin', provider, err)
             return oauthFailure(ctx, oauth, 'unavailable')
           }
         })
@@ -707,7 +708,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
             ;({ identity, tokens, returnTo, link } = done)
             grant     = done.grant ?? null
             initiator = done.initiator ?? null
-          } catch {
+          } catch (err) {
+            reportOAuthFault('callback', provider, err)
             // One code for every refusal, deliberately. Which one it was is in
             // the audit trail; telling the browser whether a state existed, or
             // whether an exchange failed, is an oracle handed to whoever can
@@ -721,7 +723,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
             if (!oauthAuth.oauthGrant) return oauthFailure(ctx, oauth, 'unavailable')
             try {
               await oauthAuth.oauthGrant(provider, { tokens, identity, grant, initiator })
-            } catch {
+            } catch (err) {
+              reportOAuthFault('grant', provider, err)
               return oauthFailure(ctx, oauth, 'exchange')
             }
             return ctx.redirect!(returnTo ?? '/')
@@ -738,7 +741,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
             let issued
             try {
               issued = await oauthAuth.confirmOAuthLink(link, provider, identity, signInOrigin(ctx))
-            } catch {
+            } catch (err) {
+              reportOAuthFault('link', provider, err)
               return oauthFailure(ctx, oauth, 'state')
             }
             if (!('token' in issued)) return oauthCodeRequired(ctx, oauth, issued)
@@ -757,7 +761,8 @@ export function auth(opts: AuthPluginOptions): Plugin {
           let resolved
           try {
             resolved = await oauthAuth.oauthResolve(provider, identity, signInOrigin(ctx))
-          } catch {
+          } catch (err) {
+            reportOAuthFault('resolve', provider, err)
             return oauthFailure(ctx, oauth, 'exchange')
           }
 
@@ -1017,6 +1022,16 @@ function setStateCookie(ctx: TransportContext, app: App, prefix: string, provide
     maxAge:   600,
     path:     callbackPath(app, prefix, provider),
   })
+}
+
+// The browser gets one coarse code either way, so a server fault (a missing
+// column, a dead database) would otherwise read as an unconfigured provider or
+// a forged state. A refusal of the request carries a status under 500
+// (errors.ts) and is not logged: it is the caller's, and the audit trail's.
+function reportOAuthFault(step: string, provider: string, err: unknown): void {
+  const status = (err as { status?: unknown })?.status
+  if (typeof status === 'number' && status < 500) return
+  console.error(`[auth] OAuth ${step} for '${provider}' failed on the server:`, err)
 }
 
 /**

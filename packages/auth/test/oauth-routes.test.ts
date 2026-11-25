@@ -161,6 +161,7 @@ describe('GET /auth/oauth/{provider}', () => {
     const broken = await makeAuth({
       oauthProviders: { google: defineProvider({ name: 'google', preset: 'google', clientId: 'c', clientSecret: 's' }) },
     })
+    const dbPath = process.env.MAIN_DB_PATH!
     const logged: unknown[][] = []
     const realError = console.error
     console.error = (...args: unknown[]) => { logged.push(args) }
@@ -172,7 +173,9 @@ describe('GET /auth/oauth/{provider}', () => {
       await request(faulty).get('/auth/oauth/faceboook')
       expect(logged).toEqual([])
 
-      broken.db.$db.run('DROP TABLE oauth_flow')
+      const raw = new Database(dbPath)
+      raw.run('DROP TABLE oauth_flow')
+      raw.close()
       const res = await request(faulty).get('/auth/oauth/google')
       expect(res.status).toBe(302)
       expect(String(res.headers['location'])).toBe('/sign-in?oauth_error=unavailable')
