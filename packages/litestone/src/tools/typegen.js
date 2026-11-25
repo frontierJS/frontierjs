@@ -78,6 +78,27 @@ export function declarationCollisions(schema) {
   return collisions
 }
 
+// ─── A field's doc block ──────────────────────────────────────────────────────
+
+/** The lines a field's JSDoc carries: its comments, an extra note, then `@deprecated` so an editor strikes the property through. */
+function fieldDocLines(field, note = null) {
+  const docs = field.comments?.length ? [...field.comments] : []
+  if (note) docs.push(note)
+  const dep = field.attributes?.find(a => a.kind === 'deprecated')
+  if (dep) docs.push(dep.reason ? `@deprecated ${dep.reason}` : '@deprecated')
+  return docs
+}
+
+function pushDoc(lines, docs) {
+  if (docs.length === 1) {
+    lines.push(`  /** ${docs[0]} */`)
+  } else if (docs.length > 1) {
+    lines.push(`  /**`)
+    for (const c of docs) lines.push(`   * ${c}`)
+    lines.push(`   */`)
+  }
+}
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 /**
@@ -162,15 +183,7 @@ export function generateTypeScript(schema, opts = {}) {
       for (const field of t.fields) {
         const tsType = fieldToTs(field, schema, modelNames, /* nullable */ field.type.optional)
         const optional = field.type.optional
-        if (includeComments && field.comments?.length) {
-          if (field.comments.length === 1) {
-            lines.push(`  /** ${field.comments[0]} */`)
-          } else {
-            lines.push(`  /**`)
-            for (const c of field.comments) lines.push(`   * ${c}`)
-            lines.push(`   */`)
-          }
-        }
+        if (includeComments) pushDoc(lines, fieldDocLines(field))
         lines.push(`  ${field.name}${optional ? '?' : ''}: ${tsType}`)
       }
       lines.push(`}`, ``)
@@ -231,45 +244,48 @@ export function generateTypeScript(schema, opts = {}) {
       if (isRelation(field)) continue
       const spec = fieldRowSpec(field, schema, audience, modelNames)
       if (!spec) continue
-      if (includeComments) {
-        const docLines = field.comments?.length ? [...field.comments] : []
-        if (spec.comment) docLines.push(spec.comment)
-        if (docLines.length === 1) {
-          lines.push(`  /** ${docLines[0]} */`)
-        } else if (docLines.length > 1) {
-          lines.push(`  /**`)
-          for (const c of docLines) lines.push(`   * ${c}`)
-          lines.push(`   */`)
-        }
-      }
+      if (includeComments) pushDoc(lines, fieldDocLines(field, spec.comment))
       lines.push(`  ${spec.name}${spec.optional ? '?' : ''}: ${spec.tsType}`)
     }
     lines.push(`}`)
     lines.push(``)
 
     // ── Create type ──────────────────────────────────────────────────────────
-    lines.push(`export interface ${pascal(model.name)}Create {`)
+    // A belongsTo write fills its key (nested-writes.js), so a required key is
+    // required only when the create names no relation: one either-or per relation.
+    const createSpecs = new Map()
+    for (const field of model.fields) {
+      if (isRelation(field) || isSystemField(field)) continue
+      const spec = fieldCreateSpec(field, schema, audience, modelNames, model)
+      if (spec) createSpecs.set(field.name, spec)
+    }
+    const eitherOr = []
+    const keyedByRelation = new Set()
+    for (const field of model.fields) {
+      if (!isRelation(field)) continue
+      const write = relationWriteTs(field, model, schema)
+      const keys = field.attributes.find(a => a.kind === 'relation')?.fields
+      if (!write || !keys || field.type.array) continue
+      const required = keys.map(k => createSpecs.get(k)).filter(s => s && !s.optional)
+      if (!required.length) continue
+      for (const s of required) keyedByRelation.add(s.name)
+      eitherOr.push(`{ ${required.map(s => `${s.name}: ${s.tsType}`).join('; ')} } | { ${field.name}: ${write} }`)
+    }
+    lines.push(eitherOr.length
+      ? `export type ${pascal(model.name)}Create = {`
+      : `export interface ${pascal(model.name)}Create {`)
     for (const field of model.fields) {
       if (isRelation(field)) {
         const write = relationWriteTs(field, model, schema)
         if (write) lines.push(`  ${field.name}?: ${write}`)
         continue
       }
-      if (isSystemField(field)) continue
-      const spec = fieldCreateSpec(field, schema, audience, modelNames, model)
+      const spec = createSpecs.get(field.name)
       if (!spec) continue
-      if (includeComments && field.comments?.length) {
-        if (field.comments.length === 1) {
-          lines.push(`  /** ${field.comments[0]} */`)
-        } else {
-          lines.push(`  /**`)
-          for (const c of field.comments) lines.push(`   * ${c}`)
-          lines.push(`   */`)
-        }
-      }
-      lines.push(`  ${spec.name}${spec.optional ? '?' : ''}: ${spec.tsType}`)
+      if (includeComments) pushDoc(lines, fieldDocLines(field))
+      lines.push(`  ${spec.name}${spec.optional || keyedByRelation.has(spec.name) ? '?' : ''}: ${spec.tsType}`)
     }
-    lines.push(`}`)
+    lines.push(eitherOr.length ? `} & ${eitherOr.map(u => `(${u})`).join(' & ')}` : `}`)
     lines.push(``)
 
     // ── Update type (all optional — except @version) ─────────────────────────
@@ -376,12 +392,7 @@ export function generateTypeScript(schema, opts = {}) {
       for (const field of view.fields) {
         const spec = fieldRowSpec(field, schema, audience, modelNames)
         if (!spec) continue
-        if (includeComments && field.comments?.length === 1) lines.push(`  /** ${field.comments[0]} */`)
-        else if (includeComments && field.comments?.length) {
-          lines.push(`  /**`)
-          for (const c of field.comments) lines.push(`   * ${c}`)
-          lines.push(`   */`)
-        }
+        if (includeComments) pushDoc(lines, fieldDocLines(field))
         lines.push(`  ${spec.name}${spec.optional ? '?' : ''}: ${spec.tsType}`)
       }
       lines.push(`}`, ``)
@@ -563,6 +574,8 @@ export interface CursorResult<T> {`,
     ``,
     `/** A nested write through a relation, each kind taking the operations the client runs for it. */`,
     `type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }`,
+    `/** A Create is a union once a belongsTo key may be written as its relation, and a plain Omit would flatten it. */`,
+    `type __OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never`,
     `type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }`,
     `type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }`,
     `/** What \`search()\` adds to a hit: \`_rank\` unless \`withRank: false\`, and the \`highlight\` and \`snippet\` asked for. */`,
@@ -971,7 +984,7 @@ function relationWriteTs(field, model, schema) {
     const backKeys = targetModel.fields
       .filter(f => f.type.kind === 'relation' && f.type.name === model.name)
       .flatMap(f => f.attributes.find(a => a.kind === 'relation')?.fields ?? [])
-    const child = backKeys.length ? `Omit<${create}, ${[...new Set(backKeys)].map(k => `'${k}'`).join(' | ')}>` : create
+    const child = backKeys.length ? `__OmitEach<${create}, ${[...new Set(backKeys)].map(k => `'${k}'`).join(' | ')}>` : create
     return `__HasManyWrite<${where}, ${child}, ${target}Update>`
   }
   if (field.attributes.some(a => a.kind === 'relation' && a.fields)) return `__BelongsToWrite<${where}, ${create}>`

@@ -4,7 +4,7 @@
 // the `*/subagents/*.jsonl` of the agents it spawned — and keeps one
 // `ClaudeTranscript` row per file (where it stopped reading) and one
 // `ClaudeMessage` row per assistant message. The reading of a transcript is
-// `readMessages` in `@frontierjs/cli/core/claude-usage.js`, the same one `fli git:history`
+// `readMessages` in `@frontierjs/claude`, the same one `fli git:history`
 // tallies with; this file is the fs and database half.
 //
 // **An append reads only what it gained.** A file whose size equals the stored
@@ -35,17 +35,7 @@
 
 import { closeSync, openSync, readdirSync, readFileSync, readSync, statSync, type Dirent } from 'node:fs'
 import { basename, dirname, join, sep } from 'node:path'
-import { claudeConfigDir } from './claude-scan.ts'
-
-type Fact = { sessionId: string | null, cwd: string | null, headless: boolean, title: string | null, firstPrompt: string | null, startedAt: string | null, lastAt: string | null, skills: string[] }
-type Msg = {
-  id: string | null, model: string | null, at: string, sessionId: string | null, cwd: string | null,
-  input: number, cacheWrite: number, cacheWrite1h: number, cacheRead: number, output: number, tools: string[], skills: string[]
-}
-type ReadMessages = (text: string, opts?: { final?: boolean, skills?: string[] }) => { consumed: number, file: Fact, messages: Msg[] }
-
-let reader: Promise<ReadMessages> | undefined
-const loadReader = () => reader ??= import('@frontierjs/cli/core/claude-usage.js').then(m => (m as { readMessages: ReadMessages }).readMessages)
+import { claudeConfigDir, readMessages, type TranscriptFile, type TranscriptMessage } from '@frontierjs/claude'
 
 export interface IndexResult {
   /** `*.jsonl` files found on disk. */
@@ -96,12 +86,12 @@ function agentOf(path: string): string | null {
 }
 
 /** Bytes [from, to) as text, and how many of them ended on a newline. Grows the slice for a line longer than it. */
-function readSlice(fd: number, from: number, to: number, read: ReadMessages, skills: string[]) {
+function readSlice(fd: number, from: number, to: number, skills: string[]) {
   let want = Math.min(SLICE, to - from)
   for (;;) {
     const buf = Buffer.allocUnsafe(want)
     const n = readSync(fd, buf, 0, want, from)
-    const r = read(buf.toString('utf8', 0, n), { final: false, skills })
+    const r = readMessages(buf.toString('utf8', 0, n), { final: false, skills })
     if (r.consumed > 0 || from + want >= to) return { ...r, got: n }
     want = Math.min(want * 2, to - from)
   }
@@ -112,8 +102,8 @@ const union = (a: string, b: string[]) => sorted([...(a ? a.split(',') : []), ..
 
 type Have = { tools: string, skills: string, agent: string | null }
 
-async function writeMessages(db: any, msgs: Msg[], subagent: boolean, agent: string | null, sessionId: string, cwd: string | null): Promise<number> {
-  const byId = new Map<string, Msg>()
+async function writeMessages(db: any, msgs: TranscriptMessage[], subagent: boolean, agent: string | null, sessionId: string, cwd: string | null): Promise<number> {
+  const byId = new Map<string, TranscriptMessage>()
   for (const m of msgs) {
     if (!m.id || !m.model || m.model === '<synthetic>') continue
     const had = byId.get(m.id)
@@ -183,7 +173,6 @@ export const hasIndex = async (db: any): Promise<boolean> => !!await db.claudeTr
  */
 export async function indexClaude(db: any, opts: { configDir?: string } = {}): Promise<IndexResult> {
   const t0 = performance.now()
-  const read = await loadReader()
   const configDir = claudeConfigDir({ configDir: opts.configDir })
   const onDisk = listTranscripts(configDir)
   const rows = new Map<string, Row>(
@@ -205,7 +194,7 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
     const from = !row || rewritten ? 0 : row.offset
     const fresh = !row || rewritten
     let offset = from
-    const facts: Fact = { sessionId: null, cwd: null, headless: false, title: null, firstPrompt: null, startedAt: null, lastAt: null, skills: [] }
+    const facts: TranscriptFile = { sessionId: null, cwd: null, headless: false, title: null, firstPrompt: null, startedAt: null, lastAt: null, skills: [] }
     const subagent = isSubagent(path)
     const agent = subagent ? row?.agent ?? agentOf(path) : null
     let skills = from === 0 || !row?.turnSkills ? [] : row.turnSkills.split(',')
@@ -215,7 +204,7 @@ export async function indexClaude(db: any, opts: { configDir?: string } = {}): P
     try { fd = openSync(path, 'r') } catch { continue }
     try {
       while (offset < size) {
-        const r = readSlice(fd, offset, size, read, skills)
+        const r = readSlice(fd, offset, size, skills)
         if (r.consumed === 0) break
         const f = r.file
         facts.sessionId ??= f.sessionId

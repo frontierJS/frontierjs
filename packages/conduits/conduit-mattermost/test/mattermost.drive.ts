@@ -268,7 +268,7 @@ try {
 
   const team = teamModel.parse({ id: ids.team, create_at: 1, update_at: 1, delete_at: 0, display_name: 'Town', name: 'town', description: '', type: 'I', allow_open_invite: false })!
   const user = profileModel.parse({ id: ids.alice, create_at: 1, update_at: 1, delete_at: 0, username: 'alice', roles: 'system_user system_admin', email: '' })!
-  const file = fileInfoModel.parse({ id: ids.open, user_id: ids.alice, post_id: '', create_at: 1, update_at: 1, delete_at: 0, name: 'a.png', extension: 'png', size: 2, mime_type: 'image/png', width: 1, height: 1, has_preview_image: true })!
+  const file = fileInfoModel.parse({ id: ids.open, user_id: ids.alice, post_id: '', create_at: 1, update_at: 1, delete_at: 0, name: 'a.png', extension: 'png', size: 2, mime_type: 'image/png', width: 1, height: 1, has_preview_image: true }, { channelExternalId: ids.open })!
   t('mirror.timesAndCodesAreWords', { teamType: team.type, deleted: team.deletedAt, created: team.createdAt?.toISOString(), roles: user.roles, emailWithheld: !('email' in user), filePost: file.postExternalId, mime: file.mimeType })
 
   const body = (id: string) => JSON.stringify({ id, message: 'm', status_code: 0 })
@@ -527,6 +527,7 @@ try {
     alice: kinds(personal.alice), bob: kinds(personal.bob),
     dmNamed: personal.bob.some(f => f.type === 'direct_added' && f.payload.channelExternalId === dm.id),
     reactionKey: added?.type === 'reaction_added' && added.payload.reaction.externalId === reactionKey(live.row!.externalId, ids.bob, 'wave'),
+    reactionChannelIsThePosts: added?.type === 'reaction_added' && added.payload.reaction.channelExternalId === live.row!.channelExternalId,
   })
 
   // ─── What a person has read ────────────────────────────────
@@ -612,6 +613,11 @@ try {
   t('backfill.metadataAndProfiles', {
     reaction: withMeta.reactions?.some(r => r.externalId === reactionKey(live.row!.externalId, ids.bob, 'eyes')),
     files: Array.isArray(withMeta.files), profiles: profiles.rows?.map(r => r.username).sort(),
+    channelIsThePosts: [...withMeta.reactions!, ...withMeta.files!].every(x => x.channelExternalId === withMeta.rows!.find(p => p.externalId === x.postExternalId)?.channelExternalId),
+    olderServer: [
+      reactionModel.parse({ user_id: ids.bob, post_id: live.row!.externalId, emoji_name: 'eyes', create_at: 1 }, { channelExternalId: live.row!.channelExternalId })?.channelExternalId === live.row!.channelExternalId,
+      reactionModel.parse({ user_id: ids.bob, post_id: live.row!.externalId, emoji_name: 'eyes', create_at: 1 }),
+    ],
   })
 
   // A pasted screenshot: the bytes go up as they are, a post of nothing but
@@ -627,7 +633,7 @@ try {
   let noBytes = ''
   try { await uploadFile(alice, { channelExternalId: ids.open, name: 'x.png', bytes: new Uint8Array(0) }) } catch (e) { noBytes = (e as Error).message }
   t('file.uploadPostAndRead', {
-    bearer: upWire?.headers.authorization, type: upWire?.headers['content-type'], size: up.row?.size, mime: up.row?.mimeType, unclaimed: up.row?.postExternalId, preview: up.row?.hasPreviewImage,
+    bearer: upWire?.headers.authorization, type: upWire?.headers['content-type'], size: up.row?.size, mime: up.row?.mimeType, unclaimed: up.row?.postExternalId, uploadChannel: up.row?.channelExternalId === ids.open, preview: up.row?.hasPreviewImage,
     posted: !!filed.row, emptyMessage: filed.row?.message, same: !!read.bytes && read.bytes.length === png.length && read.bytes.every((b, i) => b === png[i]),
     readType: read.type, thumb: !!thumb.bytes, claimedTwice: reclaim.error?.kind, notAMember: offRoom.error?.kind, noBytes,
   })
@@ -981,7 +987,7 @@ process.exit(report(got, {
   'socket.silentLinkIsCutAndRedialed':         { kept: { connected: true, answered: true, dropped: 0 }, wentDown: true, back: true, cutAtTheSink: true, keyedToTheNew: true },
   'socket.seqGapCallsGap':                     { order: ['posted', 'gap', 'posted'], gaps: 1, connection: true, skipped: 4, landed: true },
   'socket.perPersonSeesWhatOnlyTheyMay':       { alice: 1, bob: 0, service: 0, openedOnce: { alice: 1, bob: 1 } },
-  'socket.reactionsAndJoinsLand':              { alice: ['direct_added', 'reaction_added', 'reaction_removed'], bob: ['direct_added', 'reaction_added', 'reaction_removed'], dmNamed: true, reactionKey: true },
+  'socket.reactionsAndJoinsLand':              { alice: ['direct_added', 'reaction_added', 'reaction_removed'], bob: ['direct_added', 'reaction_added', 'reaction_removed'], dmNamed: true, reactionKey: true, reactionChannelIsThePosts: true },
   'read.rootCountsAndMentions':                { mentions: [ids.alice], channelType: 'O', root: 1, rootAfterReply: 0, allAfterReply: 1, aliceMentioned: 1, authorSawOwn: true },
   'read.viewClearsAndIsPushed':                { answered: true, pushed: true, bobHeardNothing: true, counts: [true, 0, 0], badId: 'mattermost: channelExternalId is not a Mattermost id' },
   'read.muteIsPushed':                         { muted: true, listed: true, bobNot: false },
@@ -989,8 +995,8 @@ process.exit(report(got, {
   'socket.openedOnEveryConnection':            { alice: 2, bob: 2, back: true },
   'backfill.sinceCapFallsBackToPages':         { rows: 5, all: true, distinct: 5, truncated: true, pagedMoreThanOnce: true, underTheCap: [5, undefined] },
   'backfill.channelsIncludeDirectAndArchived': { direct: 'direct', directTeam: null, archived: true, archivedHiddenByDefault: true },
-  'backfill.metadataAndProfiles':              { reaction: true, files: true, profiles: ['alice', 'bob'] },
-  'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
+  'backfill.metadataAndProfiles':              { reaction: true, files: true, profiles: ['alice', 'bob'], channelIsThePosts: true, olderServer: [true, null] },
+  'file.uploadPostAndRead':                    { bearer: `Bearer ${sink.tokens.alice}`, type: 'image/png', size: 12, mime: 'image/png', unclaimed: null, uploadChannel: true, preview: true, posted: true, emptyMessage: '', same: true, readType: 'image/png', thumb: true, claimedTwice: 'refused', notAMember: 'forbidden', noBytes: 'mattermost: an upload needs its bytes' },
   'license.scheduledAndGroupsAreRefused': {scheduled:{status:400,kind:'unlicensed',code:'api.scheduled_posts.license_error',message:'Scheduled posts feature requires a license',retryable:false},groups:{status:501,kind:'unlicensed',code:'api.license_error',message:'api endpoint requires a license',retryable:false},scheduledSentOnce:1,groupsSentOnce:1},
   'pin.anyMemberPinsAndTheFrameSays': {patchIsTheAuthors:'forbidden',pinned:true,listed:['post2b00000000000000000000'],isPinnedOnTheRow:true,frame:[true,false],unpinned:true,listedAfter:0,gone:'gone',notAMember:'forbidden'},
   'read.unreadFromAPostAndMute': {unread:2,mentions:1,lastViewedBeforeThePost:true,listedAgrees:true,frame:[true,true],aliceHeardNothing:0,muted:[true,true],notYours:'forbidden',u1u3:[true,true],mutePushed:[true,false]},

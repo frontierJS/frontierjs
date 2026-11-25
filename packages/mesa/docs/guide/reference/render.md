@@ -68,7 +68,7 @@ Wraps HTML in a full document.
 | `css` | none | A stylesheet URL for a `<link>` |
 | `scripts` | `[]` | Module script URLs, added at the end of `<body>` |
 | `islandLoader` | none | A module script URL for the island loader |
-| `meta` | `{}` | `{ name: content }` for `<meta>` tags |
+| `meta` | `{}` | `{ name: content }` for `<meta>` tags; an Open Graph key (`og:`, `article:`, `fb:`, `book:`, `profile:`, `music:`, `video:`) is written as `property=` |
 | `head` | `''` | Markup already rendered, placed as written |
 
 Every URL and attribute is escaped.

@@ -7,14 +7,14 @@
 // table has one row per message — so the groups always carry `model`, and a
 // total over models is a fold of priced groups, never a price of the total.
 //
-// **Cost is the sum of the PRICED groups.** A model `claude-pricing.ts` has no
+// **Cost is the sum of the PRICED groups.** A model the connector's price table has no
 // row for contributes its tokens to `unpricedTokens` and nothing to `cost`, so a
 // number is never a guess and never silently low.
 //
 // **A day is the machine's local day**, the reading `fli git:history` gives, so a
 // reply and the commit it made land in one column.
 
-import { costOf, READ_ON, SOURCE_URL } from './claude-pricing.ts'
+import { costOf, PRICES_READ_ON, PRICES_SOURCE_URL } from '@frontierjs/conduit-anthropic'
 
 /** A system or request client; every read here goes through litestone's `groupBy`, never raw SQL. */
 type Db = any
@@ -127,7 +127,7 @@ export async function readStats(db: Db, days: number): Promise<Stats> {
     days: dayRows,
     models, projects,
     indexedAt: await indexedAt(db),
-    pricing: { sourceUrl: SOURCE_URL, readOn: READ_ON },
+    pricing: { sourceUrl: PRICES_SOURCE_URL, readOn: PRICES_READ_ON },
   }
 }
 
@@ -197,7 +197,7 @@ export async function readInsights(db: Db, window: InsightWindow, now = Date.now
     projects: rank(projects, 'cwd'), models: rank(models, 'model'), tools: rank(tools, 'tool'),
     skills: rank(skills, 'skill'), agents: rank(agents, 'agent'),
     indexedAt: await indexedAt(db),
-    pricing: { sourceUrl: SOURCE_URL, readOn: READ_ON },
+    pricing: { sourceUrl: PRICES_SOURCE_URL, readOn: PRICES_READ_ON },
   }
 }
 
@@ -257,6 +257,6 @@ export async function readSessions(db: Db, { cwd, limit }: { cwd?: string, limit
   return {
     projects: [...out].map(([k, sessions]) => ({ cwd: k || null, sessions })),
     indexedAt: await indexedAt(db),
-    pricing: { sourceUrl: SOURCE_URL, readOn: READ_ON },
+    pricing: { sourceUrl: PRICES_SOURCE_URL, readOn: PRICES_READ_ON },
   }
 }

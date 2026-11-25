@@ -318,7 +318,10 @@ export class HttpTransport {
     path:     string
     segments: RouteSegment[]
     handlers: WsHandlerSet
-    limits:   Required<Omit<WsLimits, 'maxPayloadLength'>>
+    // Only the route's own overrides: the rest is `_wsLimits` read at the
+    // upgrade, since `reconfigure()` replaces it after `channels()` has
+    // registered /ws (`FJS-4605`).
+    limits:   Omit<WsLimits, 'maxPayloadLength'>
     upgrade?: WsRouteOptions['upgrade']
   }> = []
 
@@ -741,10 +744,7 @@ export class HttpTransport {
       throw new Error(`Cannot register WS route ${path} after router is built`)
     }
     const segments = parsePathSegments(path)
-    const limits   = {
-      ...this._wsLimits,
-      ...Object.fromEntries(Object.entries(opts.limits ?? {}).filter(([, v]) => v !== undefined)),
-    }
+    const limits   = Object.fromEntries(Object.entries(opts.limits ?? {}).filter(([, v]) => v !== undefined))
     this._wsRoutes.push({ path, segments, handlers, limits, upgrade: opts.upgrade })
   }
 
@@ -1503,7 +1503,7 @@ export class HttpTransport {
 
     if (!matched) return null
     const matchedHandlers = matched.handlers
-    const routeLimits     = matched.limits
+    const routeLimits     = { ...this._wsLimits, ...matched.limits }
 
     this.stats.request.websocket++
 
@@ -1747,10 +1747,13 @@ export class HttpTransport {
     const size = typeof message === 'string' ? Buffer.byteLength(message) : message.length
     if (size > lim.maxFrameBytes) {
       if (ws.data.handlers[SESSION_SOCKET]) {
-        wsSend(ws, JSON.stringify({ type: 'error', error: {
-          code: 'frame_too_large',
-          message: `Frame is ${size} bytes; this app accepts ${lim.maxFrameBytes}`,
-        } }))
+        // Answered by the call's id (`FJS-1882`): the close rejects every
+        // pending call, and only this answer tells the sender it was the size.
+        const text   = `Frame is ${size} bytes; this app accepts ${lim.maxFrameBytes}`
+        const callId = typeof message === 'string' ? this._wsCallId(message) : undefined
+        wsSend(ws, JSON.stringify(callId !== undefined
+          ? { type: 'service_error', id: callId, error: { name: 'PayloadTooLarge', message: text, code: 413, data: { code: 'frame_too_large' } } }
+          : { type: 'error', error: { code: 'frame_too_large', message: text } }))
       }
       ws.close(1009, 'frame_too_large')
       return

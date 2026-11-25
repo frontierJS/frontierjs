@@ -120,3 +120,20 @@ describe('wrapPage attribute sinks', () => {
     expect(escapeHTML("a'b")).toBe('a&#39;b')
   })
 })
+
+// FJS-4407: every meta key became name=, and a crawler reads og: only from property=.
+describe('wrapPage meta', () => {
+  const html = wrapPage('', {
+    meta: { description: 'd', 'og:title': 'T', 'article:author': 'A', 'twitter:card': 'summary' },
+  })
+
+  it('writes an Open Graph key as property=', () => {
+    expect(html).toContain('<meta property="og:title" content="T">')
+    expect(html).toContain('<meta property="article:author" content="A">')
+  })
+
+  it('keeps name= for every other key', () => {
+    expect(html).toContain('<meta name="description" content="d">')
+    expect(html).toContain('<meta name="twitter:card" content="summary">')
+  })
+})

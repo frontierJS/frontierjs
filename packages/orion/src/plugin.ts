@@ -10,7 +10,7 @@
  *   app.jobs    Caravan: one job per run, cron, the sweep, and job.dispatch
  *   app.runAs   the owner re-resolved for every run and every service call
  *   $tapEvents  a write to one of the app's models starts its flows
- *   app.ai      the app's own AI models, for the ai node
+ *   app.ai      the app's own AI doors, for the ai node
  *   app.notify  the app's declared notifications, for the notify node
  *   conduit     an instance of orion's own, whose targets are FlowCredential
  *               rows (`FJS-D273`)
@@ -43,7 +43,8 @@ import { PluginRegistry } from "./engine/plugins"
 import type { PluginManifest } from "./engine/plugins"
 import { createNodeImplementations } from "./engine/nodes"
 import type { INodeImplementation } from "./engine/executor"
-import type { IAIModels, IJobDispatcher, INotifier, IServiceCaller } from "./engine/ports"
+import { unanswered, type Reply } from "@frontierjs/toolbelt/ask"
+import type { IAIDoors, IJobDispatcher, INotifier, IServiceCaller } from "./engine/ports"
 import { createRunner, type OrionJobs, type Runner } from "./runner"
 import { litestoneModelActions, modelCatalog } from "./models"
 import { litestoneKeyValue } from "./kv"
@@ -167,10 +168,13 @@ export function orion(options: OrionOptions = {}): Plugin {
         },
       }
 
-      const ai: IAIModels = {
-        complete: (actor, model, req) => asOwner(actor, () => {
-          if (!('ai' in app)) throw new Error("This app registered no AI models: app.configure(ai({ registry }))")
-          return app.ai.get(model).complete(req)
+      const ai: IAIDoors = {
+        ask: (actor, model, question) => asOwner(actor, () => {
+          if (!('ai' in app)) return Promise.resolve<Reply>({
+            ok: false, door: model, model: "", ms: 0,
+            failure: unanswered("not_set_up", "This app registered no AI doors: app.configure(ai({ doors }))"),
+          })
+          return app.ai.ask(model, question)
         }),
       }
 

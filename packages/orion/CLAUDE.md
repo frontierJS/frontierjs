@@ -13,7 +13,7 @@ module by module, and the rulings it rests on are `IDEAS/orion-port.md`.
 | `src/tenancy.ts` | which database a run's rows are in: the `OrionHost` port, `litestoneHost` for no tenancy, a registry and row tenancy, and the tenant tag on a resume key |
 | `src/store.ts` | `LitestoneExecutionStore`: the per-stage checkpoint, the terminal write, and the two ways a wait ends, over the host's system client |
 | `src/runner.ts` | a flow row into a `Run` and one Caravan job, and back: start, the run job, resume, the dry run, the inline sync run, activation and the trigger indexes, the sweep |
-| `src/plugin.ts` | `orion()`, the Junction plugin: the owner as the actor, the tap subscriber, the two raw routes, orion's conduit, the app's AI models, the host's templates (compiled at boot), the services |
+| `src/plugin.ts` | `orion()`, the Junction plugin: the owner as the actor, the tap subscriber, the two raw routes, orion's conduit, the app's AI doors, the host's templates (compiled at boot), the services |
 | `src/services.ts` | `flows` (with `nodeTypes`, `templates` and `fromTemplate`), `runs` (`steps`, `definition`, `cancel`, `metrics`) and `flowCredentials`: the verbs a row write cannot say, and the one test of who may act on a flow |
 | `src/models.ts` | the app's models for the model nodes: the author-time catalog off the JSON Schema, and the writes through the actor |
 | `src/outbound.ts` | `http.request` over conduit, and conduit's credential resolver over `FlowCredential` |
@@ -26,7 +26,7 @@ module by module, and the rulings it rests on are `IDEAS/orion-port.md`.
 | `src/engine/plugins/` | the node-type registry and the built-in descriptors |
 | `src/engine/nodes/` | the built-in node implementations, and the worker pool behind `data.code` |
 | `src/engine/triggers/registry.ts` | which flow answers which trigger |
-| `src/engine/ports.ts` | what the nodes need from the host — the model writes, service calls, job dispatch, notifications, outbound calls, the AI models, the key-value store — and `HostCatalog`, what the compiler checks a node's names against |
+| `src/engine/ports.ts` | what the nodes need from the host — the model writes, service calls, job dispatch, notifications, outbound calls, the AI doors, the key-value store — and `HostCatalog`, what the compiler checks a node's names against |
 | `test/engine/` | the engine's suites, one directory per module |
 | `test/engine-boundary.test.ts` | the rule that `src/engine/` imports nothing outside itself but `@frontierjs/toolbelt` |
 | `test/store.test.ts` | the schema's access rules with real principals, and the store's statement count and status moves against a real litestone |

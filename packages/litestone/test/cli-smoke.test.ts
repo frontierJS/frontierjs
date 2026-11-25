@@ -1930,6 +1930,23 @@ describe('backup / replicate — the rest of db/', () => {
     expect(existsSync(join(vol, 'jobs.db'))).toBe(true)
   })
 
+  // FJS-4597: the same split for the copy itself. Written beside the schema it
+  // lands in the image's /app/db and the next deploy throws it away.
+  test('a backup with no destination lands on the database volume', async () => {
+    const dir = makeFixtureDir('backup-root-volume', { schema: null })
+    const src = join(dir, 'app', 'db'), vol = join(dir, 'volume', 'db')
+    mkdirSync(join(src, 'migrations'), { recursive: true })
+    mkdirSync(vol, { recursive: true })
+    writeFileSync(join(src, 'schema.lite'), `model Post {\n  id    Int    @id\n  title String\n}\n`, 'utf8')
+    writeFileSync(join(dir, 'litestone.config.js'), `export default { schema: './app/db/schema.lite', migrations: './app/db/migrations', db: './volume/db/app.db' }\n`, 'utf8')
+    expect((await runCli(dir, ['migrate', 'create', 'init'])).exit).toBe(0)
+
+    expect((await runCli(dir, ['migrate', 'apply', '--backup'])).exit).toBe(0)
+    expect((await runCli(dir, ['backup'])).exit).toBe(0)
+    expect(existsSync(join(src, 'backups'))).toBe(false)
+    expect(readdirSync(join(vol, 'backups'))).toHaveLength(2)
+  }, 30_000)
+
   test('replicate streams the queue and names the bytes it cannot stream', async () => {
     const dir  = appFixture('layout-replicate')
     const fake = join(dir, 'fake-litestream')
@@ -2118,6 +2135,43 @@ describe('backup / replicate — the rest of db/', () => {
     expect(empty.exit).toBe(1)
   })
 
+  // A backup with no replica anywhere is proved the way a replica is (FJS-4596):
+  // restored into the verify directory, every check run, and nothing live named.
+  test('restore --from-backup --verify proves a backup with no replica configured', async () => {
+    const dir  = appFixture('layout-verify-backup')
+    rmSync(join(dir, 'db', 'app.db'))
+    writeFileSync(join(dir, 'db', 'schema.lite'), `model Post {\n  id    Int    @id\n  title String @length(1, 20)\n}\n`, 'utf8')
+    expect((await runCli(dir, ['db', 'push'])).exit).toBe(0)
+    const app = new Database(join(dir, 'db', 'app.db'))
+    app.run(`INSERT INTO post VALUES (1, 'kept')`)
+    app.close()
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    const live = readFileSync(join(dir, 'db', 'app.db'))
+
+    const copy = join(dir, 'copy')
+    const good = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), `--verify=${copy}`, '--json'])
+    expect(good.stdout + good.stderr).not.toContain('No replica url')
+    expect(good.exit).toBe(0)
+    const report = JSON.parse(good.stdout.slice(good.stdout.indexOf('{\n')))
+    expect(report.ok).toBe(true)
+    expect(report.files.map((f: any) => f.name).sort()).toEqual(['db-jobs', 'main'])
+    expect(report.files.find((f: any) => f.name === 'main').rows).toBe(1)
+    expect(existsSync(copy)).toBe(false)
+    expect(readFileSync(join(dir, 'db', 'app.db'))).toEqual(live)
+
+    const bad = new Database(join(dir, 'out', 'main.db'))
+    bad.run(`INSERT INTO post VALUES (2, '${'x'.repeat(40)}')`)
+    bad.close()
+    const refused = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), `--verify=${copy}`, '--json'])
+    expect(refused.exit).not.toBe(0)
+    expect(JSON.parse(refused.stdout.slice(refused.stdout.indexOf('{\n'))).ok).toBe(false)
+    expect(existsSync(join(copy, 'main.db'))).toBe(true)
+
+    const forced = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), `--verify=${join(dir, 'other')}`, '--force'])
+    expect(forced.exit).toBe(1)
+    expect(forced.stdout + forced.stderr).toContain('--force')
+  })
+
   test('a backup written over another is refused', async () => {
     const dir = appFixture('layout-over')
     expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
@@ -2300,6 +2354,26 @@ describe('backup / replicate / export — a place is skipped unless it declares 
     expect(existsSync(join(dir, 'out', 'tenant-files-eu'))).toBe(false)
     expect(r.stdout).toContain('place eu')
     expect(r.stdout).toContain('litestone backup --place eu')
+  })
+
+  test('restore --from-backup --verify grades each tenant the backup holds, and skips the place it left out', async () => {
+    const dir = fleet('place-verify-backup')
+    await seed(dir)
+    // seed's main is an empty file, which the schema check rightly fails.
+    rmSync(join(dir, 'test.db'))
+    expect((await runCli(dir, ['backup', 'out'])).exit).toBe(0)
+    const r = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), `--verify=${join(dir, 'copy')}`, '--json'])
+    expect(r.exit).toBe(0)
+    const report = JSON.parse(r.stdout.slice(r.stdout.indexOf('{\n')))
+    expect(report.ok).toBe(true)
+    expect(report.files.map((f: any) => f.name)).toContain('tenant us1')
+    expect(report.files.map((f: any) => f.name)).toContain('tenant-registry')
+    expect(report.files.map((f: any) => f.name)).not.toContain('tenant eu1')
+
+    rmSync(join(dir, 'out', 'tenant-files', 'us1.db'))
+    const lost = await runCli(dir, ['restore', '--from-backup', join(dir, 'out'), `--verify=${join(dir, 'copy')}`])
+    expect(lost.exit).toBe(1)
+    expect(lost.stdout + lost.stderr).toContain('us1')
   })
 
   test('backup --place carries that place alone', async () => {

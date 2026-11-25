@@ -1,10 +1,12 @@
-// src/domain/claude/claude-pricing.ts — what a Claude Code message would cost at API list prices.
+// src/prices.ts — what a message costs at the Messages API's list prices.
 //
-// An ESTIMATE, and shown as one with the date it was read (`READ_ON`): Claude
-// Code on a subscription is not billed per token, and a price moves. A model this
-// table does not name is UNPRICED — `costOf` answers null and a screen says so —
-// because a zero would read as free and understate the total. A synthetic model
-// (`<synthetic>`) and an alias (`opus`) never appear here for that reason.
+// The one price table (`IDEAS/claude-calls.md` 6.1): the door prices its own
+// replies with it, and a host that prices a transcript (Workbench's spend)
+// reads it too. A price moves, so a screen shows it with the date it was read
+// (`PRICES_READ_ON`). A model this table does not name is UNPRICED — `costOf`
+// answers null and a screen says so — because a zero would read as free and
+// understate the total. A synthetic model (`<synthetic>`) and an alias
+// (`opus`) never appear here for that reason.
 //
 // Dollars per million tokens, from the pricing page below. Cache hits are not a
 // fixed share of input: they are 0.025x on Fable 5.1, 0.05x on Opus 5.5 and
@@ -14,8 +16,10 @@
 // same model at the same price; Haiku 5.5 alone steps up for a prompt over
 // 100,000 tokens, counted here as input plus both cache columns.
 
-export const SOURCE_URL = 'https://platform.claude.com/docs/en/about-claude/pricing'
-export const READ_ON = '2026-10-31'
+import type { Usage } from './types.ts'
+
+export const PRICES_SOURCE_URL = 'https://platform.claude.com/docs/en/about-claude/pricing'
+export const PRICES_READ_ON = '2026-10-31'
 
 export interface Price { input: number, write5m: number, write1h: number, read: number, output: number }
 
@@ -47,7 +51,7 @@ export const PRICES_OVER_100K: Record<string, Price> = {
 
 const OVER = 100_000
 
-/** The price row for a model id as a transcript spells it, or null when none is published. */
+/** The price row for a model id as a reply or a transcript spells it, or null when none is published. */
 export function priceOf(model: string, promptTokens = 0): Price | null {
   const id = model.replace(/\[1m\]$/, '').replace(/-20\d{6}$/, '')
   if (promptTokens > OVER && PRICES_OVER_100K[id]) return PRICES_OVER_100K[id]
@@ -81,4 +85,18 @@ export function costOf(m: Priced, { tiered = true }: { tiered?: boolean } = {}):
     m.cacheRead * price.read +
     m.output * price.output
   ) / 1e6
+}
+
+const n = (v: number | null | undefined) => typeof v === 'number' ? v : 0
+
+/** One response's `usage` as `costOf` reads it. */
+export function pricedUsage(model: string, u: Usage): Priced {
+  return {
+    model,
+    input:        n(u.input_tokens),
+    cacheWrite:   n(u.cache_creation_input_tokens),
+    cacheWrite1h: n(u.cache_creation?.ephemeral_1h_input_tokens),
+    cacheRead:    n(u.cache_read_input_tokens),
+    output:       n(u.output_tokens),
+  }
 }

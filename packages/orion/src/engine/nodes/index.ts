@@ -1,8 +1,9 @@
 import type { INodeImplementation, NodeContext } from "../executor"
-import type { IKeyValueStore, IAIModels, IJobDispatcher, IModelActions, INotifier, IOutbound, IServiceCaller, Recipient } from "../ports"
+import type { IKeyValueStore, IAIDoors, IJobDispatcher, IModelActions, INotifier, IOutbound, IServiceCaller, Recipient } from "../ports"
 import { RESERVED_JOB_PREFIX } from "../ports"
 import { CodeWorkerPool }          from "./code-worker-pool"
 import { fill }                    from "@frontierjs/toolbelt/fill"
+import type { Question }       from "@frontierjs/toolbelt/ask"
 
 // ─────────────────────────────────────────────
 // NODE DEPENDENCIES
@@ -13,7 +14,7 @@ import { fill }                    from "@frontierjs/toolbelt/fill"
 export interface NodeDeps {
   kv:          IKeyValueStore
   outbound?:   IOutbound
-  ai?:         IAIModels
+  ai?:         IAIDoors
   models?:     IModelActions
   services?:   IServiceCaller
   jobs?:       IJobDispatcher
@@ -421,31 +422,35 @@ const httpRespond: INodeImplementation = {
 // AI NODE
 // ─────────────────────────────────────────────
 
-function makeAiNode(models?: IAIModels): INodeImplementation {
+function makeAiNode(models?: IAIDoors): INodeImplementation {
   return {
     type: "ai",
     async execute(ctx: NodeContext) {
-      const { model, mode = "complete", prompt, system, maxTokens, temperature } = ctx.config
-      if (mode !== "complete") return { ok: false, error: `ai: unknown mode "${mode}"`, retry: false }
-      if (typeof model !== "string" || !model) return { ok: false, error: "ai: config.model must name one of the app's AI models", retry: false }
-      if (!prompt) return { ok: false, error: "ai: config.prompt is required", retry: false }
-
-      const req = {
-        messages:    [{ role: "user" as const, content: String(prompt) }],
-        ...(system      != null ? { system:      String(system) }      : {}),
-        ...(maxTokens   != null ? { maxTokens:   Number(maxTokens) }   : {}),
-        ...(temperature != null ? { temperature: Number(temperature) } : {}),
+      const { model, prompt, system, schema } = ctx.config
+      // A cap or a temperature is a door's own option, so one a flow states is
+      // refused rather than ignored: the flow would believe it was capped.
+      for (const key of ["maxTokens", "temperature"]) {
+        if (ctx.config[key] != null) return { ok: false, error: `ai: config.${key} is not a node option; name a door registered with it`, retry: false }
       }
-      if (ctx.dryRun) return notSent(ctx, { ai: model, ...req })
-      if (!models) return { ok: false, error: "ai: this host supplies no AI models", retry: false }
+      if (ctx.config.mode != null) return { ok: false, error: "ai: the node has no modes; it asks one question", retry: false }
+      if (typeof model !== "string" || !model) return { ok: false, error: "ai: config.model must name one of the app's AI doors", retry: false }
+      if (!prompt) return { ok: false, error: "ai: config.prompt is required", retry: false }
+      if (schema != null && (typeof schema !== "object" || Array.isArray(schema))) return { ok: false, error: "ai: config.schema must be a JSON Schema object", retry: false }
+
+      const question: Question = {
+        prompt: String(prompt),
+        ...(system != null ? { system: String(system) }                   : {}),
+        ...(schema != null ? { schema: schema as Record<string, unknown> } : {}),
+      }
+      if (ctx.dryRun) return notSent(ctx, { ai: model, ...question })
+      if (!models) return { ok: false, error: "ai: this host supplies no AI doors", retry: false }
 
       try {
-        const res = await models.complete(ctx.actor, model, req)
-        return {
-          ok:   true,
-          data: { result: res.content, model: res.model, usage: { inputTokens: res.inputTokens ?? null, outputTokens: res.outputTokens ?? null } },
-        }
+        const reply = await models.ask(ctx.actor, model, question)
+        if (!reply.ok) return { ok: false, error: `ai: ${reply.failure.message}`, retry: reply.failure.retryable }
+        return { ok: true, data: { result: reply.answer, model: reply.model, usage: reply.usage, costUsd: reply.costUsd } }
       } catch (err) {
+        // A door that throws broke its never-throws contract.
         return { ok: false, error: `ai: ${errorMessage(err)}` }
       }
     },

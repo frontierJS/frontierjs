@@ -18,6 +18,8 @@
     "agent"
   ],
   "dependencies": {
+    "@frontierjs/conduit": "workspace:*",
+    "@frontierjs/conduit-anthropic": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*"
   },
   "devDependencies": {

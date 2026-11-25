@@ -11,9 +11,9 @@ read as covering it, so the README's first line says otherwise.
 `src/events.ts` the stream reader and its typed events, `src/images.ts` pasted images,
 `src/run.ts` `runAsk`, `src/door.ts` `claudeDoor` (the `@frontierjs/toolbelt/ask` door over `runAsk`'s `answer` profile). The live chat: `src/protocol.ts` the control channel, `src/permission.ts`
 a prompt's card and answer, `src/catalog.ts` what init and `initialize` offer, `src/session.ts`
-the process (`Session`). The protocol's frames are `docs/control-protocol.md`. Every in-tree
-caller (cli, Workbench, Basecamp, Haven's study) and Lathe import it by name. The plan for the rest —
-Claude Code's own files — is `IDEAS/claude-calls.md`; do not cite it as behavior.
+the process (`Session`). Claude Code's own files: `src/read.ts` (`Read`, `claudeConfigDir`, `readJsonObject`), `src/messages.ts` (`readMessages`), `src/transcript.ts` (the turn fold), `src/calls.ts` (`readToolCalls`, inputs kept), `src/sessions.ts` (the session list), `src/scan.ts` (the configuration, over the pure `src/settings.ts`, `src/hooks.ts`, `src/items.ts`, `src/mcp.ts` and `src/plugins.ts`), `src/quota.ts` (the login token, its usage endpoint and `loginSend`, the token on `conduit-anthropic`'s target), `src/context.ts` (a session's first request, counted through `loginSend`), `src/subcommands.ts` (`auth status`, `mcp list`, `doctor`, `runClaude`). The protocol's frames are `docs/control-protocol.md`. Every in-tree
+caller (cli, Workbench, Basecamp, Haven's study, the loop scripts) and Lathe import it by name. What is left of the plan is
+`IDEAS/claude-calls.md` Phase 6; do not cite it as behavior.
 
 ## Traps
 
@@ -25,6 +25,13 @@ Claude Code's own files — is `IDEAS/claude-calls.md`; do not cite it as behavi
 - **A product's words stay out of `Session`.** The host's name reaches a deny's note and the
   refusal of a request it does not serve through `host`, a deny's own wording through `deny`
   (Haven's), and a card's extra facts (Lathe's diff, Haven's input) through `card`.
+- **The login token is read, never refreshed** (`src/quota.ts`): a refresh rotates the refresh token
+  and signs out every running `claude`. It never leaves `quota.ts` — not in a value, an error or a log;
+  `loginSend` holds it inside conduit's resolver.
+- **`readToolCalls` keeps inputs; nothing a page draws may use it.** A screen reads `foldTranscript`,
+  which keeps a call's name and one line.
+- **A subcommand's environment is the host's.** `runClaude` and `claudeAuthStatus` take `{ bin, env }`;
+  Workbench passes `childEnv(env)` so its own keys never reach the child.
 - **Relative imports carry `.ts`.** Vite dev servers load `cli/core/vite-ask.js`
   under Node, which strips types but resolves no missing extension.
 

@@ -18441,6 +18441,22 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2361"></a>2026-11-24 · `FJS-D2361` — How Workbench's room view loads its posts' reactions and files — One Reaction tether and one FileInfo tether per room, over a `channelExternalId` copied onto both models from Mattermost (or from the post where a payload lacks it), held equal to the post's by a create rule on Reaction and by `attach` refusing another room's upload; a list spanning rooms (Saved, Search, Activity, Waiting, Catch-up) keeps a tether per post.
+
+One tether per post was ~100 requests per room opened, each landing alone and growing its post under the reader. **As recommended**, over a relation filter `post: { channelExternalId }` (no schema change, but `@frontierjs/toolbelt/match` answers null for a relation, so every push anywhere re-reads every open room), a `$in` over the window's ids (re-made as posts land), and a composed posts list with `include` (a reaction push is announced on the reactions service, so it would go stale). A room loads its whole history: measured 2026-11-24, the busiest room held 73 reactions and 77 files. Reopen when a room's history is large enough to show in the load. The cross-room lists stay per post: they are short and off the room-switch path. Lives in `packages/workbench/db/schema.lite` (Reaction, FileInfo), `conduit-mattermost/src/mirror.ts` (`channelOf`), `web/src/lib/chat.js` (`roomExtras`) and `components/chat/PostList.mesa`.
+
+### <a id="fjs-d2360"></a>2026-11-24 · `FJS-D2360` — Q16 — How do the loop scripts read a transcript's tool calls — A new reader, `readToolCalls(text)`: each call's name, input, cwd, time and result text, the main thread's replies and first prompt, for local review and never a page. Both scripts fold over it.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (the scripts find files through `claudeConfigDir`/`encodeCwd` and keep their own line folds).
+
+The paper's recommendation, taken as written: B leaves two scripts knowing the line envelope (`type`, `isSidechain`, `cwd`), the drift Phase 5 exists to end; A is about 40 lines and a test.
+
+### <a id="fjs-d2359"></a>2026-11-24 · `FJS-D2359` — Q15 — What happens to orion's `ai` node's `maxTokens` and `temperature` — Drop them: the node's config is `{model, prompt, system?, schema?}`, and a flow wanting a cap names a door registered with one; a config still carrying either is refused.
+
+Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (widen `Question` with `maxTokens`; `claudeDoor` would refuse or ignore it), **C** (pass them through untyped as door options a door may ignore).
+
+The paper's recommendation, taken as written: n8n's shape and the doors as built; B reopens 4.1 for a field one door cannot honor, C makes one flow behave differently per door.
+
 ### <a id="fjs-d2357"></a>2026-11-23 · `FJS-D2357` — Q14 — Which model does the API door use when none is named — `claude-sonnet-5-5`.
 
 Asked in [`IDEAS/claude-calls.md`](IDEAS/claude-calls.md) § Open questions. **A** was picked over **B** (`claude-opus-5-5`), **C** (none: a model is required at build, against the contract's "absent, the door's own default").
@@ -18478,6 +18494,8 @@ Asked in [`IDEAS/workbench-messages.md`](IDEAS/workbench-messages.md) § Open qu
 The paper's recommendation, taken as written: if Basecamp rotates refresh tokens (unmeasured, `conduit-37signals` 4.1), two holders of one token log each other out, so C breaks the 37signals plan's 5.1 ruling (each app's grant is its own); B adds a cross-app route and fails whenever Intake is down.
 
 The grant is one app-level row and Jordan's, so every member's to-do is authored as Jordan. That holds for a one-owner tool; once Workbench has a second Basecamp user who must appear as the author, this reopens as a `per_caller` target (`FJS-D1182`, `conduit-37signals` 4.1).
+
+**Amended the same day (owner): the grant comes from a device-code sign-in at `app.basecamp.com`, not through the OAuth app made for n8n.** That app is a Launchpad client, and a Launchpad token refreshes at Launchpad with a client secret, while `basecampTokenResolver` refreshes at `app.basecamp.com/oauth/tokens` with a client id alone. `app.basecamp.com`'s metadata (read 2026-11-23) advertises `device_authorization_endpoint`, `registration_endpoint` and `token_endpoint_auth_methods_supported: none`, so Workbench registers its own public client once and keeps no secret and no redirect route. Unmeasured: whether a registered client may use the `device_code` grant; the fallback is an authorization code with PKCE to a loopback redirect, on the same client.
 
 ### <a id="fjs-d2334"></a>2026-11-23 · `FJS-D2334` — Q18 — How long 9.2's release festival lasts — Until the next deploy: the bake compares the newest tag with the one the last bake saw, and a newer one is a festival in the square until the next bake.
 

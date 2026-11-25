@@ -444,3 +444,23 @@ fn watch_api(app: AppHandle, status: MenuItem<tauri::Wry>, start: MenuItem<tauri
         }
     });
 }
+
+// The page reports what is unread (components/TrayUnread.mesa) and the tray's
+// title carries it: AppIndicator draws a title as a label beside the icon. A
+// dot is a room with unread in it and nothing that counts. A debug shell prints
+// each label, which is how the desktop drive sees a tray it cannot look at.
+#[tauri::command]
+pub fn tray_unread(app: AppHandle, count: u32, dot: bool) {
+    let Some(tray) = app.tray_by_id("workbench") else { return };
+    let label = if count > 0 { Some(count.to_string()) } else if dot { Some("•".to_string()) } else { None };
+    if cfg!(debug_assertions) {
+        println!("[tray] {}", label.as_deref().unwrap_or("none"));
+    }
+    let tip = match count {
+        0 if dot => "Workbench: unread messages".to_string(),
+        0 => "Workbench".to_string(),
+        n => format!("Workbench: {n} unread"),
+    };
+    let _ = tray.set_title(label);
+    let _ = tray.set_tooltip(Some(tip));
+}

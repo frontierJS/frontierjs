@@ -527,6 +527,25 @@ and the model-level annotations, identical in all three modes:
 
 ---
 
+## `@deprecated` — a column on its way out
+
+```lite
+model Person {
+  id       Int    @id
+  name     String
+  fullName String @deprecated("use name instead")
+}
+```
+
+`fullName` publishes `deprecated: true` and nothing else changes: it is still in
+`properties`, still validated, still readable and writable. The reason does not
+reach JSON Schema (draft-07 ignores the keyword anyway); it goes to the
+generated types as a JSDoc `@deprecated use name instead`, which is what makes an
+editor strike through each use. Removing the column is a migration
+(`litestone migrate create`).
+
+---
+
 ## See also
 
 - [schema.md](schema.md) — the `.lite` attributes every key above derives from

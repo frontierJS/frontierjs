@@ -13,6 +13,8 @@ export const attachmentOf = (f) => ({
   mime: f.mimeType ?? 'application/octet-stream',
   size: f.size ?? null,
   preview: !!f.hasPreviewImage,
+  width: f.width ?? null,
+  height: f.height ?? null,
 })
 
 export const isImage = (mime) => typeof mime === 'string' && mime.startsWith('image/')

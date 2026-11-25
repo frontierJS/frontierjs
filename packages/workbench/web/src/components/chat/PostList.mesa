@@ -9,6 +9,7 @@
   // slice holds the newest NEWEST and never grows it, which is the case the
   // tether does take; "Load earlier" is the slice that owns that trade.
   import { posts } from '../../resources/Post.mesa'
+  import { byPost, roomExtras } from '../../lib/chat.js'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import PostItem from './PostItem.mesa'
 
@@ -18,45 +19,116 @@
   export let markId = null     // a post a pin jumped to: scrolled to and marked
 
   const NEWEST = 50
+  const KEPT   = 5    // rooms whose tether stays open, so going back to one draws at once
 
-  let list = null
-  let el = null
+  let el     = null
   let pinned = true   // the view follows the newest post until the reader scrolls up
+  let anchor = null   // { node, top } -- the first post in view, while scrolled up
 
-  function open(id) {
-    list?.destroy()
-    pinned = true
-    list = posts.tethered({
+  // ─── Rooms ──────────────────────────────────────────────────────────────
+
+  // Least recently opened first. A kept room's tethers go on taking pushes, so its
+  // rows are current when the room is opened again.
+  const kept = new Map()
+  function openRoom(id) {
+    const extras = roomExtras(id)
+    const list = posts.tethered({
       state: 'local',
       // Roots only, asked of the server: a window of 50 spent on replies would show fewer roots.
       where: { channelExternalId: id, rootExternalId: null },
       directives: { orderBy: '-createdAt', limit: NEWEST },
     })
+    return { posts: list, reactions: extras.reactions, files: extras.files, destroy() { list.destroy(); extras.destroy() } }
   }
-  open(channelId)
-  $: channelId, () => open(channelId)
-  $.onDestroy(() => list?.destroy())
+  function tetherFor(id) {
+    const t = kept.get(id) ?? openRoom(id)
+    kept.delete(id)
+    kept.set(id, t)
+    for (const [old, o] of kept) {
+      if (kept.size <= KEPT) break
+      o.destroy()
+      kept.delete(old)
+    }
+    return t
+  }
+  $.onDestroy(() => { for (const t of kept.values()) t.destroy() })
+
+  // The room asked for, and the room drawn: the last room stays on screen until the
+  // next has its first page of posts and its reactions and files, rather than the
+  // list blanking and each post growing as its reactions and files land.
+  let list    = tetherFor(channelId)
+  let shown   = list
+  let shownId = channelId
+  $: channelId, () => { list = tetherFor(channelId) }
+  $: {
+    if (list !== shown && (!list.posts.loading || list.posts.rows.length)
+        && (!list.reactions.loading || list.reactions.rows.length) && (!list.files.loading || list.files.rows.length)) {
+      shown = list
+      shownId = channelId
+      pinned = true
+      anchor = null
+      if (el) el.scrollTop = 0
+    }
+  }
+  $: ready = (!shown.posts.loading || shown.posts.rows.length > 0)
+    && (!shown.reactions.loading || shown.reactions.rows.length > 0) && (!shown.files.loading || shown.files.rows.length > 0)
 
   // The tether holds the newest first, as loaded and as a push places one.
-  $: rows = list.rows.filter(p => !p.deletedAt && !p.rootExternalId).slice().reverse()
-  $: error = list.error
+  $: rows = shown.posts.rows.filter(p => !p.deletedAt && !p.rootExternalId).slice().reverse()
+  $: error = shown.posts.error ?? shown.reactions.error ?? shown.files.error
+  $: reactionsBy = byPost(shown.reactions.rows)
+  $: filesBy = byPost(shown.files.rows)
+  const NONE = []
 
-  const toBottom = () => { if (el) el.scrollTop = el.scrollHeight }
-  $: { rows; if (pinned) requestAnimationFrame(toBottom) }
-  // A post's files, reactions and images land after its row does; without this the
-  // view stays where the bottom was before they grew, a few posts short of the newest.
-  const stick = (body) => {
-    const ro = new ResizeObserver(() => { if (pinned) toBottom() })
-    ro.observe(body)
-    return () => ro.disconnect()
+  // ─── Scroll ─────────────────────────────────────────────────────────────
+
+  // .posts is column-reverse, so scrollTop is 0 at the newest post and negative
+  // above it, and a post's files, reactions and images growing it keep the
+  // bottom where it is with no script. Scrolled up, the reverse holds: growth
+  // BELOW the view moves what is being read, and WebKit has no scroll anchoring
+  // to undo it, so `anchor` is the first post in view and a resize puts it back.
+  // Chrome's own anchoring is off (overflow-anchor) so one mechanism holds in every engine.
+  //
+  // The anchor is the post's distance from the body's bottom, which a scroll does
+  // not change, so only growth below it moves it. A frame delivers its scroll
+  // events BEFORE its ResizeObserver, so a scroll landing in the frame a post grew
+  // would record the grown place as the one to hold: `onScroll` leaves the anchor
+  // alone while a resize is still unreported.
+  let body = null
+  let reported = 0   // the body's height the ResizeObserver last saw
+  const fromBottom = (node) => body.getBoundingClientRect().bottom - node.getBoundingClientRect().top
+  function remember() {
+    anchor = null
+    if (!el || !body || pinned) return
+    const top = el.getBoundingClientRect().top
+    for (const node of body.querySelectorAll('article[id^="post-"]')) {
+      if (node.getBoundingClientRect().bottom > top) { anchor = { node, fromBottom: fromBottom(node) }; return }
+    }
+  }
+  function onScroll() {
+    if (!el) return
+    pinned = el.scrollTop > -40
+    if (body && body.offsetHeight !== reported) return
+    remember()
+  }
+  const hold = (node) => {
+    body = node
+    reported = node.offsetHeight
+    const ro = new ResizeObserver(() => {
+      const grown = !pinned && anchor?.node.isConnected ? fromBottom(anchor.node) - anchor.fromBottom : 0
+      if (grown) el.scrollTop -= grown
+      reported = node.offsetHeight
+      remember()
+    })
+    ro.observe(node)
+    return () => { ro.disconnect(); if (body === node) body = null }
   }
   // A jump to a post the window holds; an older one is not loaded, and the caller is told.
   $: markId, () => {
     if (!markId) return
-    const el = document.getElementById(`post-${markId}`)
-    if (el) { pinned = false; el.scrollIntoView({ block: 'center' }) }
+    const node = document.getElementById(`post-${markId}`)
+    if (node) { pinned = false; node.scrollIntoView({ block: 'center' }); remember() }
   }
-  function onScroll() { if (el) pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 40 }
 
   const dayOf = (t) => new Date(t).toDateString()
   const dayLabel = (t) => {
@@ -72,22 +144,28 @@
 </script>
 
 <div class="posts" bind:this={el} onscroll|passive={onScroll} role="log" aria-live="polite" aria-label="Messages" data-post-list>
-  <div class="posts-body" {@attach stick}>
+  {#key shownId}
+  <div class="posts-body" class:ready {@attach hold}>
   {#if error}<Alert tone="danger">{error.message}</Alert>{/if}
   {#each rows as p, i (p.externalId)}
     {#if i === 0 || dayOf(rows[i - 1].createdAt) !== dayOf(p.createdAt)}
       <div class="posts-day" role="separator">{dayLabel(p.createdAt)}</div>
     {/if}
-    <PostItem post={p} {people} continuation={continues(rows[i - 1], p)} selected={p.externalId === threadId} marked={p.externalId === markId} />
+    <PostItem post={p} {people} reactionRows={reactionsBy.get(p.externalId) ?? NONE} fileRows={filesBy.get(p.externalId) ?? NONE}
+              continuation={continues(rows[i - 1], p)} selected={p.externalId === threadId} marked={p.externalId === markId} />
   {:else}
-    <p class="text-muted center posts-empty">{list.loading ? '…' : 'Nothing yet. Say something.'}</p>
+    <p class="text-muted center posts-empty">{ready ? 'Nothing yet. Say something.' : '…'}</p>
   {/each}
   </div>
+  {/key}
 </div>
 
 <style>
-  .posts { flex: 1; min-block-size: 0; overflow-y: auto; padding-block: var(--space-lg) var(--space-xl); padding-inline: calc(var(--chat-gutter, var(--space-md)) - var(--space-md)); }
-  .posts-body { display: flex; flex-direction: column; }
+  .posts { flex: 1; min-block-size: 0; overflow-y: auto; display: flex; flex-direction: column-reverse; overflow-anchor: none; padding-block: var(--space-lg) var(--space-xl); padding-inline: calc(var(--chat-gutter, var(--space-md)) - var(--space-md)); }
+  .posts-body { display: flex; flex-direction: column; opacity: 0; }
+  .posts-body.ready { opacity: 1; animation: posts-in 140ms ease-out; }
+  @keyframes posts-in { from { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .posts-body.ready { animation: none; } }
   .posts-empty { padding-block: var(--space-4xl) var(--space-sm); margin: 0; }
   .posts-day { align-self: center; margin-block: var(--space-xl) var(--space-sm); color: var(--ink-mute); font-size: var(--text-xs); font-weight: var(--label-font-weight); }
 </style>

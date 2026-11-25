@@ -32,6 +32,6 @@ if ((await res.json()).hello !== 'world') throw new Error('the route was not mou
 - `configKeys` names the `junction.config.js` section the plugin reads
 - `app.own('thing', value)` takes the `app.thing` slot, and a second owner throws
 - First-party plugins are [Caravan](caravan.md) for jobs, [Conduit](conduit.md) for integrations, [Notifications](notifications.md) and [MCP](mcp.md) for agents
-- Each subsystem is an interface, so `IAuth`, `IMail`, `IAIModel`, `ICache` and `IEventBus` swap a provider in one file
+- Each subsystem is an interface, so `IAuth`, `IMail`, `ICache` and `IEventBus` swap a provider in one file, and an AI model is a toolbelt `Door` registered with `ai({ doors })`
 
 **In depth:** [README § Tier 1 Plugins](../../../README.md#tier-1-plugins)

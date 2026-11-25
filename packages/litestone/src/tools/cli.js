@@ -208,7 +208,7 @@ const HELP = `
     ${dim('  --place=<name>')}                          backup/replicate one tenancy place alone; by default a place goes only where its ${dim('backup')} clause says
     ${cyan('litestone restore')} [config.js]         bring every db back from its replica — all or nothing
     ${dim('  --at=<instant>')}                          one point in time for every file
-    ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at/--verify: jsonl/trail only)')}
+    ${dim('  --from-backup=<dir>')}                     every db from a litestone backup ${dim('(with --url/--at: jsonl/trail only)')}
     ${dim('  --force')}                                 replace files that exist (stop the app first)
     ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
     ${dim('  --verify-only=<dir>')}                     prove a copy already in <dir> is good, and leave it
@@ -716,11 +716,22 @@ async function cmdDryRun(label, cfg) {
 // `irreversibleMigrations` names what is about to happen when nobody asked for
 // one.
 
-// Beside the schema, so an app's `db/schema.lite` backs up into `db/backups/`,
-// the path its `.gitignore` covers. At the working directory the copy (users,
-// password hashes) was one `git add .` from a commit (FJS-1465).
-function defaultBackupRoot(cfg) {
+// `db/backups/`, the path an app's `.gitignore` covers. At the working directory
+// the copy (users, password hashes) was one `git add .` from a commit
+// (FJS-1465). The `db/` is main's, as for the layout: a container's schema is
+// in the image at /app/db, and a copy written there was gone on the next deploy
+// (FJS-4597). Without a `db/` directory for main, beside the schema.
+function defaultBackupRoot(cfg, main) {
+  const root = dataRoot(main)
+  if (root) return join(root, 'backups')
   return cfg?.schema ? join(dirname(resolve(cfg.schema)), 'backups') : './backups'
+}
+
+// Main's directory when it is a `db/` directory — the volume deploy mounts.
+// One beside a bare project's source would put the project in every backup.
+function dataRoot(main) {
+  const root = main && main !== ':memory:' ? dirname(resolve(main)) : null
+  return root && basename(root) === 'db' && existsSync(root) ? root : null
 }
 
 // A new directory every run: to the second, suffixed when that second is taken.
@@ -738,7 +749,8 @@ function newBackupDir(root) {
 // on the second database has already changed the first, so a per-database
 // backup taken inside the loop is a backup of a half-migrated fleet.
 async function preApplyBackup(dbs, cfg) {
-  const destDir = resolve(getFlag('backup') ?? newBackupDir(defaultBackupRoot(cfg)))
+  const main    = dbs.find(d => d.name === 'main')?.path
+  const destDir = resolve(getFlag('backup') ?? newBackupDir(defaultBackupRoot(cfg, main)))
 
   mkdirSync(destDir, { recursive: true })
 
@@ -1793,6 +1805,7 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
     other:  declared.filter(d => d.driver !== 'sqlite' && wanted(d)),
     dirs:   dirs.filter(wanted),
     layout: onlyDb ? null : layoutFiles(cfg, declared, dirs),
+    main:   declared.find(d => d.name === 'main' && d.driver === 'sqlite')?.path ?? null,
   }
 }
 
@@ -1807,8 +1820,7 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
 // (`filesRoot` in createClient), not the schema's: a container keeps the schema
 // in the image at /app/db and the databases on the /db volume, and a copy of
 // the schema's directory held the source and none of the uploads (FJS-4580).
-// Only a main IN a `db/` directory has one — one beside a bare project's
-// source would copy the project.
+// Only a main IN a `db/` directory has one (`dataRoot`).
 //
 //   sqlite [{ name, rel, path }]   every other `*.db`, named `db-<path>` — a hyphen no
 //                                 declared database name can hold; the copy's
@@ -1820,8 +1832,8 @@ async function copyTargets(parseResult, cfg, onlyDb = null) {
 // which would otherwise put every earlier backup inside the next.
 function layoutFiles(cfg, declared, dirs) {
   const main = declared.find(d => d.name === 'main' && d.driver === 'sqlite')?.path
-  const root = main && main !== ':memory:' ? dirname(resolve(main)) : null
-  if (!root || basename(root) !== 'db' || !existsSync(root)) return null
+  const root = dataRoot(main)
+  if (!root) return null
 
   const coveredFile = new Set(declared.filter(d => d.driver === 'sqlite').map(d => resolve(d.path)))
   const skipDir     = new Set([
@@ -4149,7 +4161,7 @@ async function cmdOptimize(targetTable, cfg) {
 //   SQLite databases      → hot backup via $backup (safe during active writes)
 //   JSONL/trail dirs     → directory copy via cpSync
 //
-//   litestone backup                   → <schema dir>/backups/2026-04-21_120000/
+//   litestone backup                   → <main db/ dir>/backups/2026-04-21_120000/
 //   litestone backup ./my-backup/      → explicit destination directory
 //   litestone backup --vacuum          → compact SQLite files during backup
 //   litestone backup --zip             → zip the backup directory with timestamp
@@ -4186,7 +4198,7 @@ async function cmdBackup(dest, cfg) {
       fatal(`Place ${cyan(onlyPlace)} declares no backup directory, so name where its files go: ${cyan(`litestone backup --place ${onlyPlace} <dest>`)}.`)
     runs.push({ dest, root: localRoot(p), set: p })
   } else {
-    runs.push({ dest, root: defaultBackupRoot(cfg), set: fleet })
+    runs.push({ dest, root: defaultBackupRoot(cfg, all.main), set: fleet })
     for (const p of places) {
       if (!p.dirs.length && !p.other.length) continue
       if (localRoot(p)) runs.push({ dest: null, root: localRoot(p), set: p })
@@ -4580,8 +4592,9 @@ async function cmdReplicate(cfg) {
 //   litestone restore --url s3://bucket/myapp          → every database, latest
 //   litestone restore --at 2026-09-27T10:00:00Z        → one instant, for every file
 //   litestone restore --from-backup ./backups/<stamp>  → every database from a `backup`
+//   litestone restore --from-backup <dir> --verify=<d> → the backup restored into <d> and proved
 //   litestone restore --url … --from-backup <dir>      → SQLite from the replica, jsonl/trail from the backup
-//                                                        (--at and --verify name the replica too)
+//                                                        (--at names the replica too)
 //   litestone restore --force                          → over files that exist
 //
 // All or nothing. Every file is restored beside its destination first, and
@@ -4610,17 +4623,18 @@ async function cmdRestore(cfg) {
     return verifyInPlace(parseResult, cfg, checkDir, onlyDb)
   }
 
-  // A backup and no replica word on the line: everything comes from the backup.
-  // `replicate.url` in the config does not count — a developer putting back a
-  // local checkpoint must not be handed the production replica. With --url,
-  // --at or --verify, the replica brings the SQLite files and the backup brings
-  // what litestream never streamed.
-  if (fromBackup && !getFlag('url') && !at && !verifyDir) return restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force })
-
   if (verifyDir && force) fatal(`${cyan('--verify')} restores beside the app and never over it, so ${cyan('--force')} has nothing to replace.`)
   if (verifyDir) await confirmKeyless(loadSchema(cfg.schema))
   if (verifyDir && existsSync(verifyDir) && readdirSync(verifyDir).length)
     fatal(`${cyan('--verify')} restores into an empty directory, and ${rel(verifyDir)} is not one.`)
+
+  // A backup and no replica word on the line: everything comes from the backup,
+  // and --verify proves the backup. `replicate.url` in the config does not
+  // count — a developer putting back a local checkpoint must not be handed the
+  // production replica. With --url or --at, the replica brings the SQLite files
+  // and the backup brings what litestream never streamed.
+  if (fromBackup && !getFlag('url') && !at) return restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force, verifyDir })
+
   if (!url) fatal(`No replica url. Pass ${cyan('--url=s3://bucket/myapp')} — the one ${cyan('replicate')} streamed to — or set ${cyan('replicate.url')} in litestone.config.js.`)
   if (at && Number.isNaN(Date.parse(at))) fatal(`${cyan('--at')} is an instant — ${cyan('2026-09-27T10:00:00Z')} — and ${cyan(at)} is not one.`)
 
@@ -4782,6 +4796,10 @@ async function cmdRestore(cfg) {
 // replica restore is: every copy is staged
 // beside its destination before any is moved into place.
 //
+// Under --verify every file lands beneath the one directory at its path in the
+// backup, and is graded as a replica copy is; the stored bytes are not copied,
+// since no check reads them.
+//
 // A database the backup does not hold is left as it is, and named. `backup`
 // writes nothing for a database nothing had written to yet, and nothing for one
 // a `--db` left out, and the directory cannot say which — deleting a live audit
@@ -4804,7 +4822,7 @@ function storedFileJobs(files, root, cfg, backupDir) {
   return { jobs, kept, absent }
 }
 
-async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }) {
+async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force, verifyDir = null }) {
   const { rmSync, renameSync, cpSync } = await import('fs')
 
   const src = resolve(fromBackup)
@@ -4818,12 +4836,12 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
 
   for (const t of sqlite) {
     const from = join(src, `${t.name}.db`)
-    if (existsSync(from)) jobs.push({ name: t.name, from, dest: t.path })
+    if (existsSync(from)) jobs.push({ kind: 'declared', name: t.name, from, dest: t.path })
     else absent.push(t.name)
   }
   for (const o of other) {
     const from = join(src, o.name)
-    if (existsSync(from)) jobs.push({ name: o.name, from, dest: resolve(o.path), dir: true })
+    if (existsSync(from)) jobs.push({ kind: 'other', name: o.name, from, dest: resolve(o.path), dir: true })
     else absent.push(o.name)
   }
   for (const d of dirs) {
@@ -4841,7 +4859,7 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
     const manifestPath = join(src, LAYOUT_FILE)
     const holdsLayout  = readdirSync(src).some(f => /^db-.+\.db$/.test(f) || f === 'db-files')
     if (existsSync(manifestPath)) {
-      if (!layout)
+      if (!layout && !verifyDir)
         fatal(`The backup holds ${cyan(LAYOUT_FILE)}, and this schema's main database is not in a ${cyan('db/')} directory to put it under.\n` +
               `     Pass ${cyan('--db <name>')} to restore one declared database and leave the rest.`)
       let manifest
@@ -4849,13 +4867,15 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
       catch (e) { fatal(e.message) }
       for (const e of manifest.sqlite) {
         const from = join(src, `${e.name}.db`)
-        if (existsSync(from)) jobs.push({ name: e.name, from, dest: join(layout.root, e.rel) })
+        if (existsSync(from)) jobs.push({ kind: 'layout', name: e.name, from, dest: layout ? join(layout.root, e.rel) : null })
         else absent.push(e.name)
       }
-      const stored = storedFileJobs(manifest.files, layout.root, cfg, src)
-      jobs.push(...stored.jobs)
-      absent.push(...stored.absent)
-      kept = stored.kept
+      if (!verifyDir) {
+        const stored = storedFileJobs(manifest.files, layout.root, cfg, src)
+        jobs.push(...stored.jobs)
+        absent.push(...stored.absent)
+        kept = stored.kept
+      }
     } else if (holdsLayout) {
       fatal(`The backup holds files from under db/ and no ${cyan(LAYOUT_FILE)} to say where they go.\n` +
             `     Pass ${cyan('--db <name>')} to restore one declared database and leave them out.`)
@@ -4864,6 +4884,9 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
 
   if (!jobs.length)
     fatal(`The backup at ${cyan(rel(src))} holds none of the databases this schema declares${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+
+  if (verifyDir) for (const j of jobs) j.dest = join(verifyDir, relative(src, j.from))
+  const tenants = verifyDir ? await backupTenantJobs(dirs, cfg, src, verifyDir) : null
 
   const occupied = jobs.map(j => j.dest).filter(p => existsSync(p))
   if (occupied.length && !force)
@@ -4906,6 +4929,37 @@ async function restoreFromBackup(parseResult, cfg, { onlyDb, fromBackup, force }
   console.log()
   console.log(`  ${green(bold('✓  restore complete'))}  ${dim(`${jobs.length} file${jobs.length !== 1 ? 's' : ''} from the backup`)}`)
   console.log()
+
+  if (!verifyDir) return
+  await verifyRestored({
+    parseResult, cfg, dir: verifyDir, binary: null, files: tenants.files,
+    jobs:  [...jobs.filter(j => j.kind === 'declared' || j.kind === 'layout'), ...tenants.jobs],
+    other: jobs.filter(j => j.kind === 'other').map(j => ({ name: j.name, path: j.dest })),
+  })
+}
+
+// The tenants a backup's copy of the registry names, at their paths under the
+// verify directory. A place the backup left out is skipped, as its restore is;
+// a tenant missing from a place it holds is refused before anything is copied.
+async function backupTenantJobs(dirs, cfg, src, verifyDir) {
+  const files = dirs.find(d => d.name === 'tenant-files')
+  if (!files || !existsSync(join(src, files.name))) return { files: null, jobs: [] }
+  const reg    = dirs.find(d => d.name === 'tenant-registry')
+  const regRel = reg ? join(reg.name, reg.pattern) : join(files.name, basename(resolve((await tenantOptions(cfg)).registry ?? 'registry.db')))
+  if (!existsSync(join(src, regRel))) fatal(`The backup at ${cyan(rel(src))} holds ${cyan(files.name + '/')} and no ${cyan(regRel)} to name its tenants.`)
+
+  const { registryTenants } = await import('../tenant.js')
+  const jobs = [], missing = []
+  for (const { id, place } of registryTenants(join(src, regRel))) {
+    const at = place == null ? files : dirs.find(d => d.place === place)
+    if (!at) fatal(`Tenant ${cyan(id)} was created in place ${cyan(place)}, which this schema's ${cyan('tenancy { }')} no longer declares.`)
+    if (!existsSync(join(src, at.name))) continue
+    if (!existsSync(join(src, at.name, `${id}.db`))) { missing.push(id); continue }
+    jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: null, dest: join(verifyDir, at.name, `${id}.db`) })
+  }
+  if (missing.length) fatal(`The backup's registry names ${missing.length} tenant(s) it holds no file for: ${missing.map(id => cyan(id)).join(', ')}.`)
+  jobs.push({ kind: 'registry', name: 'tenant-registry', url: null, dest: join(verifyDir, regRel) })
+  return { files: { ...files, dir: join(verifyDir, files.name) }, jobs }
 }
 
 // ─── restore --verify: who says it runs without the key ───────────────────────

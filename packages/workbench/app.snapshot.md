@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-28 services · 23 routes · 8 plugins · prefix (none)
+28 services · 23 routes · 9 plugins · prefix (none)
 ```
 
 ## Custom methods whose body writes as the app
@@ -171,9 +171,10 @@ name when it declares none.
 
 ### `chat`
 
-- **methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
-- **custom methods** — `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
+- **methods** — `todoConnect`, `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
+- **custom methods** — `todoConnect`, `status`, `connect`, `disconnect`, `view`, `readThread`, `pin`, `markUnread`, `mute`, `follow`, `browse`, `openDirect`, `saveDraft`, `deleteDraft`, `save`, `saved`, `favorite`, `setStatus`, `setCustomStatus`, `statuses`, `search`, `activity`, `waiting`, `catchUp`, `recap`, `editHistory`, `remind`, `todoProjects`, `todoLists`, `todoNotes`, `makeTodo`, `createSection`, `renameSection`, `deleteSection`, `reorderSections`, `moveToSection`
 - **who may call** —
+  - `todoConnect` — standing 5 or above — declared `gate: 5`
   - `status` — standing 3 or above — declared `gate: 3`
   - `connect` — standing 3 or above — declared `gate: 3`
   - `disconnect` — standing 3 or above — declared `gate: 3`
@@ -701,6 +702,7 @@ In configure order, which is what `requires:` is checked against.
 3. `notifications`
 4. `channels`
 5. `caravan`
-6. `anonymous`
-7. `terminalRoute`
-8. `corsPlugin`
+6. `conduit`
+7. `anonymous`
+8. `terminalRoute`
+9. `corsPlugin`

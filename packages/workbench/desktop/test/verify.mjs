@@ -113,6 +113,7 @@ const api = spawn('bun', ['api/index.ts'], {
 let stoppedEarly = null
 let exitCode     = null
 const rows       = {}
+const trayLabels = []
 
 try {
   let up = false
@@ -161,6 +162,7 @@ try {
       while ((nl = buffer.indexOf('\n')) >= 0) {
         const line = buffer.slice(0, nl)
         buffer = buffer.slice(nl + 1)
+        if (line.startsWith('[tray] ')) trayLabels.push(line.slice(7))
         if (!line.startsWith('[probe] ')) continue
         const { row, value } = JSON.parse(line.slice(8))
         rows[row] ??= value
@@ -201,6 +203,10 @@ if (!stoppedEarly) {
   check('with branch and dirty state', /main/.test(scan.text) && /1 changed/.test(scan.text), scan.text)
   check('and the remote with its token cut out',
     /https:\/\/example\.test\/alpha\.git/.test(scan.text) && scan.leaked === false, scan.text)
+  // A member with nothing unread clears the label, so the page's own report is `none`.
+  check('the signed-in page reports what is unread to the tray',
+    trayLabels.indexOf('none') >= 0 && trayLabels.indexOf('none') < trayLabels.indexOf('3'), trayLabels)
+  check('and a count reaches the tray label through tray_unread', rows.tray?.set === true, rows.tray)
   check('no page errors', Array.isArray(rows.errors) && rows.errors.length === 0, rows.errors)
 }
 

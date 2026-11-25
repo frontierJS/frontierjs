@@ -6,16 +6,28 @@
   import { STATUS } from '../../lib/chat.js'
 
   export let status = 'offline'
+  // A badge sits on an avatar's corner with a ring of the page behind it, so the dot
+  // stays legible over a photo; the parent must be the positioned box.
+  export let badge = false
+  $: size = badge ? 'sm' : 'xs'
   $: label = STATUS[status in STATUS ? status : 'offline'].label
 </script>
 
-<span class="presence" data-presence={status}>
-  {#if status === 'online'}<Dot tone="success" size="xs" label={label} />
-  {:else if status === 'away'}<Dot tone="warning" size="xs" label={label} />
-  {:else if status === 'dnd'}<Dot tone="danger" size="xs" label={label} />
-  {:else}<Dot size="xs" hollow label={label} />{/if}
+<span class="presence" class:presence-badge={badge} data-presence={status}>
+  {#if status === 'online'}<Dot tone="success" {size} label={label} />
+  {:else if status === 'away'}<Dot tone="warning" {size} label={label} />
+  {:else if status === 'dnd'}<Dot tone="danger" {size} label={label} />
+  {:else}<Dot {size} hollow label={label} />{/if}
 </span>
 
 <style>
   .presence { display: inline-flex; align-items: center; flex: none; }
+  .presence-badge {
+    position: absolute;
+    inset-block-end: calc(-0.125 * var(--rem));
+    inset-inline-end: calc(-0.125 * var(--rem));
+    padding: calc(0.125 * var(--rem));
+    border-radius: 999px;
+    background: var(--surface);
+  }
 </style>

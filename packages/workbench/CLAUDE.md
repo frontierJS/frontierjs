@@ -71,6 +71,9 @@ The tray (`desktop/shell/src/tray.rs`) shows and hides the window, opens a
 screen through the `traygoto` event `routes/_module.mesa` listens for, starts
 the API and turns Start at login on. Start API runs the checkout, bun and
 origin `build.mjs` compiled in, so a shell from a bare `cargo build` offers none.
+The label beside the tray icon is the unread count the page reports
+(`components/TrayUnread.mesa` calling `tray_unread`, the one command a
+release shell registers).
 
 One shell runs at a time (`tauri-plugin-single-instance`): a second launch hands
 its argv to the running window and exits, and `workbench-desktop --go /capture/`

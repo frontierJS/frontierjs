@@ -16,7 +16,7 @@
 
 import { Client, SSEClientTransport, StreamableHTTPClientTransport, UnauthorizedError } from '@modelcontextprotocol/client'
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio'
-import { read, unreadable, type Read } from '../claude/claude-read.ts'
+import { read, unreadable, type Read } from '@frontierjs/claude'
 
 export type McpTool = {
   name:        string

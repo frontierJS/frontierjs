@@ -4,7 +4,8 @@
   // `#hostile` is every way a text has tried to become markup; if any of them
   // works, `window.__pwned` is set. `#narrow` is a reply with a table wider
   // than its column, in a box as narrow as a phone's chat pane.
-  import Markdown from '../../../components/display/Markdown.mesa'
+  import Markdown      from '../../../components/display/Markdown.mesa'
+  import MarkdownInput from '../../../components/forms/MarkdownInput.mesa'
 
   const hostile = [
     '<img src=x onerror="window.__pwned = 1">',
@@ -49,3 +50,7 @@
 </div>
 
 <Markdown id="heard" text={'[in page](#frag) and **bold**'} onnavigate={heard} />
+
+<!-- The Preview draws the source the way the app that sends it will (FJS-4570). -->
+<div id="input-breaks"><MarkdownInput value={'a\nb'} breaks /></div>
+<div id="input-plain"><MarkdownInput value={'a\nb'} /></div>

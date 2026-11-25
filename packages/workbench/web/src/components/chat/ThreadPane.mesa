@@ -11,7 +11,7 @@
   import Icon from '../Icon.mesa'
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import { posts } from '../../resources/Post.mesa'
-  import { getLists, readThread, setFollowing } from '../../lib/chat.js'
+  import { byPost, getLists, readThread, roomExtras, setFollowing } from '../../lib/chat.js'
   import PostItem from './PostItem.mesa'
   import Composer from './Composer.mesa'
   import TypingLine from './TypingLine.mesa'
@@ -40,6 +40,22 @@
   open(rootId)
   $: rootId, () => open(rootId)
   $.onDestroy(() => { rootList?.destroy(); replyList?.destroy() })
+
+  // The room's reactions and files, one tether each, as the room's list has; a
+  // thread's replies are in its room.
+  let roomId = channel?.externalId ?? null
+  let room = roomExtras(roomId)
+  $: channel, () => {
+    const id = channel?.externalId ?? null
+    if (id === roomId) return
+    room.destroy()
+    roomId = id
+    room = roomExtras(id)
+  }
+  $.onDestroy(() => room.destroy())
+  $: reactionsBy = byPost(room.reactions.rows)
+  $: filesBy = byPost(room.files.rows)
+  const NONE = []
 
   $: root = rootList.rows.find(p => p.externalId === rootId) ?? null
   $: replies = replyList.rows.filter(p => !p.deletedAt).slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
@@ -109,10 +125,10 @@
     {#if missing}
       <div class="thread-note"><Alert tone="warning">That thread is gone, or was never in this channel.</Alert></div>
     {:else if root}
-      <PostItem post={root} {people} inThread />
+      <PostItem post={root} {people} reactionRows={reactionsBy.get(root.externalId) ?? NONE} fileRows={filesBy.get(root.externalId) ?? NONE} inThread />
       {#if replies.length}<div class="divider-label" role="separator">{replies.length} {replies.length === 1 ? 'reply' : 'replies'}</div>{/if}
       {#each replies as p, i (p.externalId)}
-        <PostItem post={p} {people} inThread continuation={continues(replies[i - 1], p)} />
+        <PostItem post={p} {people} reactionRows={reactionsBy.get(p.externalId) ?? NONE} fileRows={filesBy.get(p.externalId) ?? NONE} inThread continuation={continues(replies[i - 1], p)} />
       {/each}
     {:else}
       <p class="text-muted center thread-note">…</p>

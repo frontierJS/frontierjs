@@ -20,7 +20,7 @@ import {
 } from '@frontierjs/conduit-mattermost'
 import { notificationChannelName } from '../../core/channels.ts'
 import { asCaller, sysOf } from './index.ts'
-import { raiseChatNotice } from '../../domain/chat/notice.ts'
+import { raiseChatNotice, readChatNotices } from '../../domain/chat/notice.ts'
 
 const ACCESSOR = {
   Team: 'team', Profile: 'profile', Channel: 'channel', ChannelMember: 'channelMember',
@@ -85,11 +85,14 @@ async function recountReplies(app: App, rows: ReadonlyArray<PostRow>): Promise<v
  * Point a post's author's own unclaimed uploads at it, as the server did on
  * taking the post. The socket's `posted` lands the same rows; this lands them
  * on the create's answer, so the sender's room draws them without waiting.
+ * An upload to another room is left unclaimed: a file's room is copied onto
+ * its row for the room's one read, and a post must not carry a file that
+ * read would show in another room.
  */
-export async function attach(app: App, post: { externalId: string; profileExternalId: string }, fileExternalIds: string[]): Promise<void> {
+export async function attach(app: App, post: { externalId: string; channelExternalId: string; profileExternalId: string }, fileExternalIds: string[]): Promise<void> {
   if (!fileExternalIds.length) return
   const t = table(app, 'FileInfo')
-  const mine = await t.findMany({ where: { externalId: { in: fileExternalIds }, profileExternalId: post.profileExternalId, postExternalId: null }, select: { externalId: true } })
+  const mine = await t.findMany({ where: { externalId: { in: fileExternalIds }, channelExternalId: post.channelExternalId, profileExternalId: post.profileExternalId, postExternalId: null }, select: { externalId: true } })
   for (const f of mine) await t.update({ where: { externalId: f.externalId }, data: { postExternalId: post.externalId } })
 }
 
@@ -161,7 +164,10 @@ export async function viewed(app: App, profile: string, channel: string, at: Dat
   const room = await table(app, 'Channel').findUnique({ where: { externalId: channel } })
   const key = memberKey(channel, profile)
   const member = await table(app, 'ChannelMember').findUnique({ where: { externalId: key } })
-  if (!room || !member || time(room.lastPostAt) > at.getTime()) return
+  if (!room || !member) return
+  const reader = await sysOf(app).member.findFirst({ where: { profileExternalId: profile }, select: { id: true } })
+  if (reader) await readChatNotices(app, sysOf(app), reader.id, new Map([[channel, at]]))
+  if (time(room.lastPostAt) > at.getTime()) return
   await table(app, 'ChannelMember').update({
     where: { externalId: key },
     data: {
@@ -515,6 +521,9 @@ export async function backfill(app: App, memberId: string): Promise<void> {
   if (!profiles.rows) throw fail('profiles could not be read', profiles.error?.kind ?? 'no answer')
   await land(app, 'Profile', profiles.rows)
   await backfillOwn(app, profile, teams.rows.map(t => t.externalId), [...people, profile])
+  // A read made in another client while no socket was open reaches this copy only as the membership's watermark.
+  const reads = await table(app, 'ChannelMember').findMany({ where: { profileExternalId: profile, lastViewedAt: { not: null } }, select: { channelExternalId: true, lastViewedAt: true } })
+  await readChatNotices(app, sys, Number(memberId), new Map(reads.map((m: any) => [m.channelExternalId, new Date(m.lastViewedAt)])))
 
   await sys.member.update({ where: { id: Number(memberId) }, data: { chatSyncedAt: began.toISOString() } })
 }

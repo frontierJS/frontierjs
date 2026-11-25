@@ -2762,9 +2762,11 @@ export class JunctionClient extends EventEmitter {
       this._noteDisconnected()
       this.emit('disconnect', e.code)
 
-      // Reject any pending WS calls
+      // The server's close names its reason (1009 frame_too_large, 1008 for a
+      // crossed bound); a bare 'WebSocket closed' reads as the network.
+      const closed = e.reason ? `WebSocket closed: ${e.reason} (${e.code})` : 'WebSocket closed'
       for (const [, { reject }] of this._wsCallMap) {
-        reject(new Error('WebSocket closed'))
+        reject(Object.assign(new Error(closed), { closeCode: e.code, closeReason: e.reason || null }))
       }
       this._wsCallMap.clear()
 

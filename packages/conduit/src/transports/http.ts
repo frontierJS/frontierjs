@@ -1006,10 +1006,11 @@ function decodeText(bytes: Uint8Array, contentType: string): string {
 // An error's `raw`. A body that is not text is named rather than read: decoded,
 // a refused image tile is megabytes of U+FFFD in every log line and stored job
 // result `raw` reaches, and read, one past the cap turned a 404 into an
-// `invalid_response`.
+// `invalid_response`. XML is read: an object store's error names which refusal
+// it was only in its `<Code>`.
 async function readBody(res: Response, limit: number): Promise<string> {
   const contentType = res.headers.get('content-type') ?? ''
-  if (isBinaryType(contentType)) {
+  if (isBinaryType(contentType) && !isXmlType(contentType)) {
     await res.body?.cancel().catch(() => {})
     const length = res.headers.get('content-length')
     return `[${contentType.split(';')[0].trim()} body${length ? `, ${length} bytes` : ''}]`
@@ -1021,6 +1022,11 @@ async function readBody(res: Response, limit: number): Promise<string> {
 // stays on the text path and meets the JSON parse.
 function isBinaryType(contentType: string): boolean {
   return contentType !== '' && !isJsonType(contentType) && !isTextType(contentType) && !isMarkupType(contentType)
+}
+
+function isXmlType(contentType: string): boolean {
+  const type = contentType.split(';')[0].trim().toLowerCase()
+  return type === 'application/xml' || type.endsWith('+xml')
 }
 
 function isTextType(contentType: string): boolean {

@@ -164,9 +164,17 @@ export async function requestFrom(req) {
     chunks.push(chunk)
   }
   const bodiless = req.method === 'GET' || req.method === 'HEAD'
+  // With nothing fronting the server, the socket is the only record of the
+  // visitor; a function forwarding to a vendor (the Plausible proxy) would
+  // otherwise report the server's own address. A front proxy's header stands.
+  const headers = new Headers()
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(', ') : value)
+  }
+  if (!headers.has('x-forwarded-for') && req.socket?.remoteAddress) headers.set('x-forwarded-for', req.socket.remoteAddress)
   return new Request(`http://${req.headers.host ?? 'localhost'}${req.url}`, {
     method:  req.method,
-    headers: req.headers,
+    headers,
     body:    bodiless ? undefined : Buffer.concat(chunks),
   })
 }

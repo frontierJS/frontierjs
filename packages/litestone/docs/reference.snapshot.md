@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**138 words** — 13 declarations · 80 field attributes · 40 model attributes · 5 transition words.
+**140 words** — 13 declarations · 82 field attributes · 40 model attributes · 5 transition words.
 
 ## Index
 
@@ -28,13 +28,13 @@ and shows you the diff first.
 **Field attributes**
 
 - *Identify a row* — [`@id`](#id-field) · [`@unique`](#unique-field) · [`@map`](#map-field) · [`@default`](#default-field) · [`@sequence`](#sequence-field) · [`@rank`](#rank-field)
-- *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
+- *Reach another row* — [`@relation`](#relation-field) · [`@from`](#from-field) · [`@stale`](#stale-field) · [`@edge`](#edge-field) · [`@scoped`](#scoped-field)
 - *Compute a value* — [`@computed`](#computed-field) · [`@transient`](#transient-field) · [`@derived`](#derived-field) · [`@generated`](#generated-field) · [`@hardDelete`](#harddelete-field) · [`@keep`](#keep-field)
 - *Hide or lock a value* — [`@omit`](#omit-field) · [`@guarded`](#guarded-field) · [`@system`](#system-field) · [`@local`](#local-field) · [`@immutable`](#immutable-field) · [`@monotonic`](#monotonic-field) · [`@sealed`](#sealed-field) · [`@capability`](#capability-field) · [`@encrypted`](#encrypted-field) · [`@hashed`](#hashed-field) · [`@opaque`](#opaque-field) · [`@personal`](#personal-field) · [`@redacted`](#redacted-field) · [`@secret`](#secret-field) · [`@check`](#check-field)
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@history`](#history-field) · [`@trail`](#trail-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@validate`](#validate-field) · [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@syntax`](#syntax-field) · [`@accept`](#accept-field) · [`@digest`](#digest-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@zone`](#zone-field) · [`@cron`](#cron-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@big`](#big-field) · [`@collate`](#collate-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@zoned`](#zoned-field)
+- *Shape the table* — [`@big`](#big-field) · [`@collate`](#collate-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field) · [`@deprecated`](#deprecated-field) · [`@zoned`](#zoned-field)
 - *Decide who may* — [`@allow`](#allow-field)
 - *Wire it to the app* — [`@override`](#override-field)
 
@@ -413,6 +413,29 @@ model Example {
 - **Also typed** — `aggregate` · `rollup` · `roll-up` · `denormalized`
 - **Deeper** — [relations.md](relations.md)
 - **See also** — [`@computed`](#computed-field) · [`@derived`](#derived-field)
+
+#### `@stale` `(on: [<relation>.<relation>[(where: <expression>)], …])` <a id="stale-field"></a>
+
+Marks a stored value the app computes as stale: a write to any listed source row sets this Boolean on every live row of this model that reaches it, by trigger, in the write's own statement. The app's job computes the value and clears the mark by writing the successor row with it false.
+
+```lite
+model Order {
+  id        Int @id
+  exampleId Int
+  example   Example @relation(fields: [exampleId], references: [id])
+}
+
+model Example {
+  id Int @id
+  orders Order[]
+  stale Boolean @default(false) @system @stale(on: [orders])
+}
+```
+
+- **Note** — Each source is a relation path walked from this row; where: reads the source row bare and this row as this.col, as a @from does. A source nobody listed, and a row that does not exist yet, stay the job's to find.
+- **Also typed** — `dirty` · `needs recompute` · `invalidate`
+- **Deeper** — [relations.md](relations.md)
+- **See also** — [`@from`](#from-field) · [`@system`](#system-field)
 
 #### `@edge` `(ref: <Model>[, key][, as][, onMissing: error|skip])` <a id="edge-field"></a>
 
@@ -1473,6 +1496,20 @@ model Example {
 
 - **Deeper** — [vectors.md](vectors.md)
 - **See also** — [`@point`](#point-field)
+
+#### `@deprecated` `[("reason")]` <a id="deprecated-field"></a>
+
+This column is on its way out. It changes nothing about the table, reads or writes. It reaches JSON Schema as deprecated: true and the generated types as a JSDoc @deprecated tag, so an editor strikes through each use. The removal itself is a migration (litestone migrate create).
+
+```lite
+model Example {
+  id Int @id
+  fullName String @deprecated("use name instead")
+}
+```
+
+- **Deeper** — [jsonschema.md](jsonschema.md)
+- **See also** — [`@label`](#label-field)
 
 #### `@zoned` `([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])` <a id="zoned-field"></a>
 

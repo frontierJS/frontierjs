@@ -57,7 +57,12 @@ beforeAll(async () => {
 describe('a backup archives every database the app keeps', () => {
   test('main, the audit trail and the jobs queue are all in the archive', async () => {
     const sys = env.system as any
-    const row = await sys.appBackup.create({ data: { appId: hubId } })
+    // Queued, so a pending job is in the queue for the archive to carry: the
+    // test env runs no worker (FJS-4584), and the queue's file exists only once
+    // something is put in it.
+    const queued = await queueBackup(env.app, { kind: 'manual', destinationId: null, requestedBy: null })
+    if (!('backup' in queued)) throw new Error('a backup was already in flight')
+    const row = queued.backup
 
     // The trail's directory is made by its first write, which lands after the
     // create returns. An archive taken before then has no trail to hold.
@@ -82,6 +87,13 @@ describe('a backup archives every database the app keeps', () => {
     try {
       expect(copy.query('SELECT id FROM app_backup WHERE id = ?').get(row.id)).toBeTruthy()
     } finally { copy.close() }
+
+    // ...and the queue copy carries the job that was pending when it was taken.
+    const queue = new Database(join(dir, 'jobs.db'), { readonly: true })
+    try {
+      const pending = queue.query(`SELECT id FROM jobs WHERE status = 'pending' AND data LIKE ?`).get(`%${row.id}%`)
+      expect(pending).toBeTruthy()
+    } finally { queue.close() }
 
     // sizeBytes is the whole archive, not the largest file.
     const total = readdirSync(dir, { recursive: true, withFileTypes: true })

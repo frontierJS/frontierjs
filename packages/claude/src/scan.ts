@@ -1,4 +1,4 @@
-// src/domain/claude/claude-scan.ts — the fs half of a read-only scan of the operator's Claude Code configuration.
+// src/scan.ts — the fs half of a read-only scan of the operator's Claude Code configuration.
 //
 // Walks `~/.claude`, `~/.claude.json` and each project's `.claude/` and hands the
 // bytes it finds to the pure readers beside it. It reads, it never writes, and
@@ -27,15 +27,15 @@
 import { closeSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync, type Stats } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { parseHooksJson, readHooks, type HookEntry } from './claude-hooks.ts'
-import { parseItem, type Item, type ItemKind } from './claude-items.ts'
-import { parseClaudeJsonMcp, parseMcpJson, readMcpServers, type ClaudeJsonMcp, type McpServer, type McpWhere } from './claude-mcp.ts'
+import { parseHooksJson, readHooks, type HookEntry } from './hooks.ts'
+import { parseItem, type Item, type ItemKind } from './items.ts'
+import { parseClaudeJsonMcp, parseMcpJson, readMcpServers, type ClaudeJsonMcp, type McpServer, type McpWhere } from './mcp.ts'
 import {
   parseInstalledPlugins, parseKnownMarketplaces, parseMarketplaceManifest, parsePluginManifest, pluginEnabled,
   type InstalledPlugin, type InstalledPlugins, type Marketplace, type MarketplaceManifest, type Marketplaces, type PluginManifest,
-} from './claude-plugins.ts'
-import { read, unreadable, type Read } from './claude-read.ts'
-import { emptySettings, mergeSettings, parseSettings, type Settings } from './claude-settings.ts'
+} from './plugins.ts'
+import { claudeConfigDir, read, unreadable, type Read } from './read.ts'
+import { emptySettings, mergeSettings, parseSettings, type Settings } from './settings.ts'
 
 // ─── shapes ───────────────────────────────────────────────────────────────────
 
@@ -557,11 +557,6 @@ function scanProject(cx: Cx, found: Sighting & { both: boolean }, user: Loaded<S
 }
 
 // ─── scan ─────────────────────────────────────────────────────────────────────
-
-/** Where Claude Code keeps its files: the option, else `CLAUDE_CONFIG_DIR`, else `<home>/.claude`. */
-export function claudeConfigDir(opts: { home?: string, configDir?: string } = {}): string {
-  return opts.configDir ?? process.env.CLAUDE_CONFIG_DIR ?? join(opts.home ?? homedir(), '.claude')
-}
 
 /**
  * Claude Code keeps `.claude.json` beside the config dir when one is set and in

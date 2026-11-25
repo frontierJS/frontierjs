@@ -18,6 +18,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
 import { createApp, channels, createService, defaultConfig } from '../index.ts'
+import { createJunctionClient } from '../src/client/index.ts'
 
 // Port 0, read back after start(). A FIXED port here was the whole of
 // `FJS-900`: three files in this package bound 3396 and four bound 3397, and
@@ -110,6 +111,9 @@ beforeAll(async () => {
     name: 'slow', methods: ['find'],
     async find() { await new Promise(r => setTimeout(r, 300)); return [] },
   }))
+  app.services.register(createService({
+    name: 'sink', methods: ['create'], async create() { return {} },
+  }))
   app.configure(channels((a: any) => {
     a.channels.on('connection', (_s: unknown, conn: unknown) => { a.channel(ROOM).join(conn) })
   }, { presence: true, presenceFlushMs: 0, presenceMetaBytes: 256, presenceUpdatesPerSecond: 2 }))
@@ -127,7 +131,7 @@ describe('a frame that is too big (FJS-705)', () => {
     // below it and answers first.
     const c = client()
     await c.ready
-    c.send({ type: 'service_call', id: '1', service: 'probe', method: 'find', pad: 'x'.repeat(4096) })
+    c.send({ type: 'noop', pad: 'x'.repeat(4096) })
 
     expect(await c.wait(() => c.closed !== null)).toBe(true)
     expect(c.closed!.code).toBe(1009)
@@ -142,6 +146,28 @@ describe('a frame that is too big (FJS-705)', () => {
     expect(await c.wait(() => c.frames.some(f => f?.type === 'service_result'))).toBe(true)
     expect(c.closed).toBeNull()
     c.close()
+  })
+
+  // FJS-4606: the refusal carried no id and the client rejected every pending
+  // call as 'WebSocket closed', so a pasted screenshot read as the network.
+  it('through the client: the oversized call is told 413, and a call beside it why the socket closed', async () => {
+    const jc = createJunctionClient({ url: `http://localhost:${PORT}` })
+    jc.connect()
+    const deadline = Date.now() + 4000
+    while (!(jc as any)._wsReady && Date.now() < deadline) await Bun.sleep(10)
+    expect((jc as any)._wsReady).toBe(true)
+    try {
+      const beside = jc.service('slow').find().catch((e: any) => e)
+      const big    = await jc.service('sink').create({ pad: 'x'.repeat(4096) }).catch((e: any) => e)
+      expect(big.code).toBe(413)
+      expect(big.data.data.code).toBe('frame_too_large')
+      expect(big.message).toContain('2048')
+      const other = await beside
+      expect(other.message).toContain('frame_too_large')
+      expect(other.closeCode).toBe(1009)
+    } finally {
+      jc.disconnect()
+    }
   })
 })
 

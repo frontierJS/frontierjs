@@ -2,7 +2,7 @@
 // (`domain/chat/notice.ts`). Pure: no app, no socket, no ntfy.
 
 import { describe, expect, test } from 'bun:test'
-import { excerpt, inQuietHours, noticeExcerpt, noticeKind } from '../src/domain/chat/notice.ts'
+import { excerpt, inQuietHours, noticeExcerpt, noticeKind, noticesRead } from '../src/domain/chat/notice.ts'
 
 const UTC = 'UTC'
 const at = (iso: string) => new Date(iso)
@@ -85,4 +85,31 @@ test('excerpt is one plain line of at most 140 characters', () => {
 test('a notice carries post text from an open room only', () => {
   expect(noticeExcerpt('open', 'ship it')).toBe('ship it')
   for (const type of ['private', 'direct', 'group']) expect(noticeExcerpt(type, 'ship it')).toBe('')
+})
+
+describe('noticesRead', () => {
+  const row = (id: number, type: string, channelExternalId: string, createdAt: string) => ({ id, type, data: { channelExternalId }, createdAt })
+  const seen = new Map([['dm', at('2026-11-24T12:00:00Z')]])
+
+  test('a read covers its room\'s DM and mention rows written up to it', () => {
+    expect(noticesRead([row(1, 'ChatDm', 'dm', '2026-11-24T11:00:00Z'), row(2, 'ChatMention', 'dm', '2026-11-24T12:00:00Z')], seen)).toEqual([1, 2])
+  })
+
+  test('a row written after the read, in another room, or a follow-up stays unread', () => {
+    expect(noticesRead([
+      row(1, 'ChatDm', 'dm', '2026-11-24T12:00:01Z'),
+      row(2, 'ChatDm', 'other', '2026-11-24T11:00:00Z'),
+      row(3, 'ChatFollowUp', 'dm', '2026-11-24T11:00:00Z'),
+    ], seen)).toEqual([])
+  })
+
+  test('the post\'s time decides, not the row\'s: a row written just after the read still reads', () => {
+    const r = { id: 1, type: 'ChatMention', data: { channelExternalId: 'dm', postExternalId: 'p1' }, createdAt: '2026-11-24T12:00:00.066Z' }
+    expect(noticesRead([r], seen)).toEqual([])
+    expect(noticesRead([r], seen, new Map([['p1', '2026-11-24T12:00:00Z']]))).toEqual([1])
+  })
+
+  test('a row whose data is stored as text is read the same', () => {
+    expect(noticesRead([{ id: 1, type: 'ChatDm', data: JSON.stringify({ channelExternalId: 'dm' }), createdAt: '2026-11-24T11:00:00Z' }], seen)).toEqual([1])
+  })
 })

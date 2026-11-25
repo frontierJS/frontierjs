@@ -11,11 +11,22 @@
 // It owns the chaos (FJS-D890): `/_sink/arm` takes `{ lost }` for a request
 // that is applied and never answered, `{ rateLimit: { retryAfter } }` for one
 // 429, `{ overloaded }` for one 529, `{ failNext }` for one 500 and
-// `{ dieMidStream }` to close the socket after the first delta. `rateLimit`
+// `{ dieMidStream }` to close the socket after the first delta, `{ chop }` to
+// send the next stream as two reads cut mid-frame. `rateLimit`
 // takes `times` (default 1) and may omit `retryAfter`; `{ reply }` is 'refusal',
-// 'max_tokens' or 'prose' for the next answer only. A request carrying
+// 'max_tokens', 'prose' or 'pause' for the next answer only. A request carrying
 // `output_config.format` is answered with JSON built from its schema, and is
 // refused 400 where the real API refuses the schema (an open object, a bound).
+//
+// What a host must send back unchanged, it checks: a request carrying `thinking`
+// gets a signed thinking block before a tool call, and a thinking block whose
+// text no longer matches its signature is the API's 400. A 'pause' answer is a
+// web search stopped at `pause_turn`; the resume (the paused turn as the last
+// message) is refused unless that turn came back as it was sent. `fallbacks`
+// without the `server-side-fallback-2026-07-01` beta header, or a `betas` field
+// in the body, is refused as the API refuses an extra input; with both, an armed
+// refusal is answered instead by `FALLBACK_MODEL`.
+//
 // `/_sink/seen`
 // is what arrived, `/_sink/reset` clears it and what is armed; the prompt
 // cache survives a reset because the drive's cache rows span two calls.
@@ -23,7 +34,7 @@
 // It does NOT pretend to be a model: a model id starting `retired-` is the
 // 404, a body over 32 KiB is the 413, and a token is four characters.
 
-import type { ContentBlock, MessagesRequest, MessagesResponse, StreamEvent, TextBlock, ToolUseBlock, Usage } from './src/types.ts'
+import type { AssistantBlock, ContentBlock, MessagesRequest, MessagesResponse, StreamEvent, Usage } from './src/types.ts'
 
 export interface AnthropicSinkOptions {
   port?:         number
@@ -34,6 +45,9 @@ export interface AnthropicSinkOptions {
 }
 
 export const MAX_BODY_BYTES = 32 * 1024
+export const FALLBACK_BETA  = 'server-side-fallback-2026-07-01'
+/** The model a declined request is re-run on when it asked for `fallbacks`. */
+export const FALLBACK_MODEL = 'claude-opus-5-5'
 
 let counter = 0
 const id     = (prefix: string) => `${prefix}_${(++counter).toString().padStart(4, '0')}${Math.random().toString(36).slice(2, 8)}`
@@ -65,7 +79,11 @@ const sample = (s: any): unknown =>
   : 'x'
 
 const textOf = (content: string | ContentBlock[]): string =>
-  typeof content === 'string' ? content : content.map(b => b.type === 'text' ? b.text : b.type === 'tool_result' ? (typeof b.content === 'string' ? b.content : (b.content ?? []).map(t => t.text).join('')) : JSON.stringify(b.input)).join('')
+  typeof content === 'string' ? content : content.map(b =>
+    b.type === 'text' ? b.text
+    : b.type === 'thinking' ? b.thinking
+    : b.type === 'tool_result' ? (typeof b.content === 'string' ? b.content : (b.content ?? []).map(t => t.text).join(''))
+    : JSON.stringify('input' in b ? b.input : b)).join('')
 
 /** Every text the prompt carries, for the token count. */
 function promptText(req: MessagesRequest): string {
@@ -86,14 +104,45 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
   const KEY       = opts.key ?? 'sk-ant-dev'
   const FORBIDDEN = opts.forbiddenKey ?? 'sk-ant-forbidden'
   const seen: { method: string; path: string; headers: Record<string, string>; body: string; at: number }[] = []
-  const armed = { lost: false, rateLimit: null as null | { retryAfter?: number; times?: number }, overloaded: false, failNext: false, dieMidStream: false, reply: null as null | 'refusal' | 'max_tokens' | 'prose' }
+  const disarmed = () => ({ lost: false, rateLimit: null as null | { retryAfter?: number; times?: number }, overloaded: false, failNext: false, dieMidStream: false, chop: false, reply: null as null | 'refusal' | 'max_tokens' | 'prose' | 'pause' })
+  const armed = disarmed()
   const cache = new Set<string>()
+  /** signature → the thinking it signed. */
+  const signed = new Map<string, string>()
+  /** Every paused turn's content, as JSON, for the resume check. */
+  const paused = new Set<string>()
+  const sign = (thinking: string) => { const sig = `sig_${Buffer.from(thinking).toString('base64url').slice(0, 24)}${id('')}`; signed.set(sig, thinking); return sig }
   const hanging: Array<() => void> = []
 
+  /** What the API refuses in the history a host sent back; null when it would accept it. */
+  function badHistory(req: MessagesRequest): string | null {
+    for (const [i, m] of req.messages.entries()) {
+      if (m.role !== 'assistant' || typeof m.content === 'string') continue
+      for (const [j, b] of m.content.entries()) {
+        if (b.type === 'thinking' && signed.get(b.signature) !== b.thinking) return `messages.${i}.content.${j}: thinking blocks cannot be modified. These blocks must remain as they were in the original response.`
+      }
+    }
+    const last = req.messages[req.messages.length - 1]
+    if (last.role === 'assistant' && !paused.has(JSON.stringify(last.content))) return `messages.${req.messages.length - 1}: a paused turn is resumed by sending it back unchanged`
+    return null
+  }
+
   /** The canned answer. Decides between a `tool_use` turn and the echo. */
-  function answer(req: MessagesRequest): { content: (TextBlock | ToolUseBlock)[]; stop_reason: MessagesResponse['stop_reason']; stop_details?: MessagesResponse['stop_details'] } {
+  function answer(req: MessagesRequest): { content: AssistantBlock[]; stop_reason: MessagesResponse['stop_reason']; stop_details?: MessagesResponse['stop_details']; model?: string } {
     const mode = armed.reply; armed.reply = null
+    const asked = textOf(req.messages.find(m => m.role === 'user')?.content ?? '')
+    if (mode === 'refusal' && req.fallbacks === 'default') return { model: FALLBACK_MODEL, stop_reason: 'end_turn', content: [{ type: 'text', text: `You said: ${asked}` }] }
     if (mode === 'refusal')   return { stop_reason: 'refusal', content: [], stop_details: { type: 'refusal', category: 'cyber', explanation: 'declined by safeguards' } }
+    if (mode === 'pause') {
+      const call = id('srvtoolu')
+      const content: AssistantBlock[] = [
+        { type: 'server_tool_use', id: call, name: 'web_search', input: { query: asked } },
+        { type: 'web_search_tool_result', tool_use_id: call, content: [{ type: 'web_search_result', url: 'https://example.com/', title: 'Example', encrypted_content: id('enc') }] },
+      ]
+      paused.add(JSON.stringify(content))
+      return { stop_reason: 'pause_turn', content }
+    }
+    if (req.messages[req.messages.length - 1].role === 'assistant') return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Searched.' }] }
     if (mode === 'max_tokens') return { stop_reason: 'max_tokens', content: [{ type: 'text', text: '{"name":' }] }
     if (mode === 'prose')     return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Sorry, I would rather answer in prose.' }] }
     const wanted = req.output_config?.format?.schema
@@ -102,8 +151,10 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
     const results  = req.messages.flatMap(m => typeof m.content === 'string' ? [] : m.content.filter(b => b.type === 'tool_result'))
     const weather  = req.tools?.find(t => t.name === 'get_weather')
     if (weather && results.length === 0) {
-      const asked = textOf(req.messages.find(m => m.role === 'user')?.content ?? '')
+      const thinks  = req.thinking && req.thinking.type !== 'disabled'
+      const thought = `The person asked about ${asked}; get_weather answers that.`
       return { stop_reason: 'tool_use', content: [
+        ...(thinks ? [{ type: 'thinking' as const, thinking: thought, signature: sign(thought) }] : []),
         { type: 'text', text: 'Let me check.' },
         { type: 'tool_use', id: id('toolu'), name: 'get_weather', input: { location: asked } },
       ] }
@@ -119,28 +170,39 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
     return { input_tokens: tokens(promptText(req)) - created - read, output_tokens: tokens(out), cache_creation_input_tokens: created, cache_read_input_tokens: read }
   }
 
-  function streamOf(message: MessagesResponse, die: boolean): Response {
+  function streamOf(message: MessagesResponse, die: boolean, chop: boolean): Response {
     const events: StreamEvent[] = [{ type: 'message_start', message: { ...message, content: [], stop_reason: null, usage: { ...message.usage, output_tokens: 1 } } }, { type: 'ping' }]
     message.content.forEach((block, index) => {
       if (block.type === 'text') {
         events.push({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
         for (const word of block.text.match(/\S+\s*/g) ?? []) events.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: word } })
-      } else {
+      } else if (block.type === 'thinking') {
+        events.push({ type: 'content_block_start', index, content_block: { type: 'thinking', thinking: '', signature: '' } })
+        for (const word of block.thinking.match(/\S+\s*/g) ?? []) events.push({ type: 'content_block_delta', index, delta: { type: 'thinking_delta', thinking: word } })
+        events.push({ type: 'content_block_delta', index, delta: { type: 'signature_delta', signature: block.signature } })
+      } else if (block.type === 'tool_use' || block.type === 'server_tool_use') {
         events.push({ type: 'content_block_start', index, content_block: { ...block, input: {} } })
         const whole = JSON.stringify(block.input)
         for (let i = 0; i < whole.length; i += 7) events.push({ type: 'content_block_delta', index, delta: { type: 'input_json_delta', partial_json: whole.slice(i, i + 7) } })
-      }
+      } else events.push({ type: 'content_block_start', index, content_block: block })
       events.push({ type: 'content_block_stop', index })
     })
     events.push({ type: 'message_delta', delta: { stop_reason: message.stop_reason, stop_sequence: null }, usage: { output_tokens: message.usage.output_tokens } })
     events.push({ type: 'message_stop' })
 
     const enc = new TextEncoder()
+    const frame = (ev: StreamEvent) => `event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`
     const body = new ReadableStream<Uint8Array>({
       async start(controller) {
+        // Two reads cut inside a frame: a reader that parses per read loses an event.
+        if (chop) {
+          const whole = enc.encode(events.map(frame).join('')), cut = Math.floor(whole.length / 3) + 5
+          controller.enqueue(whole.slice(0, cut)); await new Promise(r => setTimeout(r, 5))
+          controller.enqueue(whole.slice(cut)); controller.close(); return
+        }
         let deltas = 0
         for (const ev of events) {
-          controller.enqueue(enc.encode(`event: ${ev.type}\ndata: ${JSON.stringify(ev)}\n\n`))
+          controller.enqueue(enc.encode(frame(ev)))
           await new Promise(r => setTimeout(r, 2))
           // The death: the first delta is on the wire and the socket goes away
           // with no terminating chunk, which is what a crashed upstream looks like.
@@ -159,7 +221,7 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
       const path = new URL(req.url).pathname
 
       if (path === '/_sink/seen')  return json({ requests: seen })
-      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, { lost: false, rateLimit: null, overloaded: false, failNext: false, dieMidStream: false, reply: null }); return json({ ok: true }) }
+      if (path === '/_sink/reset') { seen.length = 0; Object.assign(armed, disarmed()); return json({ ok: true }) }
       if (path === '/_sink/arm')   { Object.assign(armed, await req.json()); return json({ ok: true, armed }) }
 
       const text = req.method === 'POST' ? await req.text() : ''
@@ -185,6 +247,11 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
       if (!body.model) return refuse('invalid_request_error', 'model: Field required', 400)
       if (body.model.startsWith('retired-')) return refuse('not_found_error', `model: ${body.model}`, 404)
       if (!Array.isArray(body.messages) || !body.messages.length) return refuse('invalid_request_error', 'messages: at least one message is required', 400)
+      if ('betas' in body) return refuse('invalid_request_error', 'betas: Extra inputs are not permitted', 400)
+      const betas = (req.headers.get('anthropic-beta') ?? '').split(',').map(b => b.trim())
+      if ('fallbacks' in body && !betas.includes(FALLBACK_BETA)) return refuse('invalid_request_error', 'fallbacks: Extra inputs are not permitted', 400)
+      const history = badHistory(body)
+      if (history) return refuse('invalid_request_error', history, 400)
 
       let response: Response
       if (path === '/v1/messages/count_tokens' && req.method === 'POST') {
@@ -193,12 +260,12 @@ export function startAnthropicSink(opts: AnthropicSinkOptions = {}) {
         if (!Number.isInteger(body.max_tokens) || body.max_tokens < 1) return refuse('invalid_request_error', 'max_tokens: Field required', 400)
         const schemaProblem = badSchema(body.output_config?.format?.schema)
         if (schemaProblem) return refuse('invalid_request_error', `output_config.format.schema: ${schemaProblem}`, 400)
-        const { content, stop_reason, stop_details } = answer(body)
+        const { content, stop_reason, stop_details, model } = answer(body)
         const message: MessagesResponse = {
-          id: id('msg'), type: 'message', role: 'assistant', model: body.model, content, stop_reason, stop_sequence: null, ...(stop_details ? { stop_details } : {}),
-          usage: usageFor(body, content.map(b => b.type === 'text' ? b.text : JSON.stringify(b.input)).join('')),
+          id: id('msg'), type: 'message', role: 'assistant', model: model ?? body.model, content, stop_reason, stop_sequence: null, ...(stop_details ? { stop_details } : {}),
+          usage: usageFor(body, textOf(content)),
         }
-        if (body.stream) { const die = armed.dieMidStream; armed.dieMidStream = false; response = streamOf(message, die) }
+        if (body.stream) { const { dieMidStream, chop } = armed; armed.dieMidStream = armed.chop = false; response = streamOf(message, dieMidStream, chop) }
         else response = json(message)
       } else return refuse('not_found_error', `Not found: ${req.method} ${path}`, 404)
 

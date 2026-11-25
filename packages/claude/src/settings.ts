@@ -1,4 +1,4 @@
-// src/domain/claude/claude-settings.ts — what a Claude Code `settings.json` says, and how the layers combine.
+// src/settings.ts — what a Claude Code `settings.json` says, and how the layers combine.
 //
 // Three files can carry settings for one project — the user's
 // `~/.claude/settings.json`, the project's `.claude/settings.json`, and the
@@ -18,7 +18,7 @@
 // A field of the wrong type is dropped to `null` and named in `issues`; the
 // rest of the file still reads. Only text that is not a JSON object fails whole.
 
-import { read, readJsonObject, type Read } from './claude-read.ts'
+import { read, readJsonObject, type Read } from './read.ts'
 
 export type PermissionMode = string
 

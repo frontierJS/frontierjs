@@ -1,9 +1,10 @@
 import { describe, test, expect, vi, beforeAll, afterAll } from "bun:test"
 import type { NodeContext } from "../../../src/engine/executor"
 import { createNodeImplementations, type NodeDeps } from "../../../src/engine/nodes/index"
+import { unanswered, checkReply, type Question, type Reply } from "@frontierjs/toolbelt/ask"
 import { CodeWorkerPool }    from "../../../src/engine/nodes/code-worker-pool"
 import { BUILTIN_DESCRIPTORS } from "../../../src/engine/plugins/builtins"
-import type { AIRequest, IAIModels, IJobDispatcher, IKeyValueStore, INotifier, IOutbound, OutboundRequest, Recipient } from "../../../src/engine/ports"
+import type { IAIDoors, IJobDispatcher, IKeyValueStore, INotifier, IOutbound, OutboundRequest, Recipient } from "../../../src/engine/ports"
 
 // ─────────────────────────────────────────────
 // PORT FAKES
@@ -29,12 +30,19 @@ class RecordingOutbound implements IOutbound {
   async send(actor: unknown, req: OutboundRequest) { this.sent.push({ actor, req }); return this.answer() }
 }
 
-class RecordingModels implements IAIModels {
-  readonly asked: Array<{ model: string; req: AIRequest }> = []
-  async complete(_actor: unknown, model: string, req: AIRequest) {
-    this.asked.push({ model, req })
-    if (model === "missing") throw new Error('AI model "missing" not registered')
-    return { content: "Hello!", model, inputTokens: 10, outputTokens: 5 }
+// A door answers per name: "limited" is a retryable Unanswered, "refusing" a
+// permanent one, "broken" throws against the never-throws contract.
+class RecordingModels implements IAIDoors {
+  readonly asked: Array<{ model: string; question: Question }> = []
+  async ask(_actor: unknown, model: string, question: Question): Promise<Reply> {
+    this.asked.push({ model, question })
+    if (model === "broken")   throw new Error("door fell over")
+    if (model === "limited")  return { ok: false, door: model, model: "m", ms: 1, failure: unanswered("rate_limited", "Slow down.") }
+    if (model === "refusing") return { ok: false, door: model, model: "m", ms: 1, failure: unanswered("refused") }
+    const answer = question.schema ? { greeting: "Hello!" } : "Hello!"
+    const reply: Reply = { ok: true, answer, door: model, model: "claude-x", usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.002, ms: 3 }
+    expect(checkReply(reply, question)).toEqual([])
+    return reply
   }
 }
 
@@ -508,33 +516,64 @@ describe("http.request", () => {
 // ─────────────────────────────────────────────
 
 describe("ai", () => {
-  test("asks the named model with the prompt as a message, and the answer lands in the output", async () => {
+  test("asks the named door with the prompt, and the answer lands in the output", async () => {
     const res = await getImpl("ai").execute(makeCtx({
-      config: { model: "claude", mode: "complete", prompt: "Say hi", system: "Be brief", maxTokens: 50 },
+      config: { model: "claude", prompt: "Say hi", system: "Be brief" },
     }))
-    expect(res.ok && res.data).toEqual({ result: "Hello!", model: "claude", usage: { inputTokens: 10, outputTokens: 5 } })
-    expect(models.asked.at(-1)).toEqual({
-      model: "claude",
-      req:   { messages: [{ role: "user", content: "Say hi" }], system: "Be brief", maxTokens: 50 },
-    })
+    expect(res.ok && res.data).toEqual({ result: "Hello!", model: "claude-x", usage: { inputTokens: 10, outputTokens: 5 }, costUsd: 0.002 })
+    expect(models.asked.at(-1)).toEqual({ model: "claude", question: { prompt: "Say hi", system: "Be brief" } })
   })
 
-  test("a model the app does not have fails the node, naming it", async () => {
-    const res = await getImpl("ai").execute(makeCtx({ config: { model: "missing", prompt: "hi" } }))
-    expect(res.ok).toBe(false)
-    expect((res as any).error).toMatch(/"missing" not registered/)
+  test("a schema reaches the door, and an object answer comes back", async () => {
+    const schema = { type: "object", properties: { greeting: { type: "string" } }, required: ["greeting"] }
+    const res = await getImpl("ai").execute(makeCtx({ config: { model: "claude", prompt: "Say hi", schema } }))
+    expect(res.ok && (res.data as any).result).toEqual({ greeting: "Hello!" })
+    expect(models.asked.at(-1)!.question).toEqual({ prompt: "Say hi", schema })
+    const bad = await getImpl("ai").execute(makeCtx({ config: { model: "claude", prompt: "x", schema: "not a schema" } }))
+    expect((bad as any).error).toMatch(/config.schema must be a JSON Schema object/)
   })
 
-  test("a missing prompt and a mode other than complete are refused", async () => {
-    expect((await getImpl("ai").execute(makeCtx({ config: { model: "claude" } }))).ok).toBe(false)
-    const embed = await getImpl("ai").execute(makeCtx({ config: { model: "claude", mode: "embed", prompt: "x" } }))
-    expect((embed as any).error).toMatch(/unknown mode "embed"/)
+  test("maxTokens and temperature are refused, naming the way to get a cap", async () => {
+    for (const key of ["maxTokens", "temperature"]) {
+      const before = models.asked.length
+      const res = await getImpl("ai").execute(makeCtx({ config: { model: "claude", prompt: "hi", [key]: 50 } }))
+      expect(res.ok).toBe(false)
+      expect((res as any).error).toMatch(new RegExp(`config.${key} is not a node option; name a door registered with it`))
+      expect((res as any).retry).toBe(false)
+      expect(models.asked.length).toBe(before)
+    }
   })
 
-  test("a dry run asks no model", async () => {
+  test("a mode left from the old node is refused, not read as one", async () => {
     const before = models.asked.length
-    const res = await getImpl("ai").execute(makeCtx({ dryRun: true, config: { model: "claude", prompt: "hi" } }))
+    const res = await getImpl("ai").execute(makeCtx({ config: { model: "claude", mode: "complete", prompt: "hi" } }))
+    expect((res as any).error).toBe("ai: the node has no modes; it asks one question")
+    expect(models.asked.length).toBe(before)
+  })
+
+  test("an Unanswered fails the node, and retry follows the reason", async () => {
+    const limited = await getImpl("ai").execute(makeCtx({ config: { model: "limited", prompt: "hi" } }))
+    expect(limited).toEqual({ ok: false, error: "ai: Slow down.", retry: true })
+    const refusing = await getImpl("ai").execute(makeCtx({ config: { model: "refusing", prompt: "hi" } }))
+    expect(refusing.ok).toBe(false)
+    expect((refusing as any).retry).toBe(false)
+  })
+
+  test("a door that throws fails the node", async () => {
+    const res = await getImpl("ai").execute(makeCtx({ config: { model: "broken", prompt: "hi" } }))
+    expect(res.ok).toBe(false)
+    expect((res as any).error).toMatch(/door fell over/)
+  })
+
+  test("a missing prompt is refused", async () => {
+    expect((await getImpl("ai").execute(makeCtx({ config: { model: "claude" } }))).ok).toBe(false)
+  })
+
+  test("a dry run asks no door", async () => {
+    const before = models.asked.length
+    const res = await getImpl("ai").execute(makeCtx({ dryRun: true, config: { model: "claude", prompt: "hi", schema: { type: "object" } } }))
     expect(res.ok && (res.data as any).dryRun).toBe(true)
+    expect(res.ok && (res.data as any).wouldSend).toEqual({ ai: "claude", prompt: "hi", schema: { type: "object" } })
     expect(models.asked.length).toBe(before)
   })
 })

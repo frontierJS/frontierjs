@@ -284,6 +284,7 @@ Done when: that flow runs end to end against the real account, and the CLI still
     - 9 silence: *the CLI still answers after Intake refreshes* is checked by 5.4's live run and has no artefact (`none`). *Every claimed noun has a lister* has none either, which is why the `Comment` gap is written here.
   - No adjudication is in tension. Tier: Assessment
 - [ ] 5.2 A grant of Intake's own: one authorization-code exchange through the 37signals OAuth app the owner made for n8n (1.8.1) seeds Jordan's refresh token in Intake's grant store. The CLI's grant is never refreshed from here, so a rotating refresh token cannot log the CLI out (4.1's open fact). This is the owner's step: the consent click and the client secret
+  - **Check before the click (2026-11-23):** the n8n app is most likely a Launchpad client, and a Launchpad token refreshes at Launchpad with its secret, while `basecampTokenResolver` refreshes at `app.basecamp.com` with a client id alone. Workbench took a device-code sign-in at `app.basecamp.com` on a client it registers itself (`FJS-D2341`, amended, `workbench-messages` 6.7), and the same route may serve Intake
 - [ ] 5.3 Triage's reads through `app.conduit.send()`: `basecamp.js`'s `get`/`getAll` become `api` sends and `walk()`, with the first live refresh against `app.basecamp.com` (2.6). Record whether the refresh token rotated
 - [ ] 5.4 Intake's 3.8 commit routes are sent through the connector and run live against the Intake list. Done when one item is triaged end to end and `basecamp` still answers the daily check
 

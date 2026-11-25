@@ -323,14 +323,14 @@ describe('moving an image between machines', () => {
   // distribution strategies open, and this is the one that needs nothing.
   test('save on one end, load on the other, in one pipeline', () => {
     expect(shipCommand(M('ssh', 'deploy@build'), M('ssh', 'deploy@prod'), 'sha256:abc'))
-      .toBe(`ssh ${SSH_MUX} deploy@build docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
+      .toBe(`ssh ${SSH_MUX} deploy@build 'docker save sha256:abc | gzip' | ssh ${SSH_MUX} deploy@prod docker load`)
   })
 
   test('a local end is the pipe itself, with no ssh', () => {
     expect(shipCommand(M('local', 'localhost'), M('ssh', 'deploy@prod'), 'sha256:abc'))
-      .toBe(`docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
+      .toBe(`docker save sha256:abc | gzip | ssh ${SSH_MUX} deploy@prod docker load`)
     expect(shipCommand(M('ssh', 'deploy@build'), M('local', 'localhost'), 'sha256:abc'))
-      .toBe(`ssh ${SSH_MUX} deploy@build docker save sha256:abc | docker load`)
+      .toBe(`ssh ${SSH_MUX} deploy@build 'docker save sha256:abc | gzip' | docker load`)
   })
 
   // Two names for one daemon means the bytes are already there.
@@ -354,7 +354,7 @@ describe('moving an image between machines', () => {
     const a = createMachine({ host: 'localhost',   exec: (o) => { cmd = o.command } })
     const b = createMachine({ host: 'deploy@prod', exec: () => {} })
     expect(a.shipTo(b, 'sha256:abc')).toBe(true)
-    expect(cmd).toBe(`docker save sha256:abc | ssh ${SSH_MUX} deploy@prod docker load`)
+    expect(cmd).toBe(`docker save sha256:abc | gzip | ssh ${SSH_MUX} deploy@prod docker load`)
   })
 
   // The property the whole thing rests on: what may not vary is which bytes ran.

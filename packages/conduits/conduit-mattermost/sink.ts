@@ -444,7 +444,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (!name || !raw.byteLength) return record(refuse(400, 'api.file.upload_file.incorrect_number_of_files.app_error', 'Unable to upload files. Incorrect number of files specified.'))
         const mime = (req.headers.get('content-type') ?? 'application/octet-stream').split(';')[0].trim()
         const t = now(), dot = name.lastIndexOf('.')
-        const info: FileInfo = { id: mint('file'), user_id: caller, post_id: '', create_at: t, update_at: t, delete_at: 0, name, extension: dot > 0 ? name.slice(dot + 1).toLowerCase() : '', size: raw.byteLength, mime_type: mime, has_preview_image: mime.startsWith('image/') }
+        const info: FileInfo = { id: mint('file'), user_id: caller, post_id: '', channel_id, create_at: t, update_at: t, delete_at: 0, name, extension: dot > 0 ? name.slice(dot + 1).toLowerCase() : '', size: raw.byteLength, mime_type: mime, has_preview_image: mime.startsWith('image/') }
         files[info.id] = { info, bytes: raw }
         return record(json({ file_infos: [info], client_ids: [] }, 201))
       }
@@ -884,7 +884,7 @@ export function startMattermostSink(opts: MattermostSinkOptions = {}) {
         if (!emoji_name) return record(refuse(400, 'model.reaction.is_valid.emoji_name.app_error', 'Invalid emoji name.'))
         const had = reactions.find(r => r.user_id === user_id && r.post_id === post_id && r.emoji_name === emoji_name)
         if (had) return record(json(had))
-        const r: Reaction = { user_id, post_id, emoji_name, create_at: now() }
+        const r: Reaction = { user_id, post_id, channel_id: p.channel_id, emoji_name, create_at: now() }
         reactions.push(r)
         p.update_at = now()
         emit('reaction_added', { reaction: JSON.stringify(r) }, { channel_id: p.channel_id })

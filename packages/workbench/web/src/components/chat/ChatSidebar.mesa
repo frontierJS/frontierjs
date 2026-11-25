@@ -5,8 +5,9 @@
   // server keeps them. A reader with no section rows (never backfilled) gets Channels and Direct
   // messages. A channel with something unread is bold with a count pill, in `danger` when
   // it names the reader; a muted one is faded and only a mention puts a pill on it. The
-  // counts are lib/chat.js's. A section folds; the fold is this browser's, kept in
-  // localStorage.
+  // counts are lib/chat.js's. A section folds down to its rooms with a pill and the one
+  // open; the fold is this browser's, kept in localStorage. Above 1024px the whole sidebar
+  // folds to a rail: each room a tile with its count on the corner, its name on hover.
   //
   // Presence is not pushed to every socket, so the direct messages' people are asked
   // for on mount and every minute while the tab is showing.
@@ -17,6 +18,7 @@
     refreshStatuses, setStatus, setFavorite, createSection, renameSection, deleteSection, moveToSection, SECTION_NAME_MAX,
   } from '../../lib/chat.js'
   import Presence from './Presence.mesa'
+  import Avatar from '@frontierjs/ui/components/display/Avatar.mesa'
   import NewDmDialog from './NewDmDialog.mesa'
   import NewRoomDialog from './NewRoomDialog.mesa'
   import SectionDialog from './SectionDialog.mesa'
@@ -38,6 +40,7 @@
   export let onScheduled = false // the Scheduled route is open
   export let onGroups = false    // the Groups route is open
   export let textScale = 1       // the Messages text size, bound to the frame that applies it
+  export let rail = false        // folded to tiles, bound to the frame that sizes the column
 
   const SCALES = [0.875, 1, 1.125, 1.25, 1.5, 1.75, 2]
   const nudge = (d) => {
@@ -75,6 +78,8 @@
 
   // A channel the reader is in, or the one open (a public preview). Archived ones are gone.
   const listed = (c) => !c.deletedAt && (c.externalId in counts || c.externalId === currentId)
+  // Above `groups`: it computes where it is declared, and a revisit's tethers already hold the section rows.
+  const keyOf  = (r) => r.kind === 'direct' ? 'dms' : r.kind === 'custom' ? `custom-${r.externalId}` : r.kind
 
   // ── The groups ──
   // The sections' own order and contents, with the two defaults filling in whatever the
@@ -88,7 +93,6 @@
   $: favorites = groups.filter(g => g.kind === 'favorites')
   $: rest      = groups.filter(g => g.kind !== 'favorites')
 
-  const keyOf = (r) => r.kind === 'direct' ? 'dms' : r.kind === 'custom' ? `custom-${r.externalId}` : r.kind
   function plain() {
     return [
       { key: 'channels', kind: 'channels', label: 'Channels',        add: 'Add channel', list: all.filter(c => !isDm(c) && listed(c)).sort(byName) },
@@ -125,6 +129,9 @@
   const FOLD = 'workbench_messages_folded'
   const readFolds = () => { try { return JSON.parse(localStorage.getItem(FOLD) ?? '{}') ?? {} } catch { return {} } }
   let folded = readFolds()
+  // A folded section still lists what would put a pill on a room, and the room open, so
+  // folding never hides a new message and opening one never makes its row vanish.
+  const pending = (n) => !!n && (n.mentions > 0 || (n.unread > 0 && !n.muted))
   function fold(key) {
     folded = { ...folded, [key]: !folded[key] }
     try { localStorage.setItem(FOLD, JSON.stringify(folded)) } catch {}
@@ -159,7 +166,7 @@
   const chooseStatus = (s) => act(() => setStatus(s))
 </script>
 
-<nav class="chat-sidebar stack gap-md" aria-label="Channels" data-chat-sidebar>
+<nav class="chat-sidebar stack gap-md" class:rail={rail} aria-label="Channels" data-chat-sidebar>
   <div class="cluster gap-2xs chat-top">
     <DropdownMenu placement="bottom-start">
       {#snippet trigger()}
@@ -180,6 +187,7 @@
       <button type="button" class="btn ghost square xs" aria-label="Smaller text" title={`Smaller text (now ${Math.round(textScale * 100)}%)`} disabled={textScale <= SCALES[0]} onclick={() => nudge(-1)} data-text-smaller>A−</button>
       <button type="button" class="btn ghost square xs chat-text-up" aria-label="Larger text" title={`Larger text (now ${Math.round(textScale * 100)}%), double-click to reset`} disabled={textScale >= SCALES[SCALES.length - 1]} onclick={() => nudge(1)} ondblclick={() => textScale = 1} data-text-larger>A+</button>
     </span>
+    <button type="button" class="btn ghost square xs chat-rail-toggle" aria-label={rail ? 'Expand the sidebar' : 'Collapse the sidebar'} title={rail ? 'Expand the sidebar' : 'Collapse the sidebar'} aria-pressed={rail} onclick={() => rail = !rail} data-sidebar-rail><Icon name="collapse" /></button>
   </div>
   {#if error}<p class="text-xs text-danger" role="alert" data-sidebar-error>{error}</p>{/if}
   <form role="search" onsubmit|preventDefault={search} data-chat-search>
@@ -192,46 +200,46 @@
   {#each favorites as h (h.key)}{@render section(h)}{/each}
   <ul class="navlist">
     <li>
-      <a class="navlink chat-room" href="/messages/activity/" aria-current={onActivity ? 'page' : null} data-activity-link>
+      <a class="navlink chat-room" href="/messages/activity/" aria-current={onActivity ? 'page' : null} title="Activity" data-activity-link>
         <Icon name="notify" /> <span class="chat-room-name">Activity</span>
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/waiting/" aria-current={onWaiting ? 'page' : null} data-waiting-link>
+      <a class="navlink chat-room" href="/messages/waiting/" aria-current={onWaiting ? 'page' : null} title="Waiting" data-waiting-link>
         <Icon name="clock" /> <span class="chat-room-name">Waiting</span>
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/catch-up/" aria-current={onCatchUp ? 'page' : null} data-catchup-link>
+      <a class="navlink chat-room" href="/messages/catch-up/" aria-current={onCatchUp ? 'page' : null} title="Catch-up" data-catchup-link>
         <Icon name="check" /> <span class="chat-room-name">Catch-up</span>
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" class:unread={threadsUnread > 0} href="/messages/threads/" aria-current={onThreads ? 'page' : null} data-threads-link>
+      <a class="navlink chat-room" class:unread={threadsUnread > 0} href="/messages/threads/" aria-current={onThreads ? 'page' : null} title="Threads" data-threads-link>
         <Icon name="thread" /> <span class="chat-room-name">Threads</span>
         {#if threadsUnread > 0}<span class="badge primary chat-pill" data-pill="threads" title={`${threadsUnread} unread`}>{threadsUnread}</span>{/if}
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/drafts/" aria-current={onDrafts ? 'page' : null} data-drafts-link>
+      <a class="navlink chat-room" href="/messages/drafts/" aria-current={onDrafts ? 'page' : null} title="Drafts" data-drafts-link>
         <Icon name="edit" /> <span class="chat-room-name">Drafts</span>
         {#if drafts.length > 0}<span class="badge chat-pill" data-drafts-count title={`${drafts.length} unsent`}>{drafts.length}</span>{/if}
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/saved/" aria-current={onSaved ? 'page' : null} data-saved-link>
+      <a class="navlink chat-room" href="/messages/saved/" aria-current={onSaved ? 'page' : null} title="Saved" data-saved-link>
         <Icon name="bookmark" /> <span class="chat-room-name">Saved</span>
         {#if savedCount > 0}<span class="badge chat-pill" data-saved-count title={`${savedCount} saved`}>{savedCount}</span>{/if}
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/scheduled/" aria-current={onScheduled ? 'page' : null} data-scheduled-link>
+      <a class="navlink chat-room" href="/messages/scheduled/" aria-current={onScheduled ? 'page' : null} title="Scheduled" data-scheduled-link>
         <Icon name="clock" /> <span class="chat-room-name">Scheduled</span>
         {#if waiting > 0}<span class="badge chat-pill" data-scheduled-count title={`${waiting} waiting to send`}>{waiting}</span>{/if}
       </a>
     </li>
     <li>
-      <a class="navlink chat-room" href="/messages/groups/" aria-current={onGroups ? 'page' : null} data-groups-link>
+      <a class="navlink chat-room" href="/messages/groups/" aria-current={onGroups ? 'page' : null} title="Groups" data-groups-link>
         <Icon name="group" /> <span class="chat-room-name">Groups</span>
       </a>
     </li>
@@ -260,11 +268,10 @@
         {/if}
       </span>
     </li>
-    {#if !folded[h.key]}
-      {#if h.kind === 'channels'}
-        <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
-      {/if}
-      {#each h.list as c (c.externalId)}
+    {#if !folded[h.key] && h.kind === 'channels'}
+      <li><a class="navlink chat-room" href="/messages/browse/" aria-current={onBrowse ? 'page' : null} data-browse-link><span class="chat-hash" aria-hidden="true">+</span> <span class="chat-room-name">Browse channels</span></a></li>
+    {/if}
+    {#each h.list.filter(c => !folded[h.key] || pending(counts[c.externalId]) || c.externalId === currentId) as c (c.externalId)}
         {@const n = counts[c.externalId]}
         {@const unread = n?.unread ?? 0}
         {@const named = n?.mentions ?? 0}
@@ -273,10 +280,16 @@
           <a class="navlink chat-room" class:not-joined={!n} class:muted-room={n?.muted} class:unread={unread > 0 || named > 0}
              href={`/messages/${c.externalId}/`} aria-current={c.externalId === currentId ? 'page' : null}
              title={label(c)} data-channel={c.externalId}>
-            {#if peer?.status}<Presence status={statusOf(peer)} />
-            {:else if c.type === 'direct' || c.type === 'group'}<Icon name="message" />
-            {:else if c.type === 'private'}<Icon name="lock" label="Private" />
-            {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
+            <span class="chat-glyph">
+              {#if peer?.status}<Presence status={statusOf(peer)} />
+              {:else if c.type === 'direct' || c.type === 'group'}<Icon name="message" />
+              {:else if c.type === 'private'}<Icon name="lock" label="Private" />
+              {:else}<span class="chat-hash" aria-hidden="true">#</span>{/if}
+            </span>
+            <span class="chat-tile" aria-hidden="true">
+              <Avatar name={label(c).slice(2)} size="sm" shape={isDm(c) ? 'circle' : 'square'} />
+              {#if peer?.status}<Presence status={statusOf(peer)} badge />{/if}
+            </span>
             <span class="chat-room-name">{label(c).slice(2)}</span>
             {#if peer && statusLine(peer)}<span class="chat-mood" title={statusLine(peer)} data-dm-mood>{statusLine(peer)}</span>{/if}
             {#if draftRooms.has(c.externalId)}<span class="chat-quiet" title="You have a draft here" data-room-draft><Icon name="edit" label="Draft" /></span>{/if}
@@ -304,7 +317,6 @@
           {/if}
         </li>
       {/each}
-    {/if}
   </ul>
 {/snippet}
 
@@ -339,4 +351,23 @@
   .chat-row-menu { position: absolute; inset-block-start: 50%; inset-inline-end: var(--space-2xs); transform: translateY(-50%); opacity: 0; }
   .chat-row:hover .chat-row-menu, .chat-row:focus-within .chat-row-menu { opacity: 1; }
   .chat-new-section { align-self: flex-start; }
+  .chat-glyph { display: inline-flex; }
+  .chat-tile { display: none; position: relative; }
+  .chat-rail-toggle { opacity: 0.7; }
+  @media (max-width: 1024px) { .chat-rail-toggle { display: none; } }
+  /* The rail: a tile per room, the counts on its corner, the names on hover. One column below 1024px has no rail. */
+  @media (min-width: 1025px) {
+    .rail { padding-inline: var(--space-2xs); overflow-x: hidden; align-items: center; }
+    .rail .chat-top { flex-direction: column; gap: var(--space-xs); }
+    .rail .chat-top > :first-child { flex: none; }
+    .rail .chat-rail-toggle :global(svg) { transform: rotate(180deg); }
+    .rail [data-me-name], .rail [data-me-line], .rail .chat-text-size, .rail [data-chat-search],
+    .rail .chat-room-name, .rail .chat-mood, .rail .chat-quiet, .rail .chat-row-menu, .rail .chat-glyph,
+    .rail [data-browse-link], .rail .chat-new-section, .rail .chat-section-head > * { display: none; }
+    .rail .navlist { inline-size: 100%; }
+    .rail .chat-section-head { min-block-size: 0; padding: 0; margin-block: var(--space-2xs); border-block-start: var(--border-width) solid var(--rule); }
+    .rail .chat-tile { display: inline-flex; }
+    .rail .chat-room, .rail .chat-me { position: relative; justify-content: center; padding-inline: 0; }
+    .rail .chat-pill { position: absolute; inset-block-start: 0; inset-inline-end: 0; margin: 0; font-size: var(--text-2xs); line-height: 1.2; padding-inline: var(--space-3xs); }
+  }
 </style>

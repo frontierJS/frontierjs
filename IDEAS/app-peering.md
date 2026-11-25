@@ -251,19 +251,30 @@ Done when: two Outposts on private addresses carry a peer call between them.
   local Basecamp ran the command through the App, its placement and its Domain;
   the release was refused there for want of an Outpost. The deploy-side checks
   moved to 3.5 by the owner's call.
-- [ ] 3.5 Live on yuma-test (owner's go-ahead first, it changes a live box):
-  yuma-test's Basecamp holds the `headscale` row (its code redeployed, or
-  `db:catalog-sync`; find which reaches a deployed hub), `hs.awe.dev` DNS-only
-  in Cloudflare, then `fli basecamp:blueprint headscale --domain hs.awe.dev`
-  against it. Done when `https://hs.awe.dev/health` answers through Caddy, a
-  node's DERP map relays only through our region and DERP answers through
-  Caddy, and a Basecamp backup of the App holds `db.sqlite` with its `-wal`
-  folded in or copied beside it. `hs.awe.dev` is a role name, so a later move to
-  prod repoints DNS and no client rejoins.
-- [ ] 3.6 The owner's phone joins: a key minted by hand with the headscale CLI,
-  shown as a QR, entered in the Tailscale app as a custom control server. Done
-  when `tailscale status` on a second node shows the phone, relayed through
-  `hs.awe.dev`. The hand-minted key is a stand-in that 3.7 retires.
+- [x] 3.5 Live on yuma-test, 2026-11-23: App `0965a724` (project Headscale,
+  production), installed by `fli basecamp:blueprint headscale --basecamp
+  yuma-test --server basecamp-host --domain hs.awe.dev --param
+  HEADSCALE_SERVER_URL=https://hs.awe.dev`. Basecamp wrote `hs.awe.dev` DNS-only
+  (a CNAME to the ingress name). Proved: `/health` passes over HTTPS through
+  Caddy; `/derp/probe` answers 200; a Tailscale client joined and its DERP map
+  held only `frontier` (`hs.awe.dev`), with netcheck naming it nearest and UDP
+  false; an App backup holds `db.sqlite` with its `-wal` beside it, and the copy
+  opened with integrity `ok` and the probe node in it. The probe was removed
+  after.
+  yuma-test's Basecamp predates the `environment` column (2026-11-14), and its
+  upgrade was held by the deploy gate (unpushed HEAD, red CI). The owner chose to
+  install on it unchanged, so its `headscale` catalog row is a stand-in: the 15
+  fixed keys are params with defaults. Owed after that hub upgrades: delete the
+  stand-in row, then `db:catalog-sync`, which skips a slug that exists.
+- [x] 3.6 The owner's phone joins. Done 2026-11-23 another way: the owner's
+  iPhone signed in to `https://hs.awe.dev` as a custom coordination server (no
+  Tailscale account), and the register command its page showed ran on the box
+  (`headscale auth register --auth-id ... --user jordan`), so no key was minted
+  and no QR was needed. Node `phone`, `100.64.0.2`, user `jordan`. Proved from a
+  throwaway probe node: `tailscale status` listed the phone with relay
+  `frontier`, and `tailscale ping` answered directly over the shared LAN, which
+  needs no STUN. Probe node and user deleted. A path between two NATed networks
+  still goes through the relay, per `FJS-D2342`.
 - [ ] 3.7 Outpost enrolls its machine into the overlay at fleet enrollment, with
   the pre-auth key Basecamp mints (`FJS-D2331`).
 

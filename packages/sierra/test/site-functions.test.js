@@ -384,6 +384,13 @@ describe('analytics.proxy derives the Plausible proxy (FJS-D1037)', () => {
     expect(seen[0].url).toBe('/js/script.manual.js')
   })
 
+  // FJS-4447: with nothing fronting serveSite, Plausible saw only the server's IP.
+  test('with no front proxy, the event carries the visitor\'s socket address', async () => {
+    const event = await fetch(`${site.url}/api/event`, { method: 'POST', body: '{"n":"pageview"}', headers: { 'Content-Type': 'text/plain' } })
+    expect(event.status).toBe(202)
+    expect(seen.at(-1).xff).toMatch(/^(::ffff:)?127\.0\.0\.1$|^::1$/)
+  })
+
   test('a site file at a proxied path is refused as a duplicate, by name', async () => {
     mkdirSync(join(P, 'functions/api'), { recursive: true })
     writeFileSync(join(P, 'functions/api/event.js'), `export default () => new Response('mine')`)

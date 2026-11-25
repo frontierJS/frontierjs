@@ -18,6 +18,7 @@ import { profiles } from '../resources/Profile.mesa'
 import { threads } from '../resources/Thread.mesa'
 import { chat as link } from '../resources/Chat.mesa'
 import { reactions } from '../resources/Reaction.mesa'
+import { fileInfos } from '../resources/FileInfo.mesa'
 import { drafts } from '../resources/Draft.mesa'
 import { posts } from '../resources/Post.mesa'
 import { savedPosts } from '../resources/SavedPost.mesa'
@@ -330,10 +331,34 @@ export function reactionChips(rows, self, people) {
  * create names its profile because the schema's policy compares it to the caller's before
  * the server is asked.
  */
+/**
+ * A room's reactions and files, one tether each. A row carries its post's room,
+ * so the room is one read whatever posts are on screen; a window of posts would
+ * ask again each time a post landed, and a filter through the post is one the
+ * client cannot match, so every push would read the room again.
+ */
+export function roomExtras(channelExternalId) {
+  const where = { channelExternalId }
+  const r = reactions.tethered({ state: 'local', all: true, where })
+  const f = fileInfos.tethered({ state: 'local', all: true, where })
+  return { reactions: r, files: f, destroy() { r.destroy(); f.destroy() } }
+}
+
+/** Rows by the post they name. */
+export function byPost(rows) {
+  const m = new Map()
+  for (const x of rows) {
+    if (!x.postExternalId) continue
+    const at = m.get(x.postExternalId)
+    if (at) at.push(x); else m.set(x.postExternalId, [x])
+  }
+  return m
+}
+
 export async function toggleReaction(post, name, rows, self) {
   const mine = rows.find(r => r.emojiName === name && r.profileExternalId === self)
   if (mine) await reactions.service.remove(mine.id)
-  else await reactions.service.create({ postExternalId: post.externalId, profileExternalId: self, emojiName: name })
+  else await reactions.service.create({ postExternalId: post.externalId, channelExternalId: post.channelExternalId, profileExternalId: self, emojiName: name })
 }
 
 // ── Making and leaving channels ──
@@ -486,6 +511,10 @@ export const todoLists = async (projectId) => (await say('todoLists', { projectI
 /** The notes a to-do from this post carries: the permalink, computed on the server. */
 export const todoNotes = async (post) => (await say('todoNotes', { postExternalId: post.externalId })).notes
 /** `{ id, appUrl }`; what is sent is the title, the two ids and the post's id, and the server adds the permalink. */
+// Bare ids, never names: a stored place Basecamp no longer answers is dropped by the dialog.
+const TODO_PLACE = 'workbench_messages_todo_place'
+export const lastTodoPlace = () => { try { return JSON.parse(localStorage.getItem(TODO_PLACE)) } catch { return null } }
+export const rememberTodoPlace = (projectId, listId) => { try { localStorage.setItem(TODO_PLACE, JSON.stringify({ projectId, listId })) } catch {} }
 export const makeTodo = (post, { projectId, listId, title }) => say('makeTodo', { postExternalId: post.externalId, projectId, listId, title })
 
 /** A tether over posts landed by id; null for none, which is not a read of everything. */

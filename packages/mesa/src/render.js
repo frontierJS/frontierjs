@@ -417,6 +417,14 @@ async function _renderString(ComponentFactory, props, options) {
 
 // ─── Full page wrapper ────────────────────────────────────────────────────────
 
+// A crawler reads an Open Graph tag only from `property=`; written as `name=`,
+// a share card falls back to the bare URL. `twitter:` stays `name=`.
+const OPEN_GRAPH_KEY = /^(og|fb|article|book|profile|music|video):/
+
+function metaKeyAttr(key) {
+  return OPEN_GRAPH_KEY.test(key) ? 'property' : 'name'
+}
+
 export function wrapPage(bodyHTML, options = {}) {
   const {
     title        = 'Mesa',
@@ -433,7 +441,7 @@ export function wrapPage(bodyHTML, options = {}) {
   // everyone, and beside an escaped value that made the omission look deliberate.
   const cssTag     = css ? `  <link rel="stylesheet" href="${escapeHTML(css)}">` : ''
   const metaTags   = Object.entries(meta)
-    .map(([n, c]) => `  <meta name="${escapeHTML(n)}" content="${escapeHTML(c)}">`)
+    .map(([n, c]) => `  <meta ${metaKeyAttr(n)}="${escapeHTML(n)}" content="${escapeHTML(c)}">`)
     .join('\n')
   const scriptTags = scripts
     .map((s) => `  <script type="module" src="${escapeHTML(s)}"></script>`)

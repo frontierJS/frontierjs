@@ -20,11 +20,12 @@
 import { ConduitStreamError } from '@frontierjs/conduit'
 import type { ConduitChunk, ConduitError, ConduitRequest, ConduitResult, TargetDescriptor } from '@frontierjs/conduit'
 import { translate, type AnthropicFailure } from './errors.ts'
-import type { ContentBlock, CountTokensResponse, Message, MessagesRequest, MessagesResponse, StreamEvent, ToolResultBlock, ToolUseBlock, Usage } from './types.ts'
+import type { AssistantBlock, CountTokensResponse, Message, MessagesRequest, MessagesResponse, StreamEvent, ToolResultBlock, ToolUseBlock, Usage } from './types.ts'
 
 export * from './types.ts'
 export * from './errors.ts'
 export * from './door.ts'
+export * from './prices.ts'
 
 export const ANTHROPIC_TARGET  = 'provider:anthropic'
 export const ANTHROPIC_ADDRESS = 'https://api.anthropic.com'
@@ -105,6 +106,16 @@ const isCount = {
   },
 }
 
+/**
+ * The body and the per-call headers of one request. `betas` leaves the body for
+ * the `anthropic-beta` header: the API 400s a `betas` field, and a beta field
+ * such as `fallbacks` sent without its header is refused as an extra input.
+ */
+function wire<R extends { betas?: string[] }>(req: R): { body: Omit<R, 'betas'>; headers: Record<string, string> } {
+  const { betas, ...body } = req
+  return { body, headers: betas?.length ? { 'anthropic-beta': betas.join(',') } : {} }
+}
+
 // ─── Calls ───────────────────────────────────────────────────────────────────
 
 /**
@@ -116,7 +127,7 @@ const isCount = {
 export async function createMessage(send: Send, req: MessagesRequest, opts: { signal?: AbortSignal } = {}): Promise<{ message?: MessagesResponse; error?: AnthropicFailure }> {
   const bad = checkRequest(req)
   if (bad) return { error: bad }
-  const result = await send<MessagesResponse>({ method: 'POST', path: '/v1/messages', body: req, validate: isMessage, ...(opts.signal ? { signal: opts.signal } : {}) })
+  const result = await send<MessagesResponse>({ method: 'POST', path: '/v1/messages', ...wire(req), validate: isMessage, ...(opts.signal ? { signal: opts.signal } : {}) })
   if (result.error) return { error: translate(result.error, result.meta.status) }
   return { message: result.data }
 }
@@ -125,7 +136,7 @@ export async function createMessage(send: Send, req: MessagesRequest, opts: { si
 export async function countTokens(send: Send, req: Omit<MessagesRequest, 'max_tokens'>): Promise<{ count?: CountTokensResponse; error?: AnthropicFailure }> {
   const bad = checkRequest({ ...req, max_tokens: 1 })
   if (bad) return { error: bad }
-  const result = await send<CountTokensResponse>({ method: 'POST', path: '/v1/messages/count_tokens', body: req, replayable: true, validate: isCount })
+  const result = await send<CountTokensResponse>({ method: 'POST', path: '/v1/messages/count_tokens', ...wire(req), replayable: true, validate: isCount })
   if (result.error) return { error: translate(result.error, result.meta.status) }
   return { count: result.data }
 }
@@ -146,7 +157,7 @@ export interface ToolLoopResult {
 }
 
 /** `Usage` with the vendor's `null`s read as zero, so it can be added to. */
-export type UsageSum = { [K in keyof Required<Usage>]: number }
+export type UsageSum = { [K in Exclude<keyof Usage, 'cache_creation'>]-?: number }
 
 const zeroUsage = (): UsageSum => ({ input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 })
 
@@ -160,7 +171,10 @@ function addUsage(sum: UsageSum, u: Partial<Usage> | undefined): void {
 
 /**
  * `stop_reason: 'tool_use'` → run every tool the turn asked for → append the
- * results → ask again, until the model stops or `maxTurns` is spent. A tool
+ * results → ask again, until the model stops or `maxTurns` is spent. A
+ * `pause_turn` (a server tool's loop hit its limit) is asked again with the
+ * paused turn as the last message and no user turn after it; that is how the
+ * API resumes one. A tool
  * that throws, or a name the table lacks, is handed back as an `is_error`
  * result rather than ending the loop: the model asked, and the model can
  * recover. Each turn is a bill, so the cap is not optional and the sum is
@@ -178,6 +192,7 @@ export async function runToolLoop(send: Send, req: MessagesRequest, tools: ToolT
     if (error) return { error, usage, turns, messages }
     addUsage(usage, message!.usage)
     messages.push({ role: 'assistant', content: message!.content })
+    if (message!.stop_reason === 'pause_turn') continue
     if (message!.stop_reason !== 'tool_use') return { message, usage, turns, messages }
 
     const asked = message!.content.filter((b): b is ToolUseBlock => b.type === 'tool_use')
@@ -213,7 +228,8 @@ export async function* streamMessage(stream: Stream, req: MessagesRequest, opts:
   if (bad) { yield { type: 'stream_error', failure: bad }; return }
 
   try {
-    const events = stream({ method: 'POST', path: '/v1/messages', body: { ...req, stream: true }, headers: { accept: 'text/event-stream' }, signal: opts.signal })
+    const { body, headers } = wire(req)
+    const events = stream({ method: 'POST', path: '/v1/messages', body: { ...body, stream: true }, headers: { ...headers, accept: 'text/event-stream' }, signal: opts.signal })
     for await (const chunk of events) {
       const data = (chunk.data as { data?: unknown } | null)?.data as StreamEvent | null | undefined
       if (!data || typeof data !== 'object' || typeof (data as { type?: unknown }).type !== 'string') continue
@@ -229,30 +245,44 @@ export async function* streamMessage(stream: Stream, req: MessagesRequest, opts:
   yield { type: 'stream_error', failure: translate(ended) }
 }
 
-/** The text a stream's `text_delta`s spell, and the tool calls its `input_json_delta`s assemble. For a caller that wants the whole answer after all. */
-export function assemble(events: StreamEvent[]): { text: string; toolUse: ToolUseBlock[]; stopReason: MessagesResponse['stop_reason']; usage: Partial<Usage>; content: ContentBlock[] } {
-  const blocks: (ContentBlock & { _json?: string })[] = []
+/**
+ * The answer a stream spells, with every block as the API built it, so a host
+ * can send `content` back next turn unchanged: a thinking block keeps its
+ * signature, a server tool its input, a cited text its citations. A tool input
+ * that is not JSON (a `max_tokens` cut inside one) is `{}` with its raw text in
+ * `invalidInput` under the block's id, rather than a throw that loses the turn.
+ */
+export function assemble(events: StreamEvent[]): { text: string; toolUse: ToolUseBlock[]; stopReason: MessagesResponse['stop_reason']; usage: Partial<Usage>; content: AssistantBlock[]; invalidInput: Record<string, string> } {
+  const blocks: AssistantBlock[] = []
+  const json = new Map<number, string>()
+  const invalidInput: Record<string, string> = {}
   let stopReason: MessagesResponse['stop_reason'] = null
   const usage: Partial<Usage> = {}
   for (const ev of events) {
-    if (ev.type === 'message_start')        Object.assign(usage, ev.message.usage)
-    if (ev.type === 'content_block_start')  blocks[ev.index] = { ...ev.content_block }
+    if (ev.type === 'message_start') Object.assign(usage, ev.message.usage)
+    if (ev.type === 'content_block_start') {
+      blocks[ev.index] = { ...ev.content_block }
+      if (ev.content_block.type === 'tool_use' || ev.content_block.type === 'server_tool_use') json.set(ev.index, '')
+    }
     if (ev.type === 'content_block_delta') {
-      const b = blocks[ev.index]
+      const b = blocks[ev.index], d = ev.delta
       if (!b) continue
-      if (ev.delta.type === 'text_delta' && b.type === 'text') b.text += ev.delta.text
-      if (ev.delta.type === 'input_json_delta' && b.type === 'tool_use') b._json = (b._json ?? '') + ev.delta.partial_json
+      if (d.type === 'text_delta'       && b.type === 'text')     b.text += d.text
+      if (d.type === 'citations_delta'  && b.type === 'text')     b.citations = [...(b.citations ?? []), d.citation]
+      if (d.type === 'thinking_delta'   && b.type === 'thinking') b.thinking += d.thinking
+      if (d.type === 'signature_delta'  && b.type === 'thinking') b.signature = d.signature
+      if (d.type === 'input_json_delta' && json.has(ev.index))    json.set(ev.index, json.get(ev.index) + d.partial_json)
     }
     if (ev.type === 'message_delta') { stopReason = ev.delta.stop_reason; Object.assign(usage, ev.usage) }
   }
-  const content: ContentBlock[] = blocks.filter(Boolean).map(b => {
-    if (b.type === 'tool_use' && b._json !== undefined) { const { _json, ...rest } = b; return { ...rest, input: JSON.parse(_json || '{}') } }
-    const { _json: _unused, ...rest } = b
-    return rest
-  })
+  for (const [index, raw] of json) {
+    const b = blocks[index] as ToolUseBlock
+    try { b.input = raw ? JSON.parse(raw) : {} } catch { b.input = {}; invalidInput[b.id] = raw }
+  }
+  const content = blocks.filter(Boolean)
   return {
-    text:     content.filter((b): b is Extract<ContentBlock, { type: 'text' }> => b.type === 'text').map(b => b.text).join(''),
+    text:     content.flatMap(b => b.type === 'text' ? [b.text] : []).join(''),
     toolUse:  content.filter((b): b is ToolUseBlock => b.type === 'tool_use'),
-    stopReason, usage, content,
+    stopReason, usage, content, invalidInput,
   }
 }

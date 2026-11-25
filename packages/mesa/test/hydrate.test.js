@@ -212,6 +212,38 @@ lead <b>{on}</b>{#if on}<s>x</s>{/if}<section><Kid/></section>`, 'Late', { dev: 
     expect(d.style.animationDuration).toBe('5ms')
   })
 
+  it('adopts the rows of an {#each} and the branch of an {#if} inside <svg> (FJS-4598)', async () => {
+    const c = await build(`<script>\n  let xs = [1, 2]\n  let k = 3\n  let on = true\n</script>\n<button onclick={() => { k++; xs = [...xs, 9] }}>go</button><svg><g>{#each xs as x}<circle r={x + k}></circle>{/each}{#if on}<rect width={k}></rect>{/if}</g></svg>`, undefined, { dev: true })
+    const root = await served(c)
+    const circles = [...root.querySelectorAll('circle')], rect = root.querySelector('rect')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    expect([...root.querySelectorAll('circle')]).toEqual(circles)
+    expect(root.querySelector('rect')).toBe(rect)
+    root.querySelector('button').click()
+    flushSync()
+    expect([...root.querySelectorAll('circle')].map((e) => e.getAttribute('r'))).toEqual(['5', '6', '13'])
+    expect([...root.querySelectorAll('circle')].slice(0, 2)).toEqual(circles)
+    expect(rect.getAttribute('width')).toBe('4')
+    expect(root.querySelector('circle').namespaceURI).toBe('http://www.w3.org/2000/svg')
+  })
+
+  it('adopts an {#if} body that is only text, and keeps writing it (FJS-4598)', async () => {
+    const c = await build(`<script>\n  let on = true\n  let k = 1\n</script>\n<button onclick={() => k++}>b</button><p>{#if on}hi {k}{/if}</p>`, undefined, { dev: true })
+    const root = await served(c)
+    const p = root.querySelector('p'), text = [...p.childNodes].find((x) => x.nodeType === 3)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    root.querySelector('button').click()
+    flushSync()
+    expect(p.textContent).toBe('hi 2')
+    expect([...p.childNodes]).toContain(text)
+  })
+
   it('adopts the nodes an {@html} wrote, replaces them on the next write, and replaces markup the client parses differently (FJS-4515)', async () => {
     const src = `<script>\n  export let m = '<i>one</i>'\n  let n = 0\n</script>\n<p>a{@html m}b</p><button onclick={() => { m = '<u>two</u>'; n++ }}>{n}</button>`
     const c = await build(src, undefined, { dev: true })
@@ -243,6 +275,23 @@ lead <b>{on}</b>{#if on}<s>x</s>{/if}<section><Kid/></section>`, 'Late', { dev: 
     flushSync()
     expect(root.querySelector('i')).toBe(i)
     expect(root.querySelectorAll('i')).toHaveLength(1)
+  })
+
+  it('adopts the settled branch of an {#await} whose {:pending} reads a live value (FJS-4599)', async () => {
+    const c = await build(`<script>\n  let n = 1\n  let p = Promise.resolve(5)\n</script>\n<button onclick={() => { p = new Promise(() => {}); n++ }}>b</button><div>{#await p}<code>{n}</code>{:then v}<i>got {v}</i>{/await}</div>`, 'HyPend', { dev: true })
+    const root = await served(c)
+    const i = root.querySelector('i')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    hydrate(root, c.dom)
+    await new Promise((r) => setTimeout(r, 0))
+    flushSync()
+    expect(warn).not.toHaveBeenCalled()
+    warn.mockRestore()
+    expect(root.querySelector('i')).toBe(i)
+    expect(root.querySelector('code')).toBeNull()
+    root.querySelector('button').click()
+    flushSync()
+    expect(root.querySelector('code')?.textContent).toBe('2')
   })
 
   it('adopts a single-element root with no key, and refuses by name when it is not on the page', async () => {

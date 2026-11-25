@@ -29,7 +29,7 @@ import { packageMembers }  from '../workspace-members.js'
 import { packageTable }    from '../package-table.js'
 import { safeRead, walk }                                                                                                                                     from '../fs.js'
 import { catchFindings, CATCH_PATHS }                                                                                                                         from '../catches.js'
-import { claudeImportFindings, claudeSpawnFindings, CLAUDE_PACKAGE }                                                                                         from '../claude-boundary.js'
+import { claudeImportFindings, claudeLoginFindings, claudeSpawnFindings, CLAUDE_PACKAGE }                                                                                         from '../claude-boundary.js'
 
 export const CHECKS = {
 
@@ -655,6 +655,11 @@ export const CHECKS = {
   'claude-spawn-owned': ({ root }) => {
     if (!existsSync(join(root, CLAUDE_PACKAGE))) return { skipped: 'no packages/claude' }
     return { findings: claudeSpawnFindings(root) }
+  },
+
+  'claude-login-owned': ({ root }) => {
+    if (!existsSync(join(root, CLAUDE_PACKAGE))) return { skipped: 'no packages/claude' }
+    return { findings: claudeLoginFindings(root) }
   },
 
   // A warning here and a per-package ceiling in CI (scripts/catch-baselines.json):

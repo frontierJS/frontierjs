@@ -37,6 +37,7 @@ export * from './errors.ts'
 export const BASECAMP_API_TARGET   = 'provider:37signals:api'
 export const BASECAMP_PERSON_TARGET = 'provider:37signals:person'
 export const BASECAMP_TOKEN_TARGET = 'provider:37signals:token'
+export const BASECAMP_REGISTER_TARGET = 'provider:37signals:register'
 export const BASECAMP_STREAM_TARGET = 'broker:37signals'
 export const BASECAMP_API_ORIGIN   = 'https://3.basecampapi.com'
 export const BASECAMP_TOKEN_ORIGIN = 'https://app.basecamp.com'
@@ -53,7 +54,7 @@ export type BasecampAs = 'api' | 'person'
  * write goes through `api`, a refresh through `token`. `api` spends whichever
  * credential the bind chose, so a call never decides whose token it spends.
  */
-export interface BasecampSend { api: Send; token: Send; as: BasecampAs }
+export interface BasecampSend { api: Send; token: Send; register: Send; as: BasecampAs }
 
 export interface BindOptions {
   /** `person` binds `api` to the per-caller target, so every call appears as its author. */
@@ -62,8 +63,8 @@ export interface BindOptions {
   who?: CredentialCaller
 }
 
-type Bindable = { api: { id: string }; person: { id: string }; token: { id: string } }
-const DEFAULT_IDS: Bindable = { api: { id: BASECAMP_API_TARGET }, person: { id: BASECAMP_PERSON_TARGET }, token: { id: BASECAMP_TOKEN_TARGET } }
+type Bindable = { api: { id: string }; person: { id: string }; token: { id: string }; register?: { id: string } }
+const DEFAULT_IDS: Bindable = { api: { id: BASECAMP_API_TARGET }, person: { id: BASECAMP_PERSON_TARGET }, token: { id: BASECAMP_TOKEN_TARGET }, register: { id: BASECAMP_REGISTER_TARGET } }
 
 export function bindBasecamp(conduit: { send<T>(req: ConduitRequest): Promise<ConduitResult<T>> }, targets: BasecampTargets | Bindable = DEFAULT_IDS, opts: BindOptions = {}): BasecampSend {
   const as = opts.as ?? 'api'
@@ -72,11 +73,35 @@ export function bindBasecamp(conduit: { send<T>(req: ConduitRequest): Promise<Co
   return {
     api:   req => conduit.send({ target: account, ...who, ...req }),
     token: req => conduit.send({ target: targets.token.id, ...req }),
+    register: req => conduit.send({ target: targets.register?.id ?? BASECAMP_REGISTER_TARGET, ...req }),
     as,
   }
 }
 
-export interface BasecampTargets { api: TargetDescriptor; person: TargetDescriptor; token: TargetDescriptor; stream: TargetDescriptor }
+/**
+ * The two targets a sign-in needs before any account is known: `token`, and
+ * `register` for the client itself. `basecampTargets` includes both.
+ */
+export function basecampSignInTargets(opts: { userAgent: string; apiOrigin?: string; tokenOrigin?: string }): Pick<BasecampTargets, 'token' | 'register'> {
+  if (!opts.userAgent?.trim()) throw new TypeError('37signals: userAgent is required — Basecamp answers a request without one 400; name the app and a contact, "My App (https://example.com/myapp)"')
+  const common = { kind: 'provider' as const, protocol: 'http' as const, headers: { 'user-agent': opts.userAgent }, registered_at: Date.now(), last_seen_at: null }
+  const apiOrigin = (opts.apiOrigin ?? BASECAMP_API_ORIGIN).replace(/\/+$/, '')
+  const tokenOrigin = (opts.tokenOrigin ?? BASECAMP_TOKEN_ORIGIN).replace(/\/+$/, '')
+  return {
+    // `authorization.json` sits on the API's origin and is asked with the
+    // token a sign-in just answered, before any account is known.
+    token: {
+      ...common, id: BASECAMP_TOKEN_TARGET, address: tokenOrigin,
+      auth: { type: 'none' }, encoding: 'form',
+      ...(apiOrigin !== tokenOrigin ? { origins: [apiOrigin] } : {}),
+    },
+    // RFC 7591 registration is a JSON body, where every other OAuth endpoint
+    // takes a form.
+    register: { ...common, id: BASECAMP_REGISTER_TARGET, address: tokenOrigin, auth: { type: 'none' } },
+  }
+}
+
+export interface BasecampTargets { api: TargetDescriptor; person: TargetDescriptor; token: TargetDescriptor; register: TargetDescriptor; stream: TargetDescriptor }
 
 /**
  * `userAgent` names the app and how to reach whoever runs it — Basecamp asks
@@ -88,20 +113,17 @@ export function basecampTargets(opts: { accountId: string | number; userAgent: s
   if (!/^\d+$/.test(account)) throw new TypeError('37signals: accountId is the number in 3.basecampapi.com/<accountId>, from authorization.json\'s accounts')
   if (!opts.userAgent?.trim()) throw new TypeError('37signals: userAgent is required — Basecamp answers a request without one 400; name the app and a contact, "My App (https://example.com/myapp)"')
   const headers = { 'user-agent': opts.userAgent }
+  const apiOrigin = (opts.apiOrigin ?? BASECAMP_API_ORIGIN).replace(/\/+$/, '')
   const common = { kind: 'provider' as const, protocol: 'http' as const, headers, registered_at: Date.now(), last_seen_at: null }
   const api: TargetDescriptor = {
     ...common, id: BASECAMP_API_TARGET,
-    address: `${(opts.apiOrigin ?? BASECAMP_API_ORIGIN).replace(/\/+$/, '')}/${account}`,
+    address: `${apiOrigin}/${account}`,
     auth: { type: 'bearer', ref: opts.ref ?? 'BASECAMP_TOKEN' },
   }
   return {
     api,
     person: { ...api, id: BASECAMP_PERSON_TARGET, auth: { type: 'bearer', ref: 'BASECAMP_PERSON_TOKEN', per_caller: true } },
-    token: {
-      ...common, id: BASECAMP_TOKEN_TARGET,
-      address: (opts.tokenOrigin ?? BASECAMP_TOKEN_ORIGIN).replace(/\/+$/, ''),
-      auth: { type: 'none' }, encoding: 'form',
-    },
+    ...basecampSignInTargets(opts),
     // No address and no credential: `basecampStreamDialect`'s dial mints both,
     // the ticket in the URL, through `api` (3.4).
     stream: {
@@ -172,6 +194,109 @@ export function basecampTokenResolver(bc: BasecampSend, opts: { clientId: string
     get: ref => grants ? mint(grants, ref) : Promise.resolve(null),
     ...(grantsFor ? { getFor: (ref: string, who: CredentialCaller) => mint(grantsFor(who), ref) } : {}),
   }
+}
+
+// ─── Signing in (device code) ─────────────────────────────────────────────
+// A public client registers once (RFC 7591, no secret) and signs a person in
+// by RFC 8628: the person approves a short code at `verification_uri` in any
+// browser while the app polls `token`. What the app keeps is the client id and
+// the refresh token, which `basecampTokenResolver` spends from then on.
+// `app.basecamp.com` advertises all three endpoints; whether a registered
+// client may take the device grant, and the registration body it requires,
+// are unmeasured, so these are the RFCs' words.
+
+export const BASECAMP_REGISTER_PATH = '/oauth/clients'
+export const BASECAMP_DEVICE_PATH   = '/oauth/device_authorizations'
+export const DEVICE_CODE_GRANT      = 'urn:ietf:params:oauth:grant-type:device_code'
+/** `full` writes; `offline_access` is what earns a refresh token. */
+export const BASECAMP_SIGN_IN_SCOPE = 'full offline_access'
+
+/**
+ * Registers a public client and answers its id. Never resent: a lost answer
+ * may have made a client nobody knows the id of, and a second one beside it
+ * is harmless while a loop of them is not.
+ */
+export async function registerClient(bc: BasecampSend, opts: { clientName: string; scope?: string }): Promise<{ clientId?: string; error?: BasecampFailure }> {
+  if (!opts.clientName?.trim()) throw new TypeError('37signals: clientName is what the person sees when they approve; name the app')
+  const r = await bc.register<{ client_id?: string }>({
+    method: 'POST', path: BASECAMP_REGISTER_PATH,
+    body: { client_name: opts.clientName, grant_types: [DEVICE_CODE_GRANT, 'refresh_token'], token_endpoint_auth_method: 'none', scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE },
+  })
+  if (r.error) return { error: failure(r) }
+  if (!r.data?.client_id) throw new TypeError('37signals: the registration endpoint answered no client_id')
+  return { clientId: r.data.client_id }
+}
+
+/** What the person is shown, and what the app polls with. `deviceCode` stays on the server. */
+export interface DeviceSignIn { deviceCode: string; userCode: string; verificationUri: string; verificationUriComplete?: string; expiresAt: number; intervalMs: number }
+
+export async function startDeviceSignIn(bc: BasecampSend, opts: { clientId: string; scope?: string }): Promise<{ signIn?: DeviceSignIn; error?: BasecampFailure }> {
+  if (!opts.clientId) throw new TypeError('37signals: clientId is required — the client registerClient answered')
+  const r = await bc.token<{ device_code?: string; user_code?: string; verification_uri?: string; verification_uri_complete?: string; expires_in?: number; interval?: number }>({
+    method: 'POST', path: BASECAMP_DEVICE_PATH, body: { client_id: opts.clientId, scope: opts.scope ?? BASECAMP_SIGN_IN_SCOPE },
+  })
+  if (r.error) return { error: failure(r) }
+  const d = r.data
+  if (!d?.device_code || !d.user_code || !d.verification_uri || typeof d.expires_in !== 'number') throw new TypeError('37signals: the device authorization answered without device_code, user_code, verification_uri or expires_in')
+  return { signIn: {
+    deviceCode: d.device_code, userCode: d.user_code, verificationUri: d.verification_uri,
+    ...(d.verification_uri_complete ? { verificationUriComplete: d.verification_uri_complete } : {}),
+    expiresAt: Date.now() + d.expires_in * 1000,
+    // RFC 8628 3.2: absent, the client waits five seconds.
+    intervalMs: (d.interval ?? 5) * 1000,
+  } }
+}
+
+export interface DeviceGrant { accessToken: string; refreshToken: string; expiresAt: number | null }
+/** `denied` and `expired` end the sign-in; the person starts another. */
+export type DeviceOutcome = { grant: DeviceGrant; polls: number } | { ended: 'denied' | 'expired' | 'cancelled' | 'no_refresh_token'; polls: number } | { error: BasecampFailure; polls: number }
+
+/**
+ * Polls `token` until the person approves, refuses or the code expires.
+ * `slow_down` adds five seconds to every later wait (RFC 8628 3.5), and a
+ * throttled or failed poll waits and asks again: the code is the credential
+ * and nothing was spent. `sleep` is the clock, for a drive.
+ */
+export async function awaitDeviceGrant(bc: BasecampSend, opts: { clientId: string; signIn: DeviceSignIn; signal?: AbortSignal; sleep?: (ms: number) => Promise<void> }): Promise<DeviceOutcome> {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>(res => setTimeout(res, ms)))
+  let wait = opts.signIn.intervalMs, polls = 0
+  for (;;) {
+    if (Date.now() >= opts.signIn.expiresAt) return { ended: 'expired', polls }
+    await sleep(wait)
+    if (opts.signal?.aborted) return { ended: 'cancelled', polls }
+    polls++
+    const r = await bc.token<{ access_token?: string; refresh_token?: string; expires_in?: number }>({
+      method: 'POST', path: BASECAMP_TOKEN_PATH,
+      body: { grant_type: DEVICE_CODE_GRANT, device_code: opts.signIn.deviceCode, client_id: opts.clientId },
+    })
+    if (!r.error) {
+      const t = r.data
+      if (!t?.access_token) throw new TypeError('37signals: the token endpoint answered no access_token')
+      if (!t.refresh_token) return { ended: 'no_refresh_token', polls }
+      return { grant: { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: typeof t.expires_in === 'number' ? Date.now() + t.expires_in * 1000 : null }, polls }
+    }
+    const code = errorBody<BasecampErrorBody>(r.error.raw)?.error
+    if (code === 'authorization_pending') continue
+    if (code === 'slow_down') { wait += 5000; continue }
+    if (code === 'access_denied') return { ended: 'denied', polls }
+    if (code === 'expired_token') return { ended: 'expired', polls }
+    const f = failure(r)
+    if (!f.retryable) return { error: f, polls }
+  }
+}
+
+/** One account the signed-in person can reach; `product: 'bc3'` is the one `api` addresses. */
+export interface AuthorizedAccount { product: string; id: number; name: string; href?: string; app_href?: string }
+export interface Authorization { identity: { id: number; first_name?: string; last_name?: string; email_address?: string }; accounts: AuthorizedAccount[] }
+
+/** Who a freshly granted token is and which accounts it reaches, read before any account is chosen. */
+export async function authorization(bc: BasecampSend, opts: { accessToken: string; apiOrigin?: string }): Promise<Read<Authorization>> {
+  const r = await bc.token<Authorization>({
+    method: 'GET', address: (opts.apiOrigin ?? BASECAMP_API_ORIGIN).replace(/\/+$/, ''), path: '/authorization.json',
+    headers: { authorization: `Bearer ${opts.accessToken}` }, replayable: true,
+  })
+  if (r.error) return { error: failure(r) }
+  return { row: r.data }
 }
 
 // ─── Reads, every one replayable ─────────────────────────────────────────

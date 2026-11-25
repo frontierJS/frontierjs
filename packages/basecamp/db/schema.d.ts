@@ -578,9 +578,9 @@ export interface Credential {
   createdAt: string
 }
 
-export interface CredentialCreate {
+export type CredentialCreate = {
   id?: string
-  userId: string
+  userId?: string
   type: string
   value: string
   label?: string | null
@@ -616,7 +616,7 @@ export interface CredentialCreate {
   clientId?: string | null
   redirectUri?: string | null
   user?: __BelongsToWrite<UserWhere, UserCreate>
-}
+} & ({ userId: string } | { user: __BelongsToWrite<UserWhere, UserCreate> })
 
 export interface CredentialUpdate {
   id?: string
@@ -732,9 +732,9 @@ export interface Session {
   rotatedAt?: string | null
 }
 
-export interface SessionCreate {
+export type SessionCreate = {
   id?: string
-  userId: string
+  userId?: string
   /** Null on an authorized app's row, which no cookie or Bearer names. */
   token?: string | null
   expiresAt: string | Date
@@ -791,7 +791,7 @@ export interface SessionCreate {
   previousRefreshToken?: string | null
   rotatedAt?: string | Date | null
   user?: __BelongsToWrite<UserWhere, UserCreate>
-}
+} & ({ userId: string } | { user: __BelongsToWrite<UserWhere, UserCreate> })
 
 export interface SessionUpdate {
   id?: string
@@ -1223,8 +1223,8 @@ export interface MetricSeriesCreate {
   type?: MetricType
   unit?: string | null
   lastSeenAt?: string | Date
-  points?: __HasManyWrite<MetricPointWhere, Omit<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
-  hours?: __HasManyWrite<MetricHourWhere, Omit<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
+  points?: __HasManyWrite<MetricPointWhere, __OmitEach<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
+  hours?: __HasManyWrite<MetricHourWhere, __OmitEach<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
 }
 
 export interface MetricSeriesUpdate {
@@ -1235,8 +1235,8 @@ export interface MetricSeriesUpdate {
   type?: MetricType
   unit?: string | null
   lastSeenAt?: string | Date
-  points?: __HasManyWrite<MetricPointWhere, Omit<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
-  hours?: __HasManyWrite<MetricHourWhere, Omit<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
+  points?: __HasManyWrite<MetricPointWhere, __OmitEach<MetricPointCreate, 'seriesId'>, MetricPointUpdate>
+  hours?: __HasManyWrite<MetricHourWhere, __OmitEach<MetricHourCreate, 'seriesId'>, MetricHourUpdate>
 }
 
 export interface MetricSeriesWhere extends WhereBase {
@@ -1386,7 +1386,7 @@ export interface FlowCreate {
   ownerId?: string
   runsPerMinute?: number | null
   maxWrites?: number
-  versions?: __HasManyWrite<FlowVersionWhere, Omit<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
+  versions?: __HasManyWrite<FlowVersionWhere, __OmitEach<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
   workspaceId?: string
   workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   owner?: __BelongsToWrite<UserWhere, UserCreate>
@@ -1401,7 +1401,7 @@ export interface FlowUpdate {
   ownerId?: string
   runsPerMinute?: number | null
   maxWrites?: number
-  versions?: __HasManyWrite<FlowVersionWhere, Omit<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
+  versions?: __HasManyWrite<FlowVersionWhere, __OmitEach<FlowVersionCreate, 'flowId'>, FlowVersionUpdate>
   workspaceId?: string
   workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   owner?: __BelongsToWrite<UserWhere, UserCreate>
@@ -1451,15 +1451,15 @@ export interface FlowVersion {
   createdAt: string
 }
 
-export interface FlowVersionCreate {
+export type FlowVersionCreate = {
   id?: string
-  flowId: string
+  flowId?: string
   flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   version: number
   definition: unknown
   authorId?: string | null
-  runs?: __HasManyWrite<RunWhere, Omit<RunCreate, 'flowVersionId'>, RunUpdate>
-}
+  runs?: __HasManyWrite<RunWhere, __OmitEach<RunCreate, 'flowVersionId'>, RunUpdate>
+} & ({ flowId: string } | { flow: __BelongsToWrite<FlowWhere, FlowCreate> })
 
 export interface FlowVersionUpdate {
   id?: string
@@ -1468,7 +1468,7 @@ export interface FlowVersionUpdate {
   version?: number
   definition?: unknown
   authorId?: string | null
-  runs?: __HasManyWrite<RunWhere, Omit<RunCreate, 'flowVersionId'>, RunUpdate>
+  runs?: __HasManyWrite<RunWhere, __OmitEach<RunCreate, 'flowVersionId'>, RunUpdate>
 }
 
 export interface FlowVersionWhere extends WhereBase {
@@ -1503,12 +1503,12 @@ export interface FlowLayout {
   updatedAt: string
 }
 
-export interface FlowLayoutCreate {
+export type FlowLayoutCreate = {
   id?: string
-  flowId: string
+  flowId?: string
   flow?: __BelongsToWrite<FlowWhere, FlowCreate>
   layout?: unknown
-}
+} & ({ flowId: string } | { flow: __BelongsToWrite<FlowWhere, FlowCreate> })
 
 export interface FlowLayoutUpdate {
   id?: string
@@ -1554,9 +1554,9 @@ export interface Run {
   heartbeatAt?: string | null
 }
 
-export interface RunCreate {
+export type RunCreate = {
   id?: string
-  flowVersionId: string
+  flowVersionId?: string
   flowVersion?: __BelongsToWrite<FlowVersionWhere, FlowVersionCreate>
   status?: FlowRunStatus
   trigger?: unknown | null
@@ -1567,9 +1567,9 @@ export interface RunCreate {
   endedAt?: string | Date | null
   error?: string | null
   heartbeatAt?: string | Date | null
-  steps?: __HasManyWrite<RunStepWhere, Omit<RunStepCreate, 'runId'>, RunStepUpdate>
-  waits?: __HasManyWrite<WaitWhere, Omit<WaitCreate, 'runId'>, WaitUpdate>
-}
+  steps?: __HasManyWrite<RunStepWhere, __OmitEach<RunStepCreate, 'runId'>, RunStepUpdate>
+  waits?: __HasManyWrite<WaitWhere, __OmitEach<WaitCreate, 'runId'>, WaitUpdate>
+} & ({ flowVersionId: string } | { flowVersion: __BelongsToWrite<FlowVersionWhere, FlowVersionCreate> })
 
 export interface RunUpdate {
   id?: string
@@ -1584,8 +1584,8 @@ export interface RunUpdate {
   endedAt?: string | Date | null
   error?: string | null
   heartbeatAt?: string | Date | null
-  steps?: __HasManyWrite<RunStepWhere, Omit<RunStepCreate, 'runId'>, RunStepUpdate>
-  waits?: __HasManyWrite<WaitWhere, Omit<WaitCreate, 'runId'>, WaitUpdate>
+  steps?: __HasManyWrite<RunStepWhere, __OmitEach<RunStepCreate, 'runId'>, RunStepUpdate>
+  waits?: __HasManyWrite<WaitWhere, __OmitEach<WaitCreate, 'runId'>, WaitUpdate>
 }
 
 export interface RunWhere extends WhereBase {
@@ -1635,9 +1635,9 @@ export interface RunStep {
   logs?: unknown | null
 }
 
-export interface RunStepCreate {
+export type RunStepCreate = {
   id?: string
-  runId: string
+  runId?: string
   run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId: string
   status: FlowStepStatus
@@ -1648,7 +1648,7 @@ export interface RunStepCreate {
   output?: unknown | null
   error?: string | null
   logs?: unknown | null
-}
+} & ({ runId: string } | { run: __BelongsToWrite<RunWhere, RunCreate> })
 
 export interface RunStepUpdate {
   id?: string
@@ -1702,14 +1702,14 @@ export interface Wait {
   createdAt: string
 }
 
-export interface WaitCreate {
+export type WaitCreate = {
   id?: string
   resumeKey: string
-  runId: string
+  runId?: string
   run?: __BelongsToWrite<RunWhere, RunCreate>
   nodeId: string
   timeoutAt?: string | Date | null
-}
+} & ({ runId: string } | { run: __BelongsToWrite<RunWhere, RunCreate> })
 
 export interface WaitUpdate {
   id?: string
@@ -2039,10 +2039,10 @@ export interface UserCreate {
   nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
-  memberships?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
-  appEditors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'userId'>, AppEditorUpdate>
-  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
-  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
+  memberships?: __HasManyWrite<WorkspaceMemberWhere, __OmitEach<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
+  appEditors?: __HasManyWrite<AppEditorWhere, __OmitEach<AppEditorCreate, 'userId'>, AppEditorUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, __OmitEach<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, __OmitEach<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
 }
 
 export interface UserUpdate {
@@ -2057,10 +2057,10 @@ export interface UserUpdate {
   nickname?: string | null
   avatarUrl?: string | null
   isSystemAdmin?: boolean
-  memberships?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
-  appEditors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'userId'>, AppEditorUpdate>
-  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
-  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
+  memberships?: __HasManyWrite<WorkspaceMemberWhere, __OmitEach<WorkspaceMemberCreate, 'userId'>, WorkspaceMemberUpdate>
+  appEditors?: __HasManyWrite<AppEditorWhere, __OmitEach<AppEditorCreate, 'userId'>, AppEditorUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, __OmitEach<DeploymentCreate, 'triggeredBy'>, DeploymentUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, __OmitEach<ApiKeyCreate, 'userId'>, ApiKeyUpdate>
 }
 
 export interface UserSystem {
@@ -2125,8 +2125,8 @@ export interface AccountCreate {
   slug: string
   displayName: string
   avatarUrl?: string | null
-  users?: __HasManyWrite<UserWhere, Omit<UserCreate, 'accountId'>, UserUpdate>
-  workspaces?: __HasManyWrite<WorkspaceWhere, Omit<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
+  users?: __HasManyWrite<UserWhere, __OmitEach<UserCreate, 'accountId'>, UserUpdate>
+  workspaces?: __HasManyWrite<WorkspaceWhere, __OmitEach<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
 }
 
 export interface AccountUpdate {
@@ -2136,8 +2136,8 @@ export interface AccountUpdate {
   slug?: string
   displayName?: string
   avatarUrl?: string | null
-  users?: __HasManyWrite<UserWhere, Omit<UserCreate, 'accountId'>, UserUpdate>
-  workspaces?: __HasManyWrite<WorkspaceWhere, Omit<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
+  users?: __HasManyWrite<UserWhere, __OmitEach<UserCreate, 'accountId'>, UserUpdate>
+  workspaces?: __HasManyWrite<WorkspaceWhere, __OmitEach<WorkspaceCreate, 'accountId'>, WorkspaceUpdate>
 }
 
 export interface AccountWhere extends WhereBase {
@@ -2191,9 +2191,9 @@ export interface Workspace {
   deletedAt?: string | null
 }
 
-export interface WorkspaceCreate {
+export type WorkspaceCreate = {
   id?: string
-  accountId: string
+  accountId?: string
   account?: __BelongsToWrite<AccountWhere, AccountCreate>
   name: string
   slug: string
@@ -2203,21 +2203,21 @@ export interface WorkspaceCreate {
   ingressSecretId?: string | null
   ingressZoneId?: string | null
   pushTopic?: string | null
-  members?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
-  invitations?: __HasManyWrite<InvitationWhere, Omit<InvitationCreate, 'workspaceId'>, InvitationUpdate>
-  projects?: __HasManyWrite<ProjectWhere, Omit<ProjectCreate, 'workspaceId'>, ProjectUpdate>
-  servers?: __HasManyWrite<ServerWhere, Omit<ServerCreate, 'workspaceId'>, ServerUpdate>
-  secrets?: __HasManyWrite<SecretWhere, Omit<SecretCreate, 'workspaceId'>, SecretUpdate>
-  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
-  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'workspaceId'>, JobUpdate>
-  alertRules?: __HasManyWrite<AlertRuleWhere, Omit<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
-  monitors?: __HasManyWrite<MonitorWhere, Omit<MonitorCreate, 'workspaceId'>, MonitorUpdate>
-  channels?: __HasManyWrite<NotificationChannelWhere, Omit<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
-  backupDestinations?: __HasManyWrite<BackupDestinationWhere, Omit<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
-  flags?: __HasManyWrite<FlagWhere, Omit<FlagCreate, 'workspaceId'>, FlagUpdate>
-  auditEvents?: __HasManyWrite<AuditEventWhere, Omit<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
-  flows?: __HasManyWrite<FlowWhere, Omit<FlowCreate, 'workspaceId'>, FlowUpdate>
-}
+  members?: __HasManyWrite<WorkspaceMemberWhere, __OmitEach<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
+  invitations?: __HasManyWrite<InvitationWhere, __OmitEach<InvitationCreate, 'workspaceId'>, InvitationUpdate>
+  projects?: __HasManyWrite<ProjectWhere, __OmitEach<ProjectCreate, 'workspaceId'>, ProjectUpdate>
+  servers?: __HasManyWrite<ServerWhere, __OmitEach<ServerCreate, 'workspaceId'>, ServerUpdate>
+  secrets?: __HasManyWrite<SecretWhere, __OmitEach<SecretCreate, 'workspaceId'>, SecretUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, __OmitEach<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
+  jobs?: __HasManyWrite<JobWhere, __OmitEach<JobCreate, 'workspaceId'>, JobUpdate>
+  alertRules?: __HasManyWrite<AlertRuleWhere, __OmitEach<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
+  monitors?: __HasManyWrite<MonitorWhere, __OmitEach<MonitorCreate, 'workspaceId'>, MonitorUpdate>
+  channels?: __HasManyWrite<NotificationChannelWhere, __OmitEach<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
+  backupDestinations?: __HasManyWrite<BackupDestinationWhere, __OmitEach<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
+  flags?: __HasManyWrite<FlagWhere, __OmitEach<FlagCreate, 'workspaceId'>, FlagUpdate>
+  auditEvents?: __HasManyWrite<AuditEventWhere, __OmitEach<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
+  flows?: __HasManyWrite<FlowWhere, __OmitEach<FlowCreate, 'workspaceId'>, FlowUpdate>
+} & ({ accountId: string } | { account: __BelongsToWrite<AccountWhere, AccountCreate> })
 
 export interface WorkspaceUpdate {
   id?: string
@@ -2232,20 +2232,20 @@ export interface WorkspaceUpdate {
   ingressZoneId?: string | null
   pushTopic?: string | null
   version: number
-  members?: __HasManyWrite<WorkspaceMemberWhere, Omit<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
-  invitations?: __HasManyWrite<InvitationWhere, Omit<InvitationCreate, 'workspaceId'>, InvitationUpdate>
-  projects?: __HasManyWrite<ProjectWhere, Omit<ProjectCreate, 'workspaceId'>, ProjectUpdate>
-  servers?: __HasManyWrite<ServerWhere, Omit<ServerCreate, 'workspaceId'>, ServerUpdate>
-  secrets?: __HasManyWrite<SecretWhere, Omit<SecretCreate, 'workspaceId'>, SecretUpdate>
-  apiKeys?: __HasManyWrite<ApiKeyWhere, Omit<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
-  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'workspaceId'>, JobUpdate>
-  alertRules?: __HasManyWrite<AlertRuleWhere, Omit<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
-  monitors?: __HasManyWrite<MonitorWhere, Omit<MonitorCreate, 'workspaceId'>, MonitorUpdate>
-  channels?: __HasManyWrite<NotificationChannelWhere, Omit<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
-  backupDestinations?: __HasManyWrite<BackupDestinationWhere, Omit<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
-  flags?: __HasManyWrite<FlagWhere, Omit<FlagCreate, 'workspaceId'>, FlagUpdate>
-  auditEvents?: __HasManyWrite<AuditEventWhere, Omit<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
-  flows?: __HasManyWrite<FlowWhere, Omit<FlowCreate, 'workspaceId'>, FlowUpdate>
+  members?: __HasManyWrite<WorkspaceMemberWhere, __OmitEach<WorkspaceMemberCreate, 'workspaceId'>, WorkspaceMemberUpdate>
+  invitations?: __HasManyWrite<InvitationWhere, __OmitEach<InvitationCreate, 'workspaceId'>, InvitationUpdate>
+  projects?: __HasManyWrite<ProjectWhere, __OmitEach<ProjectCreate, 'workspaceId'>, ProjectUpdate>
+  servers?: __HasManyWrite<ServerWhere, __OmitEach<ServerCreate, 'workspaceId'>, ServerUpdate>
+  secrets?: __HasManyWrite<SecretWhere, __OmitEach<SecretCreate, 'workspaceId'>, SecretUpdate>
+  apiKeys?: __HasManyWrite<ApiKeyWhere, __OmitEach<ApiKeyCreate, 'workspaceId'>, ApiKeyUpdate>
+  jobs?: __HasManyWrite<JobWhere, __OmitEach<JobCreate, 'workspaceId'>, JobUpdate>
+  alertRules?: __HasManyWrite<AlertRuleWhere, __OmitEach<AlertRuleCreate, 'workspaceId'>, AlertRuleUpdate>
+  monitors?: __HasManyWrite<MonitorWhere, __OmitEach<MonitorCreate, 'workspaceId'>, MonitorUpdate>
+  channels?: __HasManyWrite<NotificationChannelWhere, __OmitEach<NotificationChannelCreate, 'workspaceId'>, NotificationChannelUpdate>
+  backupDestinations?: __HasManyWrite<BackupDestinationWhere, __OmitEach<BackupDestinationCreate, 'workspaceId'>, BackupDestinationUpdate>
+  flags?: __HasManyWrite<FlagWhere, __OmitEach<FlagCreate, 'workspaceId'>, FlagUpdate>
+  auditEvents?: __HasManyWrite<AuditEventWhere, __OmitEach<AuditEventCreate, 'workspaceId'>, AuditEventUpdate>
+  flows?: __HasManyWrite<FlowWhere, __OmitEach<FlowCreate, 'workspaceId'>, FlowUpdate>
 }
 
 export interface WorkspaceSystem {
@@ -2343,9 +2343,9 @@ export interface WorkspaceMember {
   updatedAt: string
 }
 
-export interface WorkspaceMemberCreate {
+export type WorkspaceMemberCreate = {
   id?: string
-  workspaceId: string
+  workspaceId?: string
   workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   user?: __BelongsToWrite<UserWhere, UserCreate>
   /** This caller's authority in this workspace. Nobody may change their own. */
@@ -2365,7 +2365,7 @@ export interface WorkspaceMemberCreate {
   invitedBy?: string | null
   invitedAt?: string | Date | null
   acceptedAt?: string | Date | null
-}
+} & ({ workspaceId: string } | { workspace: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate> })
 
 export interface WorkspaceMemberUpdate {
   id?: string
@@ -2808,10 +2808,10 @@ export interface ServerCreate {
   replication?: unknown | null
   runtime?: unknown | null
   labels?: unknown
-  events?: __HasManyWrite<ServerEventWhere, Omit<ServerEventCreate, 'serverId'>, ServerEventUpdate>
-  volumes?: __HasManyWrite<VolumeWhere, Omit<VolumeCreate, 'serverId'>, VolumeUpdate>
-  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'serverId'>, AppServerUpdate>
-  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
+  events?: __HasManyWrite<ServerEventWhere, __OmitEach<ServerEventCreate, 'serverId'>, ServerEventUpdate>
+  volumes?: __HasManyWrite<VolumeWhere, __OmitEach<VolumeCreate, 'serverId'>, VolumeUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, __OmitEach<AppServerCreate, 'serverId'>, AppServerUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, __OmitEach<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
 }
 
 export interface ServerUpdate {
@@ -2839,10 +2839,10 @@ export interface ServerUpdate {
   replication?: unknown | null
   runtime?: unknown | null
   labels?: unknown
-  events?: __HasManyWrite<ServerEventWhere, Omit<ServerEventCreate, 'serverId'>, ServerEventUpdate>
-  volumes?: __HasManyWrite<VolumeWhere, Omit<VolumeCreate, 'serverId'>, VolumeUpdate>
-  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'serverId'>, AppServerUpdate>
-  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
+  events?: __HasManyWrite<ServerEventWhere, __OmitEach<ServerEventCreate, 'serverId'>, ServerEventUpdate>
+  volumes?: __HasManyWrite<VolumeWhere, __OmitEach<VolumeCreate, 'serverId'>, VolumeUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, __OmitEach<AppServerCreate, 'serverId'>, AppServerUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, __OmitEach<ServerNetworkCreate, 'serverId'>, ServerNetworkUpdate>
 }
 
 export interface ServerSystem {
@@ -2925,14 +2925,14 @@ export interface ServerEvent {
   noticeOwedAt?: string | null
 }
 
-export interface ServerEventCreate {
+export type ServerEventCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind: ServerEventKind
   message: string
   metadata?: unknown
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface ServerEventUpdate {
   id?: string
@@ -3122,9 +3122,9 @@ export interface Volume {
   lastSeenAt: string
 }
 
-export interface VolumeCreate {
+export type VolumeCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   name: string
   kind?: VolumeKind
@@ -3136,7 +3136,7 @@ export interface VolumeCreate {
   dockerCreatedAt?: string | Date | null
   discoveredAt?: string | Date
   lastSeenAt?: string | Date
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface VolumeUpdate {
   id?: string
@@ -3208,8 +3208,8 @@ export interface NetworkCreate {
   cidr?: string
   providerKind?: NetworkProvider
   config?: unknown
-  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
-  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, __OmitEach<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, __OmitEach<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
 }
 
 export interface NetworkUpdate {
@@ -3222,8 +3222,8 @@ export interface NetworkUpdate {
   providerKind?: NetworkProvider
   config?: unknown
   version: number
-  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
-  serverNetworks?: __HasManyWrite<ServerNetworkWhere, Omit<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, __OmitEach<AppNetworkCreate, 'networkId'>, AppNetworkUpdate>
+  serverNetworks?: __HasManyWrite<ServerNetworkWhere, __OmitEach<ServerNetworkCreate, 'networkId'>, ServerNetworkUpdate>
 }
 
 export interface NetworkWhere extends WhereBase {
@@ -3265,15 +3265,15 @@ export interface ServerNetwork {
   joinedAt: string
 }
 
-export interface ServerNetworkCreate {
+export type ServerNetworkCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
-  networkId: string
+  networkId?: string
   network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   joinedAt?: string | Date
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> }) & ({ networkId: string } | { network: __BelongsToWrite<NetworkWhere, NetworkCreate> })
 
 export interface ServerNetworkUpdate {
   id?: string
@@ -3335,9 +3335,9 @@ export interface ProjectCreate {
   status?: ProjectStatus
   tags?: string[]
   metadata?: unknown
-  environments?: __HasManyWrite<EnvironmentWhere, Omit<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'projectId'>, AppUpdate>
-  dependencyUses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
+  environments?: __HasManyWrite<EnvironmentWhere, __OmitEach<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'projectId'>, AppUpdate>
+  dependencyUses?: __HasManyWrite<DependencyUseWhere, __OmitEach<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
 }
 
 export interface ProjectUpdate {
@@ -3351,9 +3351,9 @@ export interface ProjectUpdate {
   tags?: string[]
   metadata?: unknown
   version: number
-  environments?: __HasManyWrite<EnvironmentWhere, Omit<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'projectId'>, AppUpdate>
-  dependencyUses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
+  environments?: __HasManyWrite<EnvironmentWhere, __OmitEach<EnvironmentCreate, 'projectId'>, EnvironmentUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'projectId'>, AppUpdate>
+  dependencyUses?: __HasManyWrite<DependencyUseWhere, __OmitEach<DependencyUseCreate, 'projectId'>, DependencyUseUpdate>
 }
 
 export interface ProjectWhere extends WhereBase {
@@ -3406,19 +3406,19 @@ export interface Environment {
   deletedAt?: string | null
 }
 
-export interface EnvironmentCreate {
+export type EnvironmentCreate = {
   id?: string
-  projectId: string
+  projectId?: string
   project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   workspaceId?: string
   name: string
   slug: string
   tier?: EnvironmentTier
   isProtected?: boolean
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'environmentId'>, AppUpdate>
-  flagOverrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
-  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'environmentId'>, VariableUpdate>
-}
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'environmentId'>, AppUpdate>
+  flagOverrides?: __HasManyWrite<FlagOverrideWhere, __OmitEach<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
+  variables?: __HasManyWrite<VariableWhere, __OmitEach<VariableCreate, 'environmentId'>, VariableUpdate>
+} & ({ projectId: string } | { project: __BelongsToWrite<ProjectWhere, ProjectCreate> })
 
 export interface EnvironmentUpdate {
   id?: string
@@ -3430,9 +3430,9 @@ export interface EnvironmentUpdate {
   tier?: EnvironmentTier
   isProtected?: boolean
   version: number
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'environmentId'>, AppUpdate>
-  flagOverrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
-  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'environmentId'>, VariableUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'environmentId'>, AppUpdate>
+  flagOverrides?: __HasManyWrite<FlagOverrideWhere, __OmitEach<FlagOverrideCreate, 'environmentId'>, FlagOverrideUpdate>
+  variables?: __HasManyWrite<VariableWhere, __OmitEach<VariableCreate, 'environmentId'>, VariableUpdate>
 }
 
 export interface EnvironmentWhere extends WhereBase {
@@ -3511,10 +3511,10 @@ export interface App {
   deletedAt?: string | null
 }
 
-export interface AppCreate {
+export type AppCreate = {
   id?: string
   workspaceId?: string
-  environmentId: string
+  environmentId?: string
   environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
   name: string
@@ -3541,19 +3541,19 @@ export interface AppCreate {
   replicaDestinationId?: string | null
   replicaDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   drillCron?: string | null
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'appId'>, AppBackupUpdate>
-  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'appId'>, AppDrillUpdate>
-  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'appId'>, DeploymentUpdate>
-  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'appId'>, JobUpdate>
-  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'appId'>, AppServerUpdate>
-  appPlatforms?: __HasManyWrite<AppPlatformWhere, Omit<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
-  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
-  domains?: __HasManyWrite<DomainWhere, Omit<DomainCreate, 'appId'>, DomainUpdate>
-  domainRoutes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
-  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'appId'>, VariableUpdate>
-  editors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'appId'>, AppEditorUpdate>
-  crashChannels?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'appId'>, AppChannelUpdate>
-}
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'appId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, __OmitEach<AppDrillCreate, 'appId'>, AppDrillUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, __OmitEach<DeploymentCreate, 'appId'>, DeploymentUpdate>
+  jobs?: __HasManyWrite<JobWhere, __OmitEach<JobCreate, 'appId'>, JobUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, __OmitEach<AppServerCreate, 'appId'>, AppServerUpdate>
+  appPlatforms?: __HasManyWrite<AppPlatformWhere, __OmitEach<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, __OmitEach<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
+  domains?: __HasManyWrite<DomainWhere, __OmitEach<DomainCreate, 'appId'>, DomainUpdate>
+  domainRoutes?: __HasManyWrite<DomainRouteWhere, __OmitEach<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
+  variables?: __HasManyWrite<VariableWhere, __OmitEach<VariableCreate, 'appId'>, VariableUpdate>
+  editors?: __HasManyWrite<AppEditorWhere, __OmitEach<AppEditorCreate, 'appId'>, AppEditorUpdate>
+  crashChannels?: __HasManyWrite<AppChannelWhere, __OmitEach<AppChannelCreate, 'appId'>, AppChannelUpdate>
+} & ({ environmentId: string } | { environment: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate> })
 
 export interface AppUpdate {
   id?: string
@@ -3585,18 +3585,18 @@ export interface AppUpdate {
   replicaDestinationId?: string | null
   replicaDestination?: __BelongsToWrite<BackupDestinationWhere, BackupDestinationCreate>
   drillCron?: string | null
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'appId'>, AppBackupUpdate>
-  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'appId'>, AppDrillUpdate>
-  deployments?: __HasManyWrite<DeploymentWhere, Omit<DeploymentCreate, 'appId'>, DeploymentUpdate>
-  jobs?: __HasManyWrite<JobWhere, Omit<JobCreate, 'appId'>, JobUpdate>
-  appServers?: __HasManyWrite<AppServerWhere, Omit<AppServerCreate, 'appId'>, AppServerUpdate>
-  appPlatforms?: __HasManyWrite<AppPlatformWhere, Omit<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
-  appNetworks?: __HasManyWrite<AppNetworkWhere, Omit<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
-  domains?: __HasManyWrite<DomainWhere, Omit<DomainCreate, 'appId'>, DomainUpdate>
-  domainRoutes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
-  variables?: __HasManyWrite<VariableWhere, Omit<VariableCreate, 'appId'>, VariableUpdate>
-  editors?: __HasManyWrite<AppEditorWhere, Omit<AppEditorCreate, 'appId'>, AppEditorUpdate>
-  crashChannels?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'appId'>, AppChannelUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'appId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, __OmitEach<AppDrillCreate, 'appId'>, AppDrillUpdate>
+  deployments?: __HasManyWrite<DeploymentWhere, __OmitEach<DeploymentCreate, 'appId'>, DeploymentUpdate>
+  jobs?: __HasManyWrite<JobWhere, __OmitEach<JobCreate, 'appId'>, JobUpdate>
+  appServers?: __HasManyWrite<AppServerWhere, __OmitEach<AppServerCreate, 'appId'>, AppServerUpdate>
+  appPlatforms?: __HasManyWrite<AppPlatformWhere, __OmitEach<AppPlatformCreate, 'appId'>, AppPlatformUpdate>
+  appNetworks?: __HasManyWrite<AppNetworkWhere, __OmitEach<AppNetworkCreate, 'appId'>, AppNetworkUpdate>
+  domains?: __HasManyWrite<DomainWhere, __OmitEach<DomainCreate, 'appId'>, DomainUpdate>
+  domainRoutes?: __HasManyWrite<DomainRouteWhere, __OmitEach<DomainRouteCreate, 'appId'>, DomainRouteUpdate>
+  variables?: __HasManyWrite<VariableWhere, __OmitEach<VariableCreate, 'appId'>, VariableUpdate>
+  editors?: __HasManyWrite<AppEditorWhere, __OmitEach<AppEditorCreate, 'appId'>, AppEditorUpdate>
+  crashChannels?: __HasManyWrite<AppChannelWhere, __OmitEach<AppChannelCreate, 'appId'>, AppChannelUpdate>
 }
 
 export interface AppSystem {
@@ -3729,7 +3729,7 @@ export interface VariableCreate {
   isSecret?: boolean
   value?: string | null
   secretValue?: string | null
-  versions?: __HasManyWrite<VariableVersionWhere, Omit<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
+  versions?: __HasManyWrite<VariableVersionWhere, __OmitEach<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
 }
 
 export interface VariableUpdate {
@@ -3743,7 +3743,7 @@ export interface VariableUpdate {
   isSecret?: boolean
   value?: string | null
   secretValue?: string | null
-  versions?: __HasManyWrite<VariableVersionWhere, Omit<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
+  versions?: __HasManyWrite<VariableVersionWhere, __OmitEach<VariableVersionCreate, 'variableId'>, VariableVersionUpdate>
   version: number
 }
 
@@ -3796,15 +3796,15 @@ export interface VariableVersion {
   createdAt: string
 }
 
-export interface VariableVersionCreate {
+export type VariableVersionCreate = {
   id?: string
   workspaceId?: string
-  variableId: string
+  variableId?: string
   variable?: __BelongsToWrite<VariableWhere, VariableCreate>
   revision: number
   secretValue: string
   revokedAt?: string | Date | null
-}
+} & ({ variableId: string } | { variable: __BelongsToWrite<VariableWhere, VariableCreate> })
 
 export interface VariableVersionUpdate {
   id?: string
@@ -3863,26 +3863,26 @@ export interface Domain {
   deletedAt?: string | null
 }
 
-export interface DomainCreate {
+export type DomainCreate = {
   id?: string
   workspaceId?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  routes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
+  routes?: __HasManyWrite<DomainRouteWhere, __OmitEach<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
   hostname: string
   isPrimary?: boolean
   redirectTo?: string | null
   port?: number
   isProxied?: boolean
   sslMode?: SslMode
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> })
 
 export interface DomainUpdate {
   id?: string
   workspaceId?: string
   appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  routes?: __HasManyWrite<DomainRouteWhere, Omit<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
+  routes?: __HasManyWrite<DomainRouteWhere, __OmitEach<DomainRouteCreate, 'domainId'>, DomainRouteUpdate>
   hostname?: string
   isPrimary?: boolean
   redirectTo?: string | null
@@ -3950,15 +3950,15 @@ export interface DomainRoute {
   deletedAt?: string | null
 }
 
-export interface DomainRouteCreate {
+export type DomainRouteCreate = {
   id?: string
   workspaceId?: string
-  domainId: string
+  domainId?: string
   domain?: __BelongsToWrite<DomainWhere, DomainCreate>
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
   pathPrefix: string
-}
+} & ({ domainId: string } | { domain: __BelongsToWrite<DomainWhere, DomainCreate> }) & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> })
 
 export interface DomainRouteUpdate {
   id?: string
@@ -4006,14 +4006,14 @@ export interface AppEditor {
   updatedAt: string
 }
 
-export interface AppEditorCreate {
+export type AppEditorCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  userId: string
+  userId?: string
   user?: __BelongsToWrite<UserWhere, UserCreate>
   role?: EditorRole
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ userId: string } | { user: __BelongsToWrite<UserWhere, UserCreate> })
 
 export interface AppEditorUpdate {
   id?: string
@@ -4061,11 +4061,11 @@ export interface AppServer {
   stoppedAt?: string | null
 }
 
-export interface AppServerCreate {
+export type AppServerCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   replicaIndex?: number
   status?: AppStatus
@@ -4073,7 +4073,7 @@ export interface AppServerCreate {
   assignedAt?: string | Date
   startedAt?: string | Date | null
   stoppedAt?: string | Date | null
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface AppServerUpdate {
   id?: string
@@ -4138,10 +4138,10 @@ export interface AppPlatform {
   updatedAt: string
 }
 
-export interface AppPlatformCreate {
+export type AppPlatformCreate = {
   id?: string
   workspaceId?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
   providerSecretId: string
   providerKind: PlatformProvider
@@ -4150,7 +4150,7 @@ export interface AppPlatformCreate {
   build?: PlatformBuild
   builderServerId?: string | null
   hookUrl?: string | null
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> })
 
 export interface AppPlatformUpdate {
   id?: string
@@ -4226,9 +4226,9 @@ export interface AppBackup {
   createdAt: string
 }
 
-export interface AppBackupCreate {
+export type AppBackupCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
   serverId?: string | null
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
@@ -4247,7 +4247,7 @@ export interface AppBackupCreate {
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
   durationMs?: number | null
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> })
 
 export interface AppBackupUpdate {
   id?: string
@@ -4330,11 +4330,11 @@ export interface AppDrill {
   createdAt: string
 }
 
-export interface AppDrillCreate {
+export type AppDrillCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   deploymentId?: string | null
   deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
@@ -4348,7 +4348,7 @@ export interface AppDrillCreate {
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
   durationMs?: number | null
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface AppDrillUpdate {
   id?: string
@@ -4423,16 +4423,16 @@ export interface AppCopy {
   updatedAt: string
 }
 
-export interface AppCopyCreate {
+export type AppCopyCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   cron: string
   isServingMainAddress?: boolean
   requestedBy?: string | null
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface AppCopyUpdate {
   id?: string
@@ -4496,16 +4496,16 @@ export interface AppNetwork {
   joinedAt: string
 }
 
-export interface AppNetworkCreate {
+export type AppNetworkCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  networkId: string
+  networkId?: string
   network?: __BelongsToWrite<NetworkWhere, NetworkCreate>
   ipAddress?: string | null
   dnsName?: string | null
   joinedAt?: string | Date
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ networkId: string } | { network: __BelongsToWrite<NetworkWhere, NetworkCreate> })
 
 export interface AppNetworkUpdate {
   id?: string
@@ -4574,9 +4574,9 @@ export interface Deployment {
   updatedAt: string
 }
 
-export interface DeploymentCreate {
+export type DeploymentCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
   workspaceId?: string
   status?: DeployStatus
@@ -4589,10 +4589,10 @@ export interface DeploymentCreate {
   triggeredBy?: string | null
   triggeredByUser?: __BelongsToWrite<UserWhere, UserCreate>
   queuedAt?: string | Date
-  steps?: __HasManyWrite<DeploymentStepWhere, Omit<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
-  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
-}
+  steps?: __HasManyWrite<DeploymentStepWhere, __OmitEach<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, __OmitEach<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> })
 
 export interface DeploymentUpdate {
   id?: string
@@ -4609,9 +4609,9 @@ export interface DeploymentUpdate {
   triggeredBy?: string | null
   triggeredByUser?: __BelongsToWrite<UserWhere, UserCreate>
   queuedAt?: string | Date
-  steps?: __HasManyWrite<DeploymentStepWhere, Omit<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
-  appDrills?: __HasManyWrite<AppDrillWhere, Omit<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
+  steps?: __HasManyWrite<DeploymentStepWhere, __OmitEach<DeploymentStepCreate, 'deploymentId'>, DeploymentStepUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'deploymentId'>, AppBackupUpdate>
+  appDrills?: __HasManyWrite<AppDrillWhere, __OmitEach<AppDrillCreate, 'deploymentId'>, AppDrillUpdate>
 }
 
 export interface DeploymentSystem {
@@ -4696,9 +4696,9 @@ export interface DeploymentStep {
   durationMs?: number | null
 }
 
-export interface DeploymentStepCreate {
+export type DeploymentStepCreate = {
   id?: string
-  deploymentId: string
+  deploymentId?: string
   deployment?: __BelongsToWrite<DeploymentWhere, DeploymentCreate>
   position?: number
   name: string
@@ -4707,7 +4707,7 @@ export interface DeploymentStepCreate {
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
   durationMs?: number | null
-}
+} & ({ deploymentId: string } | { deployment: __BelongsToWrite<DeploymentWhere, DeploymentCreate> })
 
 export interface DeploymentStepUpdate {
   id?: string
@@ -4780,7 +4780,7 @@ export interface JobCreate {
   cronExpression?: string | null
   timeoutSeconds?: number
   retryLimit?: number
-  runs?: __HasManyWrite<JobRunWhere, Omit<JobRunCreate, 'jobId'>, JobRunUpdate>
+  runs?: __HasManyWrite<JobRunWhere, __OmitEach<JobRunCreate, 'jobId'>, JobRunUpdate>
 }
 
 export interface JobUpdate {
@@ -4796,7 +4796,7 @@ export interface JobUpdate {
   cronExpression?: string | null
   timeoutSeconds?: number
   retryLimit?: number
-  runs?: __HasManyWrite<JobRunWhere, Omit<JobRunCreate, 'jobId'>, JobRunUpdate>
+  runs?: __HasManyWrite<JobRunWhere, __OmitEach<JobRunCreate, 'jobId'>, JobRunUpdate>
 }
 
 export interface JobSystem {
@@ -4856,9 +4856,9 @@ export interface JobRun {
   createdAt: string
 }
 
-export interface JobRunCreate {
+export type JobRunCreate = {
   id?: string
-  jobId: string
+  jobId?: string
   job?: __BelongsToWrite<JobWhere, JobCreate>
   status?: RunStatus
   trigger?: string
@@ -4868,7 +4868,7 @@ export interface JobRunCreate {
   exitCode?: number | null
   error?: string | null
   output?: unknown
-}
+} & ({ jobId: string } | { job: __BelongsToWrite<JobWhere, JobCreate> })
 
 export interface JobRunUpdate {
   id?: string
@@ -4938,7 +4938,7 @@ export interface RecipeCreate {
   script: string
   timeoutSeconds?: number
   createdBy?: string | null
-  runs?: __HasManyWrite<RecipeRunWhere, Omit<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
+  runs?: __HasManyWrite<RecipeRunWhere, __OmitEach<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
 }
 
 export interface RecipeUpdate {
@@ -4951,7 +4951,7 @@ export interface RecipeUpdate {
   script?: string
   timeoutSeconds?: number
   createdBy?: string | null
-  runs?: __HasManyWrite<RecipeRunWhere, Omit<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
+  runs?: __HasManyWrite<RecipeRunWhere, __OmitEach<RecipeRunCreate, 'recipeId'>, RecipeRunUpdate>
 }
 
 export interface RecipeSystem {
@@ -5008,11 +5008,11 @@ export interface RecipeRun {
   createdAt: string
 }
 
-export interface RecipeRunCreate {
+export type RecipeRunCreate = {
   id?: string
-  recipeId: string
+  recipeId?: string
   recipe?: __BelongsToWrite<RecipeWhere, RecipeCreate>
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   status?: RunStatus
   script: string
@@ -5024,7 +5024,7 @@ export interface RecipeRunCreate {
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
   durationMs?: number | null
-}
+} & ({ recipeId: string } | { recipe: __BelongsToWrite<RecipeWhere, RecipeCreate> }) & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface RecipeRunUpdate {
   id?: string
@@ -5093,9 +5093,9 @@ export interface DiskUsage {
   reportedAt: string
 }
 
-export interface DiskUsageCreate {
+export type DiskUsageCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   imagesTotal?: number
   imagesUnused?: number
@@ -5108,7 +5108,7 @@ export interface DiskUsageCreate {
   buildCacheBytes?: number
   buildCacheReclaimableBytes?: number
   reportedAt?: string | Date
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface DiskUsageUpdate {
   id?: string
@@ -5168,16 +5168,16 @@ export interface ServerPosture {
   createdAt: string
 }
 
-export interface ServerPostureCreate {
+export type ServerPostureCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   at: string | Date
   readings?: unknown
   controls?: unknown
   failing?: number
   unknown?: number
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface ServerPostureUpdate {
   id?: string
@@ -5233,9 +5233,9 @@ export interface MaintenanceRun {
   createdAt: string
 }
 
-export interface MaintenanceRunCreate {
+export type MaintenanceRunCreate = {
   id?: string
-  serverId: string
+  serverId?: string
   server?: __BelongsToWrite<ServerWhere, ServerCreate>
   kind: MaintenanceKind
   status?: RunStatus
@@ -5249,7 +5249,7 @@ export interface MaintenanceRunCreate {
   startedAt?: string | Date | null
   finishedAt?: string | Date | null
   durationMs?: number | null
-}
+} & ({ serverId: string } | { server: __BelongsToWrite<ServerWhere, ServerCreate> })
 
 export interface MaintenanceRunUpdate {
   id?: string
@@ -5331,7 +5331,7 @@ export interface FlagCreate {
   isEnabled?: boolean
   rollout?: number
   createdBy?: string | null
-  overrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
+  overrides?: __HasManyWrite<FlagOverrideWhere, __OmitEach<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
 }
 
 export interface FlagUpdate {
@@ -5347,7 +5347,7 @@ export interface FlagUpdate {
   rollout?: number
   createdBy?: string | null
   version: number
-  overrides?: __HasManyWrite<FlagOverrideWhere, Omit<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
+  overrides?: __HasManyWrite<FlagOverrideWhere, __OmitEach<FlagOverrideCreate, 'flagId'>, FlagOverrideUpdate>
 }
 
 export interface FlagWhere extends WhereBase {
@@ -5394,16 +5394,16 @@ export interface FlagOverride {
   updatedAt: string
 }
 
-export interface FlagOverrideCreate {
+export type FlagOverrideCreate = {
   id?: string
-  flagId: string
+  flagId?: string
   flag?: __BelongsToWrite<FlagWhere, FlagCreate>
-  environmentId: string
+  environmentId?: string
   environment?: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate>
   isEnabled?: boolean
   rollout?: number
   variantKey?: string | null
-}
+} & ({ flagId: string } | { flag: __BelongsToWrite<FlagWhere, FlagCreate> }) & ({ environmentId: string } | { environment: __BelongsToWrite<EnvironmentWhere, EnvironmentCreate> })
 
 export interface FlagOverrideUpdate {
   id?: string
@@ -5475,9 +5475,9 @@ export interface NotificationChannelCreate {
   isActive?: boolean
   isPagedForFleet?: boolean
   createdBy?: string | null
-  rules?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
-  monitors?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
-  apps?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'channelId'>, AppChannelUpdate>
+  rules?: __HasManyWrite<AlertRuleChannelWhere, __OmitEach<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
+  monitors?: __HasManyWrite<MonitorChannelWhere, __OmitEach<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
+  apps?: __HasManyWrite<AppChannelWhere, __OmitEach<AppChannelCreate, 'channelId'>, AppChannelUpdate>
 }
 
 export interface NotificationChannelUpdate {
@@ -5492,9 +5492,9 @@ export interface NotificationChannelUpdate {
   isPagedForFleet?: boolean
   createdBy?: string | null
   version: number
-  rules?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
-  monitors?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
-  apps?: __HasManyWrite<AppChannelWhere, Omit<AppChannelCreate, 'channelId'>, AppChannelUpdate>
+  rules?: __HasManyWrite<AlertRuleChannelWhere, __OmitEach<AlertRuleChannelCreate, 'channelId'>, AlertRuleChannelUpdate>
+  monitors?: __HasManyWrite<MonitorChannelWhere, __OmitEach<MonitorChannelCreate, 'channelId'>, MonitorChannelUpdate>
+  apps?: __HasManyWrite<AppChannelWhere, __OmitEach<AppChannelCreate, 'channelId'>, AppChannelUpdate>
 }
 
 export interface NotificationChannelSystem {
@@ -5576,8 +5576,8 @@ export interface BackupDestinationCreate {
   prefix?: string
   secret?: string | null
   createdBy?: string | null
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
 }
 
 export interface BackupDestinationUpdate {
@@ -5592,8 +5592,8 @@ export interface BackupDestinationUpdate {
   secret?: string | null
   createdBy?: string | null
   version: number
-  appBackups?: __HasManyWrite<AppBackupWhere, Omit<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
+  appBackups?: __HasManyWrite<AppBackupWhere, __OmitEach<AppBackupCreate, 'destinationId'>, AppBackupUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'backupDestinationId' | 'replicaDestinationId'>, AppUpdate>
 }
 
 export interface BackupDestinationSystem {
@@ -5676,8 +5676,8 @@ export interface AlertRuleCreate {
   clearForMinutes?: number
   refireAfterMinutes?: number
   isActive?: boolean
-  alerts?: __HasManyWrite<AlertWhere, Omit<AlertCreate, 'ruleId'>, AlertUpdate>
-  channels?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
+  alerts?: __HasManyWrite<AlertWhere, __OmitEach<AlertCreate, 'ruleId'>, AlertUpdate>
+  channels?: __HasManyWrite<AlertRuleChannelWhere, __OmitEach<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
 }
 
 export interface AlertRuleUpdate {
@@ -5695,8 +5695,8 @@ export interface AlertRuleUpdate {
   refireAfterMinutes?: number
   isActive?: boolean
   version: number
-  alerts?: __HasManyWrite<AlertWhere, Omit<AlertCreate, 'ruleId'>, AlertUpdate>
-  channels?: __HasManyWrite<AlertRuleChannelWhere, Omit<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
+  alerts?: __HasManyWrite<AlertWhere, __OmitEach<AlertCreate, 'ruleId'>, AlertUpdate>
+  channels?: __HasManyWrite<AlertRuleChannelWhere, __OmitEach<AlertRuleChannelCreate, 'ruleId'>, AlertRuleChannelUpdate>
 }
 
 export interface AlertRuleSystem {
@@ -5747,13 +5747,13 @@ export interface AlertRuleChannel {
   createdAt: string
 }
 
-export interface AlertRuleChannelCreate {
+export type AlertRuleChannelCreate = {
   id?: string
-  ruleId: string
+  ruleId?: string
   rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
-  channelId: string
+  channelId?: string
   channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
-}
+} & ({ ruleId: string } | { rule: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate> }) & ({ channelId: string } | { channel: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate> })
 
 export interface AlertRuleChannelUpdate {
   id?: string
@@ -5801,9 +5801,9 @@ export interface Alert {
   acknowledgedAt?: string | null
 }
 
-export interface AlertCreate {
+export type AlertCreate = {
   id?: string
-  ruleId: string
+  ruleId?: string
   rule?: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate>
   status?: AlertStatus
   severity: AlertSeverity
@@ -5815,7 +5815,7 @@ export interface AlertCreate {
   resolvedAt?: string | Date | null
   acknowledgedBy?: string | null
   acknowledgedAt?: string | Date | null
-}
+} & ({ ruleId: string } | { rule: __BelongsToWrite<AlertRuleWhere, AlertRuleCreate> })
 
 export interface AlertUpdate {
   id?: string
@@ -5914,10 +5914,10 @@ export interface MonitorCreate {
   resendEvery?: number
   tags?: string[]
   status?: MonitorStatus
-  checks?: __HasManyWrite<MonitorCheckWhere, Omit<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
-  events?: __HasManyWrite<MonitorEventWhere, Omit<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
-  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, Omit<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
-  channels?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
+  checks?: __HasManyWrite<MonitorCheckWhere, __OmitEach<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
+  events?: __HasManyWrite<MonitorEventWhere, __OmitEach<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
+  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, __OmitEach<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
+  channels?: __HasManyWrite<MonitorChannelWhere, __OmitEach<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
 }
 
 export interface MonitorUpdate {
@@ -5941,10 +5941,10 @@ export interface MonitorUpdate {
   resendEvery?: number
   tags?: string[]
   status?: MonitorStatus
-  checks?: __HasManyWrite<MonitorCheckWhere, Omit<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
-  events?: __HasManyWrite<MonitorEventWhere, Omit<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
-  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, Omit<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
-  channels?: __HasManyWrite<MonitorChannelWhere, Omit<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
+  checks?: __HasManyWrite<MonitorCheckWhere, __OmitEach<MonitorCheckCreate, 'monitorId'>, MonitorCheckUpdate>
+  events?: __HasManyWrite<MonitorEventWhere, __OmitEach<MonitorEventCreate, 'monitorId'>, MonitorEventUpdate>
+  uptimeDays?: __HasManyWrite<MonitorUptimeDayWhere, __OmitEach<MonitorUptimeDayCreate, 'monitorId'>, MonitorUptimeDayUpdate>
+  channels?: __HasManyWrite<MonitorChannelWhere, __OmitEach<MonitorChannelCreate, 'monitorId'>, MonitorChannelUpdate>
 }
 
 export interface MonitorSystem {
@@ -6020,16 +6020,16 @@ export interface MonitorCheck {
   message: string
 }
 
-export interface MonitorCheckCreate {
+export type MonitorCheckCreate = {
   id?: string
-  monitorId: string
+  monitorId?: string
   monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   isOk: boolean
   statusCode?: number | null
   latencyMs?: number | null
   message: string
-}
+} & ({ monitorId: string } | { monitor: __BelongsToWrite<MonitorWhere, MonitorCreate> })
 
 export interface MonitorCheckUpdate {
   id?: string
@@ -6076,16 +6076,16 @@ export interface MonitorUptimeDay {
   maxLatencyMs?: number | null
 }
 
-export interface MonitorUptimeDayCreate {
+export type MonitorUptimeDayCreate = {
   id?: string
-  monitorId: string
+  monitorId?: string
   monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   day: string | Date
   checks: number
   okChecks: number
   avgLatencyMs?: number | null
   maxLatencyMs?: number | null
-}
+} & ({ monitorId: string } | { monitor: __BelongsToWrite<MonitorWhere, MonitorCreate> })
 
 export interface MonitorUptimeDayUpdate {
   id?: string
@@ -6132,15 +6132,15 @@ export interface MonitorEvent {
   noticeOwedAt?: string | null
 }
 
-export interface MonitorEventCreate {
+export type MonitorEventCreate = {
   id?: string
-  monitorId: string
+  monitorId?: string
   monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
   at?: string | Date
   fromStatus: MonitorStatus
   toStatus: MonitorStatus
   message: string
-}
+} & ({ monitorId: string } | { monitor: __BelongsToWrite<MonitorWhere, MonitorCreate> })
 
 export interface MonitorEventUpdate {
   id?: string
@@ -6187,13 +6187,13 @@ export interface MonitorChannel {
   createdAt: string
 }
 
-export interface MonitorChannelCreate {
+export type MonitorChannelCreate = {
   id?: string
-  monitorId: string
+  monitorId?: string
   monitor?: __BelongsToWrite<MonitorWhere, MonitorCreate>
-  channelId: string
+  channelId?: string
   channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
-}
+} & ({ monitorId: string } | { monitor: __BelongsToWrite<MonitorWhere, MonitorCreate> }) & ({ channelId: string } | { channel: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate> })
 
 export interface MonitorChannelUpdate {
   id?: string
@@ -6233,13 +6233,13 @@ export interface AppChannel {
   createdAt: string
 }
 
-export interface AppChannelCreate {
+export type AppChannelCreate = {
   id?: string
-  appId: string
+  appId?: string
   app?: __BelongsToWrite<AppWhere, AppCreate>
-  channelId: string
+  channelId?: string
   channel?: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate>
-}
+} & ({ appId: string } | { app: __BelongsToWrite<AppWhere, AppCreate> }) & ({ channelId: string } | { channel: __BelongsToWrite<NotificationChannelWhere, NotificationChannelCreate> })
 
 export interface AppChannelUpdate {
   id?: string
@@ -6298,7 +6298,7 @@ export interface DashboardCreate {
   icon?: string | null
   isPinned?: boolean
   createdBy?: string | null
-  tiles?: __HasManyWrite<DashboardTileWhere, Omit<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
+  tiles?: __HasManyWrite<DashboardTileWhere, __OmitEach<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
 }
 
 export interface DashboardUpdate {
@@ -6312,7 +6312,7 @@ export interface DashboardUpdate {
   isPinned?: boolean
   createdBy?: string | null
   version: number
-  tiles?: __HasManyWrite<DashboardTileWhere, Omit<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
+  tiles?: __HasManyWrite<DashboardTileWhere, __OmitEach<DashboardTileCreate, 'dashboardId'>, DashboardTileUpdate>
 }
 
 export interface DashboardWhere extends WhereBase {
@@ -6359,9 +6359,9 @@ export interface DashboardTile {
   updatedAt: string
 }
 
-export interface DashboardTileCreate {
+export type DashboardTileCreate = {
   id?: string
-  dashboardId: string
+  dashboardId?: string
   dashboard?: __BelongsToWrite<DashboardWhere, DashboardCreate>
   kind: TileKind
   serverId?: string | null
@@ -6371,7 +6371,7 @@ export interface DashboardTileCreate {
   config?: unknown
   cols?: number
   position?: number
-}
+} & ({ dashboardId: string } | { dashboard: __BelongsToWrite<DashboardWhere, DashboardCreate> })
 
 export interface DashboardTileUpdate {
   id?: string
@@ -6554,8 +6554,8 @@ export interface BlueprintCreate {
   links?: unknown
   environment?: unknown
   deprecatedAt?: string | Date | null
-  params?: __HasManyWrite<BlueprintParamWhere, Omit<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'blueprintId'>, AppUpdate>
+  params?: __HasManyWrite<BlueprintParamWhere, __OmitEach<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'blueprintId'>, AppUpdate>
 }
 
 export interface BlueprintUpdate {
@@ -6580,8 +6580,8 @@ export interface BlueprintUpdate {
   environment?: unknown
   deprecatedAt?: string | Date | null
   revision: number
-  params?: __HasManyWrite<BlueprintParamWhere, Omit<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
-  apps?: __HasManyWrite<AppWhere, Omit<AppCreate, 'blueprintId'>, AppUpdate>
+  params?: __HasManyWrite<BlueprintParamWhere, __OmitEach<BlueprintParamCreate, 'blueprintId'>, BlueprintParamUpdate>
+  apps?: __HasManyWrite<AppWhere, __OmitEach<AppCreate, 'blueprintId'>, AppUpdate>
 }
 
 export interface BlueprintWhere extends WhereBase {
@@ -6641,9 +6641,9 @@ export interface BlueprintParam {
   position: number
 }
 
-export interface BlueprintParamCreate {
+export type BlueprintParamCreate = {
   id?: string
-  blueprintId: string
+  blueprintId?: string
   blueprint?: __BelongsToWrite<BlueprintWhere, BlueprintCreate>
   key: string
   label: string
@@ -6655,7 +6655,7 @@ export interface BlueprintParamCreate {
   generateLength?: number | null
   validRegex?: string | null
   position?: number
-}
+} & ({ blueprintId: string } | { blueprint: __BelongsToWrite<BlueprintWhere, BlueprintCreate> })
 
 export interface BlueprintParamUpdate {
   id?: string
@@ -6788,7 +6788,7 @@ export interface DependencyCreate {
   workspaceId?: string
   workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name: string
-  uses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
+  uses?: __HasManyWrite<DependencyUseWhere, __OmitEach<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
 }
 
 export interface DependencyUpdate {
@@ -6796,7 +6796,7 @@ export interface DependencyUpdate {
   workspaceId?: string
   workspace?: __BelongsToWrite<WorkspaceWhere, WorkspaceCreate>
   name?: string
-  uses?: __HasManyWrite<DependencyUseWhere, Omit<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
+  uses?: __HasManyWrite<DependencyUseWhere, __OmitEach<DependencyUseCreate, 'dependencyId'>, DependencyUseUpdate>
 }
 
 export interface DependencySystem {
@@ -6850,12 +6850,12 @@ export interface DependencyUse {
   observedAt: string
 }
 
-export interface DependencyUseCreate {
+export type DependencyUseCreate = {
   id?: string
   workspaceId?: string
-  projectId: string
+  projectId?: string
   project?: __BelongsToWrite<ProjectWhere, ProjectCreate>
-  dependencyId: string
+  dependencyId?: string
   dependency?: __BelongsToWrite<DependencyWhere, DependencyCreate>
   member: string
   memberPath?: string
@@ -6864,7 +6864,7 @@ export interface DependencyUseCreate {
   declared: string
   installed?: string | null
   observedAt?: string | Date
-}
+} & ({ projectId: string } | { project: __BelongsToWrite<ProjectWhere, ProjectCreate> }) & ({ dependencyId: string } | { dependency: __BelongsToWrite<DependencyWhere, DependencyCreate> })
 
 export interface DependencyUseUpdate {
   id?: string
@@ -7029,9 +7029,9 @@ export interface Notification {
   createdAt: string
 }
 
-export interface NotificationCreate {
+export type NotificationCreate = {
   id?: string
-  userId: string
+  userId?: string
   user?: __BelongsToWrite<UserWhere, UserCreate>
   type: string
   data: unknown
@@ -7039,7 +7039,7 @@ export interface NotificationCreate {
   subjectId?: string | null
   deliveryKey?: string | null
   readAt?: string | Date | null
-}
+} & ({ userId: string } | { user: __BelongsToWrite<UserWhere, UserCreate> })
 
 export interface NotificationUpdate {
   id?: string
@@ -7088,14 +7088,14 @@ export interface NotificationPreference {
   updatedAt: string
 }
 
-export interface NotificationPreferenceCreate {
+export type NotificationPreferenceCreate = {
   id?: string
-  userId: string
+  userId?: string
   user?: __BelongsToWrite<UserWhere, UserCreate>
   kind: NotificationKind
   email?: boolean
   inApp?: boolean
-}
+} & ({ userId: string } | { user: __BelongsToWrite<UserWhere, UserCreate> })
 
 export interface NotificationPreferenceUpdate {
   id?: string
@@ -7462,6 +7462,8 @@ type __SelectCheck<S, TRow, TRel, N> = S extends readonly string[] ? { readonly 
 
 /** A nested write through a relation, each kind taking the operations the client runs for it. */
 type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+/** A Create is a union once a belongsTo key may be written as its relation, and a plain Omit would flatten it. */
+type __OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
 type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
 /** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */

@@ -11,6 +11,10 @@
 // and every reply goes through `checkReply` so a row cannot pass on a reply
 // the contract would refuse.
 //
+// The `host.*` rows are what kos's companion scripts with its own fake
+// (`api/test/helpers/fakeAnthropic.ts`), asked of the real connector: a thinking
+// block sent back unchanged, streamed tool input, `pause_turn`, the fallback beta.
+//
 // What only this drive asks: a billed POST is NOT replayed — a 429 and a 529
 // come back after one attempt with the wait attached — while the free count
 // IS replayed on a lost response; and a stream is read past the seam, with
@@ -20,7 +24,7 @@ import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startAnthropicSink } from '../sink.ts'
 import { checkReply, type Question, type Reply } from '@frontierjs/toolbelt/ask'
-import { anthropicTarget, anthropicDoor, normalizeSchema, bindSend, bindStream, createMessage, countTokens, runToolLoop, streamMessage, assemble, type MessagesRequest, type StreamEvent } from '../src/index.ts'
+import { anthropicTarget, anthropicDoor, normalizeSchema, bindSend, bindStream, createMessage, countTokens, runToolLoop, streamMessage, assemble, type AssistantBlock, type MessagesRequest, type StreamEvent } from '../src/index.ts'
 
 const { got, t } = results()
 const sink = startAnthropicSink()
@@ -40,7 +44,7 @@ await conduit.register({ ...bare, id: 'provider:anthropic:noversion' })
 await conduit.register({ ...target, id: 'provider:anthropic:nokey', auth: { type: 'api_key', ref: 'UNSET_KEY', header: 'x-api-key' } })
 const send = bindSend(conduit)
 
-type Seen = { requests: { headers: Record<string, string>; body: string }[] }
+type Seen = { requests: { path: string; headers: Record<string, string>; body: string }[] }
 const seen  = () => ctl.seen() as unknown as Promise<Seen>
 const count = async () => (await seen()).requests.length
 const ask   = (text: string, extra: Partial<MessagesRequest> = {}): MessagesRequest => ({ model: 'claude-sonnet-4-5', max_tokens: 64, messages: [{ role: 'user', content: text }], ...extra })
@@ -144,6 +148,61 @@ try {
   const unknown = await runToolLoop(send, ask('Paris', { tools: [weather] }), {}, { maxTurns: 3 })
   t('toolLoop.unknownToolIsAnErrorResult', { turns: unknown.turns, ok: !unknown.error, secondTurnCarriesError: JSON.stringify(unknown.messages[2]?.content).includes('"is_error":true') })
 
+  // ── a long-running host: what it sends back next turn ──────────────────
+  const FB = ['server-side-fallback-2026-07-01']
+  await ctl.reset()
+  const bc = await createMessage(send, ask('beta', { betas: FB, fallbacks: 'default' }))
+  const bs = await collect(streamMessage(link, ask('beta', { betas: FB, fallbacks: 'default' })))
+  const bn = await countTokens(send, { model: 'claude-sonnet-4-5', messages: [{ role: 'user', content: 'beta' }], betas: FB })
+  const wired = (await seen()).requests
+  t('host.betasReachEveryCallAsAHeader', { ok: [!bc.error, bs[bs.length - 1]?.type === 'message_stop', !bn.error], paths: wired.map(r => r.path), header: wired.map(r => r.headers['anthropic-beta'] ?? null),
+    betasInBody: wired.some(r => 'betas' in JSON.parse(r.body)), fallbacks: wired.map(r => JSON.parse(r.body).fallbacks ?? null) })
+  const unbeta = await createMessage(send, ask('beta', { fallbacks: 'default' }))
+  t('host.fallbacksWithoutTheBetaIsRefused', { kind: unbeta.error?.kind, status: unbeta.error?.status, namesIt: (unbeta.error?.message ?? '').includes('fallbacks') })
+
+  await ctl.arm({ reply: 'refusal' })
+  const declined = await createMessage(send, ask('borderline'))
+  await ctl.arm({ reply: 'refusal' })
+  const rerun = await createMessage(send, ask('borderline', { betas: FB, fallbacks: 'default' }))
+  t('host.fallbackAnswersADeclineOnAnotherModel', { without: declined.message?.stop_reason, with: rerun.message?.stop_reason, model: rerun.message?.model })
+
+  const thinkReq = ask('Paris', { tools: [weather], thinking: { type: 'adaptive' } })
+  const thought  = assemble(await collect(streamMessage(link, thinkReq)))
+  const th = thought.content[0]
+  t('host.thinkingStreamsWithItsSignature', { types: thought.content.map(b => b.type), thinking: th?.type === 'thinking' ? th.thinking : null, signed: th?.type === 'thinking' && th.signature.startsWith('sig_'), input: thought.toolUse[0]?.input })
+
+  const answerWith = (content: AssistantBlock[]): MessagesRequest => ({ ...thinkReq, messages: [...thinkReq.messages, { role: 'assistant', content }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: thought.toolUse[0]!.id, content: 'sunny' }] }] })
+  const back   = await createMessage(send, answerWith(thought.content))
+  const edited = await createMessage(send, answerWith(thought.content.map(b => b.type === 'thinking' ? { ...b, thinking: `${b.thinking}!` } : b)))
+  const thinkingLoop = await runToolLoop(send, thinkReq, { get_weather: () => 'sunny' }, { maxTurns: 3 })
+  t('host.thinkingSentBackUnchanged', { accepted: back.message?.content[0]?.type === 'text' ? back.message.content[0].text : back.error?.message, edited: edited.error?.kind, status: edited.error?.status,
+    namesIt: (edited.error?.message ?? '').includes('thinking blocks cannot be modified'), loopTurns: thinkingLoop.turns, loopOk: !thinkingLoop.error })
+
+  const searchReq = ask('plumbers in Boise', { tools: [{ type: 'web_search_20260209', name: 'web_search', max_uses: 3 }] })
+  await ctl.arm({ reply: 'pause' })
+  const pausedTurn = assemble(await collect(streamMessage(link, searchReq)))
+  const search = pausedTurn.content[0], found = pausedTurn.content[1]
+  t('host.pauseTurnStreamsServerToolInput', { stop: pausedTurn.stopReason, types: pausedTurn.content.map(b => b.type), query: search?.type === 'server_tool_use' ? search.input.query : null,
+    resultKept: found?.type === 'web_search_tool_result' && Array.isArray(found.content) })
+  const resumed = await createMessage(send, { ...searchReq, messages: [...searchReq.messages, { role: 'assistant', content: pausedTurn.content }] })
+  const altered = await createMessage(send, { ...searchReq, messages: [...searchReq.messages, { role: 'assistant', content: pausedTurn.content.slice(0, 1) }] })
+  t('host.pauseTurnResumedUnchanged', { resumed: resumed.message?.content[0]?.type === 'text' ? resumed.message.content[0].text : resumed.error?.message, stop: resumed.message?.stop_reason, altered: altered.error?.kind })
+
+  await ctl.reset(); await ctl.arm({ reply: 'pause' })
+  const pauseLoop = await runToolLoop(send, searchReq, {}, { maxTurns: 3 })
+  t('toolLoop.resumesPauseTurn', { turns: pauseLoop.turns, requests: await count(), ok: !pauseLoop.error, text: pauseLoop.message?.content[0]?.type === 'text' ? pauseLoop.message.content[0].text : null, roles: pauseLoop.messages.map(m => m.role) })
+
+  await ctl.arm({ chop: true })
+  const chopped = assemble(await collect(streamMessage(link, ask('Paris', { tools: [weather] }))))
+  t('stream.frameCutAcrossReadsAssembles', { text: chopped.text, input: chopped.toolUse[0]?.input, stop: chopped.stopReason })
+
+  const truncated = assemble([
+    { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'toolu_cut', name: 'get_weather', input: {} } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'input_json_delta', partial_json: '{"location":"Par' } },
+    { type: 'message_delta', delta: { stop_reason: 'max_tokens', stop_sequence: null }, usage: { output_tokens: 5 } },
+  ])
+  t('stream.truncatedToolInputIsKeptNotThrown', { stop: truncated.stopReason, input: truncated.toolUse[0]?.input, raw: truncated.invalidInput })
+
   // ── the door ───────────────────────────────────────────────────────────
   const door = anthropicDoor({ send })
   const sent = async () => (await seen()).requests
@@ -155,7 +214,7 @@ try {
   await ctl.reset()
   const q1: Question = { prompt: 'who', schema: person }
   const r1 = await door(q1)
-  t('door.schemaAnswer', await view(r1, q1, { answer: r1.ok ? r1.answer : null, door: r1.door, model: r1.model, costUsd: r1.ok ? r1.costUsd : 0, usageCounted: r1.ok && (r1.usage?.inputTokens ?? 0) > 0 && (r1.usage?.outputTokens ?? 0) > 0 }))
+  t('door.schemaAnswer', await view(r1, q1, { answer: r1.ok ? r1.answer : null, door: r1.door, model: r1.model, costPriced: r1.ok && r1.costUsd === ((r1.usage?.inputTokens ?? 0) * 2 + (r1.usage?.outputTokens ?? 0) * 10) / 1e6, usageCounted: r1.ok && (r1.usage?.inputTokens ?? 0) > 0 && (r1.usage?.outputTokens ?? 0) > 0 }))
   const wire = await bodyOf()
   const schemaOnWire = wire.output_config?.format
   t('door.schemaNormalizedOnTheWire', { type: schemaOnWire?.type, topClosed: schemaOnWire?.schema?.additionalProperties, nestedClosed: schemaOnWire?.schema?.properties?.address?.additionalProperties,
@@ -174,6 +233,11 @@ try {
   const r3 = await tuned(q3, { model: 'claude-haiku-4-5' })
   const w3 = await bodyOf()
   t('door.optionsAndModelOverride', await view(r3, q3, { model: r3.model, wireModel: w3.model, maxTokens: w3.max_tokens, outputConfig: w3.output_config }))
+
+  // A zero would read as free; a model the table does not name is unpriced.
+  await ctl.reset()
+  const r3u = await tuned(q3, { model: 'claude-unlisted-9' })
+  t('door.unpricedModelCostsNull', await view(r3u, q3, { costUsd: r3u.ok ? r3u.costUsd : 'failed' }))
 
   await ctl.reset(); await ctl.arm({ rateLimit: { retryAfter: 1 } })
   const q4: Question = { prompt: 'again' }
@@ -269,10 +333,21 @@ process.exit(report(got, {
   'toolLoop.runsTwoTurnsAndSumsUsage':     { turns: 2, requests: 2, toolCalledWith: [{ location: 'Paris' }], text: 'The weather is sunny, 21C.', inputIsSum: true, outputIsSum: true, secondTurnLonger: true, messages: ['user', 'assistant', 'user', 'assistant'] },
   'toolLoop.cappedAtMaxTurns':             { kind: 'turn_limit', turns: 1, requests: 1, usageKept: true, resumable: 3 },
   'toolLoop.unknownToolIsAnErrorResult':   { turns: 2, ok: true, secondTurnCarriesError: true },
-  'door.schemaAnswer':                     { ok: true, reason: null, retryable: null, problems: [], sends: 1, answer: { name: 'x', age: 1, address: { city: 'x' } }, door: 'anthropic', model: 'claude-sonnet-5-5', costUsd: null, usageCounted: true },
+  'host.betasReachEveryCallAsAHeader':     { ok: [true, true, true], paths: ['/v1/messages', '/v1/messages', '/v1/messages/count_tokens'], header: ['server-side-fallback-2026-07-01', 'server-side-fallback-2026-07-01', 'server-side-fallback-2026-07-01'], betasInBody: false, fallbacks: ['default', 'default', null] },
+  'host.fallbacksWithoutTheBetaIsRefused': { kind: 'refused', status: 400, namesIt: true },
+  'host.fallbackAnswersADeclineOnAnotherModel': { without: 'refusal', with: 'end_turn', model: 'claude-opus-5-5' },
+  'host.thinkingStreamsWithItsSignature':  { types: ['thinking', 'text', 'tool_use'], thinking: 'The person asked about Paris; get_weather answers that.', signed: true, input: { location: 'Paris' } },
+  'host.thinkingSentBackUnchanged':        { accepted: 'The weather is sunny.', edited: 'refused', status: 400, namesIt: true, loopTurns: 2, loopOk: true },
+  'host.pauseTurnStreamsServerToolInput':  { stop: 'pause_turn', types: ['server_tool_use', 'web_search_tool_result'], query: 'plumbers in Boise', resultKept: true },
+  'host.pauseTurnResumedUnchanged':        { resumed: 'Searched.', stop: 'end_turn', altered: 'refused' },
+  'toolLoop.resumesPauseTurn':             { turns: 2, requests: 2, ok: true, text: 'Searched.', roles: ['user', 'assistant', 'assistant'] },
+  'stream.frameCutAcrossReadsAssembles':   { text: 'Let me check.', input: { location: 'Paris' }, stop: 'tool_use' },
+  'stream.truncatedToolInputIsKeptNotThrown': { stop: 'max_tokens', input: {}, raw: { toolu_cut: '{"location":"Par' } },
+  'door.schemaAnswer':                     { ok: true, reason: null, retryable: null, problems: [], sends: 1, answer: { name: 'x', age: 1, address: { city: 'x' } }, door: 'anthropic', model: 'claude-sonnet-5-5', costPriced: true, usageCounted: true },
   'door.schemaNormalizedOnTheWire':        { type: 'json_schema', topClosed: false, nestedClosed: false, minLengthGone: true, minimumGone: true, maxLengthGone: true, callerSchemaUntouched: true, effort: false },
   'door.textAnswerWithSystem':             { ok: true, reason: null, retryable: null, problems: [], sends: 1, answer: 'You said: hello', system: 'Be terse.', messages: [{ role: 'user', content: 'hello' }], maxTokens: 16000, model: 'claude-sonnet-5-5', outputConfig: false },
   'door.optionsAndModelOverride':          { ok: true, reason: null, retryable: null, problems: [], sends: 1, model: 'claude-haiku-4-5', wireModel: 'claude-haiku-4-5', maxTokens: 500, outputConfig: { effort: 'low' } },
+  'door.unpricedModelCostsNull':           { ok: true, reason: null, retryable: null, problems: [], sends: 1, costUsd: null },
   'door.rateLimitedThenAnswered':          { ok: true, reason: null, retryable: null, problems: [], sends: 2, waited: true, answer: 'You said: again' },
   'door.rateLimitedTwice':                 { ok: false, reason: 'rate_limited', retryable: true, problems: [], sends: 2, message: true },
   'door.overloadedThenAnswered':           { ok: true, reason: null, retryable: null, problems: [], sends: 2, waitedTheDefault: true },

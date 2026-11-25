@@ -884,6 +884,15 @@ const FIELD = [
     { seeAlso: ['enum', 'label'] }
   ),
   t(
+    'deprecated',
+    'field',
+    'shape',
+    '[("reason")]',
+    'This column is on its way out. It changes nothing about the table, reads or writes. It reaches JSON Schema as deprecated: true and the generated types as a JSDoc @deprecated tag, so an editor strikes through each use. The removal itself is a migration (litestone migrate create).',
+    'fullName String @deprecated("use name instead")',
+    { seeAlso: ['field:label'] }
+  ),
+  t(
     'required',
     'field',
     'validate',
@@ -1809,6 +1818,7 @@ export const DOCS = {
 
   // validate
   'field:label': 'jsonschema.md',
+  'field:deprecated': 'jsonschema.md',
   'field:required': 'schema.md',
   'field:email': 'schema.md',
   'field:url': 'schema.md',
@@ -2006,6 +2016,7 @@ export const TIERS = {
     'transition:stamps'
   ],
   situational: [
+    'field:deprecated',
     'field:redacted',
     'model:mirror',
     'field:local',
@@ -2092,8 +2103,10 @@ export function tierFor(row) {
  * feature the package should host rather than own.
  *
  *   shape     — column kinds, relations, constraints, indexes, derived values,
- *               and every rule a value must meet.
- *   access    — the gate, row policies, protected fields, tenancy, the principal.
+ *               every rule a value must meet, and what a read returns for any
+ *               caller (views, @@scope, @omit).
+ *   access    — the gate, row policies, protected fields, tenancy, the principal:
+ *               every answer that changes with who is asking.
  *   life      — transitions, soft delete, effective time, commitments, the trail,
  *               sealing, and who and when stamped a row.
  *   evolution — how the shape changes: what the migration differ does not own.
@@ -2119,13 +2132,13 @@ export const AXES = {
     'model:id', 'model:unique', 'model:exclude', 'model:rate', 'model:check', 'model:arc', 'model:relator',
     'field:validate', 'model:validate',
     'model:map', 'model:label', 'model:noStrict', 'model:fts', 'model:extensible',
-    'model:hasTemplates', 'model:db', 'model:trait', 'field:override'
+    'model:hasTemplates', 'model:db', 'model:trait', 'field:override', 'field:omit', 'model:scope'
   ],
   access: [
-    'schema:tenancy', 'schema:claim', 'field:omit', 'field:guarded', 'field:system',
+    'schema:tenancy', 'schema:claim', 'field:guarded', 'field:system',
     'field:capability', 'field:encrypted', 'field:hashed', 'field:personal', 'field:opaque',
     'field:redacted', 'field:secret', 'field:allow', 'transition:gate', 'transition:allow', 'transition:system', 'model:capabilities', 'model:gate', 'model:export',
-    'model:allow', 'model:deny', 'model:require', 'model:scope', 'model:tenant', 'model:auth', 'model:person',
+    'model:allow', 'model:deny', 'model:require', 'model:tenant', 'model:auth', 'model:person',
     'model:anonymous'
   ],
   life: [
@@ -2135,7 +2148,7 @@ export const AXES = {
     'model:updatedBy'
   ],
   evolution: [
-    'model:external'
+    'model:external', 'field:deprecated'
   ],
   battery: [
     'field:hardDelete', 'field:keepVersions'

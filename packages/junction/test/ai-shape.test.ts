@@ -1,97 +1,91 @@
 // ai-shape.test.ts
 //
-// `batteries-12`. What junction ships here is the SHAPE an adapter satisfies —
-// `IAIModel`, `AIBuilder`, `AIRegistry` — and it had no tests at all, no
-// callers anywhere in this repo, and one documentation reference naming a
-// function junction has never exported (`FJS-903`). The two vendor connectors
-// it used to ship are gone, so the tests are over what remains.
-//
-// Every model here is a fake and that is the point rather than a shortcut: the
-// interface's whole value is that an app's own adapter is substitutable, so a
+// What junction ships here is the lookup of an app's named doors, not a model.
+// Every door is a fake and that is the point rather than a shortcut: the
+// contract (`@frontierjs/toolbelt/ask`) is what makes a door substitutable, so a
 // test that could only be written against a real vendor would be evidence the
 // shape had failed.
 
 import { describe, it, expect } from 'bun:test'
-import { AIBuilder, AIRegistry, type IAIModel, type AIRequest } from '../src/ai/index.ts'
+import { createApp } from '../index.ts'
+import { ai } from '../src/ai/index.ts'
+import { checkReply, unanswered } from '@frontierjs/toolbelt/ask'
+import type { AskOptions, Door, Question, Reply } from '@frontierjs/toolbelt/ask'
 
 function recorder(name = 'fake') {
-  const seen: AIRequest[] = []
-  const model: IAIModel = {
-    name,
-    async complete(req) { seen.push(req); return { content: 'ok', model: name } },
-    async stream(req, onChunk) { seen.push(req); onChunk('a'); onChunk('b'); return { content: 'ab', model: name } },
+  const seen: Array<{ question: Question, opts?: AskOptions }> = []
+  const door: Door = async (question, opts) => {
+    seen.push({ question, opts })
+    return { ok: true, answer: 'ok', door: name, model: opts?.model ?? 'm', usage: null, costUsd: null, ms: 1 }
   }
-  return { model, seen }
+  return { door, seen }
 }
 
-describe('the builder collects a request', () => {
+function doors(registered: Record<string, Door>) {
+  const app = createApp()
+  app.configure(ai({ doors: registered }))
+  return app.ai
+}
 
-  it('carries every part in the order it was given', async () => {
-    const { model, seen } = recorder()
-    await new AIBuilder(model)
-      .system('be brief')
-      .user('hello')
-      .assistant('hi')
-      .user('again')
-      .temperature(0.2)
-      .maxTokens(64)
-      .think()
-      .complete()
+describe('the doors', () => {
 
-    expect(seen[0].system).toBe('be brief')
-    expect(seen[0].messages.map(m => [m.role, m.content])).toEqual([
-      ['user', 'hello'], ['assistant', 'hi'], ['user', 'again'],
-    ])
-    expect(seen[0].temperature).toBe(0.2)
-    expect(seen[0].maxTokens).toBe(64)
-    expect(seen[0].think).toBe(true)
+  it('a registered door answers, and its reply passes through untouched', async () => {
+    const reply: Reply = { ok: true, answer: { n: 1 }, door: 'x', model: 'm', usage: { inputTokens: 3, outputTokens: 4 }, costUsd: 0.01, ms: 7 }
+    const door: Door = async () => reply
+    const asked = await doors({ x: door }).ask('x', { prompt: 'p', schema: { type: 'object' } })
+    expect(asked).toBe(reply)
   })
 
-  it('refuses a request with no message rather than sending an empty one', async () => {
-    const { model, seen } = recorder()
-    await expect(new AIBuilder(model).system('only a system prompt').complete()).rejects.toThrow('at least one message')
-    // Paired: the refusal must not be *everything is refused*.
-    await new AIBuilder(model).user('x').complete()
-    expect(seen.length).toBe(1)
+  it('the question and the options reach the door', async () => {
+    const { door, seen } = recorder()
+    const controller = new AbortController()
+    const question: Question = { prompt: 'p', system: 's', schema: { type: 'object' } }
+    await doors({ x: door }).ask('x', question, { model: 'other', signal: controller.signal })
+    expect(seen[0].question).toEqual(question)
+    expect(seen[0].opts?.model).toBe('other')
+    expect(seen[0].opts?.signal).toBe(controller.signal)
   })
 
-  it('streams chunks and still answers the whole response', async () => {
-    const { model } = recorder()
-    const chunks: string[] = []
-    const res = await new AIBuilder(model).user('x').stream(c => chunks.push(c))
-    expect(chunks).toEqual(['a', 'b'])
-    expect(res.content).toBe('ab')
+  it('an unknown name is an Unanswered naming what IS registered', async () => {
+    const question = { prompt: 'p' }
+    const reply = await doors({ claude: recorder('claude').door }).ask('cluade', question)
+    expect(reply.ok).toBe(false)
+    if (reply.ok) throw new Error('unreachable')
+    expect(reply.failure.reason).toBe('not_set_up')
+    expect(reply.failure.retryable).toBe(false)
+    expect(reply.failure.message).toContain('Registered: claude')
+    expect(reply.door).toBe('cluade')
+    expect(checkReply(reply, question)).toEqual([])
+  })
+
+  it('an empty registry is a different mistake and says so', async () => {
+    const reply = await doors({}).ask('claude', { prompt: 'p' })
+    if (reply.ok) throw new Error('unreachable')
+    expect(reply.failure.message).toContain('No doors are registered')
+    expect(checkReply(reply)).toEqual([])
+  })
+
+  it('a door that cannot answer returns its own Unanswered untouched', async () => {
+    const lost: Reply = { ok: false, failure: unanswered('rate_limited'), door: 'x', model: 'm', ms: 2 }
+    const reply = await doors({ x: async () => lost }).ask('x', { prompt: 'p' })
+    expect(reply).toBe(lost)
+  })
+
+  it('names() lists the registered doors in the order given', () => {
+    expect(doors({ a: recorder().door, b: recorder().door }).names()).toEqual(['a', 'b'])
+    expect(doors({}).names()).toEqual([])
   })
 })
 
-describe('the registry', () => {
+describe('the plugin', () => {
 
-  it('register is chainable, so it is an expression createApp({ ai }) can take', () => {
-    // It returned void, which made the one-line form in every doc set `ai` to
-    // undefined — advice that fails when taken.
-    const { model } = recorder('claude')
-    const registry = new AIRegistry().register(model)
-    expect(registry).toBeInstanceOf(AIRegistry)
-    expect(registry.list()).toEqual(['claude'])
-  })
-
-  it('a model is found by its own name', async () => {
-    const { model, seen } = recorder('claude')
-    const res = await new AIRegistry().register(model).use('claude').user('x').complete()
-    expect(res.model).toBe('claude')
-    expect(seen.length).toBe(1)
-  })
-
-  it('an unknown name names what IS registered', () => {
-    const registry = new AIRegistry().register(recorder('claude').model)
-    expect(() => registry.get('cluade')).toThrow('Registered: claude')
-    // An empty registry is a different mistake and says so.
-    expect(() => new AIRegistry().get('claude')).toThrow('No models are registered')
-  })
-
-  it('registering the same name twice replaces rather than doubling', () => {
-    const registry = new AIRegistry().register(recorder('m').model).register(recorder('m').model)
-    expect(registry.list()).toEqual(['m'])
+  it('puts the doors on app.ai, and an app that did not install it has none', () => {
+    const bare = createApp()
+    expect('ai' in bare).toBe(false)
+    const app = createApp()
+    app.configure(ai({ doors: { x: recorder().door } }))
+    expect('ai' in app).toBe(true)
+    expect(app.ai.names()).toEqual(['x'])
   })
 })
 
@@ -106,13 +100,14 @@ describe('no vendor is shipped', () => {
       expect(pkg[name]).toBeUndefined()
   })
 
-  it('the ai module names no vendor host', async () => {
+  it('the ai module imports no vendor adapter and calls no vendor host', async () => {
     const src = await Bun.file(new URL('../src/ai/index.ts', import.meta.url)).text()
-    // The doc comment shows an app's own adapter, so a hostname may appear in a
-    // comment; what must not appear is one being CALLED.
+    // The header names the adapters in a comment; what must not appear is one
+    // being imported (junction sits below both) or a host being called.
     const code = src.split('\n').filter(l => !l.trim().startsWith('//')).join('\n')
+    expect(code).not.toContain('@frontierjs/claude')
+    expect(code).not.toContain('@frontierjs/conduit-anthropic')
     expect(code).not.toContain('api.anthropic.com')
     expect(code).not.toContain('api.openai.com')
-    expect(code).not.toContain('anthropic-beta')
   })
 })

@@ -1,4 +1,4 @@
-// src/domain/claude/claude-context.ts — what a Claude Code session carries before the first word is typed.
+// src/context.ts — what a Claude Code session carries before the first word is typed.
 //
 // A transcript written by Claude Code records the first request twice over:
 // an `api-request-shape` line holds the system blocks and tool list exactly as
@@ -36,9 +36,10 @@
 
 import { closeSync, openSync, readdirSync, readSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { countTokens, type CountBody } from './claude-quota.ts'
-import { read, unreadable, type Read } from './claude-read.ts'
-import { claudeConfigDir } from './claude-scan.ts'
+import { countTokens, type AnthropicFailure, type Message, type Tool } from '@frontierjs/conduit-anthropic'
+import { loginProblem, loginSend, type LoginSendOptions } from './quota.ts'
+import { claudeConfigDir, read, unreadable, type Read } from './read.ts'
+import { encodeCwd } from './sessions.ts'
 
 export type ContextPart = { name: string, chars: number, tokens: number }
 
@@ -183,10 +184,15 @@ export function readContext(text: string): Read<Measured> {
   const tools = new Map<string, Record<string, unknown>[]>()
   for (const t of Array.isArray(shape.shape.tools) ? shape.shape.tools : []) {
     // The shape lists the deferred tools a session has loaded, which are charged,
-    // and a placeholder that only keeps deferral on, which is not. `count_tokens`
-    // refuses `defer_loading` without the tool-search beta, so it is dropped.
+    // and a placeholder that only keeps deferral on, which is not. A custom tool
+    // is counted as its name, description and schema alone: the shape carries
+    // Claude Code's own keys beside them (`defer_loading`, an MCP tool's
+    // `ownership_metadata`), and `count_tokens` 400s on any it does not know.
     if (!isObj(t) || t.name === 'DeferredToolPlaceholder') continue
-    const { defer_loading: _, ...schema } = t
+    const { defer_loading: _, ...rest } = t
+    const schema = isObj(t.input_schema)
+      ? { name: t.name, ...(t.description != null ? { description: t.description } : {}), input_schema: t.input_schema }
+      : rest
     const name = typeof t.name === 'string' ? t.name : ''
     const part = name.startsWith('mcp__') ? `MCP tools: ${mcpServer(name)}` : 'System tools'
     add(part, JSON.stringify(schema).length)
@@ -224,9 +230,6 @@ export function readContext(text: string): Read<Measured> {
 
 // ─── the fs half ──────────────────────────────────────────────────────────────
 
-/** Claude Code names a project's folder by turning every non-alphanumeric character of its path into `-`. */
-export const projectFolderName = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, '-')
-
 /** At most `bytes` from the start of a file, cut at the last whole line. null when it cannot be read. */
 export function readHead(path: string, bytes: number = HEAD_BYTES): string | null {
   let fd: number | null = null
@@ -250,7 +253,7 @@ const TRY_FILES = 15
  * listed; a sidechain line inside one is skipped by the reader.
  */
 export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read<Measured & { file: string, sessionId: string }> {
-  const dir = join(opts.configDir ?? claudeConfigDir(), 'projects', projectFolderName(cwd))
+  const dir = join(opts.configDir ?? claudeConfigDir(), 'projects', encodeCwd(cwd))
   let names: string[]
   try { names = readdirSync(dir).filter(f => f.endsWith('.jsonl')) }
   catch { return unreadable(`no Claude Code transcripts for ${cwd}`) }
@@ -274,6 +277,36 @@ export function contextFor(cwd: string, opts: { configDir?: string } = {}): Read
 
 // ─── the count ────────────────────────────────────────────────────────────────
 
+/** One request to count: the parts of a Messages request that cost input tokens. */
+export type CountBody = { system?: string, tools?: unknown[], messages: unknown[] }
+
+function countRefused(f: AnthropicFailure): string {
+  if (f.kind === 'rate_limited') return 'rate limited by the count endpoint'
+  if (f.kind === 'auth_failed' || f.kind === 'forbidden') return `count endpoint refused the login (${f.status ?? f.kind}); run claude to refresh it`
+  if (f.status) return `count endpoint answered ${f.status}`
+  return `count endpoint unreachable (${f.kind})`
+}
+
+/**
+ * The input tokens of each body under `model`, in order, through the login and
+ * `conduit-anthropic`'s `countTokens`; the only tokenizer for these models is
+ * the API's (`FJS-D1734`). One refusal fails the lot: a caller subtracts counts
+ * from each other, and a partial answer would subtract a missing one. Never throws.
+ */
+async function countLogin(model: string, bodies: CountBody[], opts: LoginSendOptions = {}): Promise<Read<number[]>> {
+  const problem = loginProblem({ configDir: opts.configDir })
+  if (problem) return unreadable(problem)
+  const send = loginSend(opts)
+  const one = async (body: CountBody): Promise<Read<number>> => {
+    const r = await countTokens(send, { model, ...body, tools: body.tools as Tool[] | undefined, messages: body.messages as Message[] })
+    return r.count ? read(r.count.input_tokens) : unreadable(countRefused(r.error!))
+  }
+  const counts = await Promise.all(bodies.map(one))
+  const failed = counts.find(c => !c.ok)
+  if (failed && !failed.ok) return unreadable(failed.reason)
+  return read(counts.map(c => (c as { ok: true, value: number }).value))
+}
+
 type Counter = (model: string, bodies: CountBody[]) => Promise<Read<number[]>>
 
 /** Counted parts by transcript: a first request never changes, so each is asked once per process. */
@@ -286,7 +319,7 @@ const KEEP = 64
  * the same request without it, so the tool-use preamble the API adds lands
  * once, on *System tools*, and an MCP server is counted on top of those.
  */
-export async function countContext<T extends Measured>(m: T, key: string, count: Counter = countTokens): Promise<Omit<T, 'sent'>> {
+export async function countContext<T extends Measured>(m: T, key: string, count: Counter = countLogin): Promise<Omit<T, 'sent'>> {
   const { sent, ...ctx } = m
   const asCounted = (parts: ContextPart[]) => ({
     ...ctx, parts, basis: 'counted' as const, estimatedWhy: null,

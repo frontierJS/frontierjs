@@ -105,6 +105,17 @@ describe('the binding key', () => {
     expect(ctx.result).toMatch(/= document\.createElement\('i'\);/)
   })
 
+  it('leaves an {#await} {:pending} body unadopted and unkeyed, since the server never writes it (FJS-4599)', async () => {
+    const src = '<script>\n  let n = 1\n</script>\n{#await Promise.resolve(2)}<code>{n}</code>{#if n}<b>{n}</b>{/if}{:then v}<i>{v}</i>{/await}'
+    const ctx = await compile(src, { ...quiet, hydratable: true })
+    const at = ctx.result.indexOf('hydAwait(')
+    const pending = ctx.result.slice(at, ctx.result.indexOf('(v) =>', at))
+    expect(pending).toMatch(/makeBlock\(/)
+    expect(pending).not.toMatch(/\$\$h\.take|adopting\(|hydIf\(|hydBlock\(/)
+    expect(ctx.result).toMatch(/\(v\) => \$\$runtime\.hydBlock\(/)
+    expect(() => acorn.parse(ctx.result, { ecmaVersion: 'latest', sourceType: 'module' })).not.toThrow()
+  })
+
   it('names a snippet rendered twice once, by the snippet body, on both walks', async () => {
     const src = '<script>\n  let n = 1\n</script>\n{#snippet s()}<b>{n}</b>{/snippet}\n{@render s()}{@render s()}'
     const { dom, server } = await both(src)
@@ -113,7 +124,7 @@ describe('the binding key', () => {
   })
 })
 
-const UNRESOLVED_TODAY = 6
+const UNRESOLVED_TODAY = 0
 
 describe('every corpus file', () => {
   // rg skips node_modules and gitignored build output, as scripts/corpus.mjs does.

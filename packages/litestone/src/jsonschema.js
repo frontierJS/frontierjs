@@ -1279,6 +1279,7 @@ function opaqueRules(model, properties) {
 function applyPresentation(fieldSchema, field) {
   const label = field.attributes.find(a => a.kind === 'label')
   if (label?.text) fieldSchema.title = label.text
+  if (field.attributes.some(a => a.kind === 'deprecated')) fieldSchema.deprecated = true
 
   const messages = {}
   for (const attr of field.attributes) {

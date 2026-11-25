@@ -86,6 +86,8 @@ export interface UserThreadList {
 
 export interface Reaction {
   user_id: MattermostId; post_id: MattermostId; emoji_name: string; create_at: number
+  /** The post's channel; an older server leaves it out, and the post names it. */
+  channel_id?: MattermostId
 }
 
 export interface User {
@@ -102,6 +104,8 @@ export interface User {
 
 export interface FileInfo {
   id: MattermostId; user_id: MattermostId; post_id?: MattermostId
+  /** The channel it was uploaded to; an older server leaves it out, and the post names it. */
+  channel_id?: MattermostId
   create_at: number; update_at: number; delete_at: number
   name: string; extension: string; size: number; mime_type: string
   width?: number; height?: number; has_preview_image?: boolean

@@ -80,7 +80,7 @@ for (const k of Object.keys(env)) if (k.startsWith('CHAT_') || k.startsWith('BAS
 
 SCRATCH = mkdtempSync(join(tmpdir(), 'workbench-messages-'))
 sink = startMattermostSink({ port: 0 })
-todoSink = startBasecampSink({ port: 0 })
+todoSink = startBasecampSink({ port: 0, deviceInterval: 1 })
 const { ids, tokens } = sink
 const sinkCall = async (path, token, init = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -119,7 +119,7 @@ children.push(spawn('bun', ['api/index.ts'], {
   env: { ...env, DATABASE_URL: join(SCRATCH, 'workbench.db'), CHAT_DATABASE_URL: join(SCRATCH, 'chat.db'),
          JOBS_DATABASE_URL: join(SCRATCH, 'jobs.db'), AUDIT_PATH: join(SCRATCH, 'audit.db'),
          XDG_CONFIG_HOME: SCRATCH, WORKBENCH_DIR: join(SCRATCH, 'workbench'), CLAUDE_BIN: FAKE_CLAUDE,
-         BC3_ACCOUNT_ID: String(todoSink.account), BC3_TOKEN: todoSink.token, BC3_API_ORIGIN: todoSink.url,
+         BC3_API_ORIGIN: todoSink.url, BC3_TOKEN_ORIGIN: todoSink.url,
          CHAT_URL: sink.url, FRONTIER_APP_URL: BASE, PORT: String(API_PORT), WORKBENCH_KEY: KEY },
 }))
 children.push(spawn('bun', ['run', 'web'], {
@@ -354,12 +354,30 @@ try {
   await until(`location.pathname`, p => p === `/messages/${ids.open}/`, 'the sidebar never went back to general')
   await until(`!!document.querySelector('[data-post="${R}"]')`, v => v, 'general never redrew its posts', 15_000)
   // A post's files, reactions and images grow it after its row lands; a tall block stands in for one.
-  const gap = `(() => { const l = document.querySelector('[data-post-list]'); return l.scrollHeight - l.scrollTop - l.clientHeight })()`
+  // Measured on screen, not from scrollTop: the list is column-reverse, where scrollTop is 0 at the newest post.
+  const gap = `(() => { const l = document.querySelector('[data-post-list]'), b = l.querySelector('.posts-body')
+    return Math.abs(l.getBoundingClientRect().bottom - parseFloat(getComputedStyle(l).paddingBlockEnd) - b.getBoundingClientRect().bottom) })()`
   await until(gap, v => v < 2, 'switching back to general never landed at the newest post')
   await evaluate(`document.querySelector('[data-post-list] .posts-body').insertAdjacentHTML('beforeend', '<div data-late style="block-size: 600px"></div>')`)
   await until(gap, v => v < 2, 'content that grew after the list drew left the view short of the newest post')
-  await evaluate(`document.querySelector('[data-late]').remove()`)
   ok('a room opens at its newest post and stays there while its posts grow')
+  // Scrolled up, growth BELOW the view would carry the post being read upward.
+  await evaluate(`(() => { const l = document.querySelector('[data-post-list]'); l.scrollTop = -500; l.dispatchEvent(new Event('scroll')) })()`)
+  const firstInView = `(() => { const l = document.querySelector('[data-post-list]'), t = l.getBoundingClientRect().top
+    const a = [...l.querySelectorAll('article[id^="post-"]')].find(a => a.getBoundingClientRect().bottom > t)
+    return a ? a.id + '@' + Math.round(a.getBoundingClientRect().top) : null })()`
+  const readBefore = await evaluate(firstInView)
+  await evaluate(`document.querySelector('[data-late]').style.blockSize = '900px'`)
+  // Headless Chrome draws no frame unasked, and a ResizeObserver reports only in one;
+  // a screenshot asks for one, and the first is not always the one that reports.
+  let readAfter = null
+  for (let i = 0; i < 5 && readAfter !== readBefore; i++) {
+    await send('Page.captureScreenshot', { format: 'png' })
+    readAfter = await evaluate(firstInView)
+  }
+  check('scrolled up, a post growing below the view leaves the one being read in place', readBefore && readBefore === readAfter, { readBefore, readAfter })
+  await evaluate(`document.querySelector('[data-late]').remove()`)
+  await evaluate(`(() => { const l = document.querySelector('[data-post-list]'); l.scrollTop = 0; l.dispatchEvent(new Event('scroll')) })()`)
 
   // ── Edit, delete, and what the menu offers another person's post ──
   console.log('\n  Posts: edit, delete')
@@ -752,11 +770,30 @@ try {
   await fillSection('Design work')
   await until(`document.querySelector('[data-section="${designKey}"] [data-fold]')?.textContent.trim() ?? ''`, t => t === 'Design work', 'Rename never changed the header', 15_000)
   check('Rename changes it on the server', (await categories()).some(c => c.display_name === 'Design work'), (await categories()).map(c => c.display_name))
+  // Coming back with the section rows already held builds the sections at mount, where a
+  // first visit (rows still loading) builds the plain two and never reached the same code.
+  await click('a[href="/workbench/"]')
+  await until(`location.pathname`, p => p === '/workbench/', 'the nav never left Messages')
+  await click('a[href="/messages/"]')
+  await until(`!!document.querySelector('[data-section="${designKey}"]') || !!document.querySelector('[role=alert]')`, v => v, 'coming back never drew the sidebar', 20_000)
+  check('leaving Messages by the nav and coming back draws the sections, not the error boundary', !(await exists('[role=alert]')), await textOf('[role=alert]'))
+  // Folded from a room outside the section: the open room stays listed in a folded one.
+  await goto(`/messages/${ids.secret}/`)
+  await until(`!!document.querySelector('[data-fold="${designKey}"]')`, v => v, 'the section never drew in ops', 20_000)
   await click(`[data-fold="${designKey}"]`)
   await until(`!document.querySelector('[data-section="${designKey}"] [data-channel]')`, v => v, 'folding never hid the rooms')
-  await goto(`/messages/${ids.open}/`)
+  await goto(`/messages/${ids.secret}/`)
   await until(`!!document.querySelector('[data-fold="${designKey}"]')`, v => v, 'the section never drew after a reload', 20_000)
   check('a folded section stays folded after a reload (this browser\'s localStorage)', !(await exists(`[data-section="${designKey}"] [data-channel]`)) && (await evaluate(`localStorage.getItem('workbench_messages_folded')`))?.includes(designKey))
+  await sinkPost(tokens.bob, ids.open, `while design was folded ${Date.now()}`)
+  const foldedPill = await until(`document.querySelector('[data-section="${designKey}"] [data-channel="${ids.open}"] [data-pill]')?.dataset.pill ?? ''`, p => p, 'a new message never showed its room in the folded section', 15_000)
+  check('a folded section still lists a room with a new message, with its pill', foldedPill === 'unread', foldedPill)
+  await evaluate(`document.querySelector('[data-section="${designKey}"] [data-channel="${ids.open}"]').click()`)
+  await until(`document.querySelector('[data-section="${designKey}"] [data-channel="${ids.open}"] [data-pill]') === null`, v => v, 'opening the room never cleared its pill', 15_000)
+  check('opening that room keeps its row in the folded section', await exists(`[data-section="${designKey}"] [data-channel="${ids.open}"]`))
+  await evaluate(`document.querySelector('[data-chat-sidebar] [data-channel="${ids.secret}"]').click()`)
+  await until(`!document.querySelector('[data-section="${designKey}"] [data-channel]')`, v => v, 'leaving the read room never folded it away', 15_000)
+  ok('once read and left, the room folds away')
   await click(`[data-fold="${designKey}"]`)
   await until(`!!document.querySelector('[data-section="${designKey}"] [data-channel="${ids.open}"]')`, v => v, 'unfolding never showed the room')
 
@@ -1222,8 +1259,13 @@ try {
   check('nothing has gone to Claude for the screen opening', recapCalls() === 0 && !existsSync(FAKE_STDIN))
   const unreadPill = `document.querySelector('[data-chat-sidebar] [data-channel="${ids.open}"] [data-pill]')`
   check('a group whose end is below the fold is not read yet: the room still shows its pill', !(await exists(`${groupSel}[data-passed]`)) && (await evaluate(`!!${unreadPill}`)), await evaluate(`${unreadPill}?.textContent ?? null`))
-  // The page is what scrolls, and headless Chrome paints no frames, so the scroll event a real scroll queues is sent by hand.
-  await evaluate(`(() => { const s = document.scrollingElement; s.scrollTop = s.scrollHeight; document.dispatchEvent(new Event('scroll')) })()`)
+  // Whichever box scrolls -- the page or a pane inside it -- is scrolled to its end, and headless Chrome paints no
+  // frames, so the scroll event a real scroll queues is sent by hand.
+  await evaluate(`(() => {
+    const boxes = [document.scrollingElement]
+    for (let e = document.querySelector('${groupSel}'); e; e = e.parentElement) if (e.scrollHeight > e.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(e).overflowY)) boxes.push(e)
+    for (const s of boxes) { s.scrollTop = s.scrollHeight; s.dispatchEvent(new Event('scroll')) }
+  })()`)
   await until(`!!document.querySelector('${groupSel}[data-passed]')`, v => v, 'scrolling past the group never passed it', 20_000)
   await until(`${unreadPill} === null`, v => v === true, 'passing the group never read the room (its pill stayed)', 25_000)
   ok('scrolling past a group marks its room read through chat.view: the pill clears, and the group stays on screen marked Read')
@@ -1321,6 +1363,19 @@ try {
 
   console.log('\n  A post as a Basecamp to-do')
   {
+  // The grant is the owner's, made once on the Laptop screen: the sink approves the code the card shows.
+  await goto('/laptop/')
+  await until(`!!document.querySelector('[role=tab]')`, v => v, 'the Laptop tabs never rendered')
+  await clickText('[role=tab]', 'Services')
+  await until(`document.querySelector('[data-todos]')?.dataset.todos ?? null`, v => v === 'off', 'the Basecamp card never rendered unconnected', 15_000)
+  await clickText('[data-todos] button', 'Connect Basecamp')
+  const shownCode = await until(`document.querySelector('[data-todo-code]')?.textContent.trim() ?? null`, v => !!v, 'the card never showed a code', 15_000)
+  const verifyHref = await evaluate(`document.querySelector('[data-todo-verify]')?.getAttribute('href') ?? null`)
+  check('the Basecamp card shows the code and a link to approve it', /^[A-Za-z0-9-]{4,}$/.test(shownCode) && /^https?:\/\/.+\/device/.test(verifyHref ?? '') && await evaluate(`document.querySelector('[data-todo-verify]').target`) === '_blank', { shownCode, verifyHref })
+  await fetch(`${todoSink.url}/_sink/device`, { method: 'POST', body: JSON.stringify({ approve: shownCode }) })
+  await until(`document.querySelector('[data-todos]')?.dataset.todos ?? null`, v => v === 'connected', 'the card never said connected after the code was approved', 30_000)
+  check('once the code is approved the card says connected', /connected/i.test(await textOf('[data-todo-state]') ?? ''), await textOf('[data-todos]'))
+  check('and the code is gone from it', !(await evaluate(`!!document.querySelector('[data-todo-code]')`)))
   // The sink is the connector's, never 3.basecampapi.com. A direct message is the post that must not leak.
   const todoCall = (path, init = {}) => fetch(`${todoSink.url}${path}`, init).then(r => r.json())
   const todoSeen = async () => (await todoCall('/_sink/seen')).requests
@@ -1351,6 +1406,30 @@ try {
   check('the author and the channel are not in it either', !JSON.stringify(made?.body).includes(ids.bob) && !JSON.stringify(made?.body).includes(dmRoom.id), made?.body)
   check('the dialog links the to-do Basecamp made', /^https?:\/\/[^ ]+$/.test(await evaluate(`document.querySelector('[data-todo-link]').getAttribute('href')`)))
   await click('[data-todo-done] button')
+
+  // The sink gives one project a to-do list, so a remembered second project is seeded, not picked.
+  const PLACE = 'workbench_messages_todo_place'
+  const reopen = async () => {
+    await menuPick(`[data-post="${dmPost.id}"]`, '[data-post-more]', 'Make a Basecamp to-do')
+    await until(`(() => { const s = document.querySelector('[data-todo-project]'); return !!s && !s.disabled && !!s.value })()`, v => v, 'the dialog never picked a project', 25_000)
+    return evaluate(`({ project: document.querySelector('[data-todo-project]').value, list: document.querySelector('[data-todo-list]').value,
+      options: [...document.querySelectorAll('[data-todo-project] option')].map(o => o.value) })`)
+  }
+  const cancel = () => evaluate(`[...document.querySelectorAll('[data-todo-dialog] button')].find(b => b.textContent.trim() === 'Cancel').click()`)
+  const stored = await evaluate(`JSON.parse(localStorage.getItem('${PLACE}'))`)
+  check('the place a to-do was made is remembered as bare ids', stored && Number.isInteger(stored.projectId) && Number.isInteger(stored.listId) && made?.path?.includes(`/todolists/${stored.listId}/`), stored)
+  const again = await reopen()
+  check('the dialog opens again on that project and list', again.project === String(stored?.projectId) && again.list === String(stored?.listId), again)
+  await cancel()
+  const second = again.options.find(id => id !== String(stored?.projectId))
+  await evaluate(`localStorage.setItem('${PLACE}', JSON.stringify({ projectId: ${Number(second)}, listId: 1 }))`)
+  const other = await reopen()
+  check('a remembered project other than the first is the one it opens on', other.project === second, { second, other })
+  await cancel()
+  await evaluate(`localStorage.setItem('${PLACE}', JSON.stringify({ projectId: 424242, listId: 1 }))`)
+  const stale = await reopen()
+  check('a remembered project Basecamp no longer answers falls back to the first', stale.project === stale.options[0], stale)
+  await cancel()
   }
 
   console.log('\n  Sidebar width')
@@ -1381,6 +1460,15 @@ try {
   check('the width survives a reload', await sideWidth() === 190, await sideWidth())
   await evaluate(`document.querySelector('[data-chat-resize]').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`)
   check('a double-click puts it back to 260px', await sideWidth() === 260, await sideWidth())
+  await click('[data-sidebar-rail]')
+  check('the collapse button folds the sidebar to a 64px rail', await sideWidth() === 64, await sideWidth())
+  check('the rail hides the room names and shows a tile per room', await evaluate(`(() => { const a = document.querySelector('[data-channel]'); return getComputedStyle(a.querySelector('.chat-room-name')).display === 'none' && getComputedStyle(a.querySelector('.chat-tile')).display !== 'none' && !!a.title })()`))
+  check('and has no resize handle', await evaluate(`getComputedStyle(document.querySelector('[data-chat-resize]')).display === 'none'`))
+  await goto('/messages/')
+  await until(`!!document.querySelector('.chat-sidebar')`, v => v, 'the sidebar never came back after a reload')
+  check('the rail survives a reload', await sideWidth() === 64, await sideWidth())
+  await click('[data-sidebar-rail]')
+  check('the same button unfolds it to the width it had', await sideWidth() === 260, await sideWidth())
   await send('Emulation.clearDeviceMetricsOverride')
   }
 

@@ -44,7 +44,7 @@ export interface WorkbenchAppOptions {
   /** The team chat server's address. Default `CHAT_URL`; absent, chat is off. A drive hands the sink's. */
   chatUrl?: string | null
   /** Basecamp, the 37signals product, for a post's to-do. Default `BASECAMP_ACCOUNT_ID`, `BASECAMP_TOKEN`, `BASECAMP_API_ORIGIN`; absent, to-dos are off. A drive hands the sink's. */
-  todos?: { accountId?: string | null, token?: string | null, origin?: string | null }
+  todos?: { apiOrigin?: string | null, tokenOrigin?: string | null }
 }
 
 // A machine that never ran `fli basecamp:create` still has the dev Basecamp;
@@ -124,9 +124,8 @@ export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promis
   // The team chat (`IDEAS/workbench-messages.md`): after caravan, whose queue
   // the backfill rides and whose workers open each linked member's socket.
   const todos = bc3Provider(app, {
-    accountId: opts.todos?.accountId !== undefined ? opts.todos.accountId : env.BC3_ACCOUNT_ID,
-    token:     opts.todos?.token     !== undefined ? opts.todos.token     : env.BC3_TOKEN,
-    origin:    opts.todos?.origin    !== undefined ? opts.todos.origin    : env.BC3_API_ORIGIN,
+    apiOrigin:   opts.todos?.apiOrigin   !== undefined ? opts.todos.apiOrigin   : env.BC3_API_ORIGIN,
+    tokenOrigin: opts.todos?.tokenOrigin !== undefined ? opts.todos.tokenOrigin : env.BC3_TOKEN_ORIGIN,
   })
   chatProvider(app, { db, url: opts.chatUrl !== undefined ? opts.chatUrl : env.CHAT_URL, alongside: todos })
   app.configure(a => {

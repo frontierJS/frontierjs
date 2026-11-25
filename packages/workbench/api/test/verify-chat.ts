@@ -15,7 +15,7 @@
 // as a pushed /ws frame. The databases (main, chat, jobs) and the
 // config folder are a temp directory; the sink and the app take OS ports.
 
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -68,7 +68,7 @@ async function until<T> (pred: () => Promise<T> | T, ms = 8000): Promise<T | nul
 
 const sink = startMattermostSink({ port: 0 })
 // Basecamp, the 37signals product: the connector's sink, never 3.basecampapi.com.
-const todoSink = startBasecampSink({ port: 0 })
+const todoSink = startBasecampSink({ port: 0, deviceInterval: 1 })
 const ids = sink.ids
 const sinkCall = async (path: string, token: string, init: { method?: string, body?: unknown } = {}) => {
   const res = await fetch(`${sink.url}/api/v4${path}`, {
@@ -85,7 +85,7 @@ let env: any
 try {
   env = await createTestEnv({
     schema: join(DB, 'schema.lite'), migrations: join(DB, 'migrations'), encryptionKey: '0'.repeat(64),
-    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { accountId: todoSink.account, token: todoSink.token, origin: todoSink.url }, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
+    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { apiOrigin: todoSink.url, tokenOrigin: todoSink.url }, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
     listen: true,
   } as any)
   const sys = env.system
@@ -780,7 +780,22 @@ try {
   const todoSeen = async () => ((await (await fetch(`${todoSink.url}/_sink/seen`)).json()) as any).requests as { method: string, path: string, body: any }[]
   const todoPosts = async () => (await todoSeen()).filter(r => r.method === 'POST')
   const todoArm = (a: unknown) => fetch(`${todoSink.url}/_sink/arm`, { method: 'POST', body: JSON.stringify(a) })
-  check((await call(ada, 'status', {}) as any).todos === true, 'chat.status says to-dos are on when an account and a token are configured')
+  // The owner's grant: a device-code sign-in on the sink, approved there as
+  // the person would in a browser, and kept in basecamp.json.
+  const grantPath = join(process.env.WORKBENCH_DIR!, 'basecamp.json')
+  const offBefore = await call(ada, 'todoProjects', {})
+  check((await call(ada, 'status', {}) as any).todos === false && codeOf(offBefore) === 503 && /not connected/.test(offBefore?.message ?? ''), 'before a sign-in, to-dos are off and a to-do call is a plain 503 not connected', offBefore?.message)
+  const todoShown = await call(ada, 'todoConnect', {}) as { userCode: string, verificationUri: string, expiresAt: number }
+  check(typeof todoShown.userCode === 'string' && /\/device$/.test(todoShown.verificationUri) && !('deviceCode' in todoShown), 'todoConnect answers the code and the link to show, and never the device code', todoShown)
+  check((await call(ada, 'todoConnect', {}) as any).userCode === todoShown.userCode, 'a second Connect while one waits shows the same code')
+  check((await call(ada, 'status', {}) as any).todoSignIn?.signIn?.userCode === todoShown.userCode && (await call(ada, 'status', {}) as any).todos === false, 'chat.status shows the waiting code, and to-dos stay off until it is approved')
+  await fetch(`${todoSink.url}/_sink/device`, { method: 'POST', body: JSON.stringify({ approve: todoShown.userCode }) })
+  check(await until(async () => (await call(ada, 'status', {}) as any).todos === true), 'once approved, the poll lands the grant and chat.status says to-dos are on')
+  const grantKept = JSON.parse(readFileSync(grantPath, 'utf8'))
+  check(/^bc_client_/.test(grantKept.clientId) && grantKept.accountId === Number(todoSink.account) && /^bc_refresh_device_/.test(grantKept.refreshToken) && (statSync(grantPath).mode & 0o777) === 0o600,
+    'basecamp.json holds the client id, the account derived from authorization.json and the refresh token, mode 0600', { ...grantKept, mode: (statSync(grantPath).mode & 0o777).toString(8) })
+  const registered = (await todoSeen()).find(r => r.path === '/oauth/clients')
+  check(registered?.body?.token_endpoint_auth_method === 'none' && !JSON.stringify(registered).includes('secret'), 'the client registered is public: no secret is asked for or kept', registered?.body)
   const todoProjects = await call(ada, 'todoProjects', {}) as { projects: { id: number, name: string }[] }
   check(todoProjects.projects?.length > 1 && todoProjects.projects.every(p => typeof p.id === 'number' && typeof p.name === 'string' && Object.keys(p).length === 2), 'todoProjects walks the connector\'s projects, an id and a name each', todoProjects)
   const todoLists = await call(ada, 'todoLists', { projectId: todoProjects.projects[0].id }) as { lists: { id: number, name: string }[] }
@@ -797,6 +812,8 @@ try {
   check(typeof madeTodo.id === 'number' && /^https?:\/\//.test(madeTodo.appUrl ?? ''), 'makeTodo answers the to-do\'s id and its app_url', madeTodo)
   const sentTodos = (await todoPosts()).slice(todoBefore)
   const sentTodo = sentTodos[0]
+  const refreshed = (await todoSeen()).filter(r => r.path === '/oauth/tokens' && r.body?.grant_type === 'refresh_token')
+  check(refreshed.length === 1 && refreshed[0].body.refresh_token === grantKept.refreshToken && refreshed[0].body.client_id === grantKept.clientId, 'the to-do went out on an access token refreshed from the kept grant, under the registered client', refreshed.map(r => r.body))
   check(sentTodos.length === 1 && sentTodo.path.endsWith(`/buckets/${todoProjects.projects[0].id}/todolists/${todoLists.lists[0].id}/todos.json`), 'exactly one create reached the sink, on the project and list picked', sentTodos.map(r => r.path))
   check(sentTodo.body.content === 'Ring the client' && String(sentTodo.body.description).replace(/<[^>]+>/g, '') === permalink, 'its title is the one sent and its notes are the permalink alone', sentTodo.body)
   check(!JSON.stringify(sentTodo).includes(todoSecret) && !JSON.stringify(sentTodo).includes(ids.bob) && !JSON.stringify(sentTodo).includes(ids.open), 'the post\'s text, author and channel appear nowhere in the request', sentTodo)
@@ -813,19 +830,14 @@ try {
   const todoDenied = await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'Refused' })
   check(codeOf(todoDenied) === 403 && /forbidden/.test(todoDenied?.message ?? ''), 'Basecamp\'s refusal comes back as its kind, forbidden', todoDenied?.message)
 
-  // Off unless configured: a second app with no account or token.
-  const bare: any = await createTestEnv({
-    schema: join(DB, 'schema.lite'), migrations: join(DB, 'migrations'), encryptionKey: '0'.repeat(64),
-    api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { accountId: null, token: null, origin: null } }),
-    listen: true,
-  } as any)
-  try {
-    const bareMember = await bare.system.member.create({ data: { nick: 'bare' } })
-    const bareCall = (method: string, data: unknown) => bare.as(sessionContext({ id: String(bareMember.id), isAdmin: true })).service('chat').call(method, null, data).then((r: any) => r, (e: any) => e)
-    check((await bareCall('status', {}) as any).todos === false, 'with no account or token chat.status says to-dos are off')
-    const off = await bareCall('makeTodo', { postExternalId: todoPost.id, projectId: 1, listId: 2, title: 'Nope' })
-    check(codeOf(off) === 503 && /not configured/.test(off?.message ?? '') && codeOf(await bareCall('todoProjects', {})) === 503, 'and every to-do method answers a plain 503 not configured', off?.message)
-  } finally { await bare.close().catch(() => {}) }
+  // A lost grant: Basecamp refuses the refresh, the person is told auth_failed,
+  // the refresh token is cleared, and Connect is offered again.
+  await todoArm({ expire: true, refuseRefresh: true })
+  const lostTodo = await call(ada, 'makeTodo', { postExternalId: todoPost.id, projectId: todoProjects.projects[0].id, listId: todoLists.lists[0].id, title: 'After the grant died' })
+  const afterLost = JSON.parse(readFileSync(grantPath, 'utf8'))
+  check(/auth_failed/.test(lostTodo?.message ?? '') && !('refreshToken' in afterLost) && afterLost.clientId === grantKept.clientId, 'a refused refresh is auth_failed to the caller, and basecamp.json keeps the client but not the dead token', { message: lostTodo?.message, afterLost })
+  check((await call(ada, 'status', {}) as any).todos === false && codeOf(await call(ada, 'todoProjects', {})) === 503, 'after a lost grant to-dos are off, so the card offers Connect again')
+  await fetch(`${todoSink.url}/_sink/reset`)
 
   // ── unlink ────────────────────────────────────────────────────────────
   await as(ada).service('chat').call('disconnect', null, {})

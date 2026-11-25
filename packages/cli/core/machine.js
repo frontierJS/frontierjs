@@ -138,10 +138,20 @@ export const ttyCommand = (host, transport, command, { pty = true } = {}) =>
  * where it is not — so every combination of transports is the same one line.
  * Same machine is not this function's case: the caller skips it, because two
  * names for one daemon means the bytes are already there.
+ *
+ * Gzipped on the saving end, inside its own shell, so every hop carries the
+ * smaller stream: an uncompressed image with headless Chrome in it is a GB,
+ * which is a quarter hour on a home uplink, and gzip takes thod's 1006 MB to
+ * 388 MB. `docker load` reads a gzipped tar on every Docker version, so the
+ * loading end needs nothing. zstd is smaller and faster but needs Docker 23 to
+ * load. Every layer still crosses on every release; sending only the layers
+ * the machine lacks is `FJS-4609`.
  */
-export const shipCommand = (from, to, image) =>
-  `${pipeCommand(from.host, from.kind, `docker save ${image}`)} | ` +
-  `${pipeCommand(to.host, to.kind, 'docker load')}`
+export const shipCommand = (from, to, image) => {
+  const save = `docker save ${image} | gzip`
+  return `${from.kind === 'local' ? save : pipeCommand(from.host, from.kind, shQuote(save))} | ` +
+    `${pipeCommand(to.host, to.kind, 'docker load')}`
+}
 
 /** Are these two the same daemon? Host AND transport, because `local` is a daemon and a name is not. */
 export const sameMachine = (a, b) =>
@@ -376,7 +386,7 @@ export function createMachine({ host, exec, transport = null, path = null, ident
       other.ready?.()
       exec({
         command:  shipCommand({ kind, host }, { kind: other.kind, host: other.host }, image),
-        describe: `docker save ${image} on ${host} | docker load on ${other.host}`,
+        describe: `docker save ${image} | gzip on ${host} | docker load on ${other.host}`,
         ...opts,
       })
       return true

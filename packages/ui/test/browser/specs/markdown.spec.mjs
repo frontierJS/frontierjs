@@ -8,7 +8,7 @@
  * a phone's chat pane rather than pushing the page sideways.
  */
 export const name = 'Markdown'
-export const covers = ['display/Markdown']
+export const covers = ['display/Markdown', 'forms/MarkdownInput']
 
 export async function run(t) {
   await t.mount('markdown')
@@ -61,4 +61,15 @@ export async function run(t) {
     'a link click is heard with its href and left alone')
   await t.clickAt('#heard strong')
   t.is(await t.evaluate(`return window.__heard.length`), 1, 'a click off a link is not heard')
+
+  /* ── MarkdownInput's Preview draws a newline as its sender will ──────── */
+
+  // An app that sends with breaks: true and previews without shows one line
+  // where the reader gets two (FJS-4570).
+  const preview = async (id) => {
+    await t.clickAt(`#${id} .fjs-markdown-input-mode[aria-pressed="false"]`)
+    return t.evaluate(`return document.querySelectorAll('#${id} .fjs-markdown-input-preview br').length`)
+  }
+  t.is(await preview('input-breaks'), 1, 'breaks draws a single newline in the Preview as a <br>')
+  t.is(await preview('input-plain'), 0, 'and without it the newline folds, as Markdown does')
 }

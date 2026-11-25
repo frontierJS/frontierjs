@@ -52,6 +52,17 @@
 // minted from it is that person's, so `my/profile.json` answers their id and a
 // create is theirs. `{ revoke: <refresh token> }` ends one grant alone.
 //
+// Signing in is RFC 7591 and RFC 8628 on the same origin: `POST
+// /oauth/clients` (JSON) registers a public client that names the device_code
+// grant; `POST /oauth/device_authorizations` answers a device code for a
+// registered client, polled at `/oauth/tokens` as `authorization_pending`
+// until `/_sink/device` approves (`{ approve: <user code>, person? }`) or
+// refuses (`{ deny }`) it, and `expired_token` after `deviceLife` seconds.
+// An approved code answers once, with a refresh token the grants now hold.
+// `GET /authorization.json` names the bearer's identity and its accounts: 999,
+// plus `accounts` for a drive that needs more than one. Whether Basecamp lets
+// a registered client take the device grant is unmeasured.
+//
 // The event feed (3.1) is `GET /events.json` over 0.2's replay, oldest first,
 // `feedPage` a page (default 100). A position token names the last event
 // served and the digest of the filters it was minted for — the docs' `srv2`
@@ -85,12 +96,13 @@
 
 import { readFileSync } from 'node:fs'
 
-export interface BasecampSinkOptions { port?: number; token?: string; projects?: number; refreshToken?: string; people?: Record<string, number>; tokenLife?: number; feedPage?: number; ticketLife?: number; beatMs?: number }
+export interface BasecampSinkOptions { port?: number; token?: string; projects?: number; refreshToken?: string; people?: Record<string, number>; tokenLife?: number; feedPage?: number; ticketLife?: number; beatMs?: number; deviceInterval?: number; deviceLife?: number; accounts?: { product: string; id: number; name: string }[] }
 type Answer = { status: number; body?: unknown; headers?: Record<string, string>; times?: number }
-type Armed = { answer?: Answer; rateLimit?: { retryAfter: number }; failNext?: boolean; forbidden?: boolean; inactive?: boolean; lost?: boolean; expire?: boolean; refuseRefresh?: boolean; revoke?: string; rotate?: boolean; tokenLife?: number; epoch?: number; feedPage?: number; hangUp?: boolean; ticketLife?: number; beatMs?: number }
+type Armed = { answer?: Answer; deviceLife?: number; rateLimit?: { retryAfter: number }; failNext?: boolean; forbidden?: boolean; inactive?: boolean; lost?: boolean; expire?: boolean; refuseRefresh?: boolean; revoke?: string; rotate?: boolean; tokenLife?: number; epoch?: number; feedPage?: number; hangUp?: boolean; ticketLife?: number; beatMs?: number }
 type Json = Record<string, any>
 
 const ACCOUNT = '999'
+const DEVICE_GRANT = 'urn:ietf:params:oauth:grant-type:device_code'
 const GEARS = [15, 30, 50, 100]
 const gear = (page: number) => GEARS[Math.min(page, GEARS.length) - 1]
 const NO_UA = 'Provide a User-Agent header in the following format: My App (https://example.com/myapp)\n'
@@ -141,6 +153,10 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
   const minted = new Map<string, { until: number; person: number | null }>()
   const profileOf = (person: number | null | undefined) => person ? { ...fixture('profile.json'), id: person } : fixture('profile.json')
   let mints = 0
+  /** Registered client ids, and each device code's sign-in, until it is spent or expires. */
+  const clients = new Set<string>()
+  const devices = new Map<string, { client: string; userCode: string; until: number; state: 'pending' | 'approved' | 'denied'; person: number | null }>()
+  let deviceLife = opts.deviceLife ?? 900, deviceSeq = 0
   const hidden = new Set<number>()
   const hanging: (() => void)[] = []
   /** Rows made by a create or a seed, per list path. */
@@ -268,6 +284,7 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
       if (url.pathname === '/_sink/seen')    return Response.json({ requests: seen, cable: cableSent, open: cables.size })
       if (url.pathname === '/_sink/reset')   {
         seen.length = 0; answer = null; lost = false; inactive = false; hidden.clear(); rows = null; made.clear()
+        clients.clear(); devices.clear(); deviceSeq = 0; deviceLife = opts.deviceLife ?? 900
         minted.clear(); regrant(); refuseRefresh = false; rotate = false; tokenLife = opts.tokenLife ?? 3600
         feed = null; epoch = 0; feedPage = opts.feedPage ?? 100
         cableSent.length = 0; ticketsMinted = 0; tickets.clear(); ticketLife = opts.ticketLife ?? 120; beatMs = opts.beatMs ?? 3000
@@ -282,6 +299,7 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
         if (a.refuseRefresh) refuseRefresh = true
         if (a.rotate) rotate = true
         if (a.tokenLife !== undefined) tokenLife = a.tokenLife
+        if (a.deviceLife !== undefined) deviceLife = a.deviceLife
         if (a.epoch !== undefined) epoch = a.epoch
         if (a.feedPage !== undefined) feedPage = a.feedPage
         if (a.ticketLife !== undefined) ticketLife = a.ticketLife
@@ -328,6 +346,48 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
         if (row) Object.assign(row, patch)
         return Response.json({ ok: !!row })
       }
+      if (url.pathname === '/_sink/device') {
+        const { approve, deny, person = null } = (await req.json()) as { approve?: string; deny?: string; person?: number | null }
+        const d = [...devices.values()].find(v => v.userCode === (approve ?? deny))
+        if (d) { d.state = approve ? 'approved' : 'denied'; d.person = person }
+        return Response.json({ ok: !!d })
+      }
+      if (req.method === 'POST' && (url.pathname === '/oauth/clients' || url.pathname === '/oauth/device_authorizations')) {
+        const text = await req.text()
+        const isJson = req.headers.get('content-type')?.startsWith('application/json')
+        const body = (isJson ? JSON.parse(text || '{}') : Object.fromEntries(new URLSearchParams(text))) as Json
+        const entry = { method: req.method, path: url.pathname, userAgent: req.headers.get('user-agent'), authorization: req.headers.get('authorization'), ifNoneMatch: null, body, status: 0 }
+        seen.push(entry)
+        const reply = (b: unknown, status: number) => { entry.status = status; return Response.json(b, { status, headers: { 'cache-control': 'no-store' } }) }
+        if (answer) {
+          const a = answer
+          if (!a.times || --a.times <= 0) answer = null
+          return reply(a.body, a.status)
+        }
+        if (url.pathname === '/oauth/clients') {
+          if (!isJson) return reply({ error: 'invalid_client_metadata', error_description: 'Registration takes application/json.' }, 400)
+          if (body.token_endpoint_auth_method !== 'none' || !body.grant_types?.includes(DEVICE_GRANT) || !body.client_name) return reply({ error: 'invalid_client_metadata', error_description: 'A public client names itself, token_endpoint_auth_method none and the device_code grant.' }, 400)
+          const id = `bc_client_${clients.size + 1}`
+          clients.add(id)
+          return reply({ client_id: id, client_id_issued_at: Math.floor(Date.now() / 1000), client_name: body.client_name, grant_types: body.grant_types, token_endpoint_auth_method: 'none', scope: body.scope }, 201)
+        }
+        if (!clients.has(body.client_id)) return reply({ error: 'invalid_client' }, 401)
+        const n = ++deviceSeq, deviceCode = `bc_device_${n}`, userCode = `WDJB-MJH${n}`
+        devices.set(deviceCode, { client: body.client_id, userCode, until: Date.now() + deviceLife * 1000, state: 'pending', person: null })
+        return reply({ device_code: deviceCode, user_code: userCode, verification_uri: `${origin}/device`, verification_uri_complete: `${origin}/device?user_code=${userCode}`, expires_in: deviceLife, interval: opts.deviceInterval ?? 5 }, 200)
+      }
+      if (req.method === 'GET' && url.pathname === '/authorization.json') {
+        const bearer = req.headers.get('authorization')?.match(/^Bearer (.+)$/)?.[1] ?? ''
+        const spent = minted.get(bearer)
+        seen.push({ method: req.method, path: url.pathname, userAgent: req.headers.get('user-agent'), authorization: req.headers.get('authorization'), ifNoneMatch: null, body: null, status: 200 })
+        if (bearer !== TOKEN && !((spent?.until ?? 0) > Date.now())) { seen.at(-1)!.status = 401; return json({ error: 'OAuth token could not be verified.' }, 401) }
+        const who = profileOf(spent?.person) as Json
+        return json({
+          expires_at: new Date((spent?.until ?? Date.now() + 3_600_000)).toISOString(),
+          identity: { id: who.id, first_name: 'Person', last_name: String(who.id), email_address: who.email_address },
+          accounts: [{ product: 'bc3', id: Number(ACCOUNT), name: 'Sink Co', href: `${origin}/${ACCOUNT}`, app_href: `${origin}/${ACCOUNT}` }, ...(opts.accounts ?? [])],
+        }, 200)
+      }
       if (req.method === 'POST' && url.pathname === '/oauth/tokens') {
         const form = Object.fromEntries(new URLSearchParams(await req.text()))
         const entry = { method: req.method, path: url.pathname, userAgent: req.headers.get('user-agent'), authorization: req.headers.get('authorization'), ifNoneMatch: null, body: form, status: 0 }
@@ -337,6 +397,19 @@ export function startBasecampSink(opts: BasecampSinkOptions = {}) {
           const a = answer
           if (!a.times || --a.times <= 0) answer = null
           return reply(a.body, a.status, a.headers)
+        }
+        if (form.grant_type === DEVICE_GRANT) {
+          const d = devices.get(form.device_code)
+          if (!d) return reply({ error: 'invalid_grant' }, 400)
+          if (d.client !== form.client_id) return reply({ error: 'invalid_client' }, 401)
+          if (d.until <= Date.now()) { devices.delete(form.device_code); return reply({ error: 'expired_token' }, 400) }
+          if (d.state === 'pending') return reply({ error: 'authorization_pending' }, 400)
+          devices.delete(form.device_code)
+          if (d.state === 'denied') return reply({ error: 'access_denied' }, 400)
+          const access = `bc_minted_${++mints}`, refresh = form.device_code.replace('bc_device_', 'bc_refresh_device_')
+          minted.set(access, { until: Date.now() + tokenLife * 1000, person: d.person })
+          grants.set(refresh, d.person)
+          return reply({ access_token: access, token_type: 'Bearer', expires_in: tokenLife, refresh_token: refresh }, 200)
         }
         if (form.grant_type !== 'refresh_token') return reply({ error: 'unsupported_grant_type' }, 400)
         if (refuseRefresh || !grants.has(form.refresh_token)) return reply({ error: 'invalid_grant', error_description: 'The provided authorization grant is invalid, expired, revoked, or was issued to another client.' }, 400)

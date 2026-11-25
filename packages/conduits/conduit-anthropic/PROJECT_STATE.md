@@ -1,6 +1,6 @@
 # conduit-anthropic — state
 
-**New, sink-only, drive green (22 rows).** 2026-10-12.
+**Sink-only, drive green (53 rows).**
 
 - Drive green against: the sink. Fixture: none exists (a vendor).
 - Real vendor: never called; no key in the environment. Error wording is the

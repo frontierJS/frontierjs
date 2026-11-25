@@ -6,7 +6,7 @@
   import Icon from '../Icon.mesa'
   import { downloadFile, fileBlobUrl, fileSize, isImage } from '../../lib/files.js'
 
-  export let file = null   // { id, name, mime, size, preview }
+  export let file = null   // { id, name, mime, size, preview, width, height }
 
   let src = ''
   let failed = false
@@ -17,6 +17,8 @@
     try { src = await fileBlobUrl(file.id, file.preview ? 'preview' : 'full') } catch { failed = true }
   }
   $.onMount(load)
+  // The box takes the image's shape before its bytes land, so a post does not grow under the reader.
+  $: sized = file?.width > 0 && file?.height > 0
   $: file?.id, () => load()
 
   async function save() {
@@ -31,7 +33,7 @@
 
 {#if file}
   {#if isImage(file.mime) && !failed}
-    <button type="button" class="chat-image" onclick={openFull} aria-label={`Open ${file.name}`} data-file-card="image" data-file={file.id}>
+    <button type="button" class="chat-image" class:sized style={sized ? `--w: ${file.width}; --h: ${file.height}` : null} onclick={openFull} aria-label={`Open ${file.name}`} data-file-card="image" data-file={file.id}>
       {#if src}<img {src} alt={file.name} />{:else}<span class="skeleton chat-image-wait" aria-hidden="true"></span>{/if}
     </button>
   {:else}
@@ -50,5 +52,7 @@
   .chat-image { display: block; padding: 0; border: 0; background: none; cursor: zoom-in; max-inline-size: 100%; }
   .chat-image img { display: block; max-block-size: calc(var(--space-2xl) * 10); max-inline-size: 100%; border-radius: var(--card-radius); }
   .chat-image-wait { display: block; inline-size: calc(var(--space-2xl) * 8); block-size: calc(var(--space-2xl) * 5); }
+  .chat-image.sized { inline-size: min(100%, calc(var(--w) * 1px), calc(var(--space-2xl) * 10 * var(--w) / var(--h))); aspect-ratio: var(--w) / var(--h); }
+  .chat-image.sized img, .chat-image.sized .chat-image-wait { inline-size: 100%; block-size: 100%; max-block-size: none; object-fit: contain; }
   .chat-file { inline-size: fit-content; max-inline-size: 100%; }
 </style>

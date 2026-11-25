@@ -1,4 +1,4 @@
-// src/domain/claude/claude-mcp.ts — the MCP servers Claude Code is configured with.
+// src/mcp.ts — the MCP servers Claude Code is configured with.
 //
 // Four places declare them, one shape each time: `~/.claude.json` at the top
 // (user scope) and under `projects[<path>]` (local scope), a project's
@@ -15,7 +15,7 @@
 // reads as a secret is replaced — `--api-key sk-…` is how a token reaches a
 // stdio server that takes it from argv, and the screen draws args.
 
-import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
+import { read, unreadable, readJsonObject, type Read } from './read.ts'
 
 export type McpScope     = 'user' | 'local' | 'project' | 'plugin'
 export type McpTransport = 'stdio' | 'http' | 'sse'

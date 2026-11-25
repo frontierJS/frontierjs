@@ -41,6 +41,7 @@ table `channel` · db `chat` · gate `3.3.3.3`
 | `deletedAt` | `DateTime` | yes | — | @system |
 | `displayName` | `String` | no | — | @system · **required on write** |
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
+| `files` | `FileInfo[]` | — | — | relation |
 | `header` | `String` | no | — | @system · **required on write** |
 | `id` | `Int` | no | — | id |
 | `lastPostAt` | `DateTime` | yes | — | @system |
@@ -50,6 +51,7 @@ table `channel` · db `chat` · gate `3.3.3.3`
 | `name` | `String` | no | — | @system · **required on write** |
 | `posts` | `Post[]` | — | — | relation |
 | `purpose` | `String` | no | — | @system · **required on write** |
+| `reactions` | `Reaction[]` | — | — | relation |
 | `team` | `Team` | — | — | relation |
 | `teamExternalId` | `String` | yes | — | @system |
 | `totalMessageCount` | `Int` | no | — | @system · **required on write** |
@@ -245,6 +247,8 @@ table `file_info` · db `chat` · gate `3.8.8.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `channel` | `Channel` | — | — | relation |
+| `channelExternalId` | `String` | no | — | @system · **required on write** |
 | `createdAt` | `DateTime` | yes | — | @system |
 | `deletedAt` | `DateTime` | yes | — | @system |
 | `extension` | `String` | no | — | @system · **required on write** |
@@ -264,6 +268,7 @@ table `file_info` · db `chat` · gate `3.8.8.8`
 | `width` | `Int` | yes | — | @system |
 
 ```
+@@index(channelExternalId)
 @@index(postExternalId)
 @@index(profileExternalId)
 @@allow(read, profileExternalId == auth().profileExternalId || postExternalId != null && check(post))
@@ -454,6 +459,8 @@ table `reaction` · db `chat` · gate `3.3.8.3`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
+| `channel` | `Channel` | — | — | relation |
+| `channelExternalId` | `String` | no | — | @system · **required on write** |
 | `createdAt` | `DateTime` | yes | — | @system |
 | `emojiName` | `String` | no | — | @system · **required on write** |
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
@@ -465,9 +472,10 @@ table `reaction` · db `chat` · gate `3.3.8.3`
 | `profileExternalId` | `String` | no | — | @system · **required on write** |
 
 ```
+@@index(channelExternalId)
 @@index(postExternalId)
 @@index(profileExternalId)
-@@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read'))
+@@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId)
 @@allow(delete, profileExternalId == auth().profileExternalId)
 @@allow(read, check(post))
 ```

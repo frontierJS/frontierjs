@@ -6960,16 +6960,18 @@ describe('catch-names-its-error', () => {
   })
 })
 
-// ─── claude-package-isolated, claude-spawn-owned (IDEAS/claude-calls.md 2.3) ────
+// ─── claude-package-isolated, claude-spawn-owned, claude-login-owned (IDEAS/claude-calls.md 2.3, 5.2) ──
 //
-// The fixtures build a start call with `start()` so this file never holds the
-// text the rule looks for: a literal one here would list the test as a starter.
+// The fixtures build a start call with `start()`, and the login's names from
+// halves, so this file never holds the text a rule looks for: a literal one here
+// would list the test itself.
 
 describe('claude boundary', () => {
   const start = (fn, arg) => `${fn}(${arg}, ['-p'])\n`
   const BARE  = "'" + 'claude' + "'"
-  const LIST  = (entries) => JSON.stringify({ '//': 'note', ...entries })
-  const files = (extra = {}) => ({ 'packages/claude/index.ts': 'export {}\n', 'scripts/claude-spawners.json': LIST({}), ...extra })
+  const CREDS = '.credentials' + '.json'
+  const USAGE = 'oauth' + '/usage'
+  const files = (extra = {}) => ({ 'packages/claude/index.ts': 'export {}\n', ...extra })
   const run   = (name, rule, extra) => only(tree(name, files(extra)), rule, { scope: 'repo' })
 
   test('claude-package-isolated: an import of the cli by name or by path fails; the package\'s own files do not', () => {
@@ -6993,7 +6995,7 @@ describe('claude boundary', () => {
     expect(findings).toEqual([])
   })
 
-  test('claude-spawn-owned: a starter that is not listed fails, whatever shape the start takes', () => {
+  test('claude-spawn-owned: a starter outside the package fails, whatever shape the start takes', () => {
     const { findings } = run('claude-spawn-bad', 'claude-spawn-owned', {
       'packages/a/one.js':   start('spawn', BARE),
       'packages/a/two.ts':   start('Bun.spawn', `[${BARE}`).replace(', [\'-p\']', ''),
@@ -7005,23 +7007,22 @@ describe('claude boundary', () => {
       .toEqual(['example/five.js', 'packages/a/one.js', 'packages/a/three.mjs', 'packages/a/two.ts', 'scripts/four.mjs'])
   })
 
-  test('claude-spawn-owned: a listed starter passes, and the package itself is exempt', () => {
-    const { findings } = run('claude-spawn-listed', 'claude-spawn-owned', {
-      'scripts/claude-spawners.json': LIST({ 'scripts/loop.mjs': '3.3' }),
-      'scripts/loop.mjs':             start('spawn', BARE),
+  test('claude-spawn-owned: the package itself is exempt', () => {
+    const { findings } = run('claude-spawn-own', 'claude-spawn-owned', {
       'packages/claude/src/run.ts':   start('spawn', 'bin') + `export const BIN = ${BARE}\n`,
     })
     expect(findings).toEqual([])
   })
 
-  test('claude-spawn-owned: a listed file that no longer starts it fails, so the list only shrinks', () => {
-    const { findings } = run('claude-spawn-stale', 'claude-spawn-owned', {
-      'scripts/claude-spawners.json': LIST({ 'scripts/loop.mjs': '3.3', 'scripts/gone.mjs': '4.4' }),
-      'scripts/loop.mjs':             "import { runAsk } from '@frontierjs/claude'\n",
+  test('claude-login-owned: the credentials file or the usage endpoint named outside the package fails', () => {
+    const { findings } = run('claude-login-bad', 'claude-login-owned', {
+      'scripts/loop.mjs':             `readFileSync(join(home, '.claude', '${CREDS}'))\n`,
+      'packages/a/quota.ts':          `await fetch('https://api.anthropic.com/api/${USAGE}')\n`,
+      'packages/a/note.ts':           `// the token lives in ${CREDS}\nexport {}\n`,
+      'packages/claude/src/quota.ts': `const URL = 'https://api.anthropic.com/api/${USAGE}'\nreadFileSync('${CREDS}')\n`,
     })
-    expect(findings.length).toBe(2)
-    expect(findings.map(f => f.message).join('\n')).toMatch(/scripts\/loop\.mjs \(3\.3\).*no longer starts/s)
-    expect(findings.map(f => f.message).join('\n')).toMatch(/scripts\/gone\.mjs \(4\.4\).*file is gone/s)
+    expect(findings.map(f => relative(join(ROOT, 'claude-login-bad'), f.file)).sort())
+      .toEqual(['packages/a/quota.ts', 'scripts/loop.mjs'])
   })
 
   test('claude-spawn-owned: a bare bin in a file that never names claude, a comment, and a fake on PATH are not starters', () => {
@@ -7033,9 +7034,9 @@ describe('claude boundary', () => {
     expect(findings).toEqual([])
   })
 
-  test('both rules skip a tree with no packages/claude', () => {
+  test('every rule skips a tree with no packages/claude', () => {
     const root = tree('claude-none', { 'scripts/a.mjs': start('spawn', BARE) })
-    for (const id of ['claude-spawn-owned', 'claude-package-isolated']) {
+    for (const id of ['claude-spawn-owned', 'claude-package-isolated', 'claude-login-owned']) {
       const out = only(root, id, { scope: 'repo' })
       expect(out.skipped.map(s => s.rule)).toEqual([id])
       expect(out.findings).toEqual([])

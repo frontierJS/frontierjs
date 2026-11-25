@@ -133,10 +133,6 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
     return this.byType.get(type)?.category === "storage"
   }
 
-  isAiNode(type: string): boolean {
-    return this.byType.get(type)?.category === "ai"
-  }
-
   getOutputSchema(type: string): JSONSchema | undefined {
     return this.byType.get(type)?.outputSchema
   }

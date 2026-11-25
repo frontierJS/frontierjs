@@ -1,4 +1,4 @@
-// src/domain/claude/claude-transcript.ts — one Claude Code transcript folded into turns.
+// src/transcript.ts — one Claude Code transcript folded into turns.
 //
 // A transcript is a JSONL of everything a session did, and most of it is not
 // conversation: request blobs, file-history snapshots, hook output, one line
@@ -26,8 +26,7 @@
 
 import { readFileSync, realpathSync, statSync } from 'node:fs'
 import { isAbsolute, join, sep } from 'node:path'
-import { claudeConfigDir } from './claude-scan.ts'
-import { read, unreadable, type Read } from './claude-read.ts'
+import { claudeConfigDir, read, unreadable, type Read } from './read.ts'
 
 export type Text = {
   text:      string
@@ -115,7 +114,7 @@ function resultBytes(content: unknown): number {
 }
 
 /** The words of a user line, or null when it is not a typed prompt (a tool result, a notification). */
-function promptText(o: Record<string, any>): string | null {
+export function promptText(o: Record<string, any>): string | null {
   if (o.isMeta === true || !isObj(o.message)) return null
   // `peer` and `task-notification` lines are injected, not typed; they belong to the turn they land in.
   const kind = isObj(o.origin) ? o.origin.kind : null

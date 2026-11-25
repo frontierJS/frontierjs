@@ -4,7 +4,8 @@ The Messages API's dialect: `x-api-key`, a required version header, a billed
 POST that must not be replayed, SSE read through `conduit.stream()`.
 `src/index.ts` (target, calls, tool loop, the stream) · `src/door.ts`
 (`anthropicDoor`, the Messages API as `@frontierjs/toolbelt/ask`'s one-answer
-door) · `src/errors.ts` (the one reader of `error.raw` and `meta.status`) ·
+door) · `src/prices.ts` (the one price table: the door prices its replies, Workbench its
+spend) · `src/errors.ts` (the one reader of `error.raw` and `meta.status`) ·
 `src/types.ts` · `sink.ts` ·
 `test/anthropic.drive.ts`.
 
@@ -37,6 +38,16 @@ door) · `src/errors.ts` (the one reader of `error.raw` and `meta.status`) ·
   `stream_error`, not `indeterminate`, because the 2xx says the request ran.
   The check after the loop is for a server that closes cleanly mid-answer,
   which conduit cannot tell from an answer that finished.
+- **An unpriced model costs `null`, never 0.** A model `PRICES` does not name is
+  unpriced, and a zero would read as free in a host's total. A new model owes a
+  row in `src/prices.ts` and a new `PRICES_READ_ON`.
+- **`betas` never reaches the body.** `wire()` lifts it into `anthropic-beta`
+  for `createMessage`, `streamMessage` and `countTokens` alike; the API 400s a
+  `betas` field, and the sink refuses one so a call that skipped `wire()` fails
+  `host.betasReachEveryCallAsAHeader`.
+- **`assemble()` must keep every block the API sent.** A thinking block that
+  lost its `signature_delta` goes back with an empty signature and is a 400 on
+  the host's next turn; the `host.*` rows replay what `assemble()` built.
 - **The sink prints `error: upstream died` on the death row.** That is Bun
   reporting the errored `ReadableStream`, not a drive failure; the row is green
   beneath it.
@@ -48,4 +59,4 @@ door) · `src/errors.ts` (the one reader of `error.raw` and `meta.status`) ·
 
 ## Proving a change
 
-`bun run drive`. Green means 42 rows (22 for the connector, 20 `door.*`); there is no fixture.
+`bun run drive`. Green means 53 rows (25 for the connector, 7 `host.*`, 21 `door.*`); there is no fixture.

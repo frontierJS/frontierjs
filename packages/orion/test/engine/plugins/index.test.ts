@@ -115,13 +115,6 @@ describe("PluginRegistry — IPluginRegistry (compiler interface)", () => {
     expect(registry.isStoreNode("ai")).toBe(false)
   })
 
-  // isAiNode
-  test("isAiNode returns true only for ai", () => {
-    expect(registry.isAiNode("ai")).toBe(true)
-    expect(registry.isAiNode("store")).toBe(false)
-    expect(registry.isAiNode("data.code")).toBe(false)
-  })
-
   // getOutputSchema
   test("getOutputSchema returns schema for trigger.webhook", () => {
     const schema = registry.getOutputSchema("trigger.webhook")

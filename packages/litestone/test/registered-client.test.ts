@@ -501,6 +501,32 @@ describe('the generated system types admit every documented query shape (FJS-457
   })
 })
 
+// FJS-4600 -- a belongsTo's write fills its key, so a create names the key or
+// the relation; requiring the key refused the documented nested create.
+const BELONGS_TO_USAGE = `
+  import { createClient } from '@frontierjs/litestone'
+
+  export async function run(postId: number) {
+    const db = await createClient({ schema: 'model X { id Int @id }', db: ':memory:' })
+    await db.comment.create({ data: { body: 'x', postId } })
+    await db.comment.create({ data: { body: 'x', post: { connect: { id: postId } } } })
+    await db.comment.create({ data: { body: 'x', post: { create: { title: 'p' } } } })
+    await db.comment.create({ data: { body: 'x', post: { connectOrCreate: { where: { id: postId }, create: { title: 'p' } } } } })
+    await db.post.create({ data: { title: 'p', comments: { create: [{ body: 'x' }] } } })
+    await db.asSystem().comment.create({ data: { body: 'x', post: { connect: { id: postId } } } })
+    // @ts-expect-error -- neither the key nor the relation: nothing fills postId
+    await db.comment.create({ data: { body: 'x' } })
+  }
+`
+
+describe('a generated Create takes a belongsTo key or its relation write (FJS-4600)', () => {
+  test('connect, create and connectOrCreate stand in for the key; omitting both is refused', () => {
+    const { ok, out } = compile('system', DOCUMENTED, BELONGS_TO_USAGE)
+    expect(out).toBe('')
+    expect(ok).toBe(true)
+  })
+})
+
 // FJS-D2332 -- a select LIST is typed as the object it stands for: each entry
 // is checked where it is written, and the row is typed field by field, through
 // every hop of a path.

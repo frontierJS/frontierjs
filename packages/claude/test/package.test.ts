@@ -9,15 +9,21 @@
 import { test, expect } from 'bun:test'
 import pkg from '../package.json'
 
-test('the entry exports the transport and the live chat', async () => {
+test('the entry exports the transport, the live chat, the readers and the subcommands', async () => {
   const mod = await import('../index.ts')
   expect(Object.keys(mod).sort()).toEqual([
-    'ASK_BASH', 'ASK_BUDGET_USD', 'ASK_EFFORT', 'ASK_TOOLS', 'BadAnswer', 'ControlError', 'DRAW_BUDGET_USD',
-    'EDIT_TOOLS', 'EFFORTS', 'FALLBACK_MODELS', 'IMAGE_TYPES', 'LineReader', 'MAX_IMAGE', 'MAX_IMAGES', 'MODES',
-    'Protocol', 'SESSION_ID', 'Session', 'WORK_BUDGET_USD',
-    'agentCall', 'agentEventOf', 'askArgv', 'askCard', 'askInput', 'askSummary', 'claudeDoor', 'commandsOf', 'decide', 'denial',
-    'initOf', 'mcpConfigOf', 'mergeCommands', 'modelsOf', 'readAskEvent', 'readImages', 'resumeCommand',
-    'runAsk', 'sessionArgv', 'usageOf',
+    'ASK_BASH', 'ASK_BUDGET_USD', 'ASK_EFFORT', 'ASK_TOOLS', 'BadAnswer', 'ControlError',
+    'DRAW_BUDGET_USD', 'EDIT_TOOLS', 'EFFORTS', 'FALLBACK_MODELS', 'IMAGE_TYPES', 'LISTING_LIMIT',
+    'LineReader', 'MAX_BYTES', 'MAX_IMAGE', 'MAX_IMAGES', 'MODES', 'Protocol', 'SESSION_ID',
+    'SUMMARY_CAP', 'Session', 'TEXT_CAP', 'WORK_BUDGET_USD', 'agentCall', 'agentEventOf', 'allHooks',
+    'allItems', 'askArgv', 'askCard', 'askInput', 'askSummary', 'claudeAuthStatus', 'claudeConfigDir',
+    'claudeDoor', 'claudeJsonPath', 'commandTools', 'commandsOf', 'configRev', 'contextFor',
+    'countContext', 'decide', 'denial', 'encodeCwd', 'expandMcpVars', 'fetchUsage', 'findSession',
+    'foldTranscript', 'initOf', 'listSessions', 'mcpConfigOf', 'mergeCommands', 'modelsOf',
+    'peekSession', 'read', 'readAskEvent', 'readDoctor', 'readImages', 'readJsonObject',
+    'readListedFile', 'readMcpList', 'readMessages', 'readToolCalls', 'readTranscript',
+    'resumeCommand', 'runAsk', 'runClaude', 'scanClaude', 'sessionArgv', 'titleOf', 'unreadable',
+    'usageOf',
   ])
 })
 

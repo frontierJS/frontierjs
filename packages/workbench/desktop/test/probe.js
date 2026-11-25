@@ -93,6 +93,9 @@
       error:  document.getElementById('screen-error')?.textContent.trim() || null,
     })
 
+    // Late, so the page's own report on sign-in has gone first.
+    say('tray', { set: await invoke('tray_unread', { count: 3, dot: false }).then(() => true, e => String(e)) })
+
     // Awaited: the shell exits on `done`, and a report still in flight is lost.
     await say('errors', errors)
     sessionStorage.clear()

@@ -22,7 +22,8 @@ import { GOALS, diagnose, goalOf }                from '@frontierjs/cli/core/doc
 import { services as catalog }                    from '@frontierjs/cli/core/services.js'
 import { listGlobal }                             from '@frontierjs/cli/core/global-env.js'
 import { DEV_ENCRYPTION_KEY, DEV_WORKBENCH_KEY, env as appEnv } from '../../core/env.ts'
-import { claudeAuthStatus }                       from '../local/local-claude.ts'
+import { claudeAuthStatus }                       from '@frontierjs/claude'
+import { claudeProgram }                          from '../local/local-claude.ts'
 import { ping }                                   from './ping.ts'
 import { requiringModulesOnRegistry }             from './services.ts'
 import type { Where }                             from './laptop.ts'
@@ -127,7 +128,7 @@ export async function setup({ home, has, versionOf, gitOf, auth, keys, env: live
   // What only Workbench knows, all under Use Claude in Workbench.
   const claude = report.system.find(b => b.name === 'claude')!
   if (claude.present) {
-    const a = await (auth ?? (() => claudeAuthStatus()))()
+    const a = await (auth ?? (() => claudeAuthStatus(claudeProgram())))()
     const who = a.ok && a.value.loggedIn ? (a.value.email ?? a.value.authMethod ?? 'signed in') : null
     put('claude', row({
       id: 'claude:login', label: 'claude signed in', ok: Boolean(who), detail: who ?? (a.ok ? 'signed out' : a.reason),

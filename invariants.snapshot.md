@@ -45,7 +45,8 @@ Covered: **19 of 19**.
 | `fli check` | `seam-owner` | a seam's stated owner exists and is where the name is declared |
 | `fli check` | `seam-listed` | every seam the skill explains is named in CLAUDE.md's key list |
 | `fli check` | `catch-names-its-error` | a catch on the request or Data path names what it caught or says why not (FJS-D2131) |
-| `fli check` | `claude-spawn-owned` | only @frontierjs/claude starts the claude program, and the files still listed in scripts/claude-spawners.json are the ones that do |
+| `fli check` | `claude-spawn-owned` | only @frontierjs/claude starts the claude program |
+| `fli check` | `claude-login-owned` | only @frontierjs/claude reads the claude.ai login: its credentials file and its usage endpoint |
 
 ### 5. One owner per `app.<thing>`
 

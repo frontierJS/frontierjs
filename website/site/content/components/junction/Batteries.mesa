@@ -2,7 +2,7 @@
   Junction page § Batteries and extension points. Facts: packages/junction/
   README.md (Scheduler, Health and metrics, Mail, OpenAPI, Interface-first
   adapters, Tier 1 Plugins), src/core/app.ts (the Plugin interface, APP_SLOTS,
-  createApp building the cache and a held scheduler), src/ai/index.ts (IAIModel).
+  createApp building the cache and a held scheduler), src/ai/index.ts (ai({ doors })).
   The proof is a real run of a 30-line app in a scratch directory against the
   package's own source, kept in consts: a brace in markup opens a Mesa
   expression, and no backtick may appear in either const.
@@ -93,7 +93,7 @@ shutdown`
         </li>
         <li>
           <strong>A provider replaces an implementation.</strong>
-          Mail takes any <code>{'{ send, batch }'}</code>, AI any <code>IAIModel</code>, auth any
+          Mail takes any <code>{'{ send, batch }'}</code>, AI any toolbelt <code>Door</code>, auth any
           <code>IAuth</code>. The code that calls <code>app.mail.send</code> does not change when
           the mailer behind it does.
         </li>

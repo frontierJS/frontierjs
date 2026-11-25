@@ -62,16 +62,16 @@ export interface MemberCreate {
   id?: number
   nick: string
   chatToken?: string | null
-  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
-  notifications?: __HasManyWrite<NotificationWhere, Omit<NotificationCreate, 'userId'>, NotificationUpdate>
+  sessions?: __HasManyWrite<SessionWhere, __OmitEach<SessionCreate, 'memberId'>, SessionUpdate>
+  notifications?: __HasManyWrite<NotificationWhere, __OmitEach<NotificationCreate, 'userId'>, NotificationUpdate>
 }
 
 export interface MemberUpdate {
   id?: number
   nick?: string
   chatToken?: string | null
-  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
-  notifications?: __HasManyWrite<NotificationWhere, Omit<NotificationCreate, 'userId'>, NotificationUpdate>
+  sessions?: __HasManyWrite<SessionWhere, __OmitEach<SessionCreate, 'memberId'>, SessionUpdate>
+  notifications?: __HasManyWrite<NotificationWhere, __OmitEach<NotificationCreate, 'userId'>, NotificationUpdate>
 }
 
 export interface MemberSystem {
@@ -144,21 +144,21 @@ export interface Session {
   expiresAt: string
 }
 
-export interface SessionCreate {
+export type SessionCreate = {
   /**
    * Set by the owner, never cleared. A revoked grant is kept rather than
    * deleted so the audit trail still names what the token could reach.
    */
   revokedAt?: string | Date | null
   id?: number
-  memberId: number
+  memberId?: number
   member?: __BelongsToWrite<MemberWhere, MemberCreate>
   /**
    * Required where the trait leaves it open: a session that never expires buys
    * nothing and is a standing hole for a token that leaked.
    */
   expiresAt: string | Date
-}
+} & ({ memberId: number } | { member: __BelongsToWrite<MemberWhere, MemberCreate> })
 
 export interface SessionUpdate {
   revokedAt?: string | Date | null
@@ -444,9 +444,9 @@ export interface Notification {
   createdAt: string
 }
 
-export interface NotificationCreate {
+export type NotificationCreate = {
   id?: number
-  userId: number
+  userId?: number
   member?: __BelongsToWrite<MemberWhere, MemberCreate>
   type: string
   data: unknown
@@ -454,7 +454,7 @@ export interface NotificationCreate {
   subjectId?: string | null
   deliveryKey?: string | null
   readAt?: string | Date | null
-}
+} & ({ userId: number } | { member: __BelongsToWrite<MemberWhere, MemberCreate> })
 
 export interface NotificationUpdate {
   id?: number
@@ -553,12 +553,12 @@ export interface Team {
 
 export interface TeamCreate {
   id?: number
-  channels?: __HasManyWrite<ChannelWhere, Omit<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
+  channels?: __HasManyWrite<ChannelWhere, __OmitEach<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
 }
 
 export interface TeamUpdate {
   id?: number
-  channels?: __HasManyWrite<ChannelWhere, Omit<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
+  channels?: __HasManyWrite<ChannelWhere, __OmitEach<ChannelCreate, 'teamExternalId'>, ChannelUpdate>
 }
 
 export interface TeamSystem {
@@ -625,20 +625,20 @@ export interface Profile {
 
 export interface ProfileCreate {
   id?: number
-  memberships?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
-  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'profileExternalId'>, PostUpdate>
-  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
-  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
-  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
+  memberships?: __HasManyWrite<ChannelMemberWhere, __OmitEach<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'profileExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, __OmitEach<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
 }
 
 export interface ProfileUpdate {
   id?: number
-  memberships?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
-  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'profileExternalId'>, PostUpdate>
-  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
-  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
-  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
+  memberships?: __HasManyWrite<ChannelMemberWhere, __OmitEach<ChannelMemberCreate, 'profileExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'profileExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, __OmitEach<ThreadCreate, 'profileExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'profileExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'profileExternalId'>, FileInfoUpdate>
 }
 
 export interface ProfileSystem {
@@ -730,15 +730,19 @@ export interface Channel {
 export interface ChannelCreate {
   id?: number
   team?: __BelongsToWrite<TeamWhere, TeamCreate>
-  members?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
-  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'channelExternalId'>, PostUpdate>
+  members?: __HasManyWrite<ChannelMemberWhere, __OmitEach<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'channelExternalId'>, PostUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'channelExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'channelExternalId'>, FileInfoUpdate>
 }
 
 export interface ChannelUpdate {
   id?: number
   team?: __BelongsToWrite<TeamWhere, TeamCreate>
-  members?: __HasManyWrite<ChannelMemberWhere, Omit<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
-  posts?: __HasManyWrite<PostWhere, Omit<PostCreate, 'channelExternalId'>, PostUpdate>
+  members?: __HasManyWrite<ChannelMemberWhere, __OmitEach<ChannelMemberCreate, 'channelExternalId'>, ChannelMemberUpdate>
+  posts?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'channelExternalId'>, PostUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'channelExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'channelExternalId'>, FileInfoUpdate>
 }
 
 export interface ChannelSystem {
@@ -777,6 +781,8 @@ export interface ChannelWhere extends WhereBase {
   deletedAt?: string | Date | WhereOp<string | Date> | null
   members?: { some?: ChannelMemberWhere; every?: ChannelMemberWhere; none?: ChannelMemberWhere }
   posts?: { some?: PostWhere; every?: PostWhere; none?: PostWhere }
+  reactions?: { some?: ReactionWhere; every?: ReactionWhere; none?: ReactionWhere }
+  files?: { some?: FileInfoWhere; every?: FileInfoWhere; none?: FileInfoWhere }
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: ChannelWhere[]
   OR?:  ChannelWhere[]
@@ -791,6 +797,8 @@ export interface ChannelRelations {
   team: Team | null
   members: ChannelMember[]
   posts: Post[]
+  reactions: Reaction[]
+  files: FileInfo[]
 }
 
 // ─── ChannelMember ───────────────────────────────────────────────
@@ -901,10 +909,10 @@ export interface PostCreate {
   channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   author?: __BelongsToWrite<ProfileWhere, ProfileCreate>
   root?: __BelongsToWrite<PostWhere, PostCreate>
-  replies?: __HasManyWrite<PostWhere, Omit<PostCreate, 'rootExternalId'>, PostUpdate>
-  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
-  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'postExternalId'>, ReactionUpdate>
-  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
+  replies?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'rootExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, __OmitEach<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'postExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
 }
 
 export interface PostUpdate {
@@ -912,10 +920,10 @@ export interface PostUpdate {
   channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   author?: __BelongsToWrite<ProfileWhere, ProfileCreate>
   root?: __BelongsToWrite<PostWhere, PostCreate>
-  replies?: __HasManyWrite<PostWhere, Omit<PostCreate, 'rootExternalId'>, PostUpdate>
-  threads?: __HasManyWrite<ThreadWhere, Omit<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
-  reactions?: __HasManyWrite<ReactionWhere, Omit<ReactionCreate, 'postExternalId'>, ReactionUpdate>
-  files?: __HasManyWrite<FileInfoWhere, Omit<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
+  replies?: __HasManyWrite<PostWhere, __OmitEach<PostCreate, 'rootExternalId'>, PostUpdate>
+  threads?: __HasManyWrite<ThreadWhere, __OmitEach<ThreadCreate, 'rootExternalId'>, ThreadUpdate>
+  reactions?: __HasManyWrite<ReactionWhere, __OmitEach<ReactionCreate, 'postExternalId'>, ReactionUpdate>
+  files?: __HasManyWrite<FileInfoWhere, __OmitEach<FileInfoCreate, 'postExternalId'>, FileInfoUpdate>
 }
 
 export interface PostSystem {
@@ -1055,6 +1063,7 @@ export interface Reaction {
   id: number
   externalId: string
   postExternalId: string
+  channelExternalId: string
   profileExternalId: string
   emojiName: string
   createdAt?: string | null
@@ -1064,18 +1073,21 @@ export interface Reaction {
 export interface ReactionCreate {
   id?: number
   post?: __BelongsToWrite<PostWhere, PostCreate>
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ReactionUpdate {
   id?: number
   post?: __BelongsToWrite<PostWhere, PostCreate>
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface ReactionSystem {
   externalId?: string
   postExternalId?: string
+  channelExternalId?: string
   profileExternalId?: string
   emojiName?: string
   missingSince?: string | Date | null
@@ -1086,6 +1098,8 @@ export interface ReactionWhere extends WhereBase {
   externalId?: string | WhereOp<string> | null
   postExternalId?: string | WhereOp<string> | null
   post?: { is?: PostWhere; isNot?: PostWhere }
+  channelExternalId?: string | WhereOp<string> | null
+  channel?: { is?: ChannelWhere; isNot?: ChannelWhere }
   profileExternalId?: string | WhereOp<string> | null
   profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   emojiName?: string | WhereOp<string> | null
@@ -1102,6 +1116,7 @@ export type ReactionOrderBy =
 
 export interface ReactionRelations {
   post: Post | null
+  channel: Channel | null
   profile: Profile | null
 }
 
@@ -1111,6 +1126,7 @@ export interface FileInfo {
   id: number
   externalId: string
   postExternalId?: string | null
+  channelExternalId: string
   profileExternalId: string
   name: string
   extension: string
@@ -1128,18 +1144,21 @@ export interface FileInfo {
 export interface FileInfoCreate {
   id?: number
   post?: __BelongsToWrite<PostWhere, PostCreate>
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface FileInfoUpdate {
   id?: number
   post?: __BelongsToWrite<PostWhere, PostCreate>
+  channel?: __BelongsToWrite<ChannelWhere, ChannelCreate>
   profile?: __BelongsToWrite<ProfileWhere, ProfileCreate>
 }
 
 export interface FileInfoSystem {
   externalId?: string
   postExternalId?: string | null
+  channelExternalId?: string
   profileExternalId?: string
   name?: string
   extension?: string
@@ -1156,6 +1175,8 @@ export interface FileInfoWhere extends WhereBase {
   externalId?: string | WhereOp<string> | null
   postExternalId?: string | WhereOp<string> | null
   post?: { is?: PostWhere; isNot?: PostWhere }
+  channelExternalId?: string | WhereOp<string> | null
+  channel?: { is?: ChannelWhere; isNot?: ChannelWhere }
   profileExternalId?: string | WhereOp<string> | null
   profile?: { is?: ProfileWhere; isNot?: ProfileWhere }
   name?: string | WhereOp<string> | null
@@ -1180,6 +1201,7 @@ export type FileInfoOrderBy =
 
 export interface FileInfoRelations {
   post: Post | null
+  channel: Channel | null
   profile: Profile | null
 }
 
@@ -1623,18 +1645,70 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
 /** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`_TSudoCreate`, a phantom only `infer` reads). */
-type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q, infer N> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q, N> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
-/** What `select` may name: a column or a relation, `true` or an options object. */
-export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions }
+/** What `select` may name: a column or a relation, `true` or an options object — or a list of names and paths (FJS-D2332). */
+export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions } | readonly string[]
 // A nested `select` is typed as booleans so an inferred `false` stays `false`, which a
 // bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
-type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
+type __RelOptions = { select?: { [field: string]: boolean | __RelOptions }; [option: string]: unknown }
+
+/** Each model's relations by name, and the model each one reaches: what a nested select and a select path hop through. */
+export interface __Models {
+  Member: { rel: MemberRelations; hop: { sessions: 'Session'; notifications: 'Notification' } }
+  Session: { rel: SessionRelations; hop: { member: 'Member' } }
+  ClaudeTranscript: { rel: ClaudeTranscriptRelations; hop: {  } }
+  ClaudeMessage: { rel: ClaudeMessageRelations; hop: {  } }
+  ClaudeWrite: { rel: ClaudeWriteRelations; hop: {  } }
+  Notification: { rel: NotificationRelations; hop: { member: 'Member' } }
+  ProviderAccount: { rel: ProviderAccountRelations; hop: {  } }
+  Team: { rel: TeamRelations; hop: { channels: 'Channel' } }
+  Profile: { rel: ProfileRelations; hop: { memberships: 'ChannelMember'; posts: 'Post'; threads: 'Thread'; reactions: 'Reaction'; files: 'FileInfo' } }
+  Channel: { rel: ChannelRelations; hop: { team: 'Team'; members: 'ChannelMember'; posts: 'Post'; reactions: 'Reaction'; files: 'FileInfo' } }
+  ChannelMember: { rel: ChannelMemberRelations; hop: { channel: 'Channel'; profile: 'Profile' } }
+  Post: { rel: PostRelations; hop: { channel: 'Channel'; author: 'Profile'; root: 'Post'; replies: 'Post'; threads: 'Thread'; reactions: 'Reaction'; files: 'FileInfo' } }
+  Thread: { rel: ThreadRelations; hop: { root: 'Post'; profile: 'Profile' } }
+  Reaction: { rel: ReactionRelations; hop: { post: 'Post'; channel: 'Channel'; profile: 'Profile' } }
+  FileInfo: { rel: FileInfoRelations; hop: { post: 'Post'; channel: 'Channel'; profile: 'Profile' } }
+  Draft: { rel: DraftRelations; hop: {  } }
+  SavedPost: { rel: SavedPostRelations; hop: {  } }
+  ChatSection: { rel: ChatSectionRelations; hop: {  } }
+  ScheduledPost: { rel: ScheduledPostRelations; hop: {  } }
+  FollowUp: { rel: FollowUpRelations; hop: {  } }
+  ChatGroup: { rel: ChatGroupRelations; hop: {  } }
+  QuietSchedule: { rel: QuietScheduleRelations; hop: {  } }
+}
+type __Hop<N, K> = N extends keyof __Models ? K extends keyof __Models[N]['hop'] ? __Models[N]['hop'][K] : never : never
+type __RelOf<N> = [N] extends [never] ? {} : N extends keyof __Models ? __Models[N]['rel'] : {}
+type __RowOf<T> = T extends (infer E)[] ? E : NonNullable<T>
+
+// A select LIST is the object it stands for (FJS-D2332): `'id'` a column,
+// `'a.b:x+y'` a path whose every hop nests as `select`. Entries naming one
+// relation intersect, which is the merge the client does.
+type __Split<S extends string, D extends string> = S extends `${infer H}${D}${infer T}` ? [H, ...__Split<T, D>] : [S]
+type __PathSel<P, L> = P extends [infer H extends string] ? { [K in H]: L } : P extends [infer H extends string, ...infer R] ? { [K in H]: { select: __PathSel<R, L> } } : never
+type __EntrySel<E> = E extends `${infer P}:${infer F}` ? __PathSel<__Split<P, '.'>, { select: { [K in __Split<F, '+'>[number]]: true } }> : E extends string ? __PathSel<__Split<E, '.'>, true> : never
+type __U2I<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never
+type __Sel<S> = S extends readonly string[] ? __U2I<{ [I in keyof S]: __EntrySel<S[I]> }[number]> : S
+// A name the model lacks, a hop that is not a relation, or a leaf field the
+// last model lacks makes that entry `never`, so the call does not compile.
+type __CheckHops<P, Rel, N, F> = P extends [infer H extends string, ...infer R]
+  ? H extends keyof Rel
+    ? R extends [] ? ([F] extends [never] ? true : F extends string ? (__Split<F, '+'>[number] extends keyof __RowOf<Rel[H]> ? true : false) : false)
+      : __CheckHops<R, __RelOf<__Hop<N, H>>, __Hop<N, H>, F>
+    : false
+  : false
+type __CheckEntry<E, TRow, TRel, N> = E extends `${infer P}:${infer F}` ? __CheckHops<__Split<P, '.'>, TRel, N, F>
+  : E extends `${string}.${string}` ? __CheckHops<__Split<E, '.'>, TRel, N, never>
+  : E extends keyof TRow | keyof TRel ? true : false
+type __SelectCheck<S, TRow, TRel, N> = S extends readonly string[] ? { readonly [I in keyof S]: __CheckEntry<S[I], TRow, TRel, N> extends true ? S[I] : never } : unknown
 
 /** A nested write through a relation, each kind taking the operations the client runs for it. */
 type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+/** A Create is a union once a belongsTo key may be written as its relation, and a plain Omit would flatten it. */
+type __OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
 type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
 /** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */
@@ -1646,49 +1720,51 @@ type __FtsMarks = { field: string; open?: string; close?: string }
  * in either case the relations `include` (or `select`) named. A relation takes its
  * own nested `select` to only the columns that names; a nested `include` adds nothing.
  */
-export type ReadShape<TRow, TRel, I, S> = __Flat<
+export type ReadShape<TRow, TRel, I, S, N = never> = __Shape<TRow, TRel, I, __Sel<S>, N>
+type __Shape<TRow, TRel, I, S, N> = __Flat<
   (undefined extends S ? TRow : __SelectedColumns<TRow, S>)
-  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>> }
+  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>, __Hop<N, K>> }
   & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})
 >
 /** What a create, update or upsert answers: a read of the row written, or `null` under `select: false`. */
-export type WriteShape<TRow, TRel, I, S> = S extends false ? null : ReadShape<TRow, TRel, I, S>
+export type WriteShape<TRow, TRel, I, S, N = never> = S extends false ? null : ReadShape<TRow, TRel, I, S, N>
 type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false
 type __RelOpts<I, S, K> = K extends keyof I ? (I[K] extends Record<string, unknown> ? I[K] : __RelOptsOf<S, K>) : __RelOptsOf<S, K>
 type __RelOptsOf<S, K> = K extends keyof S ? S[K] : {}
-type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
-type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
+type __Narrow<T, O, M> = [O] extends [{ select: infer NS }] ? __Rows<T, NS, M> : T
+type __Rows<T, NS, M> = T extends null ? null : T extends (infer E)[] ? __Picked<E, NS, M>[] : __Picked<T, NS, M>
+type __Picked<E, NS, M> = __Flat<__SelectedColumns<E, NS> & { [K in keyof __RelOf<M> as __On<NS, K> extends true ? K : never]: __Narrow<__RelOf<M>[K], __RelOptsOf<NS, K>, __Hop<M, K>> }>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {
-  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
-  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
-  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}, TName = never> {
+  findMany<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
-  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  create<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
-  createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
-  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>
+  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>
+  update<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName> | null>
   updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
-  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  upsert<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
   restore(args: { where: TWhere }): Promise<{ count: number }>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>
-  search<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S> & __SearchHit)[]>
+  search<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S, TName> & __SearchHit)[]>
   optimizeFts(): Promise<{ optimized: boolean; table: string }>
 
   // Reads whose shape is not one row or a count. Emitted because an app
   // calls them: leaving one out types a real call as an error, which is
   // the failure that makes a generated .d.ts worse than no types at all.
-  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>
+  findManyAndCount<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName> }): Promise<{ rows: ReadShape<TRow, TRel, I, S, TName>[]; total: number }>
   exists(args?: { where?: TWhere }): Promise<boolean>
   aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>
   groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>
@@ -1739,28 +1815,28 @@ type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
   'member' | 'session' | 'claudeTranscript' | 'claudeMessage' | 'claudeWrite' | 'notification' | 'providerAccount' | 'team' | 'profile' | 'channel' | 'channelMember' | 'post' | 'thread' | 'reaction' | 'fileInfo' | 'draft' | 'savedPost' | 'chatSection' | 'scheduledPost' | 'followUp' | 'chatGroup' | 'quietSchedule' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
-  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'chatToken' | 'profileExternalId' | 'chatSyncedAt' | '@@gate', MemberSystem>
-  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem>
-  readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate'>
-  readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate'>
-  readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate'>
-  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate'>
-  readonly providerAccount: TableClient<ProviderAccount, ProviderAccountCreate, ProviderAccountUpdate, ProviderAccountWhere, ProviderAccountRelations, never, 'token' | '@@gate'>
-  readonly team: TableClient<Team, TeamCreate, TeamUpdate, TeamWhere, TeamRelations, never, 'externalId' | 'name' | 'displayName' | 'description' | 'type' | 'allowOpenInvite' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', TeamSystem>
-  readonly profile: TableClient<Profile, ProfileCreate, ProfileUpdate, ProfileWhere, ProfileRelations, never, 'externalId' | 'username' | 'firstName' | 'lastName' | 'nickname' | 'email' | 'roles' | 'locale' | 'isBot' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'status' | 'statusManual' | 'lastActivityAt' | 'dndEndAt' | 'customEmoji' | 'customText' | 'customExpiresAt' | 'missingSince' | '@@gate', ProfileSystem>
-  readonly channel: TableClient<Channel, ChannelCreate, ChannelUpdate, ChannelWhere, ChannelRelations, never, 'externalId' | 'teamExternalId' | 'creatorExternalId' | 'type' | 'name' | 'displayName' | 'header' | 'purpose' | 'lastPostAt' | 'totalMessageCount' | 'totalMessageCountRoot' | 'lastRootPostAt' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', ChannelSystem>
-  readonly channelMember: TableClient<ChannelMember, ChannelMemberCreate, ChannelMemberUpdate, ChannelMemberWhere, ChannelMemberRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'roles' | 'isAdmin' | 'lastViewedAt' | 'messageCount' | 'mentionCount' | 'messageCountRoot' | 'mentionCountRoot' | 'muted' | 'isFavorite' | 'updatedAt' | 'missingSince' | '@@gate', ChannelMemberSystem>
-  readonly post: TableClient<Post, PostCreate, PostUpdate, PostWhere, PostRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'rootExternalId' | 'message' | 'type' | 'isPinned' | 'props' | 'hashtags' | 'replyCount' | 'lastReplyAt' | 'createdAt' | 'updatedAt' | 'editedAt' | 'deletedAt' | 'embeds' | 'missingSince' | '@@gate', PostSystem>
-  readonly thread: TableClient<Thread, ThreadCreate, ThreadUpdate, ThreadWhere, ThreadRelations, never, 'externalId' | 'rootExternalId' | 'profileExternalId' | 'replyCount' | 'lastReplyAt' | 'lastViewedAt' | 'unreadReplies' | 'unreadMentions' | 'isFollowing' | 'missingSince' | '@@gate', ThreadSystem>
-  readonly reaction: TableClient<Reaction, ReactionCreate, ReactionUpdate, ReactionWhere, ReactionRelations, never, 'externalId' | 'postExternalId' | 'profileExternalId' | 'emojiName' | 'createdAt' | 'missingSince' | '@@gate', ReactionSystem>
-  readonly fileInfo: TableClient<FileInfo, FileInfoCreate, FileInfoUpdate, FileInfoWhere, FileInfoRelations, never, 'externalId' | 'postExternalId' | 'profileExternalId' | 'name' | 'extension' | 'size' | 'mimeType' | 'width' | 'height' | 'hasPreviewImage' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', FileInfoSystem>
-  readonly draft: TableClient<Draft, DraftCreate, DraftUpdate, DraftWhere, DraftRelations, never, 'externalId' | 'profileExternalId' | 'channelExternalId' | 'rootExternalId' | 'message' | 'props' | 'fileExternalIds' | 'createdAt' | 'updatedAt' | 'missingSince' | '@@gate', DraftSystem>
-  readonly savedPost: TableClient<SavedPost, SavedPostCreate, SavedPostUpdate, SavedPostWhere, SavedPostRelations, never, 'externalId' | 'profileExternalId' | 'postExternalId' | 'missingSince' | '@@gate', SavedPostSystem>
-  readonly chatSection: TableClient<ChatSection, ChatSectionCreate, ChatSectionUpdate, ChatSectionWhere, ChatSectionRelations, never, 'externalId' | 'profileExternalId' | 'teamExternalId' | 'name' | 'kind' | 'sortOrder' | 'channelExternalIds' | 'missingSince' | '@@gate', ChatSectionSystem>
-  readonly scheduledPost: TableClient<ScheduledPost, ScheduledPostCreate, ScheduledPostUpdate, ScheduledPostWhere, ScheduledPostRelations, never, 'memberId' | 'profileExternalId' | 'error' | 'sentPostExternalId' | 'sentAt' | '@@gate', ScheduledPostSystem>
-  readonly followUp: TableClient<FollowUp, FollowUpCreate, FollowUpUpdate, FollowUpWhere, FollowUpRelations, never, 'memberId' | 'profileExternalId' | '@@gate', FollowUpSystem>
-  readonly chatGroup: TableClient<ChatGroup, ChatGroupCreate, ChatGroupUpdate, ChatGroupWhere, ChatGroupRelations, never, 'createdByProfileExternalId' | '@@gate', ChatGroupSystem>
-  readonly quietSchedule: TableClient<QuietSchedule, QuietScheduleCreate, QuietScheduleUpdate, QuietScheduleWhere, QuietScheduleRelations, never, 'profileExternalId' | '@@gate', QuietScheduleSystem>
+  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'chatToken' | 'profileExternalId' | 'chatSyncedAt' | '@@gate', MemberSystem, {}, 'Member'>
+  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem, {}, 'Session'>
+  readonly claudeTranscript: TableClient<ClaudeTranscript, ClaudeTranscriptCreate, ClaudeTranscriptUpdate, ClaudeTranscriptWhere, ClaudeTranscriptRelations, never, '@@gate', {}, {}, 'ClaudeTranscript'>
+  readonly claudeMessage: TableClient<ClaudeMessage, ClaudeMessageCreate, ClaudeMessageUpdate, ClaudeMessageWhere, ClaudeMessageRelations, never, '@@gate', {}, {}, 'ClaudeMessage'>
+  readonly claudeWrite: TableClient<ClaudeWrite, ClaudeWriteCreate, ClaudeWriteUpdate, ClaudeWriteWhere, ClaudeWriteRelations, never, '@@gate', {}, {}, 'ClaudeWrite'>
+  readonly notification: TableClient<Notification, NotificationCreate, NotificationUpdate, NotificationWhere, NotificationRelations, never, '@@gate', {}, {}, 'Notification'>
+  readonly providerAccount: TableClient<ProviderAccount, ProviderAccountCreate, ProviderAccountUpdate, ProviderAccountWhere, ProviderAccountRelations, never, 'token' | '@@gate', {}, {}, 'ProviderAccount'>
+  readonly team: TableClient<Team, TeamCreate, TeamUpdate, TeamWhere, TeamRelations, never, 'externalId' | 'name' | 'displayName' | 'description' | 'type' | 'allowOpenInvite' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', TeamSystem, {}, 'Team'>
+  readonly profile: TableClient<Profile, ProfileCreate, ProfileUpdate, ProfileWhere, ProfileRelations, never, 'externalId' | 'username' | 'firstName' | 'lastName' | 'nickname' | 'email' | 'roles' | 'locale' | 'isBot' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'status' | 'statusManual' | 'lastActivityAt' | 'dndEndAt' | 'customEmoji' | 'customText' | 'customExpiresAt' | 'missingSince' | '@@gate', ProfileSystem, {}, 'Profile'>
+  readonly channel: TableClient<Channel, ChannelCreate, ChannelUpdate, ChannelWhere, ChannelRelations, never, 'externalId' | 'teamExternalId' | 'creatorExternalId' | 'type' | 'name' | 'displayName' | 'header' | 'purpose' | 'lastPostAt' | 'totalMessageCount' | 'totalMessageCountRoot' | 'lastRootPostAt' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', ChannelSystem, {}, 'Channel'>
+  readonly channelMember: TableClient<ChannelMember, ChannelMemberCreate, ChannelMemberUpdate, ChannelMemberWhere, ChannelMemberRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'roles' | 'isAdmin' | 'lastViewedAt' | 'messageCount' | 'mentionCount' | 'messageCountRoot' | 'mentionCountRoot' | 'muted' | 'isFavorite' | 'updatedAt' | 'missingSince' | '@@gate', ChannelMemberSystem, {}, 'ChannelMember'>
+  readonly post: TableClient<Post, PostCreate, PostUpdate, PostWhere, PostRelations, never, 'externalId' | 'channelExternalId' | 'profileExternalId' | 'rootExternalId' | 'message' | 'type' | 'isPinned' | 'props' | 'hashtags' | 'replyCount' | 'lastReplyAt' | 'createdAt' | 'updatedAt' | 'editedAt' | 'deletedAt' | 'embeds' | 'missingSince' | '@@gate', PostSystem, {}, 'Post'>
+  readonly thread: TableClient<Thread, ThreadCreate, ThreadUpdate, ThreadWhere, ThreadRelations, never, 'externalId' | 'rootExternalId' | 'profileExternalId' | 'replyCount' | 'lastReplyAt' | 'lastViewedAt' | 'unreadReplies' | 'unreadMentions' | 'isFollowing' | 'missingSince' | '@@gate', ThreadSystem, {}, 'Thread'>
+  readonly reaction: TableClient<Reaction, ReactionCreate, ReactionUpdate, ReactionWhere, ReactionRelations, never, 'externalId' | 'postExternalId' | 'channelExternalId' | 'profileExternalId' | 'emojiName' | 'createdAt' | 'missingSince' | '@@gate', ReactionSystem, {}, 'Reaction'>
+  readonly fileInfo: TableClient<FileInfo, FileInfoCreate, FileInfoUpdate, FileInfoWhere, FileInfoRelations, never, 'externalId' | 'postExternalId' | 'channelExternalId' | 'profileExternalId' | 'name' | 'extension' | 'size' | 'mimeType' | 'width' | 'height' | 'hasPreviewImage' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', FileInfoSystem, {}, 'FileInfo'>
+  readonly draft: TableClient<Draft, DraftCreate, DraftUpdate, DraftWhere, DraftRelations, never, 'externalId' | 'profileExternalId' | 'channelExternalId' | 'rootExternalId' | 'message' | 'props' | 'fileExternalIds' | 'createdAt' | 'updatedAt' | 'missingSince' | '@@gate', DraftSystem, {}, 'Draft'>
+  readonly savedPost: TableClient<SavedPost, SavedPostCreate, SavedPostUpdate, SavedPostWhere, SavedPostRelations, never, 'externalId' | 'profileExternalId' | 'postExternalId' | 'missingSince' | '@@gate', SavedPostSystem, {}, 'SavedPost'>
+  readonly chatSection: TableClient<ChatSection, ChatSectionCreate, ChatSectionUpdate, ChatSectionWhere, ChatSectionRelations, never, 'externalId' | 'profileExternalId' | 'teamExternalId' | 'name' | 'kind' | 'sortOrder' | 'channelExternalIds' | 'missingSince' | '@@gate', ChatSectionSystem, {}, 'ChatSection'>
+  readonly scheduledPost: TableClient<ScheduledPost, ScheduledPostCreate, ScheduledPostUpdate, ScheduledPostWhere, ScheduledPostRelations, never, 'memberId' | 'profileExternalId' | 'error' | 'sentPostExternalId' | 'sentAt' | '@@gate', ScheduledPostSystem, {}, 'ScheduledPost'>
+  readonly followUp: TableClient<FollowUp, FollowUpCreate, FollowUpUpdate, FollowUpWhere, FollowUpRelations, never, 'memberId' | 'profileExternalId' | '@@gate', FollowUpSystem, {}, 'FollowUp'>
+  readonly chatGroup: TableClient<ChatGroup, ChatGroupCreate, ChatGroupUpdate, ChatGroupWhere, ChatGroupRelations, never, 'createdByProfileExternalId' | '@@gate', ChatGroupSystem, {}, 'ChatGroup'>
+  readonly quietSchedule: TableClient<QuietSchedule, QuietScheduleCreate, QuietScheduleUpdate, QuietScheduleWhere, QuietScheduleRelations, never, 'profileExternalId' | '@@gate', QuietScheduleSystem, {}, 'QuietSchedule'>
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>

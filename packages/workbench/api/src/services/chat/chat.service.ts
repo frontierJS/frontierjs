@@ -66,7 +66,7 @@ import {
   activityAs, browseAs, chatOn, createSectionAs, deleteDraftAs, deleteSectionAs, editHistoryAs, isSectionId, moveToSectionAs, remindAs, renameSectionAs, reorderSectionsAs, favoriteAs, followAs, land, listen, markUnreadAs, muteAs, openDirectAs, pinAs, profileOfCaller, readThreadAs,
   saveAs, saveDraftAs, savedAs, searchAs, setCustomStatusAs, setStatusAs, statusesAs, sysOf, unlisten, viewAs, permalinkOf,
 } from '../../providers/chat/index.ts'
-import { kindOf, listsOf, makeTodo, projectsOf, todosOn } from '../../providers/bc3/index.ts'
+import { connect as connectTodos, kindOf, listsOf, makeTodo, projectsOf, signInState, todosOn } from '../../providers/bc3/index.ts'
 
 type Ctx = ServiceContext & { app: App }
 
@@ -148,7 +148,7 @@ const todoRefused = (what: string, e: Parameters<typeof kindOf>[0]) => {
   return fail(kind === 'forbidden' ? 403 : kind === 'gone' ? 404 : kind === 'refused' ? 400 : kind === 'rate_limited' ? 429 : 502, `chat.${what}: Basecamp refused (${kind})`)
 }
 const todosReady = (ctx: Ctx) => {
-  if (!todosOn(ctx.app)) throw fail(503, 'chat: Basecamp is not configured on this machine (BC3_ACCOUNT_ID, BC3_TOKEN)')
+  if (!todosOn(ctx.app)) throw fail(503, 'chat: Basecamp is not connected on this machine -- Connect Basecamp on /laptop/')
 }
 const wholeOf = (ctx: Ctx, key: string): number => {
   const v = dataOf(ctx)[key]
@@ -177,6 +177,7 @@ export default createService({
   name:    'chat',
   model:   null,
   methods: [
+    { method: 'todoConnect', gate: LEVELS.ADMINISTRATOR },
     { method: 'status',     gate: LEVELS.CREATOR, read: true },
     { method: 'connect',    gate: LEVELS.CREATOR },
     { method: 'disconnect', gate: LEVELS.CREATOR },
@@ -219,7 +220,7 @@ export default createService({
     const profile = m?.profileExternalId
       ? await sysOf(ctx.app).profile.findUnique({ where: { externalId: m.profileExternalId }, select: { username: true } })
       : null
-    return { server: chatOn(ctx.app), todos: todosOn(ctx.app), profileExternalId: m?.profileExternalId ?? null, username: profile?.username ?? null, syncedAt: m?.chatSyncedAt ?? null }
+    return { server: chatOn(ctx.app), todos: todosOn(ctx.app), todoSignIn: signInState(ctx.app), profileExternalId: m?.profileExternalId ?? null, username: profile?.username ?? null, syncedAt: m?.chatSyncedAt ?? null }
   },
 
   async connect (ctx: Ctx) {
@@ -458,6 +459,13 @@ export default createService({
     const r = await remindAs(ctx.app, profile, post, at)
     if (r.error) throw refused('remind', r.error.kind, r.error)
     return { postExternalId: post, at }
+  },
+
+  // The owner's grant, which every to-do is authored on (`FJS-D2341`), so only an administrator replaces it.
+  async todoConnect (ctx: Ctx) {
+    const r = await connectTodos(ctx.app)
+    if ('error' in r) throw todoRefused('todoConnect', r.error)
+    return r.signIn
   },
 
   async todoProjects (ctx: Ctx) {

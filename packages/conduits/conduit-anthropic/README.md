@@ -14,14 +14,15 @@ caller decides when to spend again. A count is free and is replayed by conduit.
 | Piece | Where |
 | --- | --- |
 | target builder | `anthropicTarget({ ref?, address? })` — `api_key` under `x-api-key`, `anthropic-version: 2023-06-01` on the target, `resilience.timeout_ms: 120_000` |
-| calls | `createMessage(send, req)` (unkeyed, unreplayable), `countTokens(send, req)` (`replayable: true`) |
-| tool loop | `runToolLoop(send, req, tools, { maxTurns })` — `tool_use` → run → `tool_result` → again; usage summed across turns; `turn_limit` when capped, with the conversation so far |
-| streaming | `streamMessage(bindStream(conduit), req)` — the vendor's events through `conduit.stream()`; `assemble(events)` joins the deltas |
+| calls | `createMessage(send, req)` (unkeyed, unreplayable), `countTokens(send, req)` (`replayable: true`); `req.betas` goes out as the `anthropic-beta` header on all three calls |
+| tool loop | `runToolLoop(send, req, tools, { maxTurns })` — `tool_use` → run → `tool_result` → again, and `pause_turn` → ask again with the paused turn last; usage summed across turns; `turn_limit` when capped, with the conversation so far |
+| streaming | `streamMessage(bindStream(conduit), req)` — the vendor's events through `conduit.stream()`; `assemble(events)` rebuilds the turn as the API built it, plus `invalidInput` for a tool input that is not JSON |
 | payload types | `MessagesRequest`, `MessagesResponse`, `ContentBlock`, `Usage`, `StreamEvent`, `AnthropicErrorBody` |
 | error mapping | `translate(ConduitError, status) → AnthropicFailure` — the table below |
 | sink | `sink.ts`, `startAnthropicSink()` on `port: 0` |
-| door | `anthropicDoor({ send, model?, maxTokens?, effort? })` — one question, one `Reply` |
-| drive | `bun run drive` — 42 rows, sink only |
+| door | `anthropicDoor({ send, model?, maxTokens?, effort? })` — one question, one `Reply`, priced from the table below it |
+| prices | `PRICES`, `priceOf(model)`, `costOf({ model, input, cacheWrite, cacheWrite1h?, cacheRead, output })`, `pricedUsage(model, usage)`, `PRICES_SOURCE_URL`, `PRICES_READ_ON` — list prices per million tokens; an unnamed model is `null` |
+| drive | `bun run drive` — 53 rows, sink only |
 
 `send` is `bindSend(conduit)`: the connector never holds an app.
 
@@ -64,7 +65,7 @@ left off the request. `question.schema` goes through `normalizeSchema` first:
 every object closed with `additionalProperties: false`, the bounds the API
 refuses dropped. A safeguard decline (`stop_reason: 'refusal'`) is `refused`,
 `max_tokens` is `cut_off`, and a schema answer that is not a JSON object is
-`no_answer`. `costUsd` is `null` until a price table exists.
+`no_answer`. `costUsd` is `null` only for a model the price table does not name.
 
 The door sends again once on a 429 or a 529, which are refused before anything
 ran, waiting `retry-after` (about a second when absent; over 30 s it gives up
@@ -80,14 +81,34 @@ to a completion, and a refusal before the first event goes through the same
 `error` event, or the connector's `stream_error`. A socket that closes before
 `message_stop` is `stream_error` even when the close is clean.
 
+## Sending a turn back
+
+A host that keeps a conversation sends each assistant turn back next request,
+and the API checks it. `assemble(events).content` is that turn with its blocks
+whole: a `thinking` block with its `signature` (an edited one is a 400), a
+`server_tool_use` with its input, a `web_search_tool_result`, a text's
+`citations`. Store it as it came and replay it; do not rebuild it from `text`.
+
+A server tool's loop can stop at `pause_turn`. The turn is resumed by sending
+the paused content back as the last message, with no user turn after it;
+`runToolLoop` does this, and a host running its own loop does the same.
+
+A beta is per request: `{ betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }`
+lets the API re-run a declined request on another model, and the reply's
+`model` names the one that answered. `fallbacks` without the beta is refused.
+
 ## Chaos the sink owns
 
 `/_sink/arm` with `{ lost }`, `{ rateLimit: { retryAfter } }`, `{ overloaded }`,
-`{ failNext }`, `{ dieMidStream }`. A model id starting `retired-` is the 404, a
+`{ failNext }`, `{ dieMidStream }`, `{ chop }` (the next stream in two reads cut
+mid-frame), `{ reply: 'pause' }` (a web search stopped at `pause_turn`). A model id starting `retired-` is the 404, a
 body over 32 KiB the 413, a key the sink knows and refuses is the 403. A missing
 `anthropic-version` is refused by name — the drive's negative control. A
 `get_weather` tool with no `tool_result` yet is the `tool_use` turn; a
-`cache_control` block is created on first sight and read after.
+`cache_control` block is created on first sight and read after. A request with
+`thinking` gets a signed thinking block before its tool call, and the sink
+refuses one sent back altered, a paused turn resumed altered, `betas` in the
+body, and `fallbacks` without its beta header.
 
 ## Traps
 

@@ -94,11 +94,13 @@ describe('duplicate declarations', () => {
 })
 
 describe('resolveCommands', () => {
+  // Each command is parsed together with its namespace module, so the cost grows
+  // with commands times module size and runs past bun's 5 s default under load.
   test('every command this package ships resolves, with its namespace module', () => {
     const { checked, problems } = resolveCommands(resolve(__dir, '../commands'), ts)
     expect(checked).toBeGreaterThan(300)
     expect(problems).toEqual([])
-  })
+  }, 30_000)
 
   test('the cli\'s own route tree resolves too', () => {
     const { checked, problems } = resolveCommands(resolve(__dir, '../cli/src/routes'), ts)

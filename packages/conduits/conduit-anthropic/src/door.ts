@@ -13,12 +13,14 @@
 // dropped connection, a timeout and a 500 may have run and been billed, so
 // none of them is resent.
 //
-// There is no `fetch` here: `send` is `bindSend(conduit)`.
+// There is no `fetch` here: `send` is `bindSend(conduit)`. A reply is priced
+// from `src/prices.ts`; a model the table does not name costs null, not zero.
 
 import { unanswered } from '@frontierjs/toolbelt/ask'
 import type { AskOptions, Door, Failure, Question, Reason, Reply } from '@frontierjs/toolbelt/ask'
 import { createMessage, type Send } from './index.ts'
 import type { AnthropicFailure } from './errors.ts'
+import { costOf, pricedUsage } from './prices.ts'
 import type { MessagesRequest, MessagesResponse } from './types.ts'
 
 export type AnthropicDoorOptions = {
@@ -165,8 +167,9 @@ export function anthropicDoor(options: AnthropicDoorOptions): Door {
         inputTokens:  count(u.input_tokens) + count(u.cache_read_input_tokens) + count(u.cache_creation_input_tokens),
         outputTokens: count(u.output_tokens),
       }
+      const costUsd = costOf(pricedUsage(model, u))
       const answered = (answer: Record<string, unknown> | string): Reply =>
-        ({ ok: true, door: 'anthropic', model, ms: Date.now() - t0, answer, usage, costUsd: null })
+        ({ ok: true, door: 'anthropic', model, ms: Date.now() - t0, answer, usage, costUsd })
 
       if (!question.schema) return text.trim() ? answered(text) : fail('no_answer', undefined, text, model)
       let parsed: unknown

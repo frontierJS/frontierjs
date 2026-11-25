@@ -181,6 +181,32 @@ More facts the phases turn on:
   - **Recommend A** — the 4.4 callers are short one-answer jobs at half Opus's price; a
     caller that wants Opus names it.
 
+- ~~**Q15 — What happens to orion's `ai` node's `maxTokens` and `temperature`?**~~ **Answered 2026-11-24 (`FJS-D2359`): A — drop them: the node's config is `{model, prompt, system?, schema?}`, and a flow wanting a cap names a door registered with one; a config still carrying either is refused.** The
+  node's config carries both; 4.1's `Question` carries neither, `claudeDoor` has no
+  flag for either and `anthropicDoor` takes `maxTokens` at build and no `temperature`.
+  Prior art: n8n's LLM node holds no knobs, they sit on the Chat Model sub-node it is
+  wired to; LangChain sets them in the model's constructor; Vercel's AI SDK takes them
+  per call.
+  - **A** — drop them: the node's config is `{model, prompt, system?, schema?}`, and a
+    flow wanting a cap names a door registered with one; a config still carrying
+    either is refused.
+  - **B** — widen `Question` with `maxTokens`; `claudeDoor` would refuse or ignore it.
+  - **C** — pass them through untyped as door options a door may ignore.
+  - **Recommend A** — n8n's shape and the doors as built; B reopens 4.1 for a field
+    one door cannot honor, C makes one flow behave differently per door.
+
+- ~~**Q16 — How do the loop scripts read a transcript's tool calls?**~~ **Answered 2026-11-24 (`FJS-D2360`): A — a new reader, `readToolCalls(text)`: each call's name, input, cwd, time and result text, the main thread's replies and first prompt, for local review and never a page. Both scripts fold over it.** 5.2 says
+  `loop-review.mjs` and `skill-reach.mjs` read transcripts through 5.1, but both work
+  from each call's input (a command, a `file_path`, a skill) and an error result's text,
+  and 5.1's fold drops inputs on purpose so a screen never shows a secret.
+  - **A** — a new reader, `readToolCalls(text)`: each call's name, input, cwd, time and
+    result text, the main thread's replies and first prompt, for local review and never
+    a page. Both scripts fold over it.
+  - **B** — the scripts find files through `claudeConfigDir`/`encodeCwd` and keep their
+    own line folds.
+  - **Recommend A** — B leaves two scripts knowing the line envelope (`type`,
+    `isSidechain`, `cwd`), the drift Phase 5 exists to end; A is about 40 lines and a test.
+
 ## Phase 0 — Groundwork
 
 Goal: the package exists, empty, with the guard against vendor drift in place.
@@ -253,7 +279,7 @@ either tree, and the consumers' tests plus Lathe's `drive:workspace` pass.
 - [x] 2.3 The guard: nothing outside the package spawns `claude`, and the package
   imports nothing from `cli`, as an `invariants.snapshot.md` row (`FJS-D190`)
   backed by a check.
-  - Done 2026-11-23: `claude-package-isolated` (Invariant 1) and `claude-spawn-owned` (Invariant 4) in `fli check`; the six files that still start `claude` are `scripts/claude-spawners.json`, a ratchet that fails when an unlisted file starts it or a listed one stops.
+  - Done 2026-11-23: `claude-package-isolated` (Invariant 1) and `claude-spawn-owned` (Invariant 4) in `fli check`; the six files that still started `claude` were listed in a ratchet file under `scripts/` that fails when an unlisted file starts it or a listed one stops (deleted in 5.2, when the last one moved in and the rule became absolute).
 
 ## Phase 3 — The live chat and work runs
 
@@ -314,9 +340,16 @@ doors return the same failure names.
   on the schema as the API is sent it, both fakes too, the 12 review recordings
   re-keyed; Intake links every `@frontierjs/*` from this tree, off
   `fjs-chartered-deploy`. `runClaude` stays in Workbench for 5.2's subcommands.
-- [ ] 4.5 `junction/ai` per Q9: `IAIModel` goes, `app.ai` holds entries that satisfy
+- [x] 4.5 `junction/ai` per Q9: `IAIModel` goes, `app.ai` holds entries that satisfy
   4.1's contract with `schema` optional, and orion's `ai` node calls `ask`. Orion's
   `plugin.test.ts` passes on a stub door.
+  - Built 2026-11-23: `ai({ doors })` puts `AIDoors { ask, names }` on `app.ai`; an
+    unknown name is an `Unanswered` `not_set_up` naming the registered doors.
+    `AIBuilder`, `AIRegistry` and `stream` are gone. Orion's port is `IAIDoors`, the
+    node's config `{model, prompt, system?, schema?}` with no mode (`FJS-D2359`): a
+    `maxTokens`, `temperature` or `mode` is refused by name, and an `Unanswered`'s
+    `retryable` is the step's `retry`. junction 3748/0; orion 693/7, the 7 in
+    `services.test.ts` red at HEAD too (FJS-4620).
 
 ## Phase 5 — Claude Code's files
 
@@ -324,15 +357,27 @@ Goal: one reader for each file Claude Code keeps.
 Done when: Lathe's `claude-transcript.ts` and `claude-sessions.ts` are deleted and
 Workbench's screens read through the package.
 
-- [ ] 5.1 The transcript fold, the session list and `claude-usage.js`'s
-  `readMessages`.
-- [ ] 5.2 The rest of Workbench's readers: scan, settings, hooks, MCP, quota and
+- [x] 5.1 The transcript fold, the session list and `claude-usage.js`'s
+  `readMessages`. Built 2026-11-24: `src/{read,transcript,messages,sessions}.ts`;
+  `findSession` searches every project folder, the held check stays each host's.
+- [x] 5.2 The rest of Workbench's readers: scan, settings, hooks, MCP, quota and
   login, and `local-claude.ts`'s subcommand runner. `headless.mjs` reads quota
   through it, and `loop-review.mjs` and `skill-reach.mjs` read transcripts through
   5.1. The screens stay in Workbench. A repo check fails on `.credentials.json` or
   `oauth/usage` outside the package; the token is read and never refreshed, since a
   refresh signs out every running `claude`.
-- [ ] 5.3 Lathe deletes its copies. Closes FJS-4332.
+  - Built 2026-11-24, uncommitted: `src/{hooks,items,mcp,plugins,settings,scan,quota,context,subcommands,calls}.ts`.
+    The session-context read moved too (it reads a transcript). Workbench keeps the usage
+    index, spend, prices and the writer, plus `local-claude.ts` as one line: `claudeProgram()`
+    passes `CLAUDE_BIN` and `childEnv(env)`, since `runClaude`/`claudeAuthStatus` take
+    `{ bin, env }`. `countTokens` is internal to `countContext` (it clashed with the
+    connector's; 6.1 replaces it). The scripts read through `readToolCalls` (Q16,
+    `FJS-D2360`), and the old head match, which read a transcript's first line as its prompt
+    and found nothing since Claude Code began opening with a `mode` line, now reads the
+    first typed prompt. `claude-login-owned` is the repo check;
+    `claude-spawners.json` is deleted, since its last entry moved and `claude-spawn-owned` is absolute.
+- [x] 5.3 Lathe deletes its copies. Closes FJS-4332. Done 2026-11-24, ahead of 5.2:
+  5.1 dropped `readMessages` from the CLI, which Lathe imported.
 
 ## Phase 6 — API callers onto `conduit-anthropic`
 
@@ -340,10 +385,31 @@ Goal: no app calls the Messages API itself, and one table prices a model.
 Done when: kos and ELA have no direct call, and Workbench, kos, ELA and Chronicle
 read one price table.
 
-- [ ] 6.1 The price table into `conduit-anthropic`; Workbench and Chronicle read it.
+- [x] 6.1 The price table into `conduit-anthropic`; Workbench and Chronicle read it.
   `claude-quota.ts`'s token count (`/v1/messages/count_tokens`) moves onto the
   connector's `countTokens`, splitting it from the usage read 5.2 moves.
-- [ ] 6.2 Run kos's `fakeAnthropic` scripts against the connector's sink: thinking
+  - Built 2026-11-24, uncommitted: Workbench's table is the one kept (cache rows, Haiku 5.5's
+    100k step), as the connector's `src/prices.ts`; `anthropicDoor` prices its own reply
+    (`costUsd` null only for a model the table does not name), so Chronicle's `PRICES`,
+    `estimateCost` and its `priced` wrapper are gone and Workbench's `claude-pricing.ts` is
+    deleted. `quota.ts` keeps the token and hands out `loginSend`, the connector's target with
+    the token as a bearer; `context.ts` counts through `countTokens` over it. Driven live: the
+    count had been refusing every session with an MCP tool, since Claude Code's request shape
+    now carries `ownership_metadata` on one, so a custom tool is sent as name, description and
+    schema alone.
+- [x] 6.2 Run kos's `fakeAnthropic` scripts against the connector's sink: thinking
   blocks sent back unchanged, streamed tool input, `pause_turn`, the fallback beta.
+  - Built 2026-11-24, uncommitted: the four scripts are the drive's `host.*` rows (53 green,
+    each new row seen red under a mutant). The connector could carry none of them: `assemble()`
+    dropped `thinking_delta`/`signature_delta`, so a thinking block went back unsigned;
+    `runToolLoop` ended on `pause_turn`; no call could send `anthropic-beta`; a truncated tool
+    input threw out of `assemble()`. Now: thinking, redacted thinking, `server_tool_use` and
+    `web_search_tool_result` blocks are typed and kept whole; `req.betas` is lifted into the
+    header for all three calls (`decision-rules`: A, the SDK's per-call shape); `assemble()`
+    returns `invalidInput` as kos's `llm.ts` does. The sink signs thinking and refuses an
+    edited block, an altered resume, `betas` in a body and `fallbacks` without its beta.
+  - 6.3 owes what the connector does not do and kos's `llm.ts` does: one resend on a
+    429/529/5xx/dropped connection before anything streamed (`streamMessage` never resends),
+    and its person-facing error sentences, which belong in kos.
 - [ ] 6.3 kos onto the connector. It is live, so the owner picks when.
 - [ ] 6.4 ELA's Q&A chat onto the connector. It is live, so the owner picks when.

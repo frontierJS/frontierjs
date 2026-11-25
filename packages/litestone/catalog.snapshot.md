@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**138 words** — 13 declarations · 80 field attributes · 40 model attributes · 5 transition words.
+**140 words** — 13 declarations · 82 field attributes · 40 model attributes · 5 transition words.
 
 ## Declarations
 
@@ -42,6 +42,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@rank` | Identify a row | (scope: <field> \| [<field>, …]) |  |  |  |
 | `@relation` | Reach another row | (["name",] fields: [...], references: [...][, onDelete][, onUpdate][, enforced: false]) | on a model's field · on a trait's field | onDelete: Cascade · SetNull · Restrict · NoAction |  |
 | `@from` | Reach another row | (<Model>, last\|first\|count\|sum\|avg\|max\|min\|exists: … [, where][, orderBy][, via][, withDeleted][, withTemplates]) | on a model's field · on a trait's field | operation: last · first · count · exists |  |
+| `@stale` | Reach another row | (on: [<relation>.<relation>[(where: <expression>)], …]) |  |  |  |
 | `@edge` | Reach another row | (ref: <Model>[, key][, as][, onMissing: error\|skip]) |  | onMissing: error · skip |  |
 | `@scoped` | Reach another row | [(as: <ns>[, onMissing: …])] |  |  |  |
 | `@computed` | Compute a value |  |  |  |  |
@@ -88,6 +89,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
 | `@values` | Refuse a bad value | (<ValueSetName>[, strength: required\|open\|suggested][, dependsOn: <column>[, matching: <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
+| `@deprecated` | Shape the table | [("reason")] |  |  |  |
 | `@required` | Refuse a bad value | [([where: <expr>][, "message"])] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
 | `@url` | Refuse a bad value | [(message)] |  |  |  |

@@ -1,4 +1,4 @@
-// src/domain/claude/claude-hooks.ts — the hooks a plugin or a settings file declares.
+// src/hooks.ts — the hooks a plugin or a settings file declares.
 //
 // Two files share one shape: a plugin's `hooks/hooks.json` and the `hooks` key
 // of a `settings.json` both map an event to matcher groups, each group holding
@@ -15,7 +15,7 @@
 // ignored silently by Claude Code, which makes a hook the author believes is
 // narrowed fire on everything — the entry says so.
 
-import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
+import { read, unreadable, readJsonObject, type Read } from './read.ts'
 
 export type HookHandler = {
   type:          string | null

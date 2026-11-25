@@ -42,7 +42,8 @@
  *     target: 'html',
  *   })
  *   // result.head — what every <mesa:head> wrote: title, meta, og: tags,
- *   //               for wrapPage's `head`; '' on the happy-dom path
+ *   //               for the `head` of wrapPage (from render.js); '' on the
+ *   //               happy-dom path
  *
  *   // Compiled JS module map (for client-side use)
  *   const result = await renderComponent(source, {

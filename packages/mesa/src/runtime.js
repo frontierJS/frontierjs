@@ -2998,9 +2998,13 @@ function _handle(page, inst, opts, first, frag) {
     // A template of one element IS that element, which the page holds right
     // after the marker; flag 0 still yields a fragment when there are several
     // top-level nodes, so only the parsed template can say which it is.
+    // The node a body binds is makeBlock's to say: it unwraps an svg
+    // fragment of one element, and a text template is one text node.
     root(tpl) {
-      if (tpl().nodeType === 11) return null
-      if (first?.nodeType !== 1) throw _mismatch(opts, `the root element of ${inst.id} is not on the page`)
+      let type
+      makeBlock(tpl, (el) => { type = el.nodeType })()
+      if (type === 11) return null
+      if (first?.nodeType !== type) throw _mismatch(opts, `the root element of ${inst.id} is not on the page`)
       return first
     },
     take(key) {
@@ -3231,7 +3235,8 @@ export function hydAwait(anchor, getPromise, pendingBlock, thenBlock, catchBlock
     frag.append(...nodes)
     return frag
   }
-  const pending = () => (done ? pendingBlock : grab())
+  // A factory deeper than awaitBlock unwraps shows nothing while a re-run waits.
+  const pending = () => (done ? pendingBlock?.() : grab())
   // The server's settled value, read instead of the expression: evaluated, a
   // fetch the server already made goes out again (`IDEAS/hydration.md` 3.1).
   let first = true

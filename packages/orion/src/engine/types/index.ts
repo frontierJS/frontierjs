@@ -129,27 +129,13 @@ export interface StoreNodeConfig {
   default?: Expression  // get only — returned when key is missing
 }
 
-// ai — unified AI node (replaces ai.complete / ai.embed / ai.classify / ai.extract)
+// ai — asks one of the app's AI doors. A token cap or temperature is the
+// door's own option, so a flow wanting one names a door registered with it.
 export interface AiNodeConfig {
-  mode: "complete" | "embed" | "classify" | "extract"
-
-  // complete — LLM text generation / chat
-  prompt?:      Expression
-  model?:       Expression    // default: workspace setting
-  temperature?: Expression
-  maxTokens?:   Expression
-
-  // embed — vector embedding
-  input?:       Expression
-
-  // classify — AI-driven routing
-  // Output: { label: string, confidence: number }
-  // Use with conditional edges: $.{nodeId}.label == "positive"
-  categories?:  Expression    // string[] of possible labels
-
-  // extract — structured data from unstructured text
-  // Output shape is driven by schema
-  schema?:      JSONSchema    // defines the fields to extract
+  model:   Expression    // a door name, as app.ai knows it
+  prompt:  Expression
+  system?: Expression
+  schema?: Expression    // JSON Schema the answer must fit; absent, text
 }
 
 // ─────────────────────────────────────────────

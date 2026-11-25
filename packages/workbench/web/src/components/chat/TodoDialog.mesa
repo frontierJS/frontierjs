@@ -5,7 +5,7 @@
   // server computes -- the post's text, its author and its channel never go,
   // because a to-do in a client-visible project cannot be taken back. Mounted
   // only while open, so it loads when it appears.
-  import { makeTodo, todoLists, todoNotes, todoProjects, todoTitleOf } from '../../lib/chat.js'
+  import { lastTodoPlace, makeTodo, rememberTodoPlace, todoLists, todoNotes, todoProjects, todoTitleOf } from '../../lib/chat.js'
   import Modal  from '@frontierjs/ui/components/overlay/Modal.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
@@ -23,30 +23,38 @@
   let saving   = false
   let created  = null
 
-  const fail = (e) => { error = e.message; loading = false }
+  // A 503 is Basecamp never connected; a refused call that names auth_failed is a grant Basecamp ended.
+  const unconnected = (e) => (e.code ?? e.status) === 503 || /not connected|auth_failed/.test(e.message)
+  const said = (e) => unconnected(e) ? 'Basecamp is not connected. Connect Basecamp on the Laptop screen (Services).' : e.message
+  const fail = (e) => { error = said(e); loading = false }
+  const last = lastTodoPlace()
+  const pick = (rows, id) => String((rows.find(r => r.id === id) ?? rows[0])?.id ?? '')
 
-  async function loadLists() {
+  async function loadLists(listId) {
     lists = []; list = ''
     if (!project) return
     try {
       lists = await todoLists(Number(project))
-      list = lists[0] ? String(lists[0].id) : ''
+      list = pick(lists, listId)
       error = lists.length ? null : 'That project has no to-do list.'
-    } catch (e) { error = e.message }
+    } catch (e) { error = said(e) }
   }
 
   Promise.all([todoProjects(), todoNotes(post)]).then(([found, link]) => {
     projects = found; notes = link; loading = false
-    project = found[0] ? String(found[0].id) : ''
-    return loadLists()
+    project = pick(found, last?.projectId)
+    return loadLists(Number(project) === last?.projectId ? last.listId : undefined)
   }).catch(fail)
 
   async function save() {
     if (!project || !list) { error = 'Pick a project and a list.'; return }
     if (!title.trim()) { error = 'A to-do needs a title.'; return }
     saving = true; error = null
-    try { created = await makeTodo(post, { projectId: Number(project), listId: Number(list), title: title.trim() }) }
-    catch (e) { error = e.message } finally { saving = false }
+    try {
+      created = await makeTodo(post, { projectId: Number(project), listId: Number(list), title: title.trim() })
+      rememberTodoPlace(Number(project), Number(list))
+    }
+    catch (e) { error = said(e) } finally { saving = false }
   }
 </script>
 
@@ -60,7 +68,7 @@
     <form class="stack gap-md" novalidate onsubmit|preventDefault={save} data-todo-dialog>
       <label class="stack gap-2xs">
         <span class="text-sm">Project</span>
-        <select class="field" aria-label="Project" bind:value={project} onchange={loadLists} disabled={loading} data-todo-project>
+        <select class="field" aria-label="Project" bind:value={project} onchange={() => loadLists()} disabled={loading} data-todo-project>
           {#each projects as p (p.id)}<option value={String(p.id)}>{p.name}</option>{/each}
         </select>
       </label>

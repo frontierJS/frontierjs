@@ -12,11 +12,10 @@
 
 import { spawnSync }                                           from 'node:child_process'
 import { appendFileSync, mkdirSync, readFileSync }             from 'node:fs'
-import { homedir }                                              from 'node:os'
 import { stateDir }                                             from '../packages/cli/core/paths.js'
 import { dirname, join }                                        from 'node:path'
 import { fileURLToPath }                                        from 'node:url'
-import { runAsk }                                              from '../packages/claude/index.ts'
+import { fetchUsage, runAsk }                                  from '../packages/claude/index.ts'
 
 import { SOURCE, LOOPS, logFiles, readSchedule, spentToday, overDayCap } from '../packages/cli/core/autopilot.js'
 
@@ -290,30 +289,30 @@ export function printHelp(url) {
 
 // ─── plan usage ─────────────────────────────────────────────
 
-// What /usage reads. The endpoint is undocumented, so any failure answers
-// null and the loop prints nothing rather than dying at its last line.
+// What /usage reads, through `@frontierjs/claude`'s `fetchUsage`: the one
+// reader of the login token. A failure answers null and the loop prints
+// nothing rather than dying at its last line.
 export async function planUsage() {
-  try {
-    const { accessToken } = JSON.parse(readFileSync(join(homedir(), '.claude', '.credentials.json'), 'utf8')).claudeAiOauth
-    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
-      headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' },
-      signal:  AbortSignal.timeout(10_000),
-    })
-    return res.ok ? (await res.json()).limits ?? null : null
-  } catch { return null }
+  const q = await fetchUsage({ force: true })
+  return q.ok ? q.value : null
 }
 
-// A limit whose resets_at moved between the two reads rolled over mid-loop,
+// The session and weekly windows, then each model's weekly, by name.
+const meters = q => [
+  ...(q.session ? [['session', q.session]] : []),
+  ...(q.weekly ? [['weekly', q.weekly]] : []),
+  ...q.models.map(m => [`weekly (${m.label})`, m]),
+]
+
+// A window whose resetsAt moved between the two reads rolled over mid-loop,
 // so its delta would be a lie and is left out.
-export function printPlanUsage(tag, label, limits, before) {
-  if (!limits) return
-  const key  = l => `${l.kind}:${l.scope?.model?.display_name ?? ''}`
+export function printPlanUsage(tag, label, quota, before) {
+  if (!quota) return
   const min  = t => Math.floor(Date.parse(t) / 60_000)
-  const prev = new Map((before ?? []).map(l => [key(l), l]))
-  for (const l of limits) {
-    const name = l.scope?.model ? `${l.kind} (${l.scope.model.display_name})` : l.kind
-    const was  = prev.get(key(l))
-    const diff = !was ? '' : min(was.resets_at) !== min(l.resets_at) ? ' · window reset' : ` · ${l.percent - was.percent >= 0 ? '+' : ''}${l.percent - was.percent}%`
-    console.log(`[${tag}] ${label} ${name}: ${l.percent}%${diff} · resets ${l.resets_at ? new Date(l.resets_at).toLocaleString() : '—'}`)
+  const prev = new Map(before ? meters(before) : [])
+  for (const [name, m] of meters(quota)) {
+    const was  = prev.get(name)
+    const diff = !was ? '' : min(was.resetsAt) !== min(m.resetsAt) ? ' · window reset' : ` · ${m.utilization - was.utilization >= 0 ? '+' : ''}${m.utilization - was.utilization}%`
+    console.log(`[${tag}] ${label} ${name}: ${m.utilization}%${diff} · resets ${m.resetsAt ? new Date(m.resetsAt).toLocaleString() : '—'}`)
   }
 }

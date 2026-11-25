@@ -1,7 +1,7 @@
 <script>
   // The Claude Code tab on the Workbench: what Claude Code loads on THIS machine --
   // plugins, marketplaces, skills and agents, hooks, MCP servers and settings, each a
-  // searchable table (api services/claude, domain/claude/claude-scan.ts) -- and the
+  // searchable table (api services/claude, `scanClaude` in @frontierjs/claude) -- and the
   // writes to it.
   //
   // Machine-wide, unlike the Workbench's other tab, which is per checkout; the

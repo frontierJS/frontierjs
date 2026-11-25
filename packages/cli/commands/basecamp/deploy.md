@@ -71,8 +71,8 @@ SSH-door route holds on the machine (`@frontierjs/outpost/doors`), and names
 `fli deploy:move --to=basecamp`, which carries that install's database, env
 and key into this App; `fli deploy`'s preflight refuses the reverse.
 
-The image goes to each machine by `docker save | ssh <machine> docker load` —
-no registry. The release names the id the MACHINE's daemon gives the tag after
+The image goes to each machine by `docker save | gzip | ssh <machine> docker load` —
+no registry, and every layer crosses on every release (`FJS-4609`). The release names the id the MACHINE's daemon gives the tag after
 the load, not this one's: a daemon on the containerd image store ids an image
 by its manifest digest and the classic store by its config digest, so one
 round trip can change the id. The machines are the App's placements

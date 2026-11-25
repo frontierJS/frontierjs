@@ -48,7 +48,6 @@ const registry: IPluginRegistry = {
   isErrorHandler:   (type) => ERROR_TYPES.has(type),
   isLoopNode:       (type) => LOOP_TYPES.has(type),
   isStoreNode:      (type) => STORE_TYPES.has(type),
-  isAiNode:         (type) => AI_TYPES.has(type),
   getOutputSchema:  (type) => SCHEMAS[type]?.output,
   getInputSchema:   (type) => SCHEMAS[type]?.input,
   getFunctionNames: ()     => KNOWN_FNS,
@@ -189,7 +188,7 @@ describe("Step 5 — buildStages", () => {
     const flow: Flow = {
       ...baseFlow(),
       nodes: {
-        "start": triggerNode(), "score": { ...node("score", "ai"), config: { mode: { type: "literal", value: "complete" } } } as NodeDefinition,
+        "start": triggerNode(), "score": { ...node("score", "ai"), config: {} } as NodeDefinition,
         "enrich": node("enrich"), "notify": node("notify", "io.slack"),
       },
       edges: [
@@ -528,7 +527,7 @@ describe("Step 10 — validateSchemas", () => {
       nodes: {
         "start": triggerNode(),
         "score": {
-          ...{ ...node("score", "ai"), config: { mode: { type: "literal", value: "complete" } } } as NodeDefinition,
+          ...{ ...node("score", "ai"), config: {} } as NodeDefinition,
           outputSchema: { type: "string" },   // override: produces a string
         },
         "transform": node("transform", "data.transform"),  // expects object
@@ -713,72 +712,19 @@ describe("Step 9b — validateNodeModes", () => {
 
   // ── ai ─────────────────────────────────────
 
-  test("ai node missing mode fails", () => {
+  test("an ai node needs no mode", () => {
     const flow: Flow = {
       ...baseFlow(),
       nodes: {
         "start": triggerNode(),
         "model": { id: "model", type: "ai", config: {
-          prompt: { type: "literal", value: "Say hello" },
-          // missing: mode
-        }},
-      },
-      edges: [edge("e1", "start", "model")],
-    }
-    const result = compiler.compile(flow)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors.some(e => e.code === "INVALID_NODE_MODE")).toBe(true)
-  })
-
-  test("ai node with invalid mode fails", () => {
-    const flow: Flow = {
-      ...baseFlow(),
-      nodes: {
-        "start": triggerNode(),
-        "model": { id: "model", type: "ai", config: {
-          mode:   { type: "literal", value: "generate" },  // not valid
-          prompt: { type: "literal", value: "Say hello" },
-        }},
-      },
-      edges: [edge("e1", "start", "model")],
-    }
-    const result = compiler.compile(flow)
-    expect(result.ok).toBe(false)
-    if (!result.ok) expect(result.errors.some(e => e.code === "INVALID_NODE_MODE")).toBe(true)
-  })
-
-  test("ai complete passes", () => {
-    const flow: Flow = {
-      ...baseFlow(),
-      nodes: {
-        "start": triggerNode(),
-        "model": { id: "model", type: "ai", config: {
-          mode:        { type: "literal", value: "complete" },
           prompt:      { type: "ref",     path: "$.trigger.body.prompt" },
-          temperature: { type: "literal", value: 0.7 },
-          maxTokens:   { type: "literal", value: 1000 },
+          system: { type: "literal", value: "Be brief" },
         }},
       },
       edges: [edge("e1", "start", "model")],
     }
     expect(compiler.compile(flow).ok).toBe(true)
-  })
-
-  test("an ai mode other than complete is refused — the app's models only complete", () => {
-    for (const mode of ["embed", "classify", "extract"]) {
-      const flow: Flow = {
-        ...baseFlow(),
-        nodes: {
-          "start": triggerNode(),
-          "model": { id: "model", type: "ai", config: {
-            mode:   { type: "literal", value: mode },
-            prompt: { type: "ref",     path: "$.trigger.body.text" },
-          }},
-        },
-        edges: [edge("e1", "start", "model")],
-      }
-      expect(compiler.compile(flow).ok).toBe(false)
-    }
   })
 })
 
@@ -1173,7 +1119,6 @@ describe("Integration — Lead Qualifier", () => {
         "scoreLead": {
           id: "scoreLead", type: "ai",
           config: {
-            mode: { type: "literal", value: "complete" },
             prompt: {
               type: "template",
               parts: [

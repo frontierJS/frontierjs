@@ -13,6 +13,7 @@ import type { App } from '@frontierjs/junction'
 import chatDm from '../../notifications/ChatDm.notification.ts'
 import chatMention from '../../notifications/ChatMention.notification.ts'
 import chatFollowUp from '../../notifications/ChatFollowUp.notification.ts'
+import { notificationChannelName } from '../../core/channels.ts'
 
 export interface QuietWindow {
   isEnabled:  boolean
@@ -192,5 +193,51 @@ export async function raiseFollowUp (app: App, sys: any, followUpId: number, mem
     }))
   } catch (err) {
     app.logger?.warn?.(`follow-up ${followUpId} for post ${post.externalId} not raised: ${(err as Error)?.message ?? err}`)
+  }
+}
+
+/** The bell rows a read of their room answers; a follow-up is a reminder and stays until opened. */
+const READ_BY_ROOM = ['ChatDm', 'ChatMention']
+
+/**
+ * Which of a member's unread chat notices a read covers: the row's room was
+ * read at or after its post was written. The row itself is written after the
+ * post arrives, so its own time can trail a watermark that already holds the
+ * post; `postAt` is the post's time, and a post not in the copy falls back to
+ * the row's. `seen` is room to read time. Pure.
+ */
+export function noticesRead (rows: Array<{ id: number, type: string, data: unknown, createdAt: string | Date }>, seen: Map<string, Date>, postAt: Map<string, string | Date> = new Map()): number[] {
+  return rows.filter((n) => {
+    if (!READ_BY_ROOM.includes(n.type)) return false
+    const data = (typeof n.data === 'string' ? JSON.parse(n.data) : n.data) as { channelExternalId?: string, postExternalId?: string } | null
+    const at = data?.channelExternalId ? seen.get(data.channelExternalId) : undefined
+    const written = (data?.postExternalId && postAt.get(data.postExternalId)) || n.createdAt
+    return !!at && new Date(written).getTime() <= at.getTime()
+  }).map(n => n.id)
+}
+
+/**
+ * A room read here or in another client reads its bell rows too. Nothing else
+ * does, so without this every DM and mention stayed unread on the bell and in
+ * the tray's count after the room itself was caught up. Each row goes to the
+ * member's tabs as `notifications patched`, the frame the bell's tether merges.
+ * Never throws: a failed clear must not stop the read landing.
+ */
+export async function readChatNotices (app: App, sys: any, memberId: number, seen: Map<string, Date>): Promise<void> {
+  if (!seen.size) return
+  try {
+    const rows = await sys.notification.findMany({ where: { userId: memberId, readAt: null, type: { in: READ_BY_ROOM } }, select: { id: true, type: true, data: true, createdAt: true } })
+    const posts = rows.map((n: any) => (typeof n.data === 'string' ? JSON.parse(n.data) : n.data)?.postExternalId).filter(Boolean)
+    const landed = posts.length ? await sys.post.findMany({ where: { externalId: { in: posts } }, select: { externalId: true, createdAt: true } }) : []
+    const ids = noticesRead(rows, seen, new Map(landed.map((p: any) => [p.externalId, p.createdAt])))
+    if (!ids.length) return
+    const now = new Date().toISOString()
+    const channel = (app as unknown as { channel?: (name: string) => { send: (event: string, data: unknown) => void } }).channel?.(notificationChannelName(String(memberId)))
+    for (const id of ids) {
+      const row = await sys.notification.update({ where: { id }, data: { readAt: now } })
+      channel?.send('notifications patched', row)
+    }
+  } catch (err) {
+    app.logger?.warn?.(`chat notices of member ${memberId} not marked read: ${(err as Error)?.message ?? err}`)
   }
 }

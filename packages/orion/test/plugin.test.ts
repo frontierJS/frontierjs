@@ -21,8 +21,9 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import { createTestEnv } from "../../litestone/src/testing.js"
+import type { Door } from "@frontierjs/toolbelt/ask"
 import { channels, createApp, createService, createStubAuth, request } from "../../junction/index.ts"
-import { AIRegistry, ai as aiPlugin } from "../../junction/src/ai/index.ts"
+import { ai as aiPlugin } from "../../junction/src/ai/index.ts"
 import { mail } from "../../junction/src/mail/index.ts"
 import { notifications } from "../../notifications/plugin.ts"
 import { caravan } from "../../caravan/src/index"
@@ -53,10 +54,8 @@ beforeAll(async () => {
 
   // The app's own adapter, as an app would register one. Who it runs as is
   // what the flow's owner is, so it answers with that.
-  const ai = new AIRegistry().register({
-    name:     "echo",
-    complete: async (req) => ({ content: `${app.principal()?.id}: ${req.messages[0]!.content}`, model: "echo" }),
-    stream:   async () => { throw new Error("not streamed") },
+  const echo: Door = async (question) => ({
+    ok: true, answer: `${app.principal()?.id}: ${question.prompt}`, door: "echo", model: "echo", usage: null, costUsd: null, ms: 0,
   })
 
   app = createApp({
@@ -71,7 +70,7 @@ beforeAll(async () => {
   app.services.register(createService({ name: "invoices", model: "Invoice", db: env.db }))
   app.services.register(createService({ name: "memos",    model: "Memo",    db: env.db }))
   app.configure(caravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
-  app.configure(aiPlugin({ registry: ai }))
+  app.configure(aiPlugin({ doors: { echo } }))
   app.configure(channels())
   const send = async (m: any) => { mailed.push({ to: m.to, subject: m.subject }); return { id: String(mailed.length), message: "captured" } }
   app.configure(mail({ mailer: { send, batch: (ms: any[]) => Promise.all(ms.map(send)) } as never }))
@@ -345,9 +344,9 @@ describe("the nodes that reach outside the app", () => {
     expect(hits.at(-1)).toEqual({ path: "/leads", auth: "Bearer sk_flow", body: JSON.stringify({ name: "Ada" }) })
   })
 
-  test("ai asks the app's own model, running as the flow's owner", async () => {
+  test("ai asks the app's own door, running as the flow's owner", async () => {
     const flowId = await activeFlow(env.system, chain([
-      { id: "ask", type: "ai", config: { model: lit("echo"), mode: lit("complete"), prompt: lit("hello") } },
+      { id: "ask", type: "ai", config: { model: lit("echo"), prompt: lit("hello") } },
     ]), "u-admin")
 
     const run = await settled(await runner.start(flowId, {}), ["completed", "failed"])

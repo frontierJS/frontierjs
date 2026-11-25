@@ -16,7 +16,7 @@ A counterparty is named once — its address, which credential authorises it, ho
 
 **Both ends.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so a Provider has a **Target**, where you send, and a **Receiver**, the route it calls you on (see [Receiving](#receiving)). The one thing that is deliberately *not* conduit's is a counterparty signing with FrontierJS's own scheme and becoming a caller — that is junction's door, `createApp({ credentials })`.
 
-**Conduit is optional and is not a wall.** Nothing stops a raw `fetch`, and junction's own `IMail` and `IAIModel` ship working defaults that dial out directly so an app that never installs this package still sends mail. What conduit gives a call is the ring around it: a resolved credential, retry with a deadline, a circuit breaker, observers, and a line in `/metrics`. An app that has conduit can back those same contracts with it — `packages/basecamp/api/src/core/mailer.ts` is `IMail` over `app.conduit`, and junction's email campaign tier requires conduit by name.
+**Conduit is optional and is not a wall.** Nothing stops a raw `fetch`, and junction's own `IMail` ships working defaults that dial out directly so an app that never installs this package still sends mail. What conduit gives a call is the ring around it: a resolved credential, retry with a deadline, a circuit breaker, observers, and a line in `/metrics`. An app that has conduit can back that contract with it — `packages/basecamp/api/src/core/mailer.ts` is `IMail` over `app.conduit`, and junction's email campaign tier requires conduit by name.
 
 ---
 

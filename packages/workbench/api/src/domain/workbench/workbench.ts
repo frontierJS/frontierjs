@@ -90,11 +90,11 @@ import { childEnv }                    from '@frontierjs/junction'
 import { createHash, randomBytes }     from 'node:crypto'
 import {
   appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync,
-  readdirSync, readSync, renameSync, rmSync, statSync, writeFileSync,
+  readSync, renameSync, rmSync, statSync, writeFileSync,
 } from 'node:fs'
 import { basename, isAbsolute, join, posix, relative } from 'node:path'
 import { fileURLToPath }               from 'node:url'
-import { readAskEvent, readImages, resumeCommand, runAsk, type AskProfile, type Image } from '@frontierjs/claude'
+import { claudeConfigDir, findSession, listSessions, readAskEvent, readImages, resumeCommand, runAsk, titleOf, type AskProfile, type Image } from '@frontierjs/claude'
 import { workbenchDir }                from '../../core/env.ts'
 import { resolveRoot }                 from '../local/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'
@@ -104,7 +104,6 @@ import { inventory, resolveArgv, servedBy, tail, type RunRecord, type Served } f
 import { endShell }                    from './workbench-shell.ts'
 import { reviewPrompt }                from './workbench-review.ts'
 import { workbenchContext }            from './workbench-context.ts'
-import { claudeConfigDir }             from '../claude/claude-scan.ts'
 
 export type Chat = {
   id:      string
@@ -408,24 +407,9 @@ export const pinId = (path: string): string => createHash('sha1').update(path).d
 
 const newChat = (forkOf: string | null = null): Chat => ({ id: randomBytes(4).toString('hex'), session: null, forkOf })
 
-/** What Claude Code names a session: a uuid, the stem of its transcript's file. */
-const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-/** A transcript's head is enough for its `cwd` and first prompt; the file can be hundreds of MB. */
-const PEEK_BYTES = 128 * 1024
-/** Claude Code's folder for a working directory: every character that is not a letter or digit becomes `-`. */
-const encodeCwd = (path: string) => path.replace(/[^a-zA-Z0-9]/g, '-')
-type ReadMessages = (text: string, o?: { final?: boolean }) => { file: { cwd: string | null, headless: boolean, title: string | null, firstPrompt: string | null, startedAt: string | null } }
-let usageMod: Promise<ReadMessages> | null = null
-const loadReadMessages = () => usageMod ??= import('@frontierjs/cli/core/claude-usage.js').then(m => (m as { readMessages: ReadMessages }).readMessages)
-
 /** A terminal session as the Import list shows it. */
 export type Importable = { session: string, title: string, at: string, headless: boolean }
 
-const TITLE_MAX = 60
-const titleOf = (text: string): string => {
-  const line = text.trim().split('\n')[0].trim()
-  return line.length > TITLE_MAX ? `${line.slice(0, TITLE_MAX - 1)}…` : line
-}
 function alive(pid: number | null): boolean {
   if (!pid) return false
   try { process.kill(pid, 0); return true } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM' }
@@ -1677,47 +1661,14 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
 
   // ─── terminal sessions ────────────────────────────────────────────────
 
-  /** The head of a transcript, read for where it started and what was asked
-   *  first; null when the file cannot be read or records no `cwd`. */
-  async function peek(path: string): Promise<{ cwd: string, title: string | null, at: string, headless: boolean } | null> {
-    try {
-      const read = await loadReadMessages()
-      const fd = openSync(path, 'r')
-      let text: string
-      try {
-        const buf = Buffer.allocUnsafe(PEEK_BYTES)
-        text = buf.toString('utf8', 0, readSync(fd, buf, 0, PEEK_BYTES, 0))
-      } finally { closeSync(fd) }
-      const { file } = read(text)
-      if (!file.cwd) return null
-      const line = file.firstPrompt ? titleOf(file.firstPrompt) : file.title
-      return { cwd: file.cwd, title: line || null, at: file.startedAt ?? statSync(path).mtime.toISOString(), headless: file.headless }
-    } catch { return null }
-  }
-
   /** The sessions started in this checkout's folder that no chat here holds,
    *  newest first. A run of this app's own (`claude -p`, headless) is a
    *  machine's work and is left out. */
   async function importable(id: string, limit = 50): Promise<Importable[]> {
     const p = getPin(id)
     if (!p) return []
-    const folder = join(claudeConfigDir({ configDir }), 'projects', encodeCwd(p.path))
-    let names: string[]
-    try { names = readdirSync(folder) } catch { return [] }
-    const held = new Set(p.chats.map(c => c.session))
-    const files = names
-      .filter(n => n.endsWith('.jsonl') && SESSION_ID.test(n.slice(0, -6)) && !held.has(n.slice(0, -6)))
-      .map(n => { const path = join(folder, n); try { return { path, session: n.slice(0, -6), mtime: statSync(path).mtimeMs } } catch { return null } })
-      .filter((f): f is { path: string, session: string, mtime: number } => !!f)
-      .sort((a, b) => b.mtime - a.mtime)
-    const out: Importable[] = []
-    for (const f of files) {
-      if (out.length >= limit) break
-      const head = await peek(f.path)
-      if (!head || head.cwd !== p.path || head.headless) continue
-      out.push({ session: f.session, title: head.title ?? `Session ${f.session.slice(0, 8)}`, at: new Date(f.mtime).toISOString(), headless: false })
-    }
-    return out
+    const held = new Set(p.chats.flatMap(c => c.session ? [c.session] : []))
+    return listSessions(p.path, { held, limit, configDir }).map(s => ({ ...s, headless: false as const }))
   }
 
   /** Adopt a terminal session as a chat, shown: the next message resumes it,
@@ -1729,18 +1680,10 @@ export function createWorkbench({ dir, bin = 'claude', env = {}, portsLock, conf
     const p = getPin(id)
     if (!p) return { refused: `no pinned checkout '${id}'` }
     const sid = String(session ?? '').trim()
-    if (!SESSION_ID.test(sid)) return { refused: `'${sid}' is not a session id` }
-    const held = p.chats.find(c => c.session === sid)
-    if (held) return { refused: `${p.name} already has that session as a chat` }
-    const projects = join(claudeConfigDir({ configDir }), 'projects')
-    let folders: string[] = []
-    try { folders = readdirSync(projects) } catch { /* no Claude Code history here */ }
-    const path = folders.map(f => join(projects, f, `${sid}.jsonl`)).find(f => existsSync(f))
-    if (!path) return { refused: `no session '${sid}' in Claude Code's history on this machine` }
-    const head = await peek(path)
-    if (!head) return { refused: `session '${sid}' records no folder to resume it in` }
-    if (head.cwd !== p.path) return { refused: `that session ran in ${head.cwd}, not ${p.path} — Claude Code resumes a session only from the folder it started in` }
-    const chat: Chat = { ...newChat(), session: sid, title: head.title ?? `Session ${sid.slice(0, 8)}` }
+    if (p.chats.some(c => c.session === sid)) return { refused: `${p.name} already has that session as a chat` }
+    const found = findSession(p.path, sid, { configDir })
+    if (!found.ok) return { refused: found.reason }
+    const chat: Chat = { ...newChat(), session: sid, title: found.value.title }
     updatePin(id, { chats: [...p.chats, chat], chat: chat.id })
     return { chat }
   }

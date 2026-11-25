@@ -521,9 +521,10 @@ core/
                 time; week buckets start Monday
   claude-usage.js  Claude Code sessions and output tokens per day — `fli
                 ghist --claude`'s second chart, on `git-history.js`'s buckets.
-                Pure: one transcript's text in. Dedupes by message id, because a
-                streamed reply is several lines; a subagent adds tokens and no
-                session. Only as far back as Claude Code keeps transcripts
+                Pure: one transcript's text in, read by `@frontierjs/claude`'s
+                `readMessages`. Dedupes by message id, because a streamed reply
+                is several lines; a subagent adds tokens and no session. Only
+                as far back as Claude Code keeps transcripts
   doctor.js     can this MACHINE run fli — binaries, the two env files, and the
                 env vars a namespace declares. The sibling of `checks.js` and
                 deliberately not merged with it: a missing `sqlite3` is not an

@@ -337,18 +337,21 @@ CREATE TABLE IF NOT EXISTS "reaction" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "externalId" TEXT NOT NULL UNIQUE,
   "postExternalId" TEXT NOT NULL,
+  "channelExternalId" TEXT NOT NULL,
   "profileExternalId" TEXT NOT NULL,
   "emojiName" TEXT NOT NULL,
   "createdAt" TEXT,
   "missingSince" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_reaction_postExternalId" ON "reaction" ("postExternalId");
+CREATE INDEX IF NOT EXISTS "idx_reaction_channelExternalId" ON "reaction" ("channelExternalId");
 CREATE INDEX IF NOT EXISTS "idx_reaction_profileExternalId" ON "reaction" ("profileExternalId");
 
 CREATE TABLE IF NOT EXISTS "file_info" (
   "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   "externalId" TEXT NOT NULL UNIQUE,
   "postExternalId" TEXT,
+  "channelExternalId" TEXT NOT NULL,
   "profileExternalId" TEXT NOT NULL,
   "name" TEXT NOT NULL,
   "extension" TEXT NOT NULL,
@@ -363,4 +366,5 @@ CREATE TABLE IF NOT EXISTS "file_info" (
   "missingSince" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_file_info_postExternalId" ON "file_info" ("postExternalId");
+CREATE INDEX IF NOT EXISTS "idx_file_info_channelExternalId" ON "file_info" ("channelExternalId");
 CREATE INDEX IF NOT EXISTS "idx_file_info_profileExternalId" ON "file_info" ("profileExternalId");

@@ -27,8 +27,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { workbenchDir } from '../../core/env.ts'
-import { runClaude } from '../local/local-claude.ts'
-import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
+import { claudeProgram } from '../local/local-claude.ts'
+import { read, readJsonObject, runClaude, unreadable, type Read } from '@frontierjs/claude'
 
 // ─── shapes ───────────────────────────────────────────────────────────────────
 
@@ -268,7 +268,7 @@ export async function undoWrite(db: any, id: string, opts: { trashDir?: string }
   } else {
     const args = CLI_INVERSE[row.action]?.(row)
     if (!args) return unreadable(`${row.action} cannot be undone`)
-    const ran = await runClaude(args, { cwd: row.project ?? undefined, timeoutMs: 120_000 })
+    const ran = await runClaude(args, { ...claudeProgram(), cwd: row.project ?? undefined, timeoutMs: 120_000 })
     if (!ran.ok) return ran
     if (ran.value.code !== 0) return unreadable(cliFailure(ran.value))
   }

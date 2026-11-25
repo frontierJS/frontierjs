@@ -118,8 +118,8 @@ the chat prototype proved (`IDEAS/mirror-apps.md`), and Workbench hosts both.
   - **A** — `conduit-37signals`, through `app.conduit.send()`.
   - **B** — a shell-out to the `basecamp` CLI the owner is already signed into.
   - **Recommend A** — a drive runs it on the connector's sink, as every Messages verb was proved; its live grant is the 37signals plan's 5.2, which Intake waits on too.
-- ~~**Q11 — whose 37signals grant Workbench sends a to-do on.**~~ **Answered 2026-11-23 (`FJS-D2341`): A — Workbench's own: one more authorization-code exchange through the OAuth app Intake uses, refreshed by `basecampTokenResolver`.** 6.5 reads a fixed
-  `BC3_TOKEN`, and a Basecamp access token expires in about two weeks, so the
+- ~~**Q11 — whose 37signals grant Workbench sends a to-do on.**~~ **Answered 2026-11-23 (`FJS-D2341`): A — Workbench's own: one more authorization-code exchange through the OAuth app Intake uses, refreshed by `basecampTokenResolver`.** 6.5 sent on a fixed
+  access token, and a Basecamp access token expires in about two weeks, so the
   live feature needs a refresh token.
   - **A** — Workbench's own: one more authorization-code exchange through the
     OAuth app Intake uses, refreshed by `basecampTokenResolver`.
@@ -276,8 +276,8 @@ None of this needs the server's help: 6.1 and 6.3 are queries over `Post`,
   -p` with no tools over the group's posts since `lastViewedAt`, shown inline
   and not stored. The drive runs it against a stub.
 - [x] 6.5 Post → Basecamp to-do (Q8, Q10) — *Built 2026-11-18 on the sink:
-  `chat.makeTodo` through `api/src/providers/bc3/` (off unless
-  `BC3_ACCOUNT_ID` + `BC3_TOKEN`, `FJS-D2265`), notes = `permalinkOf` alone.* a post menu entry: project and
+  `chat.makeTodo` through `api/src/providers/bc3/` (off until the
+  Connect Basecamp device sign-in on `/laptop/` lands a grant, `FJS-D2265`, `FJS-D2341`), notes = `permalinkOf` alone.* a post menu entry: project and
   list picked, a title prefilled from the post's first line and editable, the
   permalink as the notes, sent through `conduit-37signals`. What crosses is
   exactly what the dialog shows, because a DM's text in a client-visible
@@ -289,16 +289,30 @@ None of this needs the server's help: 6.1 and 6.3 are queries over `Post`,
   owner's. Done when the to-do is in Basecamp with the permalink alone as its
   notes, and the first refresh records whether Basecamp rotated the refresh
   token. This also closes Intake's PLAN 4.2 (`fjs-prototypes/intake`).
-- [ ] 6.7 A grant of Workbench's own (Q11, `FJS-D2341`) — the fixed `BC3_TOKEN`
-  is replaced by a refresh token in a grant store of Workbench's, minted by
+- [x] 6.7 A grant of Workbench's own (Q11, `FJS-D2341`) — *Built 2026-11-23 on the
+  sink: connector `registerClient` / `startDeviceSignIn` / `awaitDeviceGrant` /
+  `authorization` (drive 78 green), `basecamp.json` (0600) in
+  `api/src/providers/bc3/`, `chat.todoConnect`, the Basecamp card on `/laptop/`;
+  verify:messages 267 green. verify:chat's sign-in rows never ran: that drive
+  breaks earlier (`FJS-4619`).* The fixed access token
+  (`BC3_ACCOUNT_ID` + `BC3_TOKEN`) is replaced by a refresh token in a grant store of Workbench's, minted by
   `basecampTokenResolver`, so a to-do still sends after the two-week access
-  token expires. One authorization-code exchange through the OAuth app Intake
-  uses (`conduit-37signals` 5.2), started from a *Connect Basecamp* card on
-  `/laptop/` beside the Mattermost link card. Never a copy of Intake's or the
-  CLI's token. Check first which redirect URI that OAuth app allows. A lost
-  grant is a typed `auth_failed` that the dialog shows, with the card offering
-  to connect again. The drive runs the exchange and a refresh on the sink.
-- [ ] 6.8 The dialog opens on the last place used — the to-do dialog opens on
+  token expires. A device-code sign-in at `app.basecamp.com` (`FJS-D2341` as
+  amended): Workbench registers its own public client once at the
+  `registration_endpoint`, and a *Connect Basecamp* card on `/laptop/`, beside
+  the Mattermost link card, shows the code and the link and polls until the
+  owner approves. No client secret and no redirect route. Never a copy of
+  Intake's or the CLI's token. First, measure whether a registered client may
+  use the `device_code` grant; if not, an authorization code with PKCE to a
+  loopback redirect on the same client. A lost grant is a typed `auth_failed`
+  that the dialog shows, with the card offering to connect again. The drive
+  runs the registration, the device flow and a refresh on the sink. The live
+  answers (whether a registered client may take the device grant, the
+  registration body Basecamp requires, and where `authorization.json` answers)
+  are the owner's first Connect.
+- [x] 6.8 The dialog opens on the last place used — *Built 2026-11-23: kept in
+  localStorage beside the last channel (`lastTodoPlace`); verify:messages
+  seeds the second project and a dead id rather than deleting a sink list.* The to-do dialog opens on
   the project and list the member picked last, stored as bare ids per member,
   so the first pick of the Intake list sticks. The names are still read live
   from Basecamp, and a stored id Basecamp no longer answers falls back to the

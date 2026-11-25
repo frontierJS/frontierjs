@@ -2341,6 +2341,21 @@ describe('retries', () => {
     } finally { s.stop() }
   })
 
+  // FJS-4593: an object store reports which 403 in an XML <Code>, so a named
+  // body read every refusal as auth_failed.
+  it('a 403 XML body is the vendor report in raw, not a name', async () => {
+    const xml = '<?xml version="1.0"?><Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>'
+    const s = recorder(() => new Response(xml, { status: 403, headers: { 'content-type': 'application/xml' } }))
+    try {
+      const target = providerTarget({ address: s.url })
+      const t = new HttpTransport(target, secrets(), { retry_limit: 0 })
+
+      const result = await t.send({ target: target.id, method: 'DELETE', path: '/bucket/key' })
+
+      expect(result.error!.raw).toBe(xml)
+    } finally { s.stop() }
+  })
+
   it('a 4xx JSON body is still the vendor report in raw', async () => {
     const s = recorder(() => Response.json({ error: { code: 400, message: 'Invalid level' } }, { status: 400 }))
     try {

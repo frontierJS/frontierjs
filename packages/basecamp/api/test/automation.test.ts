@@ -75,6 +75,8 @@ beforeAll(async () => {
     plugins:       [new GatePlugin({ getLevel: basecampGateLevel })],
     api: ({ db, path }: any) => buildBasecampApp({ db, dbPath: path }),
   })
+  // A release runs as a queued job, and createTestEnv starts no worker.
+  await env.app.jobs.start()
   const sys  = env.system as any
   const acct = await sys.account.create({ data: { slug: `a-${uniq()}`, displayName: 'A' } })
   const mk   = async () => sys.user.create({ data: { email: `u-${uniq()}@x.co`, accountId: acct.id, status: 'active' } })

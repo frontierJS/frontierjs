@@ -1,5 +1,6 @@
-// src/domain/claude/claude-quota.ts — how much of the account's Claude limits are used, and the
-// API's own token count: the two reads that carry the claude.ai login token.
+// src/quota.ts — the claude.ai login token, and the two things it is used for:
+// how much of the account's Claude limits are used, and a `Send` that puts the
+// login on `conduit-anthropic`'s target, which `context.ts` counts through.
 //
 // `GET api.anthropic.com/api/oauth/usage` with the OAuth token Claude Code
 // keeps in `<configDir>/.credentials.json`: a private endpoint (`FJS-D1711`),
@@ -25,15 +26,16 @@
 // account's, and a new one must not need a code change. `five_hour` is `null`
 // while no session window is open, which is a state and not a failure.
 //
-// **`countTokens` asks `POST /v1/messages/count_tokens`** — the only tokenizer
-// for these models is the API's (`FJS-D1734`). It takes no 429 stop of its own:
-// its caller counts a transcript once and keeps the answer, and a refusal
-// leaves that caller's estimate in place, marked as one.
+// **`loginSend` is the connector's target with the token as a bearer** and the
+// OAuth beta header. The resolver reads the token on each request, so a token a
+// running `claude` refreshed is the one sent, and the token itself stays in
+// this file inside conduit's resolver.
 
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
-import { claudeConfigDir } from './claude-scan.ts'
+import { createConduit, type IConduit } from '@frontierjs/conduit'
+import { anthropicTarget, bindSend, type Send } from '@frontierjs/conduit-anthropic'
+import { claudeConfigDir, read, unreadable, readJsonObject, type Read } from './read.ts'
 
 export type Meter = {
   /** Percent of the limit used, 0 to 100 (and above when over). */
@@ -208,43 +210,48 @@ export async function fetchUsage(opts: FetchUsageOptions = {}): Promise<Read<Quo
   return read(state.good)
 }
 
-// ─── the count ────────────────────────────────────────────────────────────────
+// ─── the login as a send ──────────────────────────────────────────────────────
 
-const URL_COUNT = 'https://api.anthropic.com/v1/messages/count_tokens'
+const LOGIN_REF = 'CLAUDE_LOGIN_TOKEN'
 
-/** One request to count: the parts of a Messages request that cost input tokens. */
-export type CountBody = { system?: string, tools?: unknown[], messages: unknown[] }
+export type LoginSendOptions = { configDir?: string, now?: () => number, address?: string }
 
-export type CountTokensOptions = { configDir?: string, now?: number, fetch?: typeof fetch }
+/** Why the login cannot be sent, or null when it can. Says so before a request is made. */
+export function loginProblem(opts: { configDir?: string, now?: number } = {}): string | null {
+  const token = accessToken(claudeConfigDir({ configDir: opts.configDir }), opts.now ?? Date.now())
+  return token.ok ? null : token.reason
+}
+
+const conduits = new Map<string, { conduit: IConduit, ready: Promise<void> }>()
 
 /**
- * The input tokens of each body under `model`, in order, or why not. One
- * refusal fails the lot: a caller subtracts counts from each other, and a
- * partial answer would subtract a missing one. Never throws.
+ * `conduit-anthropic`'s `Send` signed in as the login, one conduit per config
+ * folder and address. The timeout is the usage read's: a count answers in well
+ * under it, and the connector's two minutes are a completion's.
  */
-export async function countTokens(model: string, bodies: CountBody[], opts: CountTokensOptions = {}): Promise<Read<number[]>> {
-  const token = accessToken(claudeConfigDir({ configDir: opts.configDir }), opts.now ?? Date.now())
-  if (!token.ok) return unreadable(token.reason)
-  const headers = {
-    Authorization: `Bearer ${token.value}`, 'anthropic-beta': 'oauth-2025-04-20',
-    'anthropic-version': '2023-06-01', 'content-type': 'application/json',
+export function loginSend(opts: LoginSendOptions = {}): Send {
+  const configDir = claudeConfigDir({ configDir: opts.configDir })
+  const key = `${configDir} ${opts.address ?? ''}`
+  let held = conduits.get(key)
+  if (!held) {
+    const conduit = createConduit({
+      credentials: { async get(ref) {
+        if (ref !== LOGIN_REF) return null
+        const token = accessToken(configDir, (opts.now ?? Date.now)())
+        return token.ok ? token.value : null
+      } },
+    })
+    const base = anthropicTarget({ address: opts.address })
+    const ready = conduit.register({
+      ...base,
+      auth:       { type: 'bearer', ref: LOGIN_REF },
+      headers:    { ...base.headers, 'anthropic-beta': 'oauth-2025-04-20' },
+      resilience: { timeout_ms: TIMEOUT_MS },
+    })
+    held = { conduit, ready }
+    conduits.set(key, held)
   }
-  const one = async (body: CountBody): Promise<Read<number>> => {
-    let res: Response
-    try {
-      res = await (opts.fetch ?? fetch)(URL_COUNT, {
-        method: 'POST', headers, body: JSON.stringify({ model, ...body }), signal: AbortSignal.timeout(TIMEOUT_MS),
-      })
-    } catch (e) { return unreadable(`count endpoint unreachable (${(e as Error).name})`) }
-    if (res.status === 429) return unreadable('rate limited by the count endpoint')
-    if (res.status === 401 || res.status === 403) return unreadable(`count endpoint refused the login (${res.status}); run claude to refresh it`)
-    if (!res.ok) return unreadable(`count endpoint answered ${res.status}`)
-    let json: unknown
-    try { json = await res.json() } catch { return unreadable('count endpoint answered with text that is not JSON') }
-    return isObj(json) && typeof json.input_tokens === 'number' ? read(json.input_tokens) : unreadable('count endpoint answered without input_tokens')
-  }
-  const counts = await Promise.all(bodies.map(one))
-  const failed = counts.find(c => !c.ok)
-  if (failed && !failed.ok) return unreadable(failed.reason)
-  return read(counts.map(c => (c as { ok: true, value: number }).value))
+  const { conduit, ready } = held
+  const send = bindSend(conduit)
+  return (async req => { await ready; return send(req) }) as Send
 }

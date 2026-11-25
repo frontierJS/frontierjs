@@ -164,7 +164,7 @@ export const mattermostSocketDialect: FrameDialect<SocketEvent> = {
         // frame that dropped them would land an image post with nothing to draw
         // until the next backfill.
         const meta = (raw?.metadata && typeof raw.metadata === 'object' ? raw.metadata : {}) as { files?: FileInfo[] }
-        const files = (meta.files ?? []).map(x => fileInfoModel.parse(x)).filter((x): x is FileInfoRow => !!x)
+        const files = (meta.files ?? []).map(x => fileInfoModel.parse(x, { channelExternalId: raw?.channel_id })).filter((x): x is FileInfoRow => !!x)
         if (!post) return null
         if (f.event !== 'posted') return { id: m.id, type: f.event, payload: { post, files } }
         return { id: m.id, type: 'posted', payload: { post, files, mentions: idList(data.mentions), channelType: str(data.channel_type), senderName: str(data.sender_name) } }
@@ -184,7 +184,7 @@ export const mattermostSocketDialect: FrameDialect<SocketEvent> = {
         return channelExternalId && profileExternalId ? { id: m.id, type: f.event, payload: { channelExternalId, profileExternalId } } : null
       }
       case 'reaction_added': case 'reaction_removed': {
-        const reaction = reactionModel.parse(inner<Reaction>(data.reaction) as Reaction)
+        const reaction = reactionModel.parse(inner<Reaction>(data.reaction) as Reaction, { channelExternalId: str(b.channel_id) })
         return reaction ? { id: m.id, type: f.event, payload: { reaction } } : null
       }
       case 'channel_created': case 'direct_added': case 'group_added': {

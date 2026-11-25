@@ -26,7 +26,7 @@ describe('read', () => {
     const c = captureConfig({ file })
     expect(c).toMatchObject({
       exists: false, invalid: null, saveToFile: true, nameTemplate: 'Screenshot_%Y-%m-%d_%H-%M-%S', delaySecs: 5,
-      uiScale: null, fileFormat: 'webp', borderWidth: 0, borderColor: '#000000', captureMode: 'screenshot', videoFps: 30, videoInkSecs: 3,
+      uiScale: null, fileFormat: 'webp', borderWidth: 0, borderColor: '#000000', captureMode: 'screenshot', startTool: 'select', videoFps: 30, videoInkSecs: 3,
       videoNameTemplate: 'Recording_%Y-%m-%d_%H-%M-%S', videoCursorHighlight: true, recordAudio: false,
       recordSystemAudio: false, webcam: false, webcamSize: 'medium', webUrl: '', webKeySet: false, shareOn: false,
     })
@@ -53,7 +53,7 @@ describe('read', () => {
 describe('write', () => {
   const every = {
     saveToFile: false, saveDir: '/tmp/shots', nameTemplate: '%Y%m%d-%H%M%S', delaySecs: 12, uiScale: 1.5,
-    fileFormat: 'png256', borderWidth: 6, borderColor: '#3366ff', captureMode: 'video', videoFps: 60, videoInkSecs: 4.5, videoNameTemplate: 'Rec_%n',
+    fileFormat: 'png256', borderWidth: 6, borderColor: '#3366ff', captureMode: 'video', startTool: 'arrow', videoFps: 60, videoInkSecs: 4.5, videoNameTemplate: 'Rec_%n',
     videoCursorHighlight: false, recordAudio: true, recordSystemAudio: true, webcam: true, webcamSize: 'large',
     webUrl: 'https://share.example.com/', webKey: SECRET,
   }
@@ -154,6 +154,7 @@ describe('refusals', () => {
     refuses({ saveToFile: 'yes' })
     refuses({ fileFormat: 'gif' })
     refuses({ captureMode: 'photo' })
+    refuses({ startTool: 'eyedropper' })
     refuses({ webcamSize: 'huge' })
     refuses({ borderWidth: 2.5 })
     refuses({ borderWidth: -1 })

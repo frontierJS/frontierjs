@@ -280,7 +280,9 @@ export const RULES = [
   { id: 'claude-package-isolated', scope: 'repo', severity: 'error', invariant: 1,
     title: '@frontierjs/claude imports nothing from @frontierjs/cli, by name or by path' },
   { id: 'claude-spawn-owned',   scope: 'repo', severity: 'error', invariant: 4,
-    title: 'only @frontierjs/claude starts the claude program, and the files still listed in scripts/claude-spawners.json are the ones that do' },
+    title: 'only @frontierjs/claude starts the claude program' },
+  { id: 'claude-login-owned',   scope: 'repo', severity: 'error', invariant: 4,
+    title: 'only @frontierjs/claude reads the claude.ai login: its credentials file and its usage endpoint' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))

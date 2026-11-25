@@ -30,7 +30,7 @@ const BATTERIES: Record<string, string> = {
   'cache':     'the memory/sqlite cache — constructed by createApp (FJS-D640)',
   'scheduler': 'the timer — constructed by createApp (FJS-D640, FJS-D36)',
   'mail':      'IMail and its adapters',
-  'ai':        'the model registry',
+  'ai':        'the named AI doors',
   'plugins':   'every app.configure() battery, and the declared-plugin table',
   'terminal':  'a shell over a raw socket -- terminalSocket, endShell (FJS-D2125)',
 }

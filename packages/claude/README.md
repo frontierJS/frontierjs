@@ -25,6 +25,28 @@ prototype depends on it directly.
 | `agentCall`, `agentEventOf` | a subagent's call and its `system/task_*` frames as `agent*` events |
 | `ASK_*`, `EDIT_TOOLS`, `EFFORTS`, `*_BUDGET_USD`, `IMAGE_TYPES`, `MAX_IMAGE(S)` | the profiles' fixed values |
 
+## Reading Claude Code's own files
+
+The one reader of each file Claude Code keeps — transcripts, the session list, its configuration and its login — so Workbench, Lathe, `fli git:history`, the loop scripts and Basecamp's usage index share one opinion of what a line means. None of them throws: a `Read<T>` is `{ ok: true, value }` or `{ ok: false, reason }`.
+
+| Export | What it is |
+| ------ | ---------- |
+| `readMessages(text, opts)` | a transcript's text, or a chunk of it, as one message per reply (streamed lines merged by id) with tokens, tools and skills, plus what the chunk says of the file (`cwd`, `title`, `firstPrompt`, `headless`); `consumed` is the bytes through the last newline |
+| `foldTranscript(text)`, `readTranscript(path)` | a transcript as turns: prompt, reply text, each tool call as a name and one line, its result as a size, tokens; `readTranscript` refuses a path outside `<configDir>/projects/` |
+| `listSessions(cwd, opts)` | the sessions that ran in `cwd`, newest first, headless runs and `held` ids left out |
+| `findSession(cwd, id)` | one session `claude --resume` can pick up from `cwd`, or why not, by name |
+| `peekSession(path)`, `titleOf(text)`, `encodeCwd(path)` | a transcript's head, a chat title, Claude Code's folder name for a directory |
+| `readToolCalls(text)` | every tool call with its **input** and its result's **text**, plus the main thread's replies and first prompt: for a review of what sessions did, never a page, since inputs carry file bodies and tokens |
+| `claudeConfigDir(opts)`, `read`, `unreadable`, `readJsonObject` | where the files live (`CLAUDE_CONFIG_DIR`, else `~/.claude`), the `Read` constructors, and JSON text as an object or why not |
+| `scanClaude(opts)` | the whole configuration, read-only: `~/.claude`, `~/.claude.json` and each project's `.claude/` — settings layers merged, skills, agents, commands, hooks, MCP servers, plugins and marketplaces, memory files — each file's failure an issue on its entry; `allItems`, `allHooks`, `readListedFile`, `configRev`, `claudeJsonPath` read the result; `commandTools` and `expandMcpVars` are the two pure helpers a screen needs, and the parsers the scan stands on stay inside, none handing back a secret (`env` values, headers and `apiKeyHelper` stay behind) |
+| `fetchUsage(opts)` | the claude.ai login's quota (`oauth/usage`): session, weekly and per-model meters, cached 60 s and stopped on a 429 |
+| `contextFor(cwd)`, `countContext(m, key)` | what a session carries before the first word, from its newest transcript's request shape, counted by the API |
+| `claudeAuthStatus(program)`, `runClaude(args, opts)`, `readMcpList`, `readDoctor` | the subcommands that answer about the program itself (`auth status`, `mcp list`, `doctor`) or change its configuration (`plugin`, `mcp add`); `program` is `{ bin, env }`, so a host strips its own secrets from the child's environment |
+
+**The login token is read and never refreshed.** It sits in `<configDir>/.credentials.json`; refreshing it rotates the refresh token and signs out every running `claude`. An expired token is a refusal that says to run `claude`. `fli check`'s `claude-login-owned` fails a file outside this package that names the credentials file or the usage endpoint.
+
+Whether a session is already a chat is each host's own check; `findSession` only says the transcript is resumable from `cwd`.
+
 ## The profiles
 
 - **read-only** (the default) — `Read`, `Grep`, `Glob` and an allow-listed Bash (`bash` replaces the list), `dontAsk`, hooks off, no MCP, `$2` unless `budget` says otherwise.

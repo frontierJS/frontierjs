@@ -27,6 +27,9 @@ const MODES    = ['screenshot', 'video']
 const SIZES    = ['small', 'medium', 'large']
 const FAMILIES = ['sans', 'serif', 'mono']
 const BACKS    = ['outline', 'solid', 'none']
+// The tool a screenshot starts on (`StartTool`): the annotation tools, plus
+// select, which moves and resizes the selection.
+const START_TOOLS = ['select', 'number', 'arrow', 'rect', 'ellipse', 'pen', 'highlighter', 'text', 'pixelate']
 const TOOLS    = ['number', 'arrow', 'rect', 'ellipse', 'pen', 'text', 'pixelate', 'highlighter']
 
 const isTable = (v: unknown): v is Table => typeof v === 'object' && v !== null && !Array.isArray(v) && !(v instanceof Date)
@@ -59,6 +62,7 @@ export const FIELDS: Field[] = [
   { key: 'border_width',           wire: 'borderWidth',          shape: v => isInt(v) && v >= 0, range: v => (v as number) <= 64 ? null : 'the border is 0 to 64 pixels' },
   { key: 'border_color',           wire: 'borderColor',          shape: hex },
   { key: 'capture_mode',           wire: 'captureMode',          shape: oneOf(MODES) },
+  { key: 'start_tool',             wire: 'startTool',            shape: oneOf(START_TOOLS) },
   { key: 'video_fps',              wire: 'videoFps',             shape: v => isInt(v) && v >= 0, range: v => v === 30 || v === 60 ? null : 'the frame rate is 30 or 60' },
   { key: 'video_ink_secs',         wire: 'videoInkSecs',         shape: isNum, float: true, range: v => (v as number) === 0 || ((v as number) >= 1 && (v as number) <= 10) ? null : 'drawings fade after 1 to 10 seconds, or 0 for never' },
   { key: 'video_name_template',    wire: 'videoNameTemplate',    shape: isStr, range: nonEmpty('the recording name template') },
@@ -128,7 +132,7 @@ const defaultTools = (): Record<string, Table> => {
 
 const defaults = (): Table => ({
   save_to_file: true, save_dir: join(picturesDir(), 'Screenshots'), name_template: 'Screenshot_%Y-%m-%d_%H-%M-%S',
-  delay_secs: 5, ui_scale: null, file_format: 'webp', border_width: 0, border_color: '#000000', capture_mode: 'screenshot', video_fps: 30, video_ink_secs: 3,
+  delay_secs: 5, ui_scale: null, file_format: 'webp', border_width: 0, border_color: '#000000', capture_mode: 'screenshot', start_tool: 'select', video_fps: 30, video_ink_secs: 3,
   video_name_template: 'Recording_%Y-%m-%d_%H-%M-%S', video_cursor_highlight: true, record_audio: false,
   record_system_audio: false, webcam: false, webcam_size: 'medium', web_url: '', web_key: '',
 })
@@ -213,7 +217,7 @@ function save(path: string, table: Table) {
 export type ConfigView = {
   path: string, exists: boolean, invalid: string | null,
   saveToFile: boolean, saveDir: string, nameTemplate: string, delaySecs: number, uiScale: number | null,
-  fileFormat: string, borderWidth: number, borderColor: string, captureMode: string, videoFps: number, videoInkSecs: number, videoNameTemplate: string,
+  fileFormat: string, borderWidth: number, borderColor: string, captureMode: string, startTool: string, videoFps: number, videoInkSecs: number, videoNameTemplate: string,
   videoCursorHighlight: boolean, recordAudio: boolean, recordSystemAudio: boolean, webcam: boolean, webcamSize: string,
   webUrl: string, webKeySet: boolean, webKeyHint: string | null, shareOn: boolean,
   toolStyles: Record<string, Table>,
@@ -252,6 +256,7 @@ export function captureConfig(where: Where = {}): ConfigView {
     borderWidth: effective.border_width as number,
     borderColor: '#' + (effective.border_color as string).trim().replace(/^#/, '').toLowerCase(),
     captureMode: effective.capture_mode as string,
+    startTool: effective.start_tool as string,
     videoFps: effective.video_fps as number,
     videoInkSecs: effective.video_ink_secs as number,
     videoNameTemplate: effective.video_name_template as string,

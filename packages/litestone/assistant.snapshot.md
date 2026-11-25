@@ -769,6 +769,16 @@ A value read off another model — the last order, the count of comments, the su
 orderCount Int @from(Order, count: true)
 ```
 
+#### `@stale` (on: [<relation>.<relation>[(where: <expression>)], …])
+
+tier: **common** · legal in: on a model's field, on a type's field, on a trait's field · also called: dirty, needs recompute, invalidate · see also: `from`, `system`
+
+Marks a stored value the app computes as stale: a write to any listed source row sets this Boolean on every live row of this model that reaches it, by trigger, in the write's own statement. The app's job computes the value and clears the mark by writing the successor row with it false.
+
+```lite
+stale Boolean @default(false) @system @stale(on: [orders])
+```
+
 #### `@edge` (ref: <Model>[, key][, as][, onMissing: error|skip])
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `scoped`
@@ -1470,6 +1480,16 @@ The Bytes column holds that many float32 dimensions and can be ordered by simila
 
 ```lite
 embedding Bytes? @vector(1536)
+```
+
+#### `@deprecated` [("reason")]
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `label`
+
+This column is on its way out. It changes nothing about the table, reads or writes. It reaches JSON Schema as deprecated: true and the generated types as a JSDoc @deprecated tag, so an editor strikes through each use. The removal itself is a migration (litestone migrate create).
+
+```lite
+fullName String @deprecated("use name instead")
 ```
 
 #### `@zoned` ([<date>, <time>,] <field> | <relation>.<field>[, after: <field>])

@@ -301,7 +301,7 @@ Take a bulk extract of a dataset that declares `@@export`, graded as the account
 ```bash
 litestone backup [dest] [--vacuum] [--zip] [--db=<name>] [--place=<name>]
 ```
-Create a hot backup — with no `dest`, into a new `db/backups/<stamp>/` beside the schema, so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the main database in `db/`, every other file under that `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db). A tenancy place is left out unless its `backup` clause names a directory, which then gets a stamped copy of that place alone; `--place <name> [dest]` copies one place by itself.
+Create a hot backup — with no `dest`, into a new `backups/<stamp>/` in the main database's `db/` directory (beside the schema when main is not in one), so a second backup never replaces the first. `--vacuum` runs `VACUUM INTO` for a compacted copy. With the main database in `db/`, every other file under that `db/` comes too — [replication.md § The rest of `db/`](replication.md#the-rest-of-db). A tenancy place is left out unless its `backup` clause names a directory, which then gets a stamped copy of that place alone; `--place <name> [dest]` copies one place by itself.
 
 ```bash
 litestone optimize [table]
@@ -318,7 +318,7 @@ Start Litestream WAL replication. Runs as a managed subprocess — signal-forwar
 ```bash
 litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]
 ```
-Bring every database `replicate` streams back from its replica — all or nothing. `--from-backup` with no `--url`, `--at` or `--verify` restores every database from a `litestone backup` directory instead, with no litestream (§ From a local backup). `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
+Bring every database `replicate` streams back from its replica — all or nothing. `--from-backup` with no `--url` or `--at` restores every database from a `litestone backup` directory instead, with no litestream (§ From a local backup). `--verify` restores into `<dir>` instead and grades the copy — the replica's, or with `--from-backup` alone the backup's. See `docs/replication.md` § Restoring and § Proving a copy.
 
 ```bash
 litestone rekey [--orphan=Model.field,…]

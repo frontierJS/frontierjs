@@ -18,9 +18,9 @@
 // skill was found by grep, not by the pointer.
 
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
-import { homedir }                                          from 'node:os'
 import { basename, dirname, join, resolve }                 from 'node:path'
 import { fileURLToPath }                                    from 'node:url'
+import { claudeConfigDir, readToolCalls }                   from '../packages/claude/index.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
@@ -50,21 +50,14 @@ export function reachOf(block) {
   return { loaded, refs }
 }
 
-/** Fold one transcript (a JSONL string) into `{ loaded: Set, refs: Set }`. */
+/** Fold one transcript (a JSONL string) into `{ loaded: Set, refs: Set }`; a subagent's calls count. */
 export function readSession(jsonl) {
   const loaded = new Set(), refs = new Set()
-  for (const line of jsonl.split('\n')) {
-    if (!line.includes('"tool_use"')) continue
-    let row
-    try { row = JSON.parse(line) } catch { continue }
-    const content = row.message?.content
-    if (!Array.isArray(content)) continue
-    for (const block of content) {
-      if (block?.type !== 'tool_use') continue
-      const r = reachOf(block)
-      r.loaded.forEach(s => loaded.add(s))
-      r.refs.forEach(f => refs.add(f))
-    }
+  const r = readToolCalls(jsonl)
+  for (const call of r.ok ? r.value.calls : []) {
+    const reach = reachOf(call)
+    reach.loaded.forEach(s => loaded.add(s))
+    reach.refs.forEach(f => refs.add(f))
   }
   return { loaded, refs }
 }
@@ -89,7 +82,7 @@ export function tally(sessions, cat) {
 }
 
 function transcripts(since) {
-  const base = join(homedir(), '.claude', 'projects')
+  const base = join(claudeConfigDir(), 'projects')
   if (!existsSync(base)) return []
   // Every directory of this workspace: the main tree and each lane worktree.
   const name = basename(root).replace(/^frontierjs-\d+$/, 'frontierjs')

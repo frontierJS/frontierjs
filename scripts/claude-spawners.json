@@ -1,4 +1,0 @@
-{
-  "//": "The files outside packages/claude that still start the `claude` program themselves. Each names the IDEAS/claude-calls.md step that moves it onto the package; the list only shrinks, so a file that stops starting it must be deleted from here (the `claude-spawn-owned` rule fails on both). The scan is packages/cli/core/claude-boundary.js.",
-  "packages/workbench/api/src/domain/local/local-claude.ts": "5.2 (the auth/mcp/plugin/doctor subcommand runner)"
-}

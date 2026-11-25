@@ -233,11 +233,15 @@
 {/if}
 
 <form class="card stack" novalidate onsubmit|preventDefault={add}>
-  <div class="field-row">
-    <Input label="Key" name={`${idPrefix}-key`} id={`${idPrefix}-key`} placeholder="DATABASE_URL"
-           required bind:value={newKey} />
-    <Input label="Value" name={`${idPrefix}-value`} id={`${idPrefix}-value`} required bind:value={newValue}
-           type={newSecret ? 'password' : 'text'} autocomplete="off" />
+  <div class="switcher" style="--switch-at: 32rem; gap: var(--space-md)">
+    <div style="--fr: 1">
+      <Input label="Key" name={`${idPrefix}-key`} id={`${idPrefix}-key`} placeholder="DATABASE_URL"
+             required bind:value={newKey} />
+    </div>
+    <div style="--fr: 2">
+      <Input label="Value" name={`${idPrefix}-value`} id={`${idPrefix}-value`} required bind:value={newValue}
+             type={newSecret ? 'password' : 'text'} autocomplete="off" />
+    </div>
   </div>
   <Checkbox id={`${idPrefix}-secret`} label="Secret — stored encrypted, never shown again" bind:checked={newSecret} />
   <div class="cluster">

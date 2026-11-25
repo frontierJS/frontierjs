@@ -81,7 +81,7 @@ $.config.imageAddress  = addressOf(identity, imageTag).address
 // start, and parsing prose is how a revert ends up running the wrong bytes. The
 // reader falls back to text for a row an older fli wrote.
 // ─── Ship the bytes, where the builder is not the target ─────────────────────
-// `docker save | docker load`, which preserves the image ID — so the digest the
+// `docker save | gzip | docker load`, which preserves the image ID — so the digest the
 // Release names is the digest that starts. A no-op when the two are one daemon,
 // which is every app that has declared no builder.
 //

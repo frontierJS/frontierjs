@@ -19,6 +19,7 @@ siteName: Workbench
   import { notifications } from '../resources/Notification.mesa'
   import NavBadge from '../components/chat/NavBadge.mesa'
   import UnreadBadge from '../components/chat/UnreadBadge.mesa'
+  import TrayUnread from '../components/TrayUnread.mesa'
   import { session, signOut } from '../lib/session.js'
   import { chat } from '../lib/chat.js'
   import { groups, badgeOf } from '../lib/nav.js'
@@ -148,6 +149,7 @@ siteName: Workbench
           <span class="spare">Search</span> <kbd class="kbd hide-sm">⌘K</kbd>
         </Button>
         {#if session.user.profileExternalId}<UnreadBadge />{/if}
+        <TrayUnread />
         <NotificationBell {notifications} tone="">
           {#snippet icon()}<Icon name="notify" />{/snippet}
         </NotificationBell>

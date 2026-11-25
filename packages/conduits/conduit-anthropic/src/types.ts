@@ -5,11 +5,25 @@ export type Role = 'user' | 'assistant'
 /** Marks a block as a prompt-cache breakpoint; the vendor reports the hit in `Usage`. */
 export interface CacheControl { type: 'ephemeral'; ttl?: '5m' | '1h' }
 
-export interface TextBlock       { type: 'text';        text: string;                                     cache_control?: CacheControl }
+export interface TextBlock       { type: 'text';        text: string; citations?: unknown[];              cache_control?: CacheControl }
 export interface ToolUseBlock    { type: 'tool_use';    id: string; name: string; input: Record<string, unknown>; cache_control?: CacheControl }
 export interface ToolResultBlock { type: 'tool_result'; tool_use_id: string; content?: string | TextBlock[]; is_error?: boolean; cache_control?: CacheControl }
 
-export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+/**
+ * The model's reasoning. The `signature` binds it to the conversation: a block
+ * sent back with its text or signature altered is a 400, so a host stores
+ * these as they arrived and replays them byte for byte.
+ */
+export interface ThinkingBlock         { type: 'thinking';          thinking: string; signature: string }
+export interface RedactedThinkingBlock { type: 'redacted_thinking'; data: string }
+/** A call the API runs itself (web search); its result arrives in the same turn. */
+export interface ServerToolUseBlock    { type: 'server_tool_use';   id: string; name: string; input: Record<string, unknown> }
+export interface WebSearchResultBlock  { type: 'web_search_tool_result'; tool_use_id: string; content: unknown }
+
+/** What an assistant turn may hold. */
+export type AssistantBlock = TextBlock | ToolUseBlock | ThinkingBlock | RedactedThinkingBlock | ServerToolUseBlock | WebSearchResultBlock
+
+export type ContentBlock = AssistantBlock | ToolResultBlock
 
 export interface Message { role: Role; content: string | ContentBlock[] }
 
@@ -20,6 +34,9 @@ export interface Tool {
   cache_control?: CacheControl
 }
 
+/** A tool the API runs itself, named by its versioned `type` (`web_search_20260209`). */
+export interface ServerTool { type: string; name: string; [k: string]: unknown }
+
 export type ToolChoice = { type: 'auto' | 'any' | 'none'; disable_parallel_tool_use?: boolean } | { type: 'tool'; name: string; disable_parallel_tool_use?: boolean }
 
 export interface MessagesRequest {
@@ -27,7 +44,7 @@ export interface MessagesRequest {
   max_tokens:      number
   messages:        Message[]
   system?:         string | TextBlock[]
-  tools?:          Tool[]
+  tools?:          (Tool | ServerTool)[]
   tool_choice?:    ToolChoice
   temperature?:    number
   top_p?:          number
@@ -36,6 +53,11 @@ export interface MessagesRequest {
   metadata?:       { user_id?: string }
   /** Structured output and the effort the model spends; each absent means the account's default. */
   output_config?:  OutputConfig
+  thinking?:       { type: 'adaptive' } | { type: 'enabled'; budget_tokens: number } | { type: 'disabled' }
+  /** Re-run a request the safety classifier declines on another model; needs the `server-side-fallback-2026-07-01` beta. */
+  fallbacks?:      'default'
+  /** Sent as the `anthropic-beta` header, never in the body: the API refuses a `betas` field. */
+  betas?:          string[]
 }
 
 export interface OutputConfig {
@@ -50,6 +72,8 @@ export interface Usage {
   output_tokens:                number
   cache_creation_input_tokens?: number | null
   cache_read_input_tokens?:     number | null
+  /** `cache_creation_input_tokens` split by TTL; the one-hour part is priced higher. */
+  cache_creation?:              { ephemeral_5m_input_tokens?: number | null; ephemeral_1h_input_tokens?: number | null } | null
 }
 
 export interface MessagesResponse {
@@ -57,7 +81,7 @@ export interface MessagesResponse {
   type:          'message'
   role:          'assistant'
   model:         string
-  content:       (TextBlock | ToolUseBlock)[]
+  content:       AssistantBlock[]
   stop_reason:   StopReason | null
   stop_sequence: string | null
   /** Present on a safeguard decline (`stop_reason: 'refusal'`); `explanation` is the model's own words. */
@@ -83,11 +107,14 @@ export interface AnthropicErrorBody {
 export type ContentDelta =
   | { type: 'text_delta';       text: string }
   | { type: 'input_json_delta'; partial_json: string }
+  | { type: 'thinking_delta';   thinking: string }
+  | { type: 'signature_delta';  signature: string }
+  | { type: 'citations_delta';  citation: unknown }
 
 /** The vendor's events, as it names them; `stream_error` is the connector's own and closes every stream that did not reach `message_stop`. */
 export type StreamEvent =
   | { type: 'message_start';       message: MessagesResponse }
-  | { type: 'content_block_start'; index: number; content_block: TextBlock | ToolUseBlock }
+  | { type: 'content_block_start'; index: number; content_block: AssistantBlock }
   | { type: 'content_block_delta'; index: number; delta: ContentDelta }
   | { type: 'content_block_stop';  index: number }
   | { type: 'message_delta';       delta: { stop_reason: StopReason | null; stop_sequence: string | null }; usage: Partial<Usage> & { output_tokens: number } }

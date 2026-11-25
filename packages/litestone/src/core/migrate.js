@@ -15,7 +15,7 @@
 //                  add/drop/reorder a UNIQUE the table declares itself
 
 import { SEARCH_TABLE, createSearchIndex, searchBackfillSql,
-         generateDDL, generateDDLForDatabase, schemaForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField, readScaleConstraint } from './ddl.js'
+         generateDDL, generateDDLForDatabase, schemaForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL, isStoredField, readScaleConstraint } from './ddl.js'
 // `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
 // graph throws when the module is merely imported in a browser (`FJS-1179`).
 import { createHash } from '#host'
@@ -932,6 +932,14 @@ function fksEqual(a, b) {
 // tables skips these, so a bucket added to `introspect` is added here.
 export const META_KEYS = new Set(['__views', '__triggers', '__fts', '__search', '__sql', '__joins'])
 
+// The underscore tables one database's models plan: each m2m join, carrying
+// its @edge columns, and each @edge/@scoped side table. Pairs read without
+// planEdgeStorage have no `edgeColumns`, and their join is built without them.
+function planJoinStorage(schema, dbName, pluralize) {
+  const scoped = schemaForDatabase(schema, dbName)
+  return planEdgeStorage(scoped, detectM2MPairs(scoped, pluralize), pluralize)
+}
+
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
   // Filter the meta buckets out of the table name sets
   const pristineNames = new Set(Object.keys(pristine).filter(k => !META_KEYS.has(k)))
@@ -989,11 +997,12 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
   // A join table is in neither name set, so an m2m added between two models
   // that already exist compared equal everywhere and no migration was written
   // (FJS-4569). Only a join the schema plans is asked about, and only its
-  // absence: the migration creates it, and nothing here drops one.
+  // absence: the migration creates it, and nothing here drops one. An
+  // @edge/@scoped side table is one too (FJS-4601).
   const pristineJoins = new Set(pristine.__joins ?? [])
   const liveJoins     = new Set(live.__joins ?? [])
-  const newJoinTables = [...new Set(
-    detectM2MPairs(schemaForDatabase(parseResult.schema, dbName), pluralize).map(p => p.joinTable))]
+  const { pairs: plannedPairs, ownGroups: plannedSides } = planJoinStorage(parseResult.schema, dbName, pluralize)
+  const newJoinTables = [...new Set([...plannedPairs.map(p => p.joinTable), ...plannedSides.map(g => g.sideTable)])]
     .filter(t => pristineJoins.has(t) && !liveJoins.has(t))
 
   const tableDiffs = []
@@ -1549,12 +1558,13 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
   }
 
   // Every join table, IF NOT EXISTS: one a new model brings is in no list of
-  // the diff's, only `newJoinTables` names an m2m between existing models.
+  // the diff's, only `newJoinTables` names one between existing models.
   {
-    const pairs = detectM2MPairs(schemaForDatabase(parseResult.schema, diffResult.dbName ?? 'main'), pluralize)
-    if (pairs.length) {
+    const { pairs, ownGroups } = planJoinStorage(parseResult.schema, diffResult.dbName ?? 'main', pluralize)
+    if (pairs.length || ownGroups.length) {
       lines.push(`-- ─── implicit m2m join tables (idempotent) ${'─'.repeat(24)}`)
       for (const pair of pairs) lines.push(generateJoinTableDDL(pair, true))
+      for (const g of ownGroups) lines.push(generateEdgeSideTableDDL(g, true))
       lines.push(``)
     }
   }

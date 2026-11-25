@@ -136,7 +136,7 @@ packages/junction/
 ├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
 ├── src/terminal/index.ts ← terminalSocket() — a shell over a raw socket (FJS-D2125)
 ├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
-├── src/ai/index.ts       ← IAIModel interface — adapters reach a vendor through conduit
+├── src/ai/index.ts       ← ai({ doors }) — named toolbelt Doors on app.ai
 ├── src/client/index.ts   ← browser/Sierra client — service(), resource()
 ├── src/testing/index.ts  ← createTestApp(), request(), withTestMeta()
 │
@@ -2884,7 +2884,7 @@ expect(stubs['provider:hetzner'].calls).toHaveLength(1)
 |---|---|---|
 | Auth         | `IAuth`        | `@frontierjs/auth`, custom |
 | Mail         | `IMail`        | Resend, Postal, SMTP       |
-| AI           | `IAIModel`     | OpenAI, Anthropic, Ollama  |
+| AI           | a toolbelt `Door` | `claudeDoor`, `anthropicDoor` |
 | Cache        | `ICache`       | memory, SQLite, Redis       |
 | Events       | `IEventBus`    | in-process (`on`, `once`, `onAny`), Redis pub/sub  |
 

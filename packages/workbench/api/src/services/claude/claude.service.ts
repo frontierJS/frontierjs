@@ -1,5 +1,5 @@
 // src/services/claude/claude.service.ts
-// Claude Code's configuration on this machine, read (`domain/claude/claude-scan.ts`).
+// Claude Code's configuration on this machine, read (`scanClaude` in `@frontierjs/claude`).
 //
 // No model and nothing in the database: the config is files under the account's
 // home and the pinned checkouts, so it is gated at ADMINISTRATOR like the rest of the Workbench. Nothing here writes.
@@ -49,7 +49,7 @@
 // `stats`, `insights` and `sessions` read the usage INDEX (`ClaudeMessage`, `ClaudeTranscript`), which
 // `jobs/claude-index.job.ts` keeps within five minutes of the transcripts — `indexedAt` says how stale —
 // and which still holds what Claude Code has since deleted. The dollars are an estimate at list price
-// (`domain/claude/claude-pricing.ts`) and every answer carries the page and the date they were read.
+// (`@frontierjs/conduit-anthropic`'s `costOf`) and every answer carries the page and the date they were read.
 //
 // The Workbench's pins are the checkouts whose project layer is read, so a pin
 // added there shows here on the next call. `file`, `save` and `trash` scan again
@@ -62,19 +62,17 @@ import { homedir }                from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { createService, BadRequest, Conflict, NotFound, Unprocessable, $ } from '@frontierjs/junction'
 import { LEVELS }                  from '@frontierjs/litestone'
-import { allHooks, allItems, claudeConfigDir, claudeJsonPath, configRev, readListedFile, scanClaude, type ClaudeConfig } from '../../domain/claude/claude-scan.ts'
-import { read, readJsonObject, unreadable } from '../../domain/claude/claude-read.ts'
-import { commandTools }          from '../../domain/claude/claude-hooks.ts'
-import { expandMcpVars }         from '../../domain/claude/claude-mcp.ts'
+import {
+  allHooks, allItems, claudeAuthStatus, claudeConfigDir, claudeJsonPath, commandTools, configRev, contextFor, countContext,
+  expandMcpVars, fetchUsage, read, readDoctor, readJsonObject, readListedFile, readMcpList, readTranscript, runClaude,
+  scanClaude, unreadable, type ClaudeConfig,
+} from '@frontierjs/claude'
 import { listMcpTools, type McpRaw } from '../../domain/local/local-mcp.ts'
 import {
   checkRules, checkSettingsPatch, cliFailure, patchJson, patchPermissions, readOrNull, recordCli, saveFile, trashPath, undoable, undoWrite,
   WRITE_SELECT, type RuleList,
 } from '../../domain/claude/claude-write.ts'
-import { contextFor, countContext } from '../../domain/claude/claude-context.ts'
-import { fetchUsage }              from '../../domain/claude/claude-quota.ts'
-import { readTranscript }          from '../../domain/claude/claude-transcript.ts'
-import { claudeAuthStatus, readDoctor, readMcpList, runClaude } from '../../domain/local/local-claude.ts'
+import { claudeProgram }         from '../../domain/local/local-claude.ts'
 import { indexState }            from '../../domain/claude/claude-index.ts'
 import { dispatchIndex }         from '../../jobs/claude-index.job.ts'
 import { INSIGHT_WINDOWS, readInsights, readSessions, readStats, type InsightWindow } from '../../domain/claude/claude-spend.ts'
@@ -114,7 +112,7 @@ function settingsPath(c: ClaudeConfig, scope: string, project: string | null): s
 
 /** Run the CLI and refuse with what it said; the screen shows the refusal as the reason. */
 async function cli(args: string[], cwd: string | null, timeoutMs = 30_000) {
-  const r = await runClaude(args, { cwd: cwd ?? undefined, timeoutMs })
+  const r = await runClaude(args, { ...claudeProgram(), cwd: cwd ?? undefined, timeoutMs })
   if (!r.ok) throw new Unprocessable(r.reason)
   if (r.value.code !== 0) throw new Unprocessable(cliFailure(r.value))
   return r.value
@@ -301,7 +299,7 @@ export default createService({
   },
 
   async account() {
-    return claudeAuthStatus()
+    return claudeAuthStatus(claudeProgram())
   },
 
   async quota() {
@@ -313,7 +311,7 @@ export default createService({
   async mcpHealth() {
     const cwd = cwdOf(scan(), body().project)
     // Every configured server is started to answer; a slow one holds the list.
-    const r = await runClaude(['mcp', 'list'], { cwd, timeoutMs: 90_000 })
+    const r = await runClaude(['mcp', 'list'], { ...claudeProgram(), cwd, timeoutMs: 90_000 })
     if (!r.ok) return r
     if (r.value.code !== 0) return unreadable(cliFailure(r.value))
     const servers = readMcpList(r.value.out)
@@ -370,7 +368,7 @@ export default createService({
 
   async doctor() {
     const cwd = cwdOf(scan(), body().project)
-    const r = await runClaude(['doctor'], { cwd, timeoutMs: 60_000 })
+    const r = await runClaude(['doctor'], { ...claudeProgram(), cwd, timeoutMs: 60_000 })
     if (!r.ok) return r
     const parsed = readDoctor(r.value.out)
     if (!parsed.ok) return r.value.code !== 0 ? unreadable(cliFailure(r.value)) : parsed

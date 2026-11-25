@@ -9,7 +9,8 @@ import { describe, test, expect } from 'bun:test'
 
 import { catalog, reachOf, readSession, tally } from '../../../scripts/skill-reach.mjs'
 
-const call = (name, input) => JSON.stringify({ message: { content: [{ type: 'tool_use', name, input }] } })
+let ids = 0
+const call = (name, input) => JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: `t${++ids}`, name, input }] } })
 
 describe('reachOf', () => {
   test('a Read of a reference file reaches it', () => {
@@ -31,7 +32,7 @@ describe('reachOf', () => {
 
 describe('readSession', () => {
   test('counts tool calls and ignores a path quoted in other text', () => {
-    const quoted = JSON.stringify({ message: { content: [{ type: 'text', text: 'see skills/api-hazards/references/sockets.md' }] } })
+    const quoted = JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'see skills/api-hazards/references/sockets.md' }] } })
     const s = readSession([quoted, call('Skill', { skill: 'api-hazards' }), call('Read', { file_path: 'skills/api-hazards/references/sockets.md' }), 'not json'].join('\n'))
     expect([...s.loaded]).toEqual(['api-hazards'])
     expect([...s.refs]).toEqual(['api-hazards/sockets.md'])

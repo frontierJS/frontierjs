@@ -33,7 +33,6 @@
 // ============================================================
 
 import { readdirSync, readFileSync, statSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs'
-import { homedir }                                   from 'node:os'
 import { join }                                      from 'node:path'
 
 import { ROOT, LOG_DIR, sentBack, writes, atRoot, runSession, parseArgs, printHelp } from './headless.mjs'
@@ -41,6 +40,7 @@ import { readRegisters }                                                        
 import { readLog, finishedAttempts }                                                 from '../packages/cli/core/loop-log.js'
 import { hazardCoverage }                                                            from '../packages/cli/core/hazards.js'
 import { RULES }                                                                     from '../packages/cli/core/checks.js'
+import { claudeConfigDir, encodeCwd, readToolCalls }                                 from '../packages/claude/index.ts'
 
 const args  = parseArgs(process.argv.slice(2))
 if (args.help) { printHelp(import.meta.url); process.exit(0) }
@@ -50,7 +50,7 @@ const last  = Number(args.last ?? 20)
 const LOG   = join(LOG_DIR, `${name}.jsonl`)
 const OUT   = join(LOG_DIR, `${name}-review.md`)
 // A lane's session ran in its worktree, so its transcript is under that project.
-const transcripts = root => join(homedir(), '.claude', 'projects', root.replace(/[^A-Za-z0-9]/g, '-'))
+const transcripts = root => join(claudeConfigDir(), 'projects', encodeCwd(root))
 const TRANS       = transcripts(ROOT)
 
 // ─── the attempts ───────────────────────────────────────────
@@ -225,7 +225,7 @@ if (args.ask) {
 
 // ─── transcripts ────────────────────────────────────────────
 
-// First line only: a transcript opens with the prompt it was started with.
+// The head only: where a transcript started and the prompt it was started with.
 function transcriptHeads(since) {
   const heads = []
   let files = []
@@ -233,10 +233,8 @@ function transcriptHeads(since) {
   for (const f of files) {
     const path = join(TRANS, f)
     if (statSync(path).mtimeMs < since) continue
-    try {
-      const first = JSON.parse(readHead(path).split('\n')[0])
-      heads.push({ path, at: Date.parse(first.timestamp), content: String(first.content ?? '') })
-    } catch {}
+    const head = readToolCalls(readHead(path))
+    if (head.ok && head.value.startedAt) heads.push({ path, at: Date.parse(head.value.startedAt), content: head.value.prompt ?? '' })
   }
   return heads
 }
@@ -264,26 +262,22 @@ function matchByStart(a, heads) {
     .sort((x, y) => Math.abs(x.at - at) - Math.abs(y.at - at))[0]?.path
 }
 
+// A transcript's main thread, through the package's one reader of its lines.
+function toolCalls(path) {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch { return null }
+  const r = readToolCalls(text)
+  return r.ok ? r.value : null
+}
+
 function readTranscript(path) {
-  let events
-  try { events = readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l)) } catch { return null }
-  const calls = []
-  const byId  = new Map()
-  const failures = []
-  for (const e of events) {
-    if (e.isSidechain) continue
-    for (const part of Array.isArray(e.message?.content) ? e.message.content : []) {
-      if (e.type === 'assistant' && part.type === 'tool_use') {
-        const call = { name: part.name, input: part.input ?? {}, text: callText(part), cwd: e.cwd }
-        calls.push(call)
-        byId.set(part.id, call)
-      }
-      if (e.type === 'user' && part.type === 'tool_result' && part.is_error && byId.has(part.tool_use_id)) {
-        const call = byId.get(part.tool_use_id)
-        failures.push({ key: failKey(call), call: call.text.slice(0, 160), error: resultText(part).replace(/\s+/g, ' ').slice(0, 200) })
-      }
-    }
-  }
+  const t = toolCalls(path)
+  if (!t) return null
+  const main     = t.calls.filter(c => !c.sidechain)
+  const calls    = main.map(c => ({ name: c.name, input: c.input, text: callText(c), cwd: c.cwd }))
+  const failures = calls.flatMap((call, i) => main[i].result?.error
+    ? [{ key: failKey(call), call: call.text.slice(0, 160), error: main[i].result.text.replace(/\s+/g, ' ').slice(0, 200) }]
+    : [])
   const seen = new Map()
   for (const c of calls) { const k = `${c.name} ${JSON.stringify(c.input)}`; seen.set(k, { call: c.text.slice(0, 120), n: (seen.get(k)?.n ?? 0) + 1 }) }
   return {
@@ -297,31 +291,19 @@ function readTranscript(path) {
 }
 
 function sessionText(path) {
-  try {
-    return readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l))
-      .filter(e => e.type === 'assistant' && !e.isSidechain)
-      .flatMap(e => Array.isArray(e.message?.content) ? e.message.content : [])
-      .filter(p => p.type === 'text').map(p => p.text).join('\n')
-  } catch { return '' }
+  return toolCalls(path)?.replies.join('\n') ?? ''
 }
 
 // Text and tool inputs, without results.
 function writtenText(path) {
-  try {
-    return readFileSync(path, 'utf8').trim().split('\n').map(l => JSON.parse(l))
-      .filter(e => e.type === 'assistant' && !e.isSidechain)
-      .flatMap(e => Array.isArray(e.message?.content) ? e.message.content : [])
-      .map(p => p.type === 'text' ? p.text : p.type === 'tool_use' ? JSON.stringify(p.input) : '').join('\n')
-  } catch { return '' }
+  const t = toolCalls(path)
+  if (!t) return ''
+  return [...t.replies, ...t.calls.filter(c => !c.sidechain).map(c => JSON.stringify(c.input))].join('\n')
 }
 
 function callText(part) {
   const i = part.input ?? {}
   return atRoot(String(i.command ?? i.file_path ?? i.pattern ?? i.skill ?? i.prompt ?? JSON.stringify(i)).split('\n')[0])
-}
-
-function resultText(part) {
-  return typeof part.content === 'string' ? part.content : (part.content ?? []).map(c => c.text ?? '').join(' ')
 }
 
 function failKey(call) {

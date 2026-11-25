@@ -1,4 +1,4 @@
-// src/domain/claude/claude-plugins.ts — the plugins Claude Code has installed, and the marketplaces they came from.
+// src/plugins.ts — the plugins Claude Code has installed, and the marketplaces they came from.
 //
 // Four files, none of them a plugin's code:
 //   - `plugins/installed_plugins.json`          what is installed, at which scope
@@ -18,7 +18,7 @@
 // A manifest is third-party text. Every field is read defensively, a field of
 // the wrong shape comes back `null`, and nothing here follows a path it names.
 
-import { read, readJsonObject, unreadable, type Read } from './claude-read.ts'
+import { read, unreadable, readJsonObject, type Read } from './read.ts'
 
 type Obj = Record<string, unknown>
 

@@ -12755,6 +12755,67 @@ describe('generateTypeScript — emits the surface a real client has', () => {
   })
 })
 
+// ─── @deprecated — an annotation, and only that ──────────────────────────────
+
+describe('@deprecated annotates a field and changes nothing else', () => {
+  const SRC = `
+    model Person {
+      id       Int     @id
+      name     String
+      fullName String  @deprecated("use name instead")
+      nick     String? @deprecated
+      /// Kept for old imports.
+      legacy   String? @deprecated("drop after 2027")
+    }
+    type Address {
+      line String
+      zip  String @deprecated("use postcode")
+    }
+    model Place { id Int @id  addr Json @type(Address) }
+  `
+
+  test('the parser reads the reason, or null', () => {
+    const { schema } = parse(SRC)
+    const attrs = (n: string) => schema.models.find((m: any) => m.name === 'Person').fields.find((f: any) => f.name === n).attributes
+    expect(attrs('fullName').find((a: any) => a.kind === 'deprecated')).toEqual({ kind: 'deprecated', reason: 'use name instead' })
+    expect(attrs('nick').find((a: any) => a.kind === 'deprecated')).toEqual({ kind: 'deprecated', reason: null })
+  })
+
+  test('JSON Schema carries deprecated: true and never the reason', () => {
+    const js = generateJsonSchema(parse(SRC).schema)
+    const props = js['$defs'].Person.properties
+    expect(props.fullName.deprecated).toBe(true)
+    expect(props.nick.deprecated).toBe(true)
+    expect(props.name.deprecated).toBeUndefined()
+    expect(JSON.stringify(js)).not.toContain('use name instead')
+  })
+
+  test('the generated types carry a JSDoc @deprecated tag, with and without a reason', () => {
+    const dts = generateTypeScript(parse(SRC).schema)
+    expect(dts).toContain('  /** @deprecated use name instead */\n  fullName: string')
+    expect(dts).toContain('  /** @deprecated */\n  nick?: string | null')
+    // beside its own doc comment, the tag is a second line of the same block
+    expect(dts).toContain('   * Kept for old imports.\n   * @deprecated drop after 2027\n   */\n  legacy?:')
+    // a `type T { … }` field too
+    expect(dts).toContain('  /** @deprecated use postcode */\n  zip: string')
+    expect(generateTypeScript(parse(SRC).schema, { includeComments: false })).not.toContain('@deprecated')
+  })
+
+  test('a deprecated column is created, read and written as before', async () => {
+    const db = await createClient({ schema: SRC, db: ':memory:' } as any)
+    const row = await (db as any).person.create({ data: { name: 'a', fullName: 'A' } })
+    expect(row.fullName).toBe('A')
+    await (db as any).person.update({ where: { id: row.id }, data: { fullName: 'B' } })
+    expect((await (db as any).person.findUnique({ where: { id: row.id } })).fullName).toBe('B')
+  })
+
+  test('it is refused on an enum member', () => {
+    const r = parse(`enum S { a @deprecated b }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join('\n')).toContain('@deprecated is not allowed on an enum member')
+  })
+})
+
 // ─── generateTypeScript — the service map ────────────────────────────────────
 //
 // The half that crosses the wire. A row type nothing on the other side can name
@@ -17006,7 +17067,7 @@ describe('generateTypeScript', () => {
   test('@secret field excluded from client audience', () => {
     const dts = generateTypeScript(schema, { audience: 'client' })
     // apiKey is @secret = @guarded → stripped in client audience
-    const userSection = dts.slice(dts.indexOf('export interface User {'), dts.indexOf('export interface UserCreate {'))
+    const userSection = dts.slice(dts.indexOf('export interface User {'), dts.indexOf('export type UserCreate = {'))
     expect(userSection).not.toContain('apiKey')
   })
 
@@ -17018,7 +17079,9 @@ describe('generateTypeScript', () => {
   test('emits Create interface', () => {
     const dts = generateTypeScript(schema)
     expect(dts).toContain('export interface AccountCreate {')
-    expect(dts).toContain('export interface UserCreate {')
+    // a required belongsTo key makes it a union: the key or the relation write
+    expect(dts).toContain('export type UserCreate = {')
+    expect(dts).toContain('& ({ accountId: number } | { account: __BelongsToWrite<AccountWhere, AccountCreate> })')
   })
 
   test('Create interface makes @id optional', () => {
@@ -17164,7 +17227,7 @@ describe('generateTypeScript', () => {
     // `account` relation field should not appear in User interfaces
     const userRow = dts.slice(
       dts.indexOf('export interface User {'),
-      dts.indexOf('export interface UserCreate {')
+      dts.indexOf('export type UserCreate = {')
     )
     // 'account' as a standalone property (not accountId) should not appear
     const lines = userRow.split('\n').filter(l => l.trim().startsWith('account:') || l.trim().startsWith('account?:'))

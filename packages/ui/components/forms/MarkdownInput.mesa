@@ -19,6 +19,7 @@
   //
   // Usage:
   //   <MarkdownInput name="body" value={post.body} oninput={e => post.body = e.target.value} />
+  //   <MarkdownInput name="body" breaks />
   //
   // bind:this exposes: focus(), insert(text)
 
@@ -33,6 +34,10 @@
   export let disabled    = undefined  // undefined = ask the form; false overrides it
   export let required    = undefined
   export let readonly    = false
+  // The Preview must draw a newline the way the app that sends the text will;
+  // one that renders with breaks: true and previews without shows one line
+  // where its reader gets two.
+  export let breaks      = false
 
   // Field integration
   export let name   = ''
@@ -163,7 +168,7 @@
     {#if previewing}
       <div class="fjs-markdown-input-preview" aria-live="polite">
         {#if source.trim()}
-          <Markdown text={source} headingBase={3} />
+          <Markdown text={source} headingBase={3} breaks={breaks} />
         {:else}
           <p class="field-hint">Nothing to preview.</p>
         {/if}

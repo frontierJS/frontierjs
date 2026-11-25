@@ -24,7 +24,6 @@ export interface IPluginRegistry {
   isErrorHandler(type: string): boolean   // is this a flow.error node?
   isLoopNode(type: string): boolean       // is this a flow.loop node?
   isStoreNode(type: string): boolean      // is this a store node?
-  isAiNode(type: string): boolean         // is this an ai node?
   getOutputSchema(type: string): JSONSchema | undefined
   getInputSchema(type: string):  JSONSchema | undefined
   getFunctionNames(): Set<string>
@@ -884,7 +883,6 @@ function fieldNamesOf(expr: Expression | undefined): string[] | undefined {
 }
 
 const STORE_MODES = new Set(["get", "set", "delete"])
-const AI_MODES    = new Set(["complete"])
 
 function validateNodeModes(ctx: PipelineContext): void {
   const { flow, registry, errors } = ctx
@@ -892,8 +890,6 @@ function validateNodeModes(ctx: PipelineContext): void {
   for (const [id, node] of Object.entries(flow.nodes)) {
     if (registry.isStoreNode(node.type)) {
       validateMode(id, node, STORE_MODES, errors)
-    } else if (registry.isAiNode(node.type)) {
-      validateMode(id, node, AI_MODES, errors)
     }
   }
 }

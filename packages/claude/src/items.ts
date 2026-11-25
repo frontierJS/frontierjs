@@ -1,4 +1,4 @@
-// src/domain/claude/claude-items.ts — a skill, an agent or a command, read from its markdown file.
+// src/items.ts — a skill, an agent or a command, read from its markdown file.
 //
 // The three are one file shape: YAML frontmatter, then a body. What differs is
 // which keys Claude Code needs. An agent without `name` or `description` is
@@ -18,7 +18,7 @@
 // the model at all, so it counts 0.
 
 import { parseFrontmatter, splitFrontmatter } from '@frontierjs/toolbelt/frontmatter'
-import { read, unreadable, type Read } from './claude-read.ts'
+import { read, unreadable, type Read } from './read.ts'
 
 export type ItemKind = 'skill' | 'agent' | 'command'
 

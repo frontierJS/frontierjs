@@ -241,7 +241,7 @@ try {
   const defaults = {
     'capture-save-to-file': true, 'capture-save-dir': join(homedir(), 'Pictures', 'Screenshots'),
     'capture-template': 'Screenshot_%Y-%m-%d_%H-%M-%S', 'capture-format': 'webp', 'capture-delay': '5',
-    'capture-border-width': '0', 'capture-scale': 'auto', 'capture-fps': '30', 'capture-cursor': true, 'capture-ink': '3',
+    'capture-start-tool': 'select', 'capture-border-width': '0', 'capture-scale': 'auto', 'capture-fps': '30', 'capture-cursor': true, 'capture-ink': '3',
     'capture-ink-never': false, 'capture-web-url': '',
   }
   for (const [id, want] of Object.entries(defaults)) {
@@ -264,6 +264,7 @@ try {
   check('a preset fills the file name', await read('capture-template') === '%Y%m%d-%H%M%S', await read('capture-template'))
   await type('capture-template', TEMPLATE)
   await choose('capture-format', 'png')
+  await choose('capture-start-tool', 'arrow')
   await type('capture-border-width', '6')
   check('a border width turns the color on', await evaluate(`${swatch('#3b82f6')}.disabled`) === false)
   await evaluate(`${swatch('#3b82f6')}.click()`)
@@ -280,6 +281,7 @@ try {
   check('name_template is the typed one', t1.name_template === TEMPLATE)
   check('file_format is png', t1.file_format === 'png', t1.file_format)
   check('delay_secs is 12', t1.delay_secs === 12, String(t1.delay_secs))
+  check('start_tool is arrow', t1.start_tool === 'arrow', t1.start_tool)
   check('border_width is 6', t1.border_width === 6, String(t1.border_width))
   check('border_color is the picked swatch', t1.border_color === '#3b82f6', t1.border_color)
   check('ui_scale is 1.5', t1.ui_scale === 1.5, String(t1.ui_scale))
@@ -302,7 +304,7 @@ try {
   console.log('\n  Reload — the saved values come back')
   await openScreen()
   const back = {
-    'capture-save-to-file': false, 'capture-save-dir': FOLDER, 'capture-template': TEMPLATE, 'capture-format': 'png',
+    'capture-save-to-file': false, 'capture-save-dir': FOLDER, 'capture-template': TEMPLATE, 'capture-format': 'png', 'capture-start-tool': 'arrow',
     'capture-border-width': '6', 'capture-delay': '12', 'capture-scale': 'auto', 'capture-fps': '60', 'capture-cursor': false,
     'capture-ink-never': true, 'capture-web-url': SHARE_URL,
   }

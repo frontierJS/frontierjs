@@ -1,0 +1,33 @@
+<script>
+  // components/TrayUnread.mesa -- tells the desktop shell what is unread, for the
+  // label beside its tray icon (`tray_unread` in desktop/shell/src/tray.rs): the
+  // Messages badge's number plus the unread notifications, or a dot when the only
+  // unread is a room with nothing in it that counts.
+  //
+  // Draws nothing, and in a browser, where there is no shell, sends nothing. The
+  // bell's limit is the inbox's, so past 50 unread notifications the count stops
+  // at what the inbox holds, as the bell's does.
+  import { chat } from '../lib/chat.js'
+  import { notifications, isUnread, INBOX } from '../resources/Notification.mesa'
+
+  const invoke = globalThis.__TAURI_INTERNALS__?.invoke
+  var inbox = notifications.tethered({ state: 'local', directives: INBOX })
+
+  let sent = ''
+  function send(count, dot) {
+    const key = `${count}:${dot}`
+    if (!invoke || key === sent) return
+    sent = key
+    invoke('tray_unread', { count, dot }).catch(() => {})
+  }
+  const report = () => send(
+    (typeof chat.badge === 'number' ? chat.badge : 0) + inbox.rows.filter(isUnread).length,
+    chat.badge === 'dot',
+  )
+
+  report()
+  $: (chat.badge, inbox.rows), () => report()
+
+  // A signed-out shell must not keep the last member's count.
+  $.onDestroy(() => { inbox.destroy(); send(0, false) })
+</script>

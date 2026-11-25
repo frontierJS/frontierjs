@@ -175,8 +175,8 @@ function pageOf(list: PostList | undefined): PostPage {
   const meta = (p: Post) => (p.metadata && typeof p.metadata === 'object' ? p.metadata : {}) as { reactions?: Reaction[]; files?: FileInfo[] }
   return {
     rows:       posts.map(p => postModel.parse(p)).filter((x): x is PostRow => !!x),
-    reactions:  posts.flatMap(p => meta(p).reactions ?? []).map(x => reactionModel.parse(x)).filter((x): x is ReactionRow => !!x),
-    files:      posts.flatMap(p => meta(p).files ?? []).map(x => fileInfoModel.parse(x)).filter((x): x is FileInfoRow => !!x),
+    reactions:  posts.flatMap(p => (meta(p).reactions ?? []).map(x => reactionModel.parse(x, { channelExternalId: p.channel_id }))).filter((x): x is ReactionRow => !!x),
+    files:      posts.flatMap(p => (meta(p).files ?? []).map(x => fileInfoModel.parse(x, { channelExternalId: p.channel_id }))).filter((x): x is FileInfoRow => !!x),
     nextPostId: list.next_post_id || null,
     prevPostId: list.prev_post_id || null,
   }
@@ -331,7 +331,7 @@ export async function uploadFile(mm: MattermostSend, file: NewFile): Promise<Ans
     method: 'POST', path: `${API}/files`, query: { channel_id: channel, filename: file.name.trim() },
     body: file.bytes, headers: { 'Content-Type': file.mimeType || 'application/octet-stream' },
   })
-  return answer(r, x => fileInfoModel.parse(x?.file_infos?.[0] as FileInfo))
+  return answer(r, x => fileInfoModel.parse(x?.file_infos?.[0] as FileInfo, { channelExternalId: channel }))
 }
 
 /**

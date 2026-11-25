@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os'
 
 import { createApp }     from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
+import { channels }      from '../src/transport/channels.ts'
 
 const running: Array<{ stop: () => Promise<void> }> = []
 const dirs:    string[] = []
@@ -208,5 +209,36 @@ describe("the file's http section reaches the transport", () => {
     running.push(app as unknown as { stop: () => Promise<void> })
     const limits = (app.http as unknown as { _wsLimits: { maxFrameBytes: number } })._wsLimits
     expect(limits.maxFrameBytes).toBe(1024 * 1024)
+  })
+
+  // A route registered by `app.configure(channels())` exists before the file
+  // is read, so a bound it copied at registration kept the default: lathe's
+  // 2 MB call on /ws closed 1009 under a 32 MB `app.http.ws` (`FJS-4605`).
+  test("a frame over the default reaches channels()' /ws under the file's ws.maxFrameBytes", async () => {
+    const app = createApp({
+      root:     configDir({ app: { http: { ws: { maxFrameBytes: 1024 * 1024 } } } }),
+      config:   { port: 0 } as never,
+      logLevel: 'silent',
+    })
+    app.services.register(createService({ name: 'sink', methods: ['create'], async create () { return { ok: true } } }))
+    app.configure(channels())
+    await app.start()
+    running.push(app as unknown as { stop: () => Promise<void> })
+
+    const ws     = new WebSocket(`ws://127.0.0.1:${app.http.port}/ws`, ['fjs'])
+    const frames: Array<{ type?: string, id?: string }> = []
+    let closed: number | null = null
+    ws.onmessage = e => frames.push(JSON.parse(String(e.data)))
+    ws.onclose   = e => { closed = e.code }
+    const until  = async (pred: () => boolean) => {
+      const deadline = Date.now() + 4000
+      while (!pred() && Date.now() < deadline) await Bun.sleep(10)
+    }
+    await until(() => frames.some(f => f.type === 'connected'))
+    ws.send(JSON.stringify({ type: 'service_call', id: '1', service: 'sink', method: 'create', data: { pad: 'x'.repeat(600 * 1024) } }))
+    await until(() => closed !== null || frames.some(f => f.id === '1'))
+    ws.close()
+    expect(closed).toBeNull()
+    expect(frames.find(f => f.id === '1')?.type).toBe('service_result')
   })
 })

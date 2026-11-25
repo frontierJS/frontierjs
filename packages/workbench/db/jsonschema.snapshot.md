@@ -256,6 +256,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `team` — belongsTo `Team` via `teamExternalId` · optional
 - relation `members` — hasMany `ChannelMember`
 - relation `posts` — hasMany `Post`
+- relation `reactions` — hasMany `Reaction`
+- relation `files` — hasMany `FileInfo`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -358,6 +360,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:3 create:3 update:8 delete:3` · closed (`additionalProperties: false`)
 - relation `post` — belongsTo `Post` via `postExternalId`
+- relation `channel` — belongsTo `Channel` via `channelExternalId`
 - relation `profile` — belongsTo `Profile` via `profileExternalId`
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -365,6 +368,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `externalId` | `string` | — | — | `x-litestone-kind` | — |
 | `postExternalId` | `string` | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | — | — | `x-litestone-kind` | — |
 | `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
 | `emojiName` | `string` | — | — | `x-litestone-kind` | — |
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
@@ -375,6 +379,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 - gate `read:3 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
 - relation `post` — belongsTo `Post` via `postExternalId` · optional
+- relation `channel` — belongsTo `Channel` via `channelExternalId`
 - relation `profile` — belongsTo `Profile` via `profileExternalId`
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -382,6 +387,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `externalId` | `string` | — | — | `x-litestone-kind` | — |
 | `postExternalId` | `string`? | — | — | `x-litestone-kind` | — |
+| `channelExternalId` | `string` | — | — | `x-litestone-kind` | — |
 | `profileExternalId` | `string` | — | — | `x-litestone-kind` | — |
 | `name` | `string` | — | — | `x-litestone-kind` | — |
 | `extension` | `string` | — | — | `x-litestone-kind` | — |

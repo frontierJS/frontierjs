@@ -42,7 +42,7 @@ import { spawnSync }                                             from 'node:chil
 import { existsSync, readFileSync, writeFileSync, copyFileSync, statSync,
          readdirSync, mkdirSync, rmSync, realpathSync }           from 'node:fs'
 import { join, resolve, dirname, relative }                       from 'node:path'
-import { releasableMembers, memberByName }                    from './workspace-members.js'
+import { releasableMembers, memberByName, packageMembers, isHeldOut } from './workspace-members.js'
 import { readRuns, lastFullRun, retryPlan }                  from './ci-log.js'
 
 // Where the generated build context lands, relative to the app root. The
@@ -134,7 +134,13 @@ function sourceOfRoot(root, names) {
   const add   = (m) => { if (m.manifest.name && !found.has(m.dir)) found.set(m.dir, { name: m.manifest.name, dir: m.dir, private: !!m.manifest.private }) }
   for (const m of releasableMembers(root)) add(m)
   for (const name of names) { const m = memberByName(root, name); if (m) add(m) }
-  return found.size ? { dir: join(root, 'packages'), packages: [...found.values()] } : null
+  // The held-out members (packages/conduits/*) are not packed for sharing a
+  // scope, but one a packed package depends on must be -- `@frontierjs/claude`
+  // needs `conduit-anthropic`, and an image that installs claude from the tree
+  // would otherwise ask npm for a connector that was never published.
+  const held = packageMembers(root).filter(m => isHeldOut(m) && m.manifest.name && !found.has(m.dir))
+    .map(m => ({ name: m.manifest.name, dir: m.dir, private: !!m.manifest.private }))
+  return found.size ? { dir: join(root, 'packages'), packages: [...found.values()], held } : null
 }
 
 function sourceOfDir(dir) {
@@ -361,6 +367,16 @@ export function vendorWorkspacePackages({ appRoot, include = [], packagesDir: gi
   // costs a second and proves each still packs at all.
   const scopes  = new Set(names.map(scopeOf).filter(Boolean))
   const targets = source.packages.filter(p => names.includes(p.name) || (!p.private && scopes.has(scopeOf(p.name))))
+  // Close over the held-out members the targets depend on, theirs included.
+  const held = source.held ?? []
+  for (let i = 0; i < targets.length; i++) {
+    let deps = {}
+    try { deps = JSON.parse(readFileSync(join(targets[i].dir, 'package.json'), 'utf8')).dependencies ?? {} } catch { /* packPackage reports it */ }
+    for (const dep of Object.keys(deps)) {
+      const m = held.find(h => h.name === dep)
+      if (m && !targets.includes(m)) targets.push(m)
+    }
+  }
   const unfound = names.filter(n => !targets.some(t => t.name === n))
   if (unfound.length)
     throw new Error(`no package named ${unfound.join(', ')} in ${packagesDir} — the image would install it from nowhere`)

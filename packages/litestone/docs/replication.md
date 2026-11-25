@@ -165,9 +165,8 @@ check for you:
 litestone restore --from-backup db/backups/2026-10-06_1422 --force   # fli db:restore <dir> --force
 ```
 
-With `--from-backup` and no replica word on the line — `--url`, `--at` or
-`--verify` — every database comes from the backup directory, and litestream is
-not needed. `replicate.url` in the config does not count, so a local checkpoint
+With `--from-backup` and no replica word on the line — `--url` or `--at` —
+every database comes from the backup directory, and litestream is not needed. `replicate.url` in the config does not count, so a local checkpoint
 never reaches for the production replica. The directory's layout is the map:
 `<name>.db`, `<name>/` for jsonl and trail, `tenant-files/` and
 `tenant-registry/`, and `db-<path>.db` for a SQLite file under `db/` no schema
@@ -192,11 +191,14 @@ replaces files only with `--force`, the way a replica restore does, `-wal` and
 ## Proving a copy
 
 ```bash
-litestone restore --verify /tmp/drill --from-backup ./backups/2026-09-27_0300
+litestone restore --verify /tmp/drill --url s3://mybucket/myapp --from-backup ./backups/2026-09-27_0300
+litestone restore --verify /tmp/drill --from-backup ./backups/2026-09-27_0300   # the backup alone
 ```
 
 The same all-or-nothing restore, into an empty `<dir>` and never over a live
-path, laid out the way `litestone backup` writes. Then every file is graded,
+path, laid out the way `litestone backup` writes. With `--from-backup` and no
+`--url` or `--at` it is the backup that is restored and proved, with no
+litestream; its stored files are not copied, since no check reads them. Then every file is graded,
 from what the schema says about it rather than from the app's suite, which
 arranges its own rows and cannot run on real ones:
 

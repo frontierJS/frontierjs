@@ -30,8 +30,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { workbenchDir } from '../../core/env.ts'
-import { claudeConfigDir } from '../claude/claude-scan.ts'
-import { projectFolderName } from '../claude/claude-context.ts'
+import { claudeConfigDir, encodeCwd } from '@frontierjs/claude'
 import { expandPath, readCatalog, writeRecord } from './catalog.ts'
 
 export type MoveOptions = {
@@ -97,14 +96,14 @@ const transcripts = (folder: string): string[] =>
 export function historiesOf(src: string, projects: string): Array<{ folder: string, cwd: string }> {
   let names: string[]
   try { names = readdirSync(projects) } catch { return [] }
-  const own = projectFolderName(src)
+  const own = encodeCwd(src)
   const out: Array<{ folder: string, cwd: string }> = []
   for (const name of names) {
     if (name !== own && !name.startsWith(own + '-')) continue
     const folder = join(projects, name)
     if (!isDir(folder)) continue
     const cwd = transcripts(folder).map(firstCwd).find((c): c is string => !!c) ?? (name === own ? src : null)
-    if (cwd && under(cwd, src) && projectFolderName(cwd) === name) out.push({ folder, cwd })
+    if (cwd && under(cwd, src) && encodeCwd(cwd) === name) out.push({ folder, cwd })
   }
   return out
 }
@@ -191,7 +190,7 @@ export function movePrototype(name: string, into: string, o: MoveOptions = {}): 
   if (busy) return { refused: `a process is running in ${busy} — stop it first, or it keeps writing to the old place` }
 
   const projects = join(o.claudeDir || claudeConfigDir(), 'projects')
-  const histories = historiesOf(src, projects).map(h => ({ ...h, next: join(projects, projectFolderName(rebase(h.cwd, src, dest))) }))
+  const histories = historiesOf(src, projects).map(h => ({ ...h, next: join(projects, encodeCwd(rebase(h.cwd, src, dest))) }))
   const taken = histories.find(h => existsSync(h.next))
   if (taken) return { refused: `Claude Code already has history at ${taken.next} — merge or remove it first` }
 

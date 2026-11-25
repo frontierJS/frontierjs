@@ -17,8 +17,9 @@
 // the server's, not tauri://localhost, so an origin or CORS fault shows only
 // in the bundled build.
 //
-// A release build reads neither variable and registers no command, so a
-// shipped app cannot be scripted or repointed from its environment.
+// A release build reads neither variable, so a shipped app cannot be scripted
+// or repointed from its environment. Its one command is tray_unread, which
+// only sets the tray's label.
 //
 // A webview with no new-window handler drops every target=_blank link without
 // a sound, so each one goes to the system browser instead.
@@ -113,12 +114,15 @@ fn main() {
     } else {
         builder
     };
+    // invoke_handler replaces, never adds, so each build names its full list.
     #[cfg(debug_assertions)]
     let builder = if probe.is_some() {
-        builder.invoke_handler(tauri::generate_handler![probe_report, probe_done])
+        builder.invoke_handler(tauri::generate_handler![probe_report, probe_done, tray::tray_unread])
     } else {
-        builder
+        builder.invoke_handler(tauri::generate_handler![tray::tray_unread])
     };
+    #[cfg(not(debug_assertions))]
+    let builder = builder.invoke_handler(tauri::generate_handler![tray::tray_unread]);
 
     builder
         .setup(move |app| {

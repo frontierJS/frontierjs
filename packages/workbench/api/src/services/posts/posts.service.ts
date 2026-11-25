@@ -16,9 +16,9 @@ export default createService({
     after: {
       create: [async (ctx: any) => {
         const ids = (ctx.data as { fileExternalIds?: unknown } | undefined)?.fileExternalIds
-        const post = ctx.result as { externalId?: string, profileExternalId?: string } | null
-        if (!Array.isArray(ids) || !post?.externalId || !post.profileExternalId) return
-        await attach(ctx.app as App, { externalId: post.externalId, profileExternalId: post.profileExternalId }, ids.map(String))
+        const post = ctx.result as { externalId?: string, channelExternalId?: string, profileExternalId?: string } | null
+        if (!Array.isArray(ids) || !post?.externalId || !post.channelExternalId || !post.profileExternalId) return
+        await attach(ctx.app as App, { externalId: post.externalId, channelExternalId: post.channelExternalId, profileExternalId: post.profileExternalId }, ids.map(String))
       }],
     },
   },

@@ -1512,6 +1512,12 @@ class Parser {
       // already become `description`; a label is the short form, not the prose.
       case 'label':      return { kind: 'label', text: this.parseParenString() }
 
+      // @deprecated or @deprecated("use fullName instead") — this column is on
+      // its way out. Annotation only: DDL, reads, writes and validation are
+      // untouched. It reaches JSON Schema as `deprecated: true` and the
+      // generated types as a JSDoc `@deprecated` tag; the reason is for the tag.
+      case 'deprecated': return { kind: 'deprecated', reason: this.check(TK.LPAREN) ? this.parseParenString() : null }
+
       // @required("Please select a customer from the list")
       //
       // Carries the WORDING only — it does not make the field required. The

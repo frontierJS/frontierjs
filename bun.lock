@@ -107,6 +107,8 @@
       "name": "@frontierjs/claude",
       "version": "0.0.1",
       "dependencies": {
+        "@frontierjs/conduit": "workspace:*",
+        "@frontierjs/conduit-anthropic": "workspace:*",
         "@frontierjs/toolbelt": "workspace:*",
       },
       "devDependencies": {
@@ -914,6 +916,7 @@
         "@frontierjs/claude": "workspace:*",
         "@frontierjs/conduit": "workspace:*",
         "@frontierjs/conduit-37signals": "workspace:*",
+        "@frontierjs/conduit-anthropic": "workspace:*",
         "@frontierjs/conduit-digitalocean": "workspace:*",
         "@frontierjs/conduit-hetzner": "workspace:*",
         "@frontierjs/conduit-mattermost": "workspace:*",

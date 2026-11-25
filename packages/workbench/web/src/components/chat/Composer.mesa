@@ -99,6 +99,17 @@
   }
   $.onDestroy(() => { if (text !== synced) flush(bound, text) })
 
+  // field-sizing grows the box with its text; WebKitGTK (the desktop shell)
+  // and Firefox lack it and hold every draft in one line. The CSS
+  // max-block-size still caps what this sets.
+  const SIZES_ITSELF = typeof CSS === 'undefined' || CSS.supports('field-sizing', 'content')
+  function fit() {
+    if (SIZES_ITSELF || !box) return
+    box.style.blockSize = 'auto'
+    box.style.blockSize = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`
+  }
+  $: text, box, () => { requestAnimationFrame(fit) }
+
   // ── @ ──
   function watchMention() {
     picker = mentionAt(text, box?.selectionStart ?? text.length, people, memberIds, inChannel, lists.groups.rows)
@@ -271,7 +282,7 @@
       <button type="button" class="btn primary square composer-send" aria-label="Send" title="Send (Enter)" disabled={sending || uploading || (!text.trim() && !ready.length)} onclick={send}><Icon name="send" /></button>
     </div>
   </div>
-  <p class="text-xs text-muted composer-hint">Enter sends · Shift+Enter for a new line · @ names someone{#if !rootExternalId} · / for commands{/if}</p>
+  <p class="text-xs composer-hint" aria-hidden="true">&nbsp;</p>
 </div>
 <WhenDialog bind:open={whenOpen} title="Send later" action="Schedule" onpick={later} />
 

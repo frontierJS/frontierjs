@@ -354,6 +354,8 @@ model Channel {
   deletedAt         DateTime?
   members           ChannelMember[]
   posts             Post[]
+  reactions         Reaction[]
+  files             FileInfo[]
 
   @@db(chat)
   @@mirror(key: externalId)
@@ -473,6 +475,10 @@ model Reaction {
   externalId        String
   postExternalId    String
   post              Post      @relation(fields: [postExternalId], references: [externalId])
+  // The post's room, copied so a room's reactions are one read and one tether;
+  // create holds the copy to the post's.
+  channelExternalId String
+  channel           Channel   @relation(fields: [channelExternalId], references: [externalId])
   profileExternalId String
   profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
   emojiName         String
@@ -481,10 +487,11 @@ model Reaction {
   @@db(chat)
   @@mirror(key: externalId)
   @@index([postExternalId])
+  @@index([channelExternalId])
   @@index([profileExternalId])
   @@gate(3.3.8.3)
   @@allow(read, check(post))
-  @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read'))
+  @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId)
   @@allow(delete, profileExternalId == auth().profileExternalId)
 }
 
@@ -496,6 +503,10 @@ model FileInfo {
   externalId        String
   postExternalId    String?
   post              Post?     @relation(fields: [postExternalId], references: [externalId])
+  // The room it was uploaded to, known before any post claims it; attach
+  // refuses a post in another room, so the copy is the post's.
+  channelExternalId String
+  channel           Channel   @relation(fields: [channelExternalId], references: [externalId])
   profileExternalId String
   profile           Profile   @relation(fields: [profileExternalId], references: [externalId])
   name              String
@@ -512,6 +523,7 @@ model FileInfo {
   @@db(chat)
   @@mirror(key: externalId)
   @@index([postExternalId])
+  @@index([channelExternalId])
   @@index([profileExternalId])
   @@gate(3.8.8.8)
   @@allow(read, profileExternalId == auth().profileExternalId || (postExternalId != null && check(post)))

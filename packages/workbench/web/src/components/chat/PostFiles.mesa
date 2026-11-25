@@ -1,17 +1,19 @@
 <script>
   // components/chat/PostFiles.mesa -- the files under a post. A post row does not say
-  // whether it has any, and a FileInfo row names its post and nothing above it, so each
-  // post asks for its own: a file shows once its row has landed, which an upload's own
-  // answer or the sync does, and a deleted one is gone from the list.
+  // whether it has any; the rows come from the room's one FileInfo tether (roomExtras),
+  // so a file shows once its row has landed, which an upload's own answer or the sync
+  // does, and a deleted one is gone from the list. A list across rooms passes no rows,
+  // and then the post asks for its own.
   import { fileInfos } from '../../resources/FileInfo.mesa'
   import { attachmentOf } from '../../lib/files.js'
   import FileCard from './FileCard.mesa'
 
   export let post = null
+  export let rows = undefined   // the post's FileInfo rows, from its room's tether
 
-  const list = fileInfos.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } })
-  $.onDestroy(() => list.destroy())
-  $: files = list.rows.filter(f => !f.deletedAt).map(attachmentOf)
+  var own = rows === undefined ? fileInfos.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } }) : null
+  $.onDestroy(() => own?.destroy())
+  $: files = (own ? own.rows : rows).filter(f => !f.deletedAt).map(attachmentOf)
 </script>
 
 {#if files.length}

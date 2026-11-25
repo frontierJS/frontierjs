@@ -83,7 +83,7 @@ export interface ThreadRow {
   isFollowing: boolean
 }
 export interface ReactionRow {
-  externalId: string; postExternalId: string; profileExternalId: string; emojiName: string; createdAt: Date | null
+  externalId: string; postExternalId: string; channelExternalId: string; profileExternalId: string; emojiName: string; createdAt: Date | null
 }
 export interface ProfileRow {
   externalId: string; username: string; firstName: string; lastName: string; nickname: string
@@ -104,7 +104,7 @@ export interface ProfileRow {
   customEmoji?: string | null; customText?: string | null; customExpiresAt?: Date | null
 }
 export interface FileInfoRow {
-  externalId: string; postExternalId: string | null; profileExternalId: string
+  externalId: string; postExternalId: string | null; channelExternalId: string; profileExternalId: string
   name: string; extension: string; size: number; mimeType: string
   width: number | null; height: number | null; hasPreviewImage: boolean
   createdAt: Date | null; updatedAt: Date | null; deletedAt: Date | null
@@ -247,11 +247,22 @@ export const threadModel: MirrorModel<ThreadRow, UserThread, never, never, Mirro
   },
 }
 
-export const reactionModel: MirrorModel<ReactionRow, Reaction, { postExternalId: string; profileExternalId: string; emojiName: string }> = {
+/**
+ * The channel a reaction or a file belongs to, which the row carries so a
+ * room's reactions and files are one read. The payload's own wins; where an
+ * older server leaves it out, the caller holding the post (or the upload's
+ * channel) names it, and a row with neither is not read.
+ */
+export interface InChannel { channelExternalId?: string | null }
+const channelOf = (own: string | undefined, scope: InChannel | undefined): string | null =>
+  isId(own) ? own : isId(scope?.channelExternalId) ? scope!.channelExternalId! : null
+
+export const reactionModel: MirrorModel<ReactionRow, Reaction, { postExternalId: string; profileExternalId: string; emojiName: string }, never, InChannel> = {
   key: 'externalId', target: MATTERMOST_USER_TARGET,
-  parse(r) {
-    if (!r || !isId(r.post_id) || !isId(r.user_id) || !r.emoji_name) return null
-    return { externalId: reactionKey(r.post_id, r.user_id, r.emoji_name), postExternalId: r.post_id, profileExternalId: r.user_id, emojiName: r.emoji_name, createdAt: at(r.create_at) }
+  parse(r, scope) {
+    const channel = r ? channelOf(r.channel_id, scope) : null
+    if (!r || !isId(r.post_id) || !isId(r.user_id) || !r.emoji_name || !channel) return null
+    return { externalId: reactionKey(r.post_id, r.user_id, r.emoji_name), postExternalId: r.post_id, channelExternalId: channel, profileExternalId: r.user_id, emojiName: r.emoji_name, createdAt: at(r.create_at) }
   },
   create(input) {
     if (!/^[a-z0-9_+-]+$/.test(input.emojiName ?? '')) throw new TypeError('mattermost: an emoji name is its short code without colons — thumbsup')
@@ -296,12 +307,13 @@ function embedsOf(metadata: unknown): EmbedRow[] {
   return out
 }
 
-export const fileInfoModel: MirrorModel<FileInfoRow, FileInfo> = {
+export const fileInfoModel: MirrorModel<FileInfoRow, FileInfo, never, never, InChannel> = {
   key: 'externalId', target: MATTERMOST_TARGET,
-  parse(f) {
-    if (!f || !isId(f.id)) return null
+  parse(f, scope) {
+    const channel = f ? channelOf(f.channel_id, scope) : null
+    if (!f || !isId(f.id) || !channel) return null
     return {
-      externalId: f.id, postExternalId: f.post_id || null, profileExternalId: f.user_id,
+      externalId: f.id, postExternalId: f.post_id || null, channelExternalId: channel, profileExternalId: f.user_id,
       name: f.name, extension: f.extension ?? '', size: f.size ?? 0, mimeType: f.mime_type ?? 'application/octet-stream',
       width: f.width ?? null, height: f.height ?? null, hasPreviewImage: !!f.has_preview_image,
       createdAt: at(f.create_at), updatedAt: at(f.update_at), deletedAt: at(f.delete_at),

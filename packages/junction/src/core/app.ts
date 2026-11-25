@@ -985,7 +985,7 @@ export interface ServiceCaller {
 const APP_SLOTS = {
   auth:            "createApp({ auth }) or app.configure(auth({ auth })) from '@frontierjs/auth'",
   mail:            "app.configure(mail({ mailer })) from '@frontierjs/junction/mail'",
-  ai:              "app.configure(ai({ registry })) from '@frontierjs/junction/ai'",
+  ai:              "app.configure(ai({ doors })) from '@frontierjs/junction/ai'",
   conduit:         "app.configure(conduit()) from '@frontierjs/conduit'",
   jobs:            "app.configure(caravan()) from '@frontierjs/caravan'",
   mcp:             "app.configure(mcp()) from '@frontierjs/mcp'",

@@ -5,6 +5,8 @@
 // backed key-value store and the app's AI adapters.
 // ─────────────────────────────────────────────
 
+import type { Question, Reply } from "@frontierjs/toolbelt/ask"
+
 // ─── store node ────────────────────────────────
 
 // `scope` is `global`, `flow:<flowId>` or `run:<runId>` (`FJS-D281`). Tenancy
@@ -111,29 +113,10 @@ export interface IOutbound {
 }
 
 // ─── ai node ───────────────────────────────────
-// The app's own models, by name — `IAIModel` in junction's shape. Vendor code is
-// the app's (`FJS-D153`), so orion knows a message list and nothing about who
-// answers it.
+// The app's own AI doors, by name: `app.ai` in junction's shape, each one a
+// `@frontierjs/toolbelt/ask` Door. Vendor code is the app's (`FJS-D153`), so
+// orion knows a question and a reply and nothing about who answers.
 
-export interface AIMessage {
-  role:    "user" | "assistant" | "system"
-  content: string
-}
-
-export interface AIRequest {
-  messages:     AIMessage[]
-  system?:      string
-  maxTokens?:   number
-  temperature?: number
-}
-
-export interface AIResponse {
-  content:       string
-  model:         string
-  inputTokens?:  number
-  outputTokens?: number
-}
-
-export interface IAIModels {
-  complete(actor: unknown, model: string, req: AIRequest): Promise<AIResponse>
+export interface IAIDoors {
+  ask(actor: unknown, model: string, question: Question): Promise<Reply>
 }

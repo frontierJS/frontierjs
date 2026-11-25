@@ -1509,7 +1509,7 @@ deploy: {
 ```
 
 Declared, the image is built there once and shipped with
-`docker save | docker load`, which preserves the image ID — so the digest the
+`docker save | gzip | docker load`, which preserves the image ID — so the digest the
 Release names is the digest that starts. No registry; `IDEAS/deploy-plane.md`
 keeps three distribution strategies open and this is the one that needs no
 infrastructure.

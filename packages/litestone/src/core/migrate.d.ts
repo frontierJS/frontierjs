@@ -74,7 +74,7 @@ export function diffSchemas(pristine?: any, live?: any, parseResult?: any, dbNam
     pluralize?: boolean;
 }): {
     newTables: any;
-    newJoinTables: string[];
+    newJoinTables: any[];
     newMatViews: any;
     newViews: any;
     changedViews: any;

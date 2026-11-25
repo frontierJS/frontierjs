@@ -7387,7 +7387,7 @@ export function makeAwaitBlock(data, label) {
 
   return xNode(
     'await:bind',
-    { label, exp, pendingBlock, thenBlock, catchBlock, thenValue, catchValue, deps },
+    { label, exp, pendingBlock, thenBlock, catchBlock, thenValue, catchValue, deps, fresh: deps !== undefined },
     (w, n) => {
       w.writeLine(`$$runtime.awaitBlock(${n.label.name}, () => (${n.exp}),`)
       w.indent++
@@ -7400,7 +7400,7 @@ export function makeAwaitBlock(data, label) {
       const catchArgs = (val) => val ? `(${val}) => `  : '() => '
       w.write(true)
       n.pendingBlock
-        ? (w.write(pendingArgs), w.add(n.pendingBlock))
+        ? (w.write(pendingArgs + (n.fresh ? FRESH_OPEN : '')), w.add(n.pendingBlock), n.fresh && w.write(FRESH_CLOSE))
         : w.write('null')
       w.write(',')
       w.write(true)
@@ -11003,9 +11003,16 @@ function _domTraversal(code) {
 // A block body's template argument: the hoisted template, or a <mesa:element>'s
 // dynamicElement around one. Two groups: the whole argument, and the inner template.
 const BLOCK_TEMPLATE = '(\\$\\$tpl\\d+|\\$\\$runtime\\.dynamicElement\\([^\\n]*?, (\\$\\$tpl\\d+)\\))'
+// A {:pending} body never runs while its block adopts -- hydAwait shows the
+// server's settled branch in its place -- so it stays the unflagged body, set
+// aside between these marks; an adopting half there takes keys no page holds.
+const FRESH_OPEN = '/*$$fresh{*/', FRESH_CLOSE = '/*}$$fresh*/'
+const FRESH_INNERMOST = /\/\*\$\$fresh\{\*\/((?:(?!\/\*\$\$fresh\{\*\/)[^])*?)\/\*\}\$\$fresh\*\//g
 const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['keyBlock', 'hydKey'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
 
 function _adoptRoots(code, ctx) {
+  const fresh = []
+  for (let prev; prev !== code;) prev = code, code = code.replace(FRESH_INNERMOST, (_, body) => `/*$$fresh${fresh.push(body) - 1}*/`)
   const byName = new Map()
   for (const { holder, key } of ctx.hydrationVars ?? []) {
     const name = typeof holder.bindName === 'function' ? holder.bindName() : holder.name
@@ -11090,6 +11097,7 @@ function _adoptRoots(code, ctx) {
     }
   )
   for (const [from, to] of ADOPTING_CALLS) out = out.split(`$$runtime.${from}(`).join(`$$runtime.${to}(`)
+  for (let prev; prev !== out;) prev = out, out = out.replace(/\/\*\$\$fresh(\d+)\*\//g, (_, i) => fresh[i])
   return out
 }
 
@@ -11236,7 +11244,7 @@ export const REACHED_ELEMENT = new Set([
  * resolved only after the build, since labels are named while writing.
  */
 export function hydrationVar(ctx, holder, offset) {
-  if (!ctx.config?.hydratable || TARGETS[ctx.config.target]) return
+  if (!ctx.config?.hydratable || TARGETS[ctx.config.target] || ctx.unkeyed) return
   if (!ctx.hydrationVars) ctx.hydrationVars = []
   ctx.hydrationVars.push({ holder, key: bindingKey(offset) })
 }
@@ -11411,7 +11419,7 @@ export function readSourceMarks(code) {
   return out
 }
 
-function hoistTemplates(code) {
+function hoistTemplates(code, hydratable) {
   const seen = new Map() // key → tplName
   const decls = []
   let idx = 0
@@ -11447,6 +11455,23 @@ function hoistTemplates(code) {
       return getOrAdd(tpl, flags)
     }
   )
+
+  // A hydratable block body is adopted through its template's name, which
+  // `_adoptRoots` matches and `root()` parses; an svg or text body left inline
+  // was never adopted, and its walk ran over the server's markers (FJS-4598).
+  if (hydratable) {
+    code = code.replace(
+      /makeBlock\(\$\$runtime\.(svgToFragment|createTextNode)\(`((?:[^`\\]|\\.)*)`(?:, \d+)?\)/g,
+      (_, fn, tpl) => {
+        const key = `${fn}|${tpl}`
+        if (!seen.has(key)) {
+          seen.set(key, `$$tpl${idx}`)
+          decls.push(`var $$tpl${idx++} = () => $$runtime.${fn}(\`${tpl}\`);`)
+        }
+        return `makeBlock(${seen.get(key)}`
+      }
+    )
+  }
 
   if (!decls.length) return code
 
@@ -12494,8 +12519,9 @@ async function assembleOutput(ctx, hook) {
       }
     })
     for (const k in ctx.glob ?? {}) resolveDependencies(ctx.glob[k])
-    const built = _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning }))), ctx.analysis?.opaqueValues).replace(/^const \$\$set_/mg, (m) => '  ' + m)
-    return ctx.config.hydratable && !TARGETS[ctx.config.target] ? _adoptRoots(built, ctx) : built
+    const adopts = ctx.config.hydratable && !TARGETS[ctx.config.target]
+    const built = _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning }), adopts)), ctx.analysis?.opaqueValues).replace(/^const \$\$set_/mg, (m) => '  ' + m)
+    return adopts ? _adoptRoots(built, ctx) : built
   })
 
   // Position markers are OFF unless asked for, and the caller that asks is the

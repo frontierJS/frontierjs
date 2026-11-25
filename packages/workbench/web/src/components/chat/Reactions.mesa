@@ -1,12 +1,11 @@
 <script>
   // components/chat/Reactions.mesa -- the row of `emoji · n` under a post. Mine is
   // marked; a click toggles mine; the title names who. The `+` at the end opens the
-  // picker. The post's Reaction rows are a tether of their own, so a reaction from
-  // another person (or the reader's from another tab) arrives as a push.
+  // picker. The rows come from the room's one Reaction tether (roomExtras), so a
+  // reaction from another person (or the reader's from another tab) arrives as a push.
   //
-  // One tether per post: a Reaction row names its post and nothing above it, so the
-  // channel cannot be asked for its reactions at once, and a `$in` over the rows on
-  // screen would be re-made every time a post lands.
+  // A list across rooms (saved, search, activity) passes no rows, and then the post
+  // asks for its own: that list has no one room to ask.
   import { reactions } from '../../resources/Reaction.mesa'
   import { glyphOf } from '../../lib/emoji.js'
   import { me, reactionChips, toggleReaction } from '../../lib/chat.js'
@@ -16,18 +15,19 @@
   export let post   = null
   export let people = []
   export let onerror = undefined
+  export let rows   = undefined   // the post's Reaction rows, from its room's tether
 
-  const list = reactions.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } })
-  $.onDestroy(() => list.destroy())
+  var own = rows === undefined ? reactions.tethered({ state: 'local', all: true, where: { postExternalId: post.externalId } }) : null
+  $.onDestroy(() => own?.destroy())
 
-  $: rows  = list.rows
-  $: chips = reactionChips(rows, me(), people)
+  $: have  = own ? own.rows : rows
+  $: chips = reactionChips(have, me(), people)
 
   let busy = false
   export async function toggle(name) {
     if (busy) return
     busy = true
-    try { await toggleReaction(post, name, rows, me()) } catch (e) { onerror?.(e) } finally { busy = false }
+    try { await toggleReaction(post, name, have, me()) } catch (e) { onerror?.(e) } finally { busy = false }
   }
 </script>
 

@@ -1,6 +1,6 @@
-// ─── claude-boundary.js — who may start the `claude` program ──────────────────
+// ─── claude-boundary.js — who may start the `claude` program, and hold its login ──
 //
-// Two rules about `@frontierjs/claude` (`IDEAS/claude-calls.md` Phase 2.3):
+// Three rules about `@frontierjs/claude` (`IDEAS/claude-calls.md` 2.3, 5.2):
 //
 //   1. The package imports nothing from `@frontierjs/cli`. The cli depends on
 //      it, so a reverse import is a cycle that only shows when a consumer
@@ -8,11 +8,10 @@
 //   2. Nothing outside the package starts the program. Every caller that builds
 //      its own command line is one more place the flags, the budget and the
 //      stream reader can drift, which is what the package was extracted to end.
-//
-// Rule 2 is not yet true: Phases 3-5 move the remaining callers. So it is a
-// ratchet, `scripts/claude-spawners.json`, one entry per file that still starts
-// `claude`, each naming the plan step that removes it. An unlisted starter fails,
-// and so does a listed file that stopped, which keeps the list shrinking.
+//   3. Nothing outside the package reads the claude.ai login. Its token is in
+//      `.credentials.json` and its one use is the `oauth/usage` endpoint; a
+//      second reader is a second chance to refresh the token, which signs out
+//      every running `claude`, or to print it.
 //
 // What counts as starting it: a process-start call (`spawn`, `execFile`,
 // `Bun.spawn`, a tagged `$` template) whose command is the literal `claude` or
@@ -21,10 +20,9 @@
 // named in a start call, so no fake reads as a starter.
 
 import { join, relative, resolve, dirname, sep } from 'path'
-import { readdirSync, readFileSync, statSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, statSync } from 'fs'
 
 export const CLAUDE_PACKAGE   = 'packages/claude'
-export const SPAWNERS_FILE    = 'scripts/claude-spawners.json'
 export const SCAN_ROOTS       = ['packages', 'scripts', 'example', 'website']
 
 const SOURCE     = /\.(m?js|cjs|ts|tsx|jsx|mesa)$/
@@ -95,43 +93,39 @@ export function startsClaude(text) {
   return m[1] ? BINDS.test(src) : true
 }
 
-/** Root-relative paths of every file outside packages/claude that starts the program. */
-export function claudeStarters(root) {
+/** Root-relative paths of every file outside packages/claude whose code `test` holds. */
+function outside(root, test) {
   const own = join(root, CLAUDE_PACKAGE) + sep
   const found = []
   for (const top of SCAN_ROOTS) for (const file of sourceFiles(join(root, top))) {
     if (file.startsWith(own)) continue
     let text
     try { text = readFileSync(file, 'utf8') } catch { continue }
-    if (startsClaude(text)) found.push(relative(root, file).split(sep).join('/'))
+    if (test(text)) found.push(relative(root, file).split(sep).join('/'))
   }
   return found.sort()
 }
 
-/** The ratchet: `{ '<path>': '<plan step that removes it>' }`; the `//` key is the file's own note. */
-export function readSpawners(root) {
-  try {
-    const { '//': _note, ...list } = JSON.parse(readFileSync(join(root, SPAWNERS_FILE), 'utf8'))
-    return list
-  } catch { return {} }
+/** Root-relative paths of every file outside packages/claude that starts the program. */
+export const claudeStarters = root => outside(root, startsClaude)
+
+/** `{ file, message }` for each file outside the package that starts `claude`. */
+export function claudeSpawnFindings(root) {
+  return claudeStarters(root).map(rel => ({ file: join(root, rel),
+    message: 'starts the `claude` program itself. Go through `@frontierjs/claude` ' +
+             '(`runAsk`, `sessionArgv`, `claudeDoor`, `runClaude`).' }))
 }
 
-/** `{ file, message }` for an unlisted starter and for a listed file that no longer starts it. */
-export function claudeSpawnFindings(root) {
-  const listed  = readSpawners(root)
-  const found   = new Set(claudeStarters(root))
-  const out = []
-  for (const rel of found) {
-    if (rel in listed) continue
-    out.push({ file: join(root, rel),
-      message: 'starts the `claude` program itself. Go through `@frontierjs/claude` (`runAsk`, `sessionArgv`), ' +
-               'or, if this caller is moving in a later phase, list it in `scripts/claude-spawners.json` with the plan step that removes it.' })
-  }
-  for (const [rel, step] of Object.entries(listed)) {
-    if (found.has(rel)) continue
-    out.push({ file: join(root, SPAWNERS_FILE),
-      message: `lists ${rel} (${step}), which no longer starts \`claude\` ` +
-               (existsSync(join(root, rel)) ? '' : '(the file is gone) ') + '-- delete the entry so the list only shrinks.' })
-  }
-  return out
+// ─── rule 3: nothing outside the package reads the login ─────────────────────
+
+const LOGIN = /\.credentials\.json|oauth\/usage/
+
+/** Does this source name the login's file or its usage endpoint in code? */
+export const readsLogin = text => LOGIN.test(code(text))
+
+/** `{ file, message }` for each file outside the package that names the login's file or endpoint. */
+export function claudeLoginFindings(root) {
+  return outside(root, readsLogin).map(rel => ({ file: join(root, rel),
+    message: 'reads the claude.ai login: its credentials file or its usage endpoint. Go through `@frontierjs/claude`\'s ' +
+             '`fetchUsage` or `countContext`, which read the token and never refresh it.' }))
 }
