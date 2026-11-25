@@ -14,6 +14,7 @@ import {
   appTsconfig, appBiomeJson, appCheckScripts, appSurfaceScripts, appWorkflow, appAgentsMd, appAgentsProjectMd, appClaudeMd,
 } from '../core/app-config.js'
 import { RULES }                             from '../core/checks.js'
+import { memberByName }                      from '../core/workspace-members.js'
 import { extensionDevDeps }                  from '../core/extension-surface.js'
 import { siteDevDeps }                       from '../core/site-surface.js'
 import { addSurfaceToTsconfig }              from '../core/scaffold/surface.js'
@@ -559,15 +560,17 @@ describe('every dependency a scaffold writes is an exact version', () => {
   const EXACT = /^\d+\.\d+\.\d+$/
   const written = { ...FJS_PACKAGES, ...APP_DEV_DEPS, ...FJS_TRANSITIVE }
   const pinned  = Object.entries(written).filter(([name]) => name.startsWith('@frontierjs/') || name === 'bun-types')
+  // A connector sits under packages/conduits/, not beside cli.
+  const pkgOf   = name => memberByName(resolve(CLI, '..', '..'), name)?.manifest
 
   test('the pins reach every framework package a pinned one depends on', () => {
     // A `--source url` app overrides only what is pinned here, and bun asks npm
     // for the rest at a version only the package host serves.
-    const pkgOf = name => JSON.parse(readFileSync(join(CLI, '..', name.split('/')[1], 'package.json'), 'utf8'))
     const missing = []
     for (const [name] of pinned) {
       if (!name.startsWith('@frontierjs/')) continue
       const pkg = pkgOf(name)
+      expect(pkg, name).toBeDefined()
       for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'])
         for (const dep of Object.keys(pkg[field] ?? {}))
           if (dep.startsWith('@frontierjs/') && !(dep in written)) missing.push(`${name} → ${dep}`)
@@ -588,9 +591,8 @@ describe('every dependency a scaffold writes is an exact version', () => {
     const bad = []
     for (const [name, spec] of pinned) {
       if (!name.startsWith('@frontierjs/')) continue
-      let tree
-      try { tree = JSON.parse(readFileSync(join(CLI, '..', name.split('/')[1], 'package.json'), 'utf8')).version }
-      catch { continue }
+      const tree = pkgOf(name)?.version
+      if (!tree) continue
       const [pa, pb, pc] = spec.split('.').map(Number)
       const [ta, tb, tc] = tree.split('.').map(Number)
       if (pa !== ta || pb !== tb || pc > tc) bad.push(`${name}: pinned ${spec}, tree ${tree}`)

@@ -260,8 +260,32 @@ fn show(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
         let _ = window.unminimize();
-        let _ = window.set_focus();
+        raise(&window);
     }
+}
+
+// GNOME refuses a raise stamped older than the user's last input and posts
+// "Workbench is ready" instead. set_focus stamps the window's own last input,
+// which a click on the tray (gnome-shell's, not ours) is newer than, so on X11
+// the raise carries the server's current time.
+#[cfg(target_os = "linux")]
+fn raise(window: &tauri::WebviewWindow) {
+    let w = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        use gtk::prelude::*;
+        let Ok(gtk_window) = w.gtk_window() else { return };
+        let now = gtk_window
+            .window()
+            .and_then(|g| g.downcast::<gdkx11::X11Window>().ok())
+            .map(|x| gdkx11::functions::x11_get_server_time(&x))
+            .unwrap_or(gtk::gdk::ffi::GDK_CURRENT_TIME as u32);
+        gtk_window.present_with_time(now);
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn raise(window: &tauri::WebviewWindow) {
+    let _ = window.set_focus();
 }
 
 // A minimized window still reports visible, so it is brought back rather than

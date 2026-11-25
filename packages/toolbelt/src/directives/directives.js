@@ -567,14 +567,14 @@ export function resolveCallerTokens(query, claims) {
   const walk = (v) => {
     if (Array.isArray(v)) return v.map(walk)
     if (!v || typeof v !== 'object') return v
-    if (Object.prototype.hasOwnProperty.call(v, CALLER_TOKEN)) {
+    if (Object.hasOwn(v, CALLER_TOKEN)) {
       found = true
       const name = v[CALLER_TOKEN]
       if (Object.keys(v).length !== 1 || typeof name !== 'string' || name === '') {
         malformed.push(JSON.stringify(v))
         return v
       }
-      const held = claims && Object.prototype.hasOwnProperty.call(claims, name) ? claims[name] : undefined
+      const held = claims && Object.hasOwn(claims, name) ? claims[name] : undefined
       if (!isClaimValue(held)) { unknown.push(name); return v }
       return held
     }

@@ -235,14 +235,28 @@ const repo = $.wsRepo(all)
 // and not the other is completed, not bumped and not republished.
 const { unpublished, untaggedBumps, releaseSet } = await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 
+// A first release whose CI gate failed has no tag to measure its bump against,
+// so it read as never released and the rerun bumped past the unshipped version.
+// The release commit that last moved the manifest's version stands in: the
+// version before it is where the bump came from.
+const { execFileSync } = await import('child_process')
+const releaseCommitFrom = (dir) => {
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  try {
+    const [sha, subject = ''] = git('log', '-1', '--format=%H%x09%s', '-G"version"', '--', 'package.json').split('\t')
+    if (!sha || !subject.startsWith('chore(release):')) return ''
+    return JSON.parse(git('show', `${sha}^:./package.json`)).version ?? ''
+  } catch { return '' }
+}
+
 const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   const state  = $.git.pkgState(pkg.name, dir)
   const tagged = state.lastTag === releaseTag(pkg.name, pkg.version)
-  const lastTagVersion = state.lastTag ? state.lastTag.slice(pkg.name.length + 1) : ''
+  const bumpedFrom = state.lastTag ? state.lastTag.slice(pkg.name.length + 1) : releaseCommitFrom(dir)
   const holds  = hosts(repo ?? dir)
-  // An untagged version ahead of the last tag may be a bump whose CI gate failed
-  // before the tag was written, so the hosts are asked about it too.
-  const held   = tagged || (lastTagVersion && lastTagVersion !== pkg.version)
+  // An untagged version ahead of the last release may be a bump whose CI gate
+  // failed before the tag was written, so the hosts are asked about it too.
+  const held   = tagged || (bumpedFrom && bumpedFrom !== pkg.version)
     ? await Promise.all(to.map(d => holds[d](pkg.name, pkg.version))) : []
   const missing   = to.filter((d, i) => held[i] === false)
   const published = !tagged ? false : held.some(h => h === null) ? null : missing.length === 0
@@ -250,7 +264,7 @@ const onHosts = await Promise.all(packages.map(async ({ dir, pkg }) => {
   // destination lacks. The remote, not the local tag list, says what is public.
   const needsRemote = tagged && state.affected && published === false
   const pushed = needsRemote ? await remoteHasTag(repo ?? dir, releaseTag(pkg.name, pkg.version)) : undefined
-  return { name: pkg.name, version: pkg.version, tagged, lastTagVersion, moved: state.affected, published, missing, pushed,
+  return { name: pkg.name, version: pkg.version, tagged, bumpedFrom, moved: state.affected, published, missing, pushed,
            none: held.length > 0 && held.every(h => h === false) }
 }))
 const { pending, unknown, moved: movedAll, fromTag } = unpublished(onHosts)

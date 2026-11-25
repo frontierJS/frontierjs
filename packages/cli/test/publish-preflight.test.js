@@ -409,14 +409,14 @@ describe('a release in flight', () => {
 })
 
 describe('an untagged bump', () => {
-  const m = (o) => ({ name: 'a', version: '0.1.2', lastTagVersion: '0.1.1', tagged: false, none: true, ...o })
+  const m = (o) => ({ name: 'a', version: '0.1.2', bumpedFrom: '0.1.1', tagged: false, none: true, ...o })
 
   test('a version ahead of the last tag that no host holds is resumed, not bumped over', () => {
     expect(untaggedBumps([m({})])).toEqual(['a'])
   })
 
   test('a tagged version, a first release, or a host that holds it is not one', () => {
-    expect(untaggedBumps([m({ tagged: true }), m({ lastTagVersion: '' }), m({ none: false })])).toEqual([])
+    expect(untaggedBumps([m({ tagged: true }), m({ bumpedFrom: '' }), m({ none: false })])).toEqual([])
   })
 
   test('a version at or below the last tag is not a bump', () => {

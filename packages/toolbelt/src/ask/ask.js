@@ -53,7 +53,7 @@ export const REASONS = Object.freeze({
 /** How much of a door's raw output a failure keeps: enough to diagnose, not a transcript. */
 export const DETAIL_LIMIT = 2000
 
-const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
+const own = (o, k) => Object.hasOwn(o, k)
 
 /**
  * The failure for `reason`, with `retryable` read from the table. `message` is

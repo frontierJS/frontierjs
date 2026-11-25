@@ -16,6 +16,8 @@ tauri-plugin-single-instance = "2"
 libc = "0.2"
 
 # The title bar in the app's theme (src/main.rs with_titlebar): a GTK header
-# bar replaces the window manager's, and the page sends its colors.
+# bar replaces the window manager's, and the page sends its colors. gdkx11 is
+# the server time a raise from the tray carries (src/tray.rs raise).
 [target.'cfg(target_os = "linux")'.dependencies]
-gtk = "0.18"
+gtk    = "0.18"
+gdkx11 = "0.18"

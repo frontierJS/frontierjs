@@ -466,16 +466,19 @@ export function unpublished(members = []) {
  * written. Nothing public names that version, so the next run tags HEAD once it
  * passes rather than bumping over it (`FJS-D1720`).
  *
- * A package with no tag at all is a first release and goes through the bump, and
- * a version at or below its last tag is not a bump, so neither is listed.
+ * A package with nothing to measure from is a first release and goes through the
+ * bump, and a version at or below where it came from is not a bump, so neither
+ * is listed.
  *
- * @param members  [{ name, version, lastTagVersion, tagged, none }] -- `none` is
- *                 true only when every destination answered and holds nothing
+ * @param members  [{ name, version, bumpedFrom, tagged, none }] -- `bumpedFrom`
+ *                 is the last tag's version, or for a package never tagged the
+ *                 version before its untagged release commit; `none` is true
+ *                 only when every destination answered and holds nothing
  */
 export function untaggedBumps(members = []) {
   return members.filter(m => {
-    if (m.tagged || !m.none || !m.lastTagVersion) return false
-    const now = parseVersion(m.version), last = parseVersion(m.lastTagVersion)
+    if (m.tagged || !m.none || !m.bumpedFrom) return false
+    const now = parseVersion(m.version), last = parseVersion(m.bumpedFrom)
     return Boolean(now && last && gte(now, last) && !sameVersion(now, last))
   }).map(m => m.name)
 }
