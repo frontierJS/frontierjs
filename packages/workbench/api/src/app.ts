@@ -10,6 +10,7 @@ import { createClient } from '@frontierjs/litestone'
 
 import { createWorkbenchAuth, sweepSessions } from './auth.ts'
 import { env, DEV_ENCRYPTION_KEY, DEV_WORKBENCH_KEY } from './core/env.ts'
+import { migrateAtBoot }                      from './core/migrate.ts'
 import { createWorkbench }                    from './domain/workbench/workbench.ts'
 import { workbenchTerminal }                  from './plugins/workbench-terminal.ts'
 import { loginRoute, logoutRoute, meRoute, LOGIN_PATH, LOGOUT_PATH, ME_PATH } from './login.ts'
@@ -29,6 +30,7 @@ import { resolveBasecamp, DEV_BASECAMP, DEV_BASECAMP_ORIGIN } from '@frontierjs/
 import './workbench.types.ts'
 
 const SCHEMA = new URL('../../db/schema.lite', import.meta.url).pathname
+const MIGRATIONS = new URL('../../db/migrations', import.meta.url).pathname
 // The queue's own file, beside the main one, so `db:reset` takes both.
 const JOBS_DB = env.JOBS_DATABASE_URL || new URL('../../db/workbench-jobs.db', import.meta.url).pathname
 
@@ -58,12 +60,18 @@ function previewBasecamp (name: string): { name: string, url: string, peerKeyId?
   }
 }
 
+// A test hands its own client, already on its migrations, and is never migrated under.
+async function openMigrated (): Promise<{ asSystem: () => any }> {
+  await migrateAtBoot(SCHEMA, MIGRATIONS)
+  return await createClient({ path: SCHEMA, resolveFrom: 'schema', encryptionKey: env.ENCRYPTION_KEY }) as { asSystem: () => any }
+}
+
 export async function buildWorkbenchApp (opts: WorkbenchAppOptions = {}): Promise<App> {
   if (env.NODE_ENV === 'production' && env.ENCRYPTION_KEY === DEV_ENCRYPTION_KEY)
     throw new Error('Workbench refuses to boot in production on the public dev ENCRYPTION_KEY. Set one: openssl rand -hex 32')
   if (env.NODE_ENV === 'production' && (opts.key ?? env.WORKBENCH_KEY) === DEV_WORKBENCH_KEY)
     throw new Error('Workbench refuses to boot in production on the public dev WORKBENCH_KEY. Set one.')
-  const db  = opts.db ?? await createClient({ path: SCHEMA, resolveFrom: 'schema', encryptionKey: env.ENCRYPTION_KEY }) as { asSystem: () => any }
+  const db  = opts.db ?? await openMigrated()
   const key = opts.key ?? env.WORKBENCH_KEY
 
   const auth = createWorkbenchAuth(db, { key })

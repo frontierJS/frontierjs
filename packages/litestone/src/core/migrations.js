@@ -27,6 +27,9 @@ import { derivedOnce } from './schema-maps.js'
 import { resolveOperations, checkAgainstHistory, renameStatements, carryStatements, describeOperation, guessRenames } from './operations.js'
 import { generateDDLForDatabase, schemaForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
+// The copy an app's boot takes before it calls apply().
+export { copyBeforeMigrating, declaredDatabasePaths, preMigrateDir, PRE_MIGRATE_KEEP } from './pre-migrate.js'
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MIGRATIONS_TABLE = `_litestone_migrations`

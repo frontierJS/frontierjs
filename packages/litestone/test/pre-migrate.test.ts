@@ -1,6 +1,6 @@
 // test/pre-migrate.test.ts
-// The copy boot takes before it migrates (`FJS-3907`), over a real file and
-// litestone's real `apply()`. The migrations are two of this file's own, so
+// The copy an app's boot takes before it migrates (`FJS-3907`, `FJS-4627`),
+// over a real file and the real `apply()`. The migrations are two of this file's own, so
 // the cases do not move when the app's history does.
 
 import { test, expect, beforeEach } from 'bun:test'
@@ -8,8 +8,7 @@ import { Database }  from 'bun:sqlite'
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir }    from 'node:os'
 import { join }      from 'node:path'
-import { apply }     from '@frontierjs/litestone/migrations'
-import { copyBeforeMigrating, preMigrateDir, PRE_MIGRATE_KEEP } from '../src/domain/backup/pre-migrate.ts'
+import { apply, copyBeforeMigrating, preMigrateDir, PRE_MIGRATE_KEEP } from '../src/core/migrations.js'
 
 const log = { info() {} }
 let root: string, dbPath: string, migrations: string
@@ -23,7 +22,7 @@ const tables    = (path: string) => {
 
 beforeEach(() => {
   root       = mkdtempSync(join(tmpdir(), 'pre-migrate-'))
-  dbPath     = join(root, 'basecamp.db')
+  dbPath     = join(root, 'app.db')
   migrations = join(root, 'migrations')
   mkdirSync(migrations)
   migration('20260101000000_first.sql', 'CREATE TABLE lead (id INTEGER PRIMARY KEY, name TEXT);')

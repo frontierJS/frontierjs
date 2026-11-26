@@ -65,7 +65,7 @@ Goal: Google's behavior checked against its docs and one real token answering.
 Done when: 0.3's two curl calls answer with a real host's busy range and a
 created-then-deleted event.
 
-- [ ] 0.1 Check Google's facts against developers.google.com and write them in
+- [x] 0.1 Check Google's facts against developers.google.com and write them in
       the connector's README the way `conduit-gmail` did: the narrowest scopes
       (`calendar.freebusy`, `calendar.events` vs the newer granular
       `calendar.events.owned` / `calendar.calendarlist.readonly`), the
@@ -87,23 +87,23 @@ Goal: `@frontierjs/conduit-gmail/calendar` speaks Calendar, proved against a sin
 Done when: `cd packages/conduits/conduit-gmail && bun run drive` passes with
 the new `calendar.` rows, including a negative control per refusal.
 
-- [ ] 1.1 Target and calls: `calendarTarget({ ref })` (bearer, per caller, JSON),
+- [x] 1.1 Target and calls: `calendarTarget({ ref })` (bearer, per caller, JSON),
       `CALENDAR_SCOPES`, `listCalendars`, `freeBusy({ timeMin, timeMax, items })`,
       `insertEvent({ calendarId, id, … })`, `getEvent`, `patchEvent`,
       `deleteEvent`. `insertEvent` and `deleteEvent` are `replayable: true`
       because the id makes them so. `./calendar` is the package's first module
       subpath (it exports `.` and `./sink` today).
-- [ ] 1.2 Errors: lift the Google-envelope half of `translate` so mail and
+- [x] 1.2 Errors: lift the Google-envelope half of `translate` so mail and
       calendar share it; add `conflict` (409 on a reused event id = it already
       landed) and `sync_reset` (410).
-- [ ] 1.3 Pure helpers: `eventIdFor(bookingId)` (a hash written in base32hex),
+- [x] 1.3 Pure helpers: `eventIdFor(bookingId)` (a hash written in base32hex),
       `busyRanges(freeBusyAnswer)` that merges overlapping ranges and reports a
       calendar Google could not read (`errors[]` per calendar) instead of
       treating it as free.
-- [ ] 1.4 Sink: `/calendar/v3/*` mounted beside `/gmail/v1/*` in the existing
+- [x] 1.4 Sink: `/calendar/v3/*` mounted beside `/gmail/v1/*` in the existing
       Google stand-in, with chaos for `lost`, `revoke`, `rateLimit`,
       `forbidScope` and a calendar that answers `notFound` inside a 200.
-- [ ] 1.5 Drive rows, README, `PROJECT_STATE.md` (what stays unverified).
+- [x] 1.5 Drive rows, README, `PROJECT_STATE.md` (what stays unverified).
 
 ### Phase 2 — Connect a calendar in calendly
 
@@ -111,19 +111,19 @@ Goal: a host clicks Connect, consents at Google, and lands back with a stored gr
 Done when: a calendly test drives `beginGrant` → the sink's OIDC provider →
 `onGrant` → a `CalendarConnection` row, and a revoked grant marks the row lost.
 
-- [ ] 2.1 Schema: `CalendarConnection` (host, provider, account address,
+- [x] 2.1 Schema: `CalendarConnection` (host, provider, account address,
       refresh token `@encrypted`, `busyCalendarIds`, `writeCalendarId`,
       `status`, `lostAt`), gated to the host. Before drawing it, read how
       `conduit-microsoft`'s `GrantStore` and ELA's Gmail grant hold their rows.
       `Booking` gains nothing; the event id is `eventIdFor(booking.id)`.
-- [ ] 2.2 A `google-calendar` grant provider in auth (`purpose: 'grant'`,
+- [x] 2.2 A `google-calendar` grant provider in auth (`purpose: 'grant'`,
       calendar scopes, `access_type=offline` + `prompt=consent` so Google
       sends a refresh token) whose `onGrant` writes the row as the system.
-- [ ] 2.3 A `GrantStore` over that row for `oidcTokenResolver`; `onLost` sets
+- [x] 2.3 A `GrantStore` over that row for `oidcTokenResolver`; `onLost` sets
       `status: lost` and sends the host a notification.
-- [ ] 2.4 The host's settings screen: Connect, Disconnect (revokes at Google),
+- [x] 2.4 The host's settings screen: Connect, Disconnect (revokes at Google),
       pick which calendars count as busy and which one gets bookings.
-- [ ] 2.5 File what the first real `beginGrant` caller finds in `ISSUES.md`.
+- [x] 2.5 File what the first real `beginGrant` caller finds in `ISSUES.md`.
 
 ### Phase 3 — Busy time removes slots
 
@@ -132,18 +132,24 @@ Done when: calendly's tests show `slotsFor`/`daysWithSlots` dropping a
 sink-busy hour, `book()` refusing it with `NotBookable('overlap')`, and the
 lost-grant and outage cases behaving as Q3 rules.
 
-- [ ] 3.1 `slotsFor` and `daysWithSlots` subtract `busyRanges` beside the local
+- [x] 3.1 `slotsFor` and `daysWithSlots` subtract `busyRanges` beside the local
       `busyFrom`/`busyUntil` read in `domain/scheduling/book.ts`, padded by the
       event type's buffers.
-- [ ] 3.2 A per-host cache of the busy read (short TTL, keyed by range) so the
+- [x] 3.2 A per-host cache of the busy read (short TTL, keyed by range) so the
       public page does not call Google once per visitor.
-- [ ] 3.3 `book()` re-reads free/busy for the one slot, uncached, before the insert.
-- [ ] 3.4 Lost grant or Google down (`FJS-D2404`, fail open): slots and
+- [x] 3.3 `book()` re-reads free/busy for the one slot, uncached, before the insert.
+- [x] 3.4 Lost grant or Google down (`FJS-D2404`, fail open): slots and
       `book()` fall back to local bookings after a short timeout, so a slow
       Google never stalls the public page; the host gets a notification and a
       banner naming the calendar, once per outage rather than per visitor.
-- [ ] 3.5 Measure: the latency of a month's `daysWithSlots` with Google in the
+- [x] 3.5 Measure: the latency of a month's `daysWithSlots` with Google in the
       path. That number decides Phase 5.
+  - Measured 2026-11-26 against the sink (`api/test/google-busy.test.ts`
+    prints it): 38 ms with no connection, 46 ms cold and 33 ms warm with the
+    sink answering at once, 377 ms cold behind a 300 ms round trip, 2,573 ms
+    when Google hangs (the 2,500 ms deadline). One round trip per host per
+    range per minute; a warm cache costs nothing. **Phase 5 is not called
+    for** on these numbers. A real Google round trip is unmeasured until 4.4.
 
 ### Phase 4 — Bookings land in the host's calendar
 
@@ -151,12 +157,12 @@ Goal: book, cancel and rebook each leave exactly one correct event.
 Done when: calendly's tests over the sink show one event after a lost answer
 and a retry, none after a cancel, and the moved time after a rebook.
 
-- [ ] 4.1 A job after commit: `insertEvent` with `eventIdFor(booking.id)`,
+- [x] 4.1 A job after commit: `insertEvent` with `eventIdFor(booking.id)`,
       `sendUpdates` as Q4 rules.
-- [ ] 4.2 Cancel (the host's screen, the invitee's manage link, the inbound
+- [x] 4.2 Cancel (the host's screen, the invitee's manage link, the inbound
       webhook) deletes the event, and a 404 or 410 counts as done; rebook
       deletes the old and inserts the new.
-- [ ] 4.3 A lost answer is settled by `getEvent(id)`; a 409 on retry counts as landed.
+- [x] 4.3 A lost answer is settled by `getEvent(id)`; a 409 on retry counts as landed.
 - [ ] 4.4 **Owner:** the live walk — connect a real calendar, block an hour in
       Google, see it vanish from the booking page, book a slot, see it appear in
       Google, cancel, see it go.
@@ -220,3 +226,58 @@ connected calendars per host. Apple iCloud (CalDAV, no OAuth).
 - **Q5 — Whose Google Cloud project.** A new one for scheduling, or an existing
   client's (ELA's already holds a Gmail OAuth client). Owner's call; it decides
   whose name the consent screen shows and whose verification it rides.
+- **Q6 — A grant provider in a bearer-session app.** `auth({ oauth })` throws
+  at boot unless `cookieAuth: true` (`packages/auth/plugin.ts`, tested in
+  `test/oauth-routes.test.ts`), because a sign-in callback can only hand back a
+  session as a cookie. A `purpose: 'grant'` provider signs nobody in, and
+  `app.oauth.beginGrant` is installed inside that same block, so calendly
+  (`cookieAuth: false`) cannot reach it. Found 2026-11-26 by Phase 2, the
+  first real caller.
+  - **A** — auth applies the cookie check only when a sign-in provider is
+    configured; a grant-only `{ oauth }` mounts the callback and `beginGrant`
+    under Bearer sessions.
+  - **B** — keep the guard; a bearer app runs the grant on its own two raw
+    routes over `auth.oauthBegin` / `oauthCallback` / `oauthGrant`. Calendly
+    is built this way today, as the interim.
+  - **C** — calendly moves to `cookieAuth: true`.
+  - **Recommend A** — the guard's stated reason does not hold for a grant, and
+    B makes every bearer app copy the plugin's state-cookie and callback
+    handling, which is the one-owner seam `FJS-D1313` drew. Until ruled,
+    `beginGrant` itself stays unproven by a real caller.
+- **Q7 — The host changes the write calendar after bookings exist.** The event
+  job writes, moves and deletes in the connection's CURRENT `writeCalendarId`,
+  so a booking written to the old calendar keeps its event there after a
+  cancel, and nothing says so. Found 2026-11-26 by Phase 4.
+  - **A** — document it.
+  - **B** — a nullable `Booking.googleCalendarId` the job sets on create and
+    reads for move and delete.
+  - **C** — Settings warns when the write calendar changes.
+  - **Recommend B** — which calendar an event went to is a fact about the
+    past, and `writeCalendarId` is config that changes, so it cannot stand in
+    for it. The event id is already derived (`eventIdFor`); the calendar is the
+    one piece that cannot be. C leaves the silent miss in place. Proof: book,
+    change the write calendar, cancel, and the old event is gone.
+- **Q8 — The reschedule slot list hides the booking's own time.** `slotsFor`
+  and `daysWithSlots` count the booking being moved as busy, locally and now
+  as its own Google event, while `rebook` subtracts it. An invitee cannot pick
+  a time overlapping the one they hold. Found 2026-11-26 by Phase 4.
+  - **A** — leave it.
+  - **B** — an optional `moving: bookingId` on `slotsFor` and `daysWithSlots`,
+    through the one subtraction `rebook` already owns.
+  - **Recommend B** — the cost of A is a hidden slot, not lost data, but B is
+    one helper called twice. Google busy comes back as ranges, not event ids,
+    so B subtracts by time range and would also uncover a second Google event
+    at exactly that time; the booking-time re-check still refuses it.
+- **Q9 — An event write can be lost between commit and dispatch.** The three
+  dispatches in `bookings.service.ts` sit in `$.afterCommit`, which is
+  at-most-once; a crash there loses that Google write for good.
+  `docs/CONSISTENCY.md` puts a third-party call in `ctx.enqueue` (`FJS-D35`),
+  and calendly has no Outbox model. Found 2026-11-26 by Phase 4.
+  - **A** — accept it for the prototype and say so.
+  - **B** — `fli outbox:install`, one migration, and the three dispatches move
+    to `ctx.enqueue`.
+  - **C** — a reconcile cron that re-syncs bookings whose event is missing.
+  - **Recommend B** — the outbox relay already owns durable effects, and C is
+    a second owner plus new missing-event state. The job is idempotent (job id
+    per booking and status, event id from the booking id), so at-least-once is
+    safe. Do it before Q7 so the job changes land once.

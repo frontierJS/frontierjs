@@ -16,6 +16,13 @@ Two strategies, and the choice is about isolation, not about size:
 | Backup / restore one tenant | copy a file | export rows |
 | Cost per tenant | a file, a connection in the LRU pool | a row |
 
+**A marketplace is `strategy row`.** A buyer, a cart across three shops and the
+payment for it belong to no tenant, and an order is the shop's and the buyer's
+at once — `@@tenant(admit:)` below says that on the row (`FJS-D1296`). Under
+`strategy database` a fleet-wide sqlite file is for what no tenant owns, such as
+the fleet's audit trail — ruled as `scope global` (`FJS-D1295`), not yet built
+(`FJS-3032`).
+
 ---
 
 ## `strategy database` — a file per tenant

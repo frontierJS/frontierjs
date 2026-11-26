@@ -32,7 +32,7 @@ render: static
 <section id="top" class="hero">
   <div class="container">
     <p class="eyebrow">The landscape</p>
-    <h1>Nothing here was invented.</h1>
+    <h1>Standing on shoulders</h1>
     <p class="lede">
       FrontierJS is an argument assembled out of other people's work — a hook pipeline
       from one, a policy language from another, a routing convention from a third, and

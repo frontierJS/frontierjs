@@ -88,6 +88,8 @@ try {
     api: ({ db }: any) => buildWorkbenchApp({ db, key: 'test-key', chatUrl: sink.url, todos: { apiOrigin: todoSink.url, tokenOrigin: todoSink.url }, deliver: (async (url: string, init: any) => { pushes.push({ url, title: init?.headers?.Title ?? '', body: String(init?.body ?? '') }); return new Response('', { status: 200 }) }) as unknown as typeof fetch }),
     listen: true,
   } as any)
+  // The backfill rides the queue, which createTestEnv leaves stopped (FJS-4584).
+  await env.app.jobs.start()
   const sys = env.system
   const ada = await sys.member.create({ data: { nick: 'ada' } })
   const bo  = await sys.member.create({ data: { nick: 'bo' } })

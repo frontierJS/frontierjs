@@ -62,6 +62,7 @@ src/
     ids.js — who assigns an @id; the generators are toolbelt/ids
     migrate.js — introspect, buildPristine, diffSchemas, residue
     migrations.js — file migrations, buildShadow, historyGap, autoMigrate
+    pre-migrate.js — the copy a boot takes before apply(), and each declared database's path to apply to (FJS-3907, FJS-4627)
     tenancy.js — resolveTenancy + tenantFrom; four readers, one answer
     retention.js — the database block's retention: the SQLite sweep and the jsonl compaction
     watch.js — under bun --watch/--hot, imports each file parseFile read so a schema edit restarts the process (FJS-1235)

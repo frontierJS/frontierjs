@@ -27,11 +27,19 @@
 // `/oauth2/v3/certs`). `/_sink/seen` is what arrived, recorded on arrival, and
 // the units each request cost. `/_sink/reset` keeps the mailboxes.
 //
+// `/calendar/v3/*` is `sink-calendar.ts` and `/o/oauth2/*` is `sink-oauth.ts`,
+// mounted here so one listener and one `seen` list serve all three; a token
+// minted at `/o/oauth2/token` is accepted by `/calendar/v3/*`. Seed it with `calendar`.
+//
 // It does NOT pretend to be Gmail's search: `q` understands `newer_than:`,
 // `older_than:`, `from:`, `to:`, `subject:`, `rfc822msgid:`, `in:`, `label:`,
 // `is:` and bare words over subject and body, and nothing else.
 
 import { generateKeyPairSync, randomBytes, sign as cryptoSign, type KeyObject } from 'node:crypto'
+import { createCalendarSink, type CalendarSinkOptions, type CalendarSinkState } from './sink-calendar.ts'
+import { createOAuthSink, type OAuthSinkOptions, type OAuthSinkState } from './sink-oauth.ts'
+
+export { OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET } from './sink-oauth.ts'
 import type { GmailLabel, GmailMessage, GmailPart, GmailProfile, HistoryRecord } from './src/types.ts'
 
 // ─── Options and state ────────────────────────────────────────────────────
@@ -65,6 +73,10 @@ export interface GmailSinkOptions {
   publisher?:     string
   /** How many history records a mailbox keeps; older watermarks answer 404. */
   historyWindow?: number
+  /** Accounts, calendars and events behind `/calendar/v3/*`. */
+  calendar?:      CalendarSinkOptions
+  /** The client `/o/oauth2/*` accepts; its tokens reach the calendar accounts above. */
+  oauth?:         OAuthSinkOptions
 }
 
 export interface PushOptions {
@@ -112,7 +124,7 @@ export interface Mailbox {
   attachments:  Map<string, { bytes: Buffer; filename: string; mimeType: string }>
 }
 
-interface Armed {
+export interface Armed {
   lost:         boolean
   rateLimit:    null | { status?: 429 | 403; retryAfter?: number; limit?: 'sending' | 'bandwidth' | 'concurrency' }
   failNext:     boolean
@@ -124,9 +136,15 @@ interface Armed {
   forbidScope:  boolean
   signIn:       boolean
   enforceUnits: boolean
+  /** Calendar ids the next freeBusy answers `notFound` for, inside its 200. */
+  freeBusyNotFound: string[]
+  /** Calendar only, until disarmed or reset: every answer waits this many ms first. */
+  delay:        number
+  /** Calendar only, until disarmed or reset: every call answers this status. */
+  outage:       null | { status: 500 | 503 | 429 }
 }
 
-const ARMED_OFF: Armed = { lost: false, rateLimit: null, failNext: false, staleHistory: false, deliverTwice: false, expireWatch: false, revoke: false, quota: false, forbidScope: false, signIn: false, enforceUnits: false }
+const ARMED_OFF: Armed = { lost: false, rateLimit: null, failNext: false, staleHistory: false, deliverTwice: false, expireWatch: false, revoke: false, quota: false, forbidScope: false, signIn: false, enforceUnits: false, freeBusyNotFound: [], delay: 0, outage: null }
 
 export interface GmailSinkState {
   // Mailbox is internal; it rides here so a host that mounts the handler can read it.
@@ -136,6 +154,8 @@ export interface GmailSinkState {
   pushes:     SeenPush[]
   units:      Record<string, number>
   armed:      Armed
+  calendar:   CalendarSinkState
+  oauth:      OAuthSinkState
   hanging:    Array<() => void>
   publisher:  string
   pushToken(o: PushOptions): string
@@ -275,6 +295,12 @@ export function createGmailSinkState(opts: GmailSinkOptions = {}): GmailSinkStat
   const hanging: Array<() => void> = []
   const window = opts.historyWindow ?? 1_000
   const PUBLISHER = opts.publisher ?? DEFAULT_PUBLISHER
+  const calendar = createCalendarSink({ seen, armed, hanging, json }, opts.calendar)
+  const oauth    = createOAuthSink({
+    seen, json, aliases: calendar.aliases,
+    accountToken: email => [...calendar.accounts.values()].find(a => a.email === email)?.token ?? null,
+    firstEmail:   () => calendar.accounts.values().next().value?.email ?? null,
+  }, opts.oauth)
 
   // 2048 bits, as Google's are. `rogue` is a key nobody published.
   const newKey = () => { const pair = generateKeyPairSync('rsa', { modulusLength: 2048 }); return { kid: randomBytes(10).toString('hex'), ...pair } }
@@ -395,7 +421,7 @@ export function createGmailSinkState(opts: GmailSinkOptions = {}): GmailSinkStat
   }
 
   return {
-    opts, mailboxes, seen, pushes, units, armed, hanging, publisher: PUBLISHER,
+    opts, mailboxes, seen, pushes, units, armed, hanging, publisher: PUBLISHER, calendar, oauth,
     pushToken, record,
     rotateKeys() { signing = newKey() },
     deliver, push,
@@ -485,8 +511,10 @@ export function gmailSinkHandler(state: GmailSinkState): (req: Request) => Promi
     if (path === '/_sink/push-token' && req.method === 'POST') return json({ token: state.pushToken(await req.json()) })
     if (path === '/oauth2/v3/certs') return json((state as GmailSinkState & { jwks: unknown }).jwks, 200, { 'cache-control': 'public, max-age=3600' })
 
+    const granted = await state.oauth.handle(req)
+    if (granted) return granted
     const m = /^\/gmail\/v1\/users\/(?:me|[^/]+)(\/.*)?$/.exec(path)
-    if (!m) return null
+    if (!m) return state.calendar.handle(req)
     const rest = m[1] ?? ''
     const text = req.method === 'POST' ? await req.text() : ''
     const entry: SeenRequest = { method: req.method, path, query: url.search, headers: Object.fromEntries(req.headers), body: text, at: Date.now(), units: 0 }

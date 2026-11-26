@@ -24,7 +24,8 @@ Gmail was called; see `PROJECT_STATE.md` for what stays unverified.
 | pure | `buildMime`, `toRaw`, `mintMessageId`, `replyHeaders`, `headerOf`, `subjectsThread`, `parseMessage`, `bodyOf`, `attachmentsOf`, `addressesOf`, `advanceHistoryId`, `backfillQuery`, `decodePushEnvelope`, `verifyPushBearer`, `pushVerifier` |
 | errors | `translate(error, status?, headers?) → GmailFailure` — the table below |
 | sink | `sink.ts`: `startGmailSink(opts)` on `port: 0`, and `gmailSinkHandler(state)` so one Google stand-in mounts `/gmail/v1/*` beside its other paths |
-| drive | `bun run drive` — 41 rows, sink only; no conforming Gmail exists |
+| calendar | `@frontierjs/conduit-gmail/calendar` — see § Calendar |
+| drive | `bun run drive` — 41 Gmail rows then 42 `calendar.` and `oauth.` rows, sink only; no conforming Gmail or Calendar exists |
 
 `send` is `bindSend(conduit)`: the connector never holds an app. The
 credential is a USER's OAuth access token with a Gmail scope, minted by the
@@ -126,6 +127,115 @@ boundaries, base64 parts): raw non-ASCII bytes in a header are refused naming
 the header, a missing Message-ID is refused, a reply whose Subject differs
 forks silently as Gmail does. The drive's negative control is a message built
 with the encoder removed.
+
+## Calendar
+
+`import { … } from '@frontierjs/conduit-gmail/calendar'` — a host's busy time
+read, a booking written. It is a module beside the mail dialect, not a second
+package: the same Google grant, the same error envelope, the same stand-in.
+`./calendar` is not re-exported from `.`.
+
+| Piece | Where |
+| --- | --- |
+| target | `calendarTarget({ ref = 'GOOGLE_CALENDAR_GRANT', address?, id?, perCaller? })` on `https://www.googleapis.com`, base `/calendar/v3`; `bindCalendarSend(conduit)` is `bindSend` over `CALENDAR_TARGET` |
+| calls | `listCalendars`, `freeBusy({ timeMin, timeMax, items, timeZone? })`, `insertEvent`, `getEvent`, `patchEvent`, `deleteEvent`; each answers `{ <thing> } \| { error: CalendarFailure }`, and each takes a trailing `{ timeoutMs?, signal? }`: `timeoutMs` caps each attempt, `signal` ends the whole call, retries included (a request cannot lower the target's `retry_limit`) |
+| pure | `eventIdFor(bookingId, generation?)`, `busyRanges(answer, requested?)` |
+| errors | `translateCalendar` shares `translate`'s reader of `error.raw`; adds `conflict` and `sync_reset` |
+| sink | `startGmailSink({ calendar: { accounts: [{ token, email, scopes?, calendars?, events? }] } })` serves `/calendar/v3/*` beside `/gmail/v1/*`; with `oauth` it is also Google's OAuth (`sink-oauth.ts`): `/o/oauth2/v2/auth` consents at once as `login_hint` or the first account, `/o/oauth2/token` (code with PKCE S256; refresh; a refresh token only for `access_type=offline`, never rotated), `/o/oauth2/revoke`, `/o/oauth2/userinfo`, and `POST /_sink/oauth/revoke {email}` for the user revoking at Google. `OAUTH_CLIENT_ID`/`OAUTH_CLIENT_SECRET` are exported from `./sink` |
+
+**Scopes: three, one per method, the narrowest each accepts.**
+`CALENDAR_SCOPES` is `calendar.freebusy` (freeBusy.query),
+`calendar.events.owned` (events insert, get, patch, delete on calendars the
+user owns) and `calendar.calendarlist.readonly` (calendarList.list). They are
+three because no narrow scope covers two methods: freeBusy.query does not
+accept any `calendar.events*` scope, and `calendar.events.owned` cannot list
+calendars. The broad `calendar` scope would be one, and is refused here as
+more than the app asks for. Whether Google classes the three as sensitive or
+restricted shows only on the Cloud Console consent screen.
+
+**The event id is the idempotency key.** `events.insert` takes the caller's
+`id` (5-1024 characters of `a-v` and `0-9`), so `insertEvent` and
+`deleteEvent` are `replayable: true` and conduit repeats them after a lost
+answer. The replay of an insert lands on a 409, which is `conflict`: THE FIRST
+ONE LANDED, and `getEvent` reads it back. A caller that sees `conflict` on an
+insert it just sent has succeeded, and one that sees it on a rebook has a
+taken id. `eventIdFor(bookingId)` derives the id (SHA-256 in base32hex, 32
+characters, namespaced `fjs:booking`); Google keeps a deleted event's id as a
+cancelled tombstone, so a rebook is `eventIdFor(bookingId, 'r2')`.
+`deleteEvent` treats `gone` (404, or 410 `deleted`) as done and answers
+`{ deleted: true, already: true }`; a wrong `calendarId` is also a 404 and
+reads the same.
+
+**Busy time is read, not assumed.** `freeBusy` answers 200 for a calendar it
+could not read, with `errors[]` and no `busy`. `busyRanges` merges every
+calendar's ranges (start inclusive, end exclusive, epoch ms; overlapping and
+touching ranges join) and lists each such calendar in `unreadable` with
+Google's own `reason` instead of counting it free. Pass the requested ids as
+the second argument and one the answer lacks is `missing`.
+
+Facts, **checked against developers.google.com on 2026-11-26**:
+
+- The envelope is `{ error: { code, message, errors: [{ domain, reason, message }] } }`.
+  Reasons: 401 `authError`; 403 `userRateLimitExceeded`, `rateLimitExceeded`,
+  `quotaExceeded`, `forbiddenForNonOrganizer`; 404 `notFound`; 409
+  `duplicate`; 410 `fullSyncRequired`, `updatedMinTooLongAgo`, `deleted`; 412
+  `conditionNotMet`; 429 `rateLimitExceeded`; 500 `backendError`; 400
+  `timeRangeEmpty`, the only documented 400 reason.
+- `rateLimitExceeded` arrives as 403 OR 429; `userRateLimitExceeded` and
+  `quotaExceeded` only as 403. Quota is 10,000 requests a minute per project
+  and 600 a minute per user.
+- **`quotaExceeded` is `quota` here, and Gmail's table says the same, but the
+  two guides word it differently.** Gmail's means the day's units are spent;
+  Calendar's guide documents the 403 as "Calendar usage limits exceeded",
+  which may clear in a minute. The status cannot tell them apart, so it stays
+  `quota` and is never retried; an app that wants to wait it out decides that
+  itself.
+- freeBusy: `items` carries `calendarExpansionMax` at 50 and
+  `groupExpansionMax` at 100. **The true per-call ceiling is not documented**,
+  so 50 is the floor `freeBusy` refuses past; the longest range is not
+  documented either. Per-calendar reasons are `groupTooBig`,
+  `tooManyCalendarsRequested`, `notFound`, `internalError`, and Google says
+  more may be added.
+- calendarList: `maxResults` defaults to 100, at most 250; `minAccessRole` is
+  `freeBusyReader`, `reader`, `writer` or `owner`.
+- `sendUpdates` is `all`, `externalOnly` or `none`. Google's default is not
+  stated clearly, so every write sends `none` unless told otherwise.
+- `access_type=offline` returns a refresh token, only on first authorization
+  unless consent is re-prompted. A project in Testing status issues refresh
+  tokens that expire in seven days. Revoke is `POST
+  https://oauth2.googleapis.com/revoke`, form-encoded `token`.
+
+**Unverified: the sink assumes these and no real token has been tried** (plan
+step 0.3): the 204 on delete; that re-inserting a deleted id answers 409
+(a third-party report); that `GET` of a deleted event is 200 with `status:
+'cancelled'`; the `sendUpdates` default; the per-call ceiling on `items` and
+the longest range; the sensitive or restricted class of the three scopes; the
+403 `reason` for a missing scope (the sink uses Gmail's `details[].reason`
+spelling); that a patch of a cancelled event is a 410.
+
+Refused before the send (zero attempts, a `TypeError`): an event id that is
+not 5-1024 characters of `a-v0-9`; `timeMin` not before `timeMax` or either
+not RFC 3339; an empty `items`; more than 50 `items`; `maxResults` past 250;
+an empty patch. Not built: incremental sync (`syncToken`, so `sync_reset` is
+named and unused), watch channels, recurring and all-day events, attendee
+responses, the batch endpoint.
+
+The sink enforces what Google does so a drift in the client is a refusal: the
+bearer's scopes against the method (its table is written out again, not
+imported), the id alphabet (400), a reused id including a deleted one (409),
+DELETE 204 then 410 then 404, `timeRangeEmpty`, an unknown calendar inside a
+200. It counts an event as busy unless it is cancelled or `transparency:
+'transparent'`, clipped to the range and unmerged. Chaos is the same
+`/_sink/arm` — `lost`, `revoke`, `rateLimit` (403 or 429, `rateLimitExceeded`),
+`forbidScope`, `failNext` — plus `{ freeBusyNotFound: ['id'] }`, the next
+freeBusy answering `notFound` for those calendars inside its 200, and two that
+last until disarmed or reset: `{ delay: ms }` (every Calendar answer waits
+first) and `{ outage: { status: 500 | 503 | 429 } }` (every Calendar call
+answers that, on every retry).
+`GET /_sink/calendar` lists every account's calendars and events;
+`POST /_sink/calendar/event` `{ token, calendarId?, start, end, summary?,
+transparency?, status? }` adds one mid-test; `state.calendar.addEvent` does it
+in process. `/_sink/seen` carries calendar requests too.
 
 ## Refused before the send (C9)
 

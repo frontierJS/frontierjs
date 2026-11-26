@@ -21,7 +21,7 @@ This folder is the live home (`FJS-D1559`, which superseded `FJS-D1185`). Every 
 | Email | `conduit-resend` | Send, batch, an `IMail` adapter, the Svix webhook signature |
 | | `conduit-postmark` | Send, batch, an `IMail` adapter, the unsigned inbound webhook |
 | | `conduit-mailgun` | Send, an `IMail` adapter, raw-MIME inbound (brings the MIME parser) |
-| | `conduit-gmail` | Read, watch, send (on `conduit-oidc`) |
+| | `conduit-gmail` | Mail: read, watch, send; `./calendar`: free/busy and events (on `conduit-oidc`) |
 | | `conduit-microsoft` | Graph mail: delegated grant, delta sync, change notifications, drafts/replies/send (`FJS-D1463`) |
 | SMS, voice, push | `conduit-twilio` | Messaging, Basic through the signer seam, E.164, STOP, `X-Twilio-Signature` |
 | | `conduit-telnyx` | SMS/MMS, E.164, STOP/HELP, Ed25519 webhooks |

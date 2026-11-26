@@ -100,11 +100,9 @@ render: static
 
 <section class="landscape" aria-labelledby="landscape-title">
   <div class="container">
-    <h2 id="landscape-title">Nothing here was invented</h2>
+    <h2 id="landscape-title">Standing on shoulders</h2>
     <p class="lede">
-      FrontierJS is assembled out of {d.projects.length} other projects. Each word is one of them,
-      sized by <span data-factor-label>how close it is</span>; hover one to see what was
-      taken and where it stops.
+      FrontierJS has foundations and inspirations from over 25 projects. See below:
     </p>
 
     <div class="controls">

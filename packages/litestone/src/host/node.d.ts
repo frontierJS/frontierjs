@@ -96,6 +96,6 @@ export function defaultFileStorage(): Promise<{
     buildReadFilter(model: any, ctx: any): any;
 }>;
 export { resolve, join, dirname, basename, extname, isAbsolute } from "path";
-export { existsSync, statSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, renameSync, openSync, readSync, writeSync, fstatSync, closeSync, watch } from "fs";
+export { existsSync, statSync, chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync, renameSync, openSync, readSync, writeSync, fstatSync, closeSync, watch } from "fs";
 export { fileURLToPath, pathToFileURL } from "url";
 export { createCipheriv, createDecipheriv, randomBytes, createHmac, createHash } from "crypto";

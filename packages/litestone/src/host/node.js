@@ -26,7 +26,7 @@ export const envVar = (/** @type {string} */ name) => process.env[name]
 
 // ─── the filesystem ───────────────────────────────────────────────────────
 export {
-  existsSync, statSync, mkdirSync, mkdtempSync, readdirSync,
+  existsSync, statSync, chmodSync, mkdirSync, mkdtempSync, readdirSync,
   readFileSync, writeFileSync, appendFileSync, rmSync, renameSync,
   openSync, readSync, writeSync, fstatSync, closeSync, watch,
 } from 'fs'

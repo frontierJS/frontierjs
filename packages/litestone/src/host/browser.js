@@ -103,6 +103,7 @@ const FS = 'a browser has no filesystem — a database is a name in OPFS, and th
 export const existsSync = () => false
 
 export const statSync      = no('statSync', FS)
+export const chmodSync     = no('chmodSync', FS)
 export const mkdirSync     = no('mkdirSync', FS)
 export const readdirSync   = no('readdirSync', FS)
 export const mkdtempSync   = no('mkdtempSync', FS)

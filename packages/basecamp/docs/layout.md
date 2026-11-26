@@ -185,9 +185,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           App (and HubConfig) whose replica lists, and sends one `ReplicaFound` per
           workspace; jobs/restore-reconcile.job.ts runs it once, queued by app.ts
           when `restoreStaged` answered `done`
-          domain/backup/pre-migrate.ts is the copy app.ts takes between
-          `openSqlite` and `apply()` when applied migrations have pending ones
-          after them: `pre-migrate/<db>--<stamp>.db` beside the database, newest three
+          app.ts calls litestone's `copyBeforeMigrating` between `openSqlite` and
+          `apply()`: `pre-migrate/<db>--<stamp>.db` beside the database, newest three
           kept, and a copy that fails stops the boot (FJS-3907)
           jobs/app-backup-run.job.ts is the one `/backup` caller (Invariant 4) —
           the schedule's `app-backup:run`, `app-backups.take` and a release's

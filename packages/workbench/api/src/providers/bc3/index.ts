@@ -111,7 +111,11 @@ export function bc3Provider (app: App, opts: { apiOrigin?: string | null, tokenO
   const signIn = basecampSignInTargets({ userAgent: USER_AGENT, ...origins })
   return {
     targets: [signIn.token, signIn.register, ...(account ? [accountTarget(app, account)] : [])],
-    credentials: { [REF]: { get: async ref => resolverOf(app)?.get(ref) ?? null } },
+    // invalidate forwarded: without it a 401 replays the cached dead token, so the refresh and onLost never run.
+    credentials: { [REF]: {
+      get:        async ref => resolverOf(app)?.get(ref) ?? null,
+      invalidate: (ref, value) => resolverOf(app)?.invalidate?.(ref, value),
+    } },
   }
 }
 

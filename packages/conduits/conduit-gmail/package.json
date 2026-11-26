@@ -1,21 +1,24 @@
 {
   "name": "@frontierjs/conduit-gmail",
   "version": "0.0.1",
-  "description": "Gmail over conduit: read, watch, send",
+  "description": "Gmail and Google Calendar over conduit: read, watch, send, book",
   "type": "module",
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
+    "./calendar": "./src/calendar.ts",
     "./sink": "./sink.ts"
   },
   "files": [
     "src",
     "sink.ts",
+    "sink-calendar.ts",
+    "sink-oauth.ts",
     "README.md"
   ],
   "scripts": {
     "test": "node ../../../scripts/tmp-run.mjs 'bun run drive'",
-    "drive": "bun test/gmail.drive.ts",
+    "drive": "bun test/gmail.drive.ts && bun test/calendar.drive.ts",
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
