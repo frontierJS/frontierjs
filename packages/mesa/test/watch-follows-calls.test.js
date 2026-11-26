@@ -94,6 +94,19 @@ describe('a call follows the component\'s import watches (FJS-D404)', () => {
     expect(text(host)).toBe('€5!')
   })
 
+  // FJS-4636: the helper calls nothing imported, it only reads the store.
+  it('a local helper that reads a watched import', async () => {
+    const host = await mount(`<script>
+  import { prefs } from './store.js'
+  $: prefs.currency
+  function is(c) { return prefs.currency === c }
+</script>
+<b aria-current={is('EUR') ? 'page' : null}></b>`, { prefs })
+    expect(host.querySelector('b').hasAttribute('aria-current')).toBe(false)
+    flip(); await settle()
+    expect(host.querySelector('b').getAttribute('aria-current')).toBe('page')
+  })
+
   it('inside a callback handed to a method call', async () => {
     const host = await mount(`<script>
   import { money, prefs } from './store.js'

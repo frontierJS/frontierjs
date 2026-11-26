@@ -62,7 +62,7 @@ Detail: `references/mesa.md`
 - **A `const` that CALLS something with a `let` in its arguments is made again on every write to that `let`.** When the thing made owns memory outside the DOM (a three `Mesh`, a texture, an audio node), every remake is a leak the destroy never sees (`FJS-4175`): make it a `var`, which builds once (VISION RULE 13), and carry later prop values to it in a `$:` block.
 - **Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception.**
 - **An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that.**
-- **A function hides its reads from the compiler, which costs a subscription and an ordering.**
+- **A function hides its reads from the compiler's ORDERING.**
 - **A `$:` block is woken by what it reads from outside itself, never by its own writes.** A called function that does `++seq` subscribes the block to `seq`; the write is ignored while the block runs (`FJS-2652`), so a state change made BY the block is not a trigger for it.
 - **A derived `const` that writes a signal throws in a dev build and goes through in production** (`FJS-D1367`). The compiler refuses only a write in the initializer's own text; one reached through a call is the runtime's dev throw at the write. A `$:` that reads a signal and then writes it warns unless a test of that signal guards the write; a read after the write does not count, and nor does a write inside a function the block hands out.
 - **A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation.**

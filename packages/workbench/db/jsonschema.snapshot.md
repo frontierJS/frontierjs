@@ -414,6 +414,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `message` | `string` | — | — | `x-litestone-kind` | — |
 | `props` | `json` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
 | `fileExternalIds` | `json` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
+| `hiddenAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `missingSince` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 
 **On create**: required — nothing · not accepted — `id`

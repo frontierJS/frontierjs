@@ -1547,6 +1547,28 @@ inside the compiler that owns it is one an author cannot hold either.
 <select bind:value={selectedId}>
 ```
 
+#### Binding a field of an object or a row
+
+A member target writes into the object and then does the `o = o` of RULE 43
+for the author, so every other reader of it updates. `bind:value={draft.name}`
+notifies `draft`. A row of an `{#each}` notifies the top-level `let` its list
+came from, through nested rows, so a checklist needs no toggle handler
+([FJS-4646](../../../ISSUES.md#fjs-4646)):
+
+```html
+{#each todos as todo (todo.id)}
+  <li class:done={todo.done}>
+    <input type="checkbox" bind:checked={todo.done}> {todo.text}
+  </li>
+{/each}
+```
+
+A row rebinds only when its list comes back as the same array, so a row of a
+list built on each read (`todos.filter(...)`, or a derived `const` over one)
+never sees the write. Binding a field of such a row is a compile error naming
+the list. Bind a row of the `let` itself, or write the change in a handler
+that reassigns it.
+
 #### Input masking — `bind:value|mask({pattern})`
 
 The `|mask` modifier enforces a character pattern as the user types and writes
@@ -2157,6 +2179,35 @@ that is not a form submit needs no hand-kept `busy`/`error` pair:
 > A boundary holds its body until the values it reads land, `pending` snippet or not. A
 > read the compiler cannot see — a derived `const label = user.name` — that throws on
 > mount prints `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY` naming the const (`FJS-4292`).
+
+> **RULE 16a** — A load never starts before every awaited `const` it reads, directly or
+> through a derived `const` or a `$:` writable derived, has had its first successful
+> answer. Until then it is `loading` and its loader is not called. After that first
+> answer an upstream refetch does not hold it back: it keeps its value, reports
+> `pending`, and re-runs when the upstream lands with a new value.
+>
+> ```mesa
+> <script>
+>   const states = await getStates()
+>   $: selectedState = states?.[0]
+>   const cities = await getCities(selectedState)
+> </script>
+> ```
+>
+> `getCities` is first called with `'California'`, never with `undefined`. A derived
+> value is not deferred: `selectedState` still reads `states?.[0]`, since it runs
+> while `states` is `undefined`.
+>
+> When the upstream's first load fails (`FJS-D2393`), the dependent takes its error
+> as its own: `error` is the same `Error`, `status` is `'error'`, and the loader is
+> never called. A later successful `.refresh()` of the upstream starts it. A load that
+> starts from its hydrated server value does not wait.
+>
+> The compiler hands each load its upstream (`asyncUpstream`), so two reads are
+> outside the rule and the load is not held: a read inside a called `function`
+> declaration (`FJS-D2394`), and a `let` a `$:` watch writes, as in
+> `$: a, () => { x = a.n }` (`FJS-D2395`). Read the value through a derived instead,
+> `const x = a.n` or `$: x = a?.n`.
 
 ### 13.3 Optimistic Updates
 
@@ -2938,6 +2989,7 @@ both run inside the effect that reads them, so what they read is tracked (§15).
 | 14b | `$: (a, b)` is a multi-path watch (sequence). `$: { ... }` is an auto-tracked block effect. Wrapping a sequence inside a block produces a block effect, not multi-path watches. |
 | 15 | Component files are always ESM — top-level `await` is valid |
 | 16 | `$async.x` exists for a top-level `const x = await …` and a top-level `async function x()`; any other name is a compile error |
+| 16a | A load never starts before every awaited `const` it reads, directly or through derived values, has had its first answer |
 | 17 | Non-const reactive vars can be manually assigned anytime — last write wins |
 | 18 | Mesa's builtins are reached through `$`, which the compiler provides inside the component function — no import, and only the members used are wired |
 | 18a | `$` may not be destructured, aliased or shadowed; it is legal only as the object of a member expression (`FJS-D132`) |

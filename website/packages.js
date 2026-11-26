@@ -17,6 +17,9 @@
  *   code     optional example
  *   r        what it replaces — [] means there is no common equivalent
  *
+ * A package entry may carry `repl`, the URL of an in-browser playground for it;
+ * its page links it beside the install line.
+ *
  * `range(name)` is supplied by the reader: the minor an `npm create` pins, read
  * off that package's manifest so no version number is written here.
  */
@@ -579,6 +582,7 @@ const PKGS = [
     realm: 'UI · Component',
     who: '@frontierjs/mesa',
     pitch: 'One file renders to a page, an email, a fragment or a module. Zero dependencies.',
+    repl: '/packages/mesa/repl/',
     rows: [
       {
         k: 'Reactivity',

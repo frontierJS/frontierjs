@@ -4134,9 +4134,11 @@ describe('asyncDerived', () => {
     const [b, setB] = createSignal(null)
     const aState = makeAsyncState()
     const bState = makeAsyncState([aState])
+    const calls = []
     asyncDerived(() => aState, async () => { await new Promise((r) => setTimeout(r, 20)); return x() * 10 }, [x], setA)
-    asyncDerived(() => bState, async () => `b${a()}`, [a], setB)
+    asyncDerived(() => bState, async () => { calls.push(a()); return `b${a()}` }, [a], setB)
     await new Promise((r) => setTimeout(r, 60))
+    expect(calls).toEqual([10])
     expect(b()).toBe('b10')
     expect(bState.pending).toBe(false)
     expect(bState.status).toBe('success')
@@ -4150,6 +4152,7 @@ describe('asyncDerived', () => {
 
     await new Promise((r) => setTimeout(r, 60))
     expect(b()).toBe('b20')
+    expect(calls).toEqual([10, 20])
     expect(bState.pending).toBe(false)
     expect(bState.status).toBe('success')
   })
@@ -4163,6 +4166,145 @@ describe('asyncDerived', () => {
     aState._update('start')
     expect(bState.pending).toBe(true)
     expect(bState.status).toBe('error')
+  })
+
+  // RULE 16a: a load never starts before every async value it reads has its
+  // first answer. Each helper's upstream lands only when `open` is called.
+  const upstreamLoad = (dep, setValue, answers) => {
+    const state = makeAsyncState()
+    const open = []
+    asyncDerived(() => state, () => new Promise((resolve, reject) => open.push(() => {
+      const a = answers.shift()
+      a instanceof Error ? reject(a) : resolve(a)
+    })), [dep], setValue)
+    return { state, open }
+  }
+
+  it('a load reading an upstream through a derived waits for its first answer', async () => {
+    const [x] = createSignal(1)
+    const [a, setA] = createSignal(undefined)
+    const up = upstreamLoad(x, setA, [{ name: 'California' }])
+    const d = createMemo(() => a()?.name)
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(d()); return `cities-${d()}` }, [d], () => {})
+    await tick()
+    expect(calls).toEqual([])
+    expect(bState.loading).toBe(true)
+    expect(bState.status).toBe('pending')
+    up.open[0]()
+    await tick()
+    expect(calls).toEqual(['California'])
+    expect(bState.status).toBe('success')
+  })
+
+  it('starts when the upstream answers with the value its dependent already read', async () => {
+    const [x] = createSignal(1)
+    const [a, setA] = createSignal(null)
+    const up = upstreamLoad(x, setA, [null])
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(a()); return 'b' }, [a], () => {})
+    await tick()
+    expect(calls).toEqual([])
+    up.open[0]()
+    await tick()
+    expect(calls).toEqual([null])
+    expect(bState.status).toBe('success')
+  })
+
+  // FJS-D2393: the upstream's error is the dependent's, and its loader never runs.
+  it('adopts an upstream failure, then starts once the upstream refresh succeeds', async () => {
+    const [x] = createSignal(1)
+    const [a, setA] = createSignal(undefined)
+    const boom = new Error('boom')
+    const up = upstreamLoad(x, setA, [boom, 'CA'])
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(a()); return `b${a()}` }, [a], () => {})
+    const settled = bState.settled()
+    up.open[0]()
+    await tick()
+    await settled
+    expect(calls).toEqual([])
+    expect(bState.error).toBe(boom)
+    expect(bState.status).toBe('error')
+    expect(bState.loading).toBe(false)
+
+    // A refresh clears the upstream's error while it still has no value.
+    up.state.refresh()
+    await tick()
+    expect(up.state.error).toBe(null)
+    expect(up.state.loading).toBe(false)
+    expect(calls).toEqual([])
+
+    up.open[1]()
+    await tick()
+    expect(calls).toEqual(['CA'])
+    expect(bState.error).toBe(null)
+    expect(bState.status).toBe('success')
+  })
+
+  it('an upstream refetch after its first answer does not hold the dependent back', async () => {
+    const [x, setX] = createSignal(1)
+    const [a, setA] = createSignal(undefined)
+    const up = upstreamLoad(x, setA, ['CA', 'TX'])
+    const [b, setB] = createSignal(undefined)
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(a()); return `b${a()}` }, [a], setB)
+    up.open[0]()
+    await tick()
+    expect(b()).toBe('bCA')
+
+    setX(2)
+    await tick()
+    expect(up.state.pending).toBe(true)
+    expect(b()).toBe('bCA')
+    expect(bState.pending).toBe(true)
+    bState.refresh()
+    await tick()
+    expect(calls).toEqual(['CA', 'CA'])
+
+    up.open[1]()
+    await tick()
+    expect(calls).toEqual(['CA', 'CA', 'TX'])
+    expect(b()).toBe('bTX')
+  })
+
+  it('a seeded dependent starts from its seed while its upstream is unanswered', async () => {
+    const [x] = createSignal(1)
+    const [a, setA] = createSignal(undefined)
+    const up = upstreamLoad(x, setA, ['CA'])
+    const [b, setB] = createSignal(undefined)
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(a()); return `b${a()}` }, [a], setB, null, { value: 'bCA' })
+    await tick()
+    expect(calls).toEqual([])
+    expect(b()).toBe('bCA')
+    expect(bState.loading).toBe(false)
+    // Pending through the upstream still in flight, and its landing re-runs it.
+    expect(bState.status).toBe('pending')
+    up.open[0]()
+    await tick()
+    expect(calls).toEqual(['CA'])
+  })
+
+  it('refresh on a dependent whose upstream is unanswered does nothing', async () => {
+    const [x] = createSignal(1)
+    const [a, setA] = createSignal(undefined)
+    const up = upstreamLoad(x, setA, ['CA'])
+    const bState = makeAsyncState([up.state])
+    const calls = []
+    asyncDerived(() => bState, async () => { calls.push(a()); return 'b' }, [a], () => {})
+    bState.refresh()
+    await tick()
+    expect(calls).toEqual([])
+    expect(bState.loading).toBe(true)
+    up.open[0]()
+    await tick()
+    expect(calls).toEqual(['CA'])
   })
 })
 

@@ -328,7 +328,7 @@ Graded: **13 of 219**.
 | A `const` that CALLS something with a `let` in its arguments is made again on every write to that `let`. | **none** |
 | Replacing a value notifies; mutating one does not — and `o = o` is the deliberate exception. | **none** |
 | An import is inert in a component with no `$:` of its own on it, and the default hint level says nothing about that. | **none** |
-| A function hides its reads from the compiler, which costs a subscription and an ordering. | **none** |
+| A function hides its reads from the compiler's ORDERING. | **none** |
 | A `$:` block is woken by what it reads from outside itself, never by its own writes. | **none** |
 | A derived `const` that writes a signal throws in a dev build and goes through in production | **none** |
 | A `$: dep, handler` does not run at mount, and its `prev` is the same object when the change was a mutation. | **none** |

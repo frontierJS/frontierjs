@@ -47,6 +47,7 @@ export async function load({ params }) {
     who:    pkg.who,
     pitch:  pkg.pitch,
     install: pkg.install,
+    repl:   pkg.repl ?? null,
     count:  groups.reduce((n, g) => n + g.rows.length, 0),
     groups: groups.map((g) => ({
       title: g.title,

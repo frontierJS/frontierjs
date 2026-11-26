@@ -70,6 +70,7 @@ There is no import, no wrapper and no `.value`.
 | `createEventDispatcher()` | a callback prop, `export let onchange = null` and `onchange?.(value)`. `$.emit('change', value)` calls it for you. See [Component events](../runtime/component-events.md) |
 | `setContext` / `getContext` | `$context.key = value` / `$context.key`. See [Context](../runtime/context.md) |
 | `{#await promise}` | `{#await promise}`, and also `const x = await …` at the top level, with `$async.x` for its state. See [Async](../runtime/async.md) |
+| `const b = $derived(await f(a))` | `const b = await f(a)` | A load waits for every awaited `const` it reads, so `f` never sees an unanswered `a`. A derived value is not deferred, so `$: s = a?.[0]` keeps its `?.`. See [One load feeding another](../runtime/async.md#one-load-feeding-another) |
 
 ### Template
 
@@ -83,7 +84,7 @@ There is no import, no wrapper and no `.value`.
 | `{@const x = …}` | `{@const x = …}` | |
 | `{@html x}` | `{@html x}` | |
 | `{@attach fn}` or `use:action` | `{@attach fn}` | See [`{@attach}`](../template/attach.md) |
-| `bind:value` `bind:checked` `bind:group` `bind:this` | the same | On an element, `bind:` is only `value`, `checked`, `files`, `group` and `this` |
+| `bind:value` `bind:checked` `bind:group` `bind:this` | the same | On an element, `bind:` is only `value`, `checked`, `files`, `group` and `this`. A row's field (`bind:checked={todo.done}`) binds when the `{#each}` loops over a `let`, not over `todos.filter(...)` |
 | `class:active={x}` / `style:color={c}` | the same | |
 | `{#snippet children()}` / `{@render children?.()}` | the same, or `<slot />` | `<slot />` is a snippet with no arguments |
 | `<slot name="header" />` | `<slot name="header" />` or `<slot:header />` | A slot takes no attribute but `name` |

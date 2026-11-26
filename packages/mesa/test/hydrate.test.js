@@ -594,6 +594,101 @@ describe('hydrate() with an awaited const', () => {
   })
 })
 
+// RULE 16a: a load that reads another load through a `$:` waits for its first
+// answer, so no path calls `getCities(undefined)`.
+describe('a load fed by another load (Places)', () => {
+  const PLACES = `<script>
+  const later = (fn) => new Promise((r, j) => setTimeout(() => { try { r(fn()) } catch (e) { j(e) } }, 5))
+  const getStates = () => { globalThis.__pl.push('states'); return later(() => { if (globalThis.__plFail) throw new Error('states down'); return ['California', 'Texas'] }) }
+  const getCities = (s) => { globalThis.__pl.push(s); return later(() => { if (!s) throw new Error('no state'); return s === 'California' ? ['LA', 'SF'] : ['Austin'] }) }
+  const states = await getStates()
+  $: selectedState = states?.[0]
+  const cities = await getCities(selectedState)
+</script>
+<mesa:boundary><p>{cities.join(', ')}</p>{#snippet failed(e)}<s>{e.message}</s>{/snippet}</mesa:boundary>`
+  const page = async (c) => {
+    globalThis.__pl = []
+    const { html, state } = await renderToParts(c.server, {}, { target: 'server', hydratable: true })
+    const calls = globalThis.__pl
+    const root = document.createElement('div')
+    root.innerHTML = html
+    document.body.append(root)
+    globalThis.__pl = []
+    return { root, html, state, calls }
+  }
+  const settle = async () => { for (let i = 0; i < 3; i++) { await new Promise((r) => setTimeout(r, 15)); flushSync() } }
+  const keyOf = (state, pick) => Object.keys(state).find((k) => k.includes('$') && pick(state[k]))
+  const states = (v) => v?.[0] === 'California'
+  const cities = (v) => v?.[0] === 'LA'
+
+  it('a server render inside a boundary writes the cities from two calls', async () => {
+    const c = await build(PLACES)
+    const { html, calls } = await page(c)
+    expect(calls).toEqual(['states', 'California'])
+    expect(html).toMatch(/<p>[^<]*LA, SF/)
+    expect(html).not.toMatch(/<s>/)
+  })
+
+  it('a server render whose upstream fails writes its error, and calls the dependent never', async () => {
+    const c = await build(PLACES)
+    globalThis.__plFail = true
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const { html, calls } = await page(c)
+      expect(calls).toEqual(['states'])
+      expect(html).toMatch(/<s>states down/)
+      expect(html).not.toMatch(/no state/)
+    } finally {
+      globalThis.__plFail = false
+      errors.mockRestore()
+    }
+  })
+
+  it('both seeded: the client loads nothing', async () => {
+    const c = await build(PLACES)
+    const { root, state } = await page(c)
+    hydrate(root, c.dom, {}, { state: JSON.parse(JSON.stringify(state)) })
+    await settle()
+    expect(globalThis.__pl).toEqual([])
+    expect(root.querySelector('p').textContent).toBe('LA, SF')
+  })
+
+  it('the upstream seeded and the dependent not: one call, with the seeded answer', async () => {
+    const c = await build(PLACES)
+    const { root, state } = await page(c)
+    const seeded = JSON.parse(JSON.stringify(state))
+    delete seeded[keyOf(seeded, cities)]
+    hydrate(root, c.dom, {}, { state: seeded })
+    await settle()
+    expect(globalThis.__pl).toEqual(['California'])
+    expect(root.querySelector('p').textContent).toBe('LA, SF')
+  })
+
+  it('neither seeded: the states, then the cities of the first', async () => {
+    const c = await build(PLACES)
+    const { root } = await page(c)
+    hydrate(root, c.dom, {}, { state: {} })
+    await settle()
+    expect(globalThis.__pl).toEqual(['states', 'California'])
+    expect(root.querySelector('p').textContent).toBe('LA, SF')
+  })
+
+  // The seed is used, and the upstream landing changes what the dependent
+  // reads, so it loads again.
+  it('the dependent seeded and the upstream not: the seed, then one reload when the upstream lands', async () => {
+    const c = await build(PLACES)
+    const { root, state } = await page(c)
+    const seeded = JSON.parse(JSON.stringify(state))
+    delete seeded[keyOf(seeded, states)]
+    hydrate(root, c.dom, {}, { state: seeded })
+    flushSync()
+    expect(root.querySelector('p').textContent).toBe('LA, SF')
+    await settle()
+    expect(globalThis.__pl).toEqual(['states', 'California'])
+    expect(root.querySelector('p').textContent).toBe('LA, SF')
+  })
+})
+
 describe('a client:* subtree under the flag (FJS-D2174)', () => {
   // An idle trigger and a dynamic import, then the claim; a first import of a
   // module written moments ago is slow.

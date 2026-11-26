@@ -33,6 +33,7 @@ The messages here are shortened. Each one names the thing you wrote.
 |---|---|---|
 | `bind:x` on something that is not a top-level `let` | `'x' must be a writable top-level let` | Bind a `let`. For a derived value use `$: name = expr` |
 | `bind:value` on a `var` | `cannot two-way bind: var v is outside the reactive graph` | Declare it `let` |
+| `bind:checked={todo.done}` where `todo` is a row of `todos.filter(...)` or a derived `const` | `cannot two-way bind: 'todo' is a row of …` | Loop over the `let` itself (`{#each todos as todo}`), or write it in a handler that reassigns the list |
 | `bind:this` on a `const` or other non-`let` | `'el' must be a top-level let variable` | Declare `let el = null` |
 | `bind:group` on a non-`let` | `'g' must be a top-level let variable` | Declare it with `let` at the top level |
 | `bind:value\|mask` with no pattern | `bind:value\|mask requires a pattern argument` | `bind:value\|mask({"99/99/9999"})={value}` |

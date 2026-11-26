@@ -3189,11 +3189,27 @@ function refuseUnhandledFailures(ctx, reads) {
   const catching = []
   const read = uncaughtTemplateReads(ctx.DOM?.body, catching)
   const caught = new Set(catching.flatMap((b) => boundaryWatchSet(awaited, b.body)))
+  const errorRead = (name) => {
+    const r = reads.get(name)
+    return r && (r.errorInTemplate || r.fields.has('error') || r.fields.has('status'))
+  }
+  // A dependent adopts its upstream's failed first load (`FJS-D2393`), so
+  // whatever shows the dependent shows the upstream; counting the upstream
+  // unshown printed an error the page was already showing (`FJS-D2396`).
+  //
+  // That holds for the first load only: once the upstream has answered, a
+  // refetch of it that fails is not adopted, so it keeps its name and the
+  // runtime prints it then.
+  const direct = new Set(awaited.filter((v) => errorRead(v.name) || caught.has(v)).map((v) => v.name))
+  const shown = new Set(direct)
+  for (const name of shown) {
+    for (const up of asyncUpstream(ctx.analysis.vars, name)) shown.add(up)
+  }
+  ctx.analysis.dependentShownAsync = new Set([...shown].filter((name) => !direct.has(name)))
   for (const v of awaited) {
     const { name } = v
-    const r = reads.get(name)
-    if (r && (r.errorInTemplate || r.fields.has('error') || r.fields.has('status'))) continue
-    if (!caught.has(v)) unshown.add(name)
+    if (errorRead(name)) continue
+    if (!direct.has(name)) unshown.add(name)
     if (!read.has(name)) continue
     ctx.analysis.errors.push(
       `UNHANDLED_FAILURE: the template reads '${name}', an awaited \`const\`, and nothing shows it ` +
@@ -4658,6 +4674,15 @@ function collectOpaqueValues(ast) {
     if (id.type === 'ArrayPattern') { id.elements.forEach((el) => bindNames(el, out)); return }
     if (id.type === 'AssignmentPattern') { bindNames(id.left, out); return }
     if (id.type === 'RestElement') bindNames(id.argument, out)
+  }
+  // A top-level `function` is in no set the template classification reads,
+  // so `{label('n')}` over `function label(p)` was written once while the
+  // same call with no arguments, or to a `const` arrow, moved (FJS-4637).
+  // What a call to it hands back may read a signal, which is this set's fact;
+  // the script half is `callsLocal` in seedReactiveSet (FJS-1439).
+  for (const node of ast.body) {
+    const fn = node.type === 'ExportNamedDeclaration' ? node.declaration : node
+    if (fn?.type === 'FunctionDeclaration' && fn.id) opaqueValues.add(fn.id.name)
   }
   for (const node of ast.body) {
     const decl = node.type === 'VariableDeclaration' ? node
@@ -7059,12 +7084,13 @@ export function parseEachHeader(value) {
  * both enter it, so a row reads the same way on every target.
  */
 export function eachFrame(ctx, header, rowSource) {
-  const { itemName, indexName, isDestructure, patNames } = header
+  const { arrayName, itemName, indexName, isDestructure, patNames } = header
   let patFn = null
   if (isDestructure) {
     ctx._eachPatternSeq = (ctx._eachPatternSeq ?? 0) + 1
     patFn = `$$pat${ctx._eachPatternSeq}`
   }
+  const prevSources = enterEachSources(ctx, isDestructure ? patNames : [itemName], arrayName)
   const prevAccessors = ctx.accessors ? { ...ctx.accessors } : null
   const outerLift = ctx.accessors?.[EACH_LIFT] ?? null
   let lift = null
@@ -7083,6 +7109,7 @@ export function eachFrame(ctx, header, rowSource) {
     if (indexName) ctx.accessors[indexName] = `${indexName}()`
   }
   const restore = () => {
+    ctx._eachSources = prevSources
     if (!prevAccessors) return
     ctx.accessors = prevAccessors
     // The copy is a spread, which drops a non-enumerable key: an `{#each}`
@@ -7090,6 +7117,70 @@ export function eachFrame(ctx, header, rowSource) {
     if (outerLift) Object.defineProperty(ctx.accessors, EACH_LIFT, { value: outerLift, configurable: true })
   }
   return { patFn, lift, restore }
+}
+
+/**
+ * Record, for a row's frame, which list each item name was drawn from, and
+ * return the outer record for the frame's restore. `elementBindTarget` reads
+ * it to find the `let` a write into a row's object has to notify.
+ */
+function enterEachSources(ctx, names, arrayName) {
+  const prev = ctx._eachSources ?? null
+  const next = { ...prev }
+  for (const n of names) if (n) next[n] = arrayName
+  ctx._eachSources = next
+  return prev
+}
+
+/**
+ * The variable an `{#each}` list is read from, and whether it is read as a
+ * path: `g.items` is `{ name: 'g', path: true }`, `todos.filter(...)` is
+ * `{ name: 'todos', path: false }`. A path hands back the same array on every
+ * read; a call builds a new one.
+ */
+function listRoot(source) {
+  let node
+  try { node = acorn.parseExpressionAt(source, 0, { ecmaVersion: 'latest' }) } catch { return { name: null, path: false } }
+  if (source.slice(node.end).trim()) return { name: null, path: false }
+  let path = true
+  for (;;) {
+    if (node.type === 'ChainExpression') node = node.expression
+    else if (node.type === 'MemberExpression') node = node.object
+    else if (node.type === 'CallExpression') { path = false; node = node.callee }
+    else break
+  }
+  const name = node.type === 'Identifier' ? node.name : null
+  return { name, path: path && name !== null }
+}
+
+/**
+ * What a write into row `name`'s object has to notify: `{ owner }`, the
+ * top-level `let` its list came from, followed through nested rows
+ * (`{#each g.items as item}` inside `{#each groups as g}` is `groups`);
+ * `{ proxy: true }` when the list reads through a watch proxy, which notifies
+ * on its own; `{ refusal }` when no write can reach the rows; null when `name`
+ * is no row. Only a list read as a path qualifies: a row rebinds past its
+ * equality guard only when the list comes back as the same array (RULE 43),
+ * and `todos.filter(...)` or a derived `const` is a new array of the same
+ * objects, so the count would update and the row would not.
+ */
+function eachListOwner(ctx, name) {
+  if (ctx._eachSources?.[name] === undefined) return null
+  const row = name
+  const seen = new Set()
+  while (ctx._eachSources?.[name] !== undefined && !seen.has(name)) {
+    seen.add(name)
+    const source = ctx._eachSources[name]
+    const list = listRoot(source)
+    if (!list.path) {
+      return { refusal: `'${row}' is a row of \`${source.trim()}\`, which builds a new list on each read, so the row never sees the write. Bind on a row of the list itself (\`{#each ${list.name ?? 'list'} as ${row}}\`), or write the change in a handler that reassigns the list.` }
+    }
+    name = list.name
+  }
+  const acc = ctx.accessors?.[name]
+  if (acc === `$$runtime.get($$sig_${name})`) return { owner: name }
+  if (isProxyAccessor(acc, name)) return { proxy: true }
+  return { refusal: `'${row}' is a row of \`${name}\`, which is not a top-level \`let\`, so the write has no list to notify. Bind on a row of the \`let\` it comes from, or write the change in a handler that reassigns it.` }
 }
 
 export function makeEachBlock(data, option) {
@@ -7233,6 +7324,7 @@ export function makeVirtualEachBlock(data, option) {
     keyFunctionStr = `(${itemName}) => ${keyExp}`
   }
 
+  const prevSources = enterEachSources(ctx, [itemName], arrayName)
   const prevAccessors = ctx.accessors ? { ...ctx.accessors } : null
   // Register item (and optional index) as getter-style accessors — same as makeEachBlock
   if (ctx.accessors) {
@@ -7246,6 +7338,7 @@ export function makeVirtualEachBlock(data, option) {
     { allowSingleBlock: true, each: { itemName, indexName } }
   )
 
+  ctx._eachSources = prevSources
   if (prevAccessors) ctx.accessors = prevAccessors
 
   const arrayExpr = ctx.accessors ? rewriteExpr(arrayName, ctx.accessors) : arrayName
@@ -7961,11 +8054,21 @@ export function elementBindTarget(ctx, attr, varName) {
     // A write into the object a `let` holds notifies nobody, and the author
     // has no place to put the `obj = obj` that fixes it, so the setter ends
     // with it: `bind:value={pick[id]}` left `disabled={!pick[id]}` stale.
+    // A row's item is written the same way, so the notify goes to the `let`
+    // its list came from: `bind:checked={todo.done}` left `class:done` and
+    // every count over `todos` stale.
     const isMemberTarget = /[.[]/.test(varName)
     const root = varName.match(/^[A-Za-z_$][\w$]*/)?.[0]
     const rootRead = root && ctx.analysis?.vars?.[root]?.kind === 'let' ? `$$runtime.get($$sig_${root})` : null
+    const row = isMemberTarget && root ? eachListOwner(ctx, root) : null
+    if (row?.refusal) {
+      ctx.analysis.errors.push(`bind:${attr}={${varName}} — cannot two-way bind: ${row.refusal}`)
+      return null
+    }
     const notify = isMemberTarget && rootRead && rw.startsWith(rootRead)
       ? ` $$runtime.set($$sig_${root}, ${rootRead}, true);`
+      : row?.owner
+      ? ` $$runtime.set($$sig_${row.owner}, $$runtime.get($$sig_${row.owner}), true);`
       : ''
     setter = `($$v) => { ${isMemberTarget ? rw : varName} = $$v;${notify} }`
   }
@@ -10353,6 +10456,25 @@ function sortDeclarations(ctx) {
   return { sorted, classEdges, emittedClassStarts }
 }
 
+/**
+ * Every awaited const `name` reads, directly or through derived values, in
+ * discovery order. The walk stops at an awaited const: its own upstream is
+ * its own list, and a load gated on it is gated on that too.
+ */
+function asyncUpstream(vars, name) {
+  const found = new Set(), seen = new Set([name])
+  const walk = (n) => {
+    for (const dep of vars[n]?.deps ?? []) {
+      if (seen.has(dep)) continue
+      seen.add(dep)
+      if (vars[dep]?.isAsync) found.add(dep)
+      else walk(dep)
+    }
+  }
+  walk(name)
+  return [...found]
+}
+
 /** Phase of emitScript: each declaration buffered as its own bucket of code. */
 function emitDeclarations(ctx, sorted, watchedCalls) {
   const { vars } = ctx.analysis
@@ -10434,10 +10556,10 @@ function emitDeclarations(ctx, sorted, watchedCalls) {
       mod.code.push(xNode.raw(`const ${sigR} = $$runtime.track(undefined);\nconst ${sigW} = (v) => $$runtime.set(${sigR}, v);`))
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       const stateVar = `$$async_${v.name}`
-      const upstream = v.deps.filter((dep) => vars[dep]?.isAsync && dep !== v.name).map((dep) => `$$async_${dep}`)
+      const upstream = asyncUpstream(vars, v.name).map((dep) => `$$async_${dep}`)
       // A load nothing shows failing carries its name, which the runtime prints when it rejects.
       const stateArgs = ctx.analysis.unshownAsync?.has(v.name)
-        ? `[${upstream.join(', ')}], '${v.name}'`
+        ? `[${upstream.join(', ')}], '${v.name}'${ctx.analysis.dependentShownAsync?.has(v.name) ? ', true' : ''}`
         : upstream.length ? `[${upstream.join(', ')}]` : ''
       mod.code.push(xNode.raw(`const ${stateVar} = $$runtime.makeAsyncState(${stateArgs});`))
       mod.code.push(xNode.raw(`$$async.${v.name} = ${stateVar};`))

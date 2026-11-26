@@ -173,6 +173,7 @@ CREATE TABLE IF NOT EXISTS "draft" (
   "fileExternalIds" TEXT NOT NULL,
   "createdAt" TEXT,
   "updatedAt" TEXT,
+  "hiddenAt" TEXT,
   "missingSince" TEXT
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_draft_profileExternalId" ON "draft" ("profileExternalId");

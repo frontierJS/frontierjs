@@ -140,3 +140,30 @@ describe('what the narrowing leaves alone', () => {
     expect(ctx.analysis.opaqueValues).not.toContain('plain')
   })
 })
+
+// The template half of FJS-1439: a call to a `function` declaration WITH
+// arguments was written once, while the same call with none, or to a `const`
+// arrow, was a render effect — so the helper's spelling decided whether
+// `{label('n')}` over `let n` ever moved (FJS-4637).
+describe('a template call to a local function moves however the function is spelled (FJS-4637)', () => {
+  const SPELLINGS = {
+    'declaration, no args':   ['function label() { return "n" + n }', 'label()'],
+    'arrow const, with args': ['const label = (p) => p + n', "label('n')"],
+    'declaration, with args': ['function label(p) { return p + n }', "label('n')"],
+    'exported declaration':   ['export function label(p) { return p + n }', "label('n')"],
+  }
+  for (const [what, [decl, call]] of Object.entries(SPELLINGS)) {
+    // happy-dom has no delegation root, so a prop push is the write.
+    it(`${what}: text and attribute`, async () => {
+      const el = await mount(
+        `<script>\n  export let n = 0\n  ${decl}\n</script>\n<p data-l={${call}}>{${call}}</p>`
+      )
+      expect(el.querySelector('p').textContent).toBe('n0')
+      const anchor = [...el.childNodes].find((c) => c.nodeType === 8)
+      runtime.pushProps(anchor, { n: 5 })
+      runtime.flushSync()
+      expect(el.querySelector('p').textContent).toBe('n5')
+      expect(el.querySelector('p').getAttribute('data-l')).toBe('n5')
+    })
+  }
+})

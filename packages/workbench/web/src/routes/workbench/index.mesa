@@ -705,11 +705,31 @@ title: Workbench
   // textarea.field grows with its text through field-sizing; a browser
   // without it (Firefox) holds a long prompt in a four-line box. The CSS
   // max-height still caps what this sets.
+  //
+  // The height is read off a hidden copy and written only when it changes:
+  // collapsing the box itself to measure it lays the whole page out twice a
+  // key, 40 ms a key in WebKitGTK with a long transcript (FJS-4632).
   const SIZES_ITSELF = typeof CSS === 'undefined' || CSS.supports('field-sizing', 'content')
+  const rulers = new WeakMap()
   function fit(el) {
-    if (SIZES_ITSELF) return
-    el.style.blockSize = 'auto'
-    el.style.blockSize = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+    if (SIZES_ITSELF || !el.offsetWidth) return
+    let r = rulers.get(el)
+    if (!r) {
+      const ruler = el.cloneNode(false)
+      ruler.removeAttribute('id')
+      ruler.removeAttribute('placeholder')
+      ruler.setAttribute('aria-hidden', 'true')
+      ruler.tabIndex = -1
+      ruler.style.cssText = 'position:fixed;inset-block-start:0;inset-inline-start:0;visibility:hidden;pointer-events:none;block-size:auto;max-block-size:none;overflow:hidden'
+      el.parentNode.append(ruler)
+      rulers.set(el, r = { ruler, fitted: 0 })
+    }
+    r.ruler.style.inlineSize = `${el.offsetWidth}px`
+    r.ruler.value = el.value
+    const height = r.ruler.scrollHeight + r.ruler.offsetHeight - r.ruler.clientHeight
+    if (height === r.fitted) return
+    r.fitted = height
+    el.style.blockSize = `${height}px`
   }
 
   function keydown(p, e) {

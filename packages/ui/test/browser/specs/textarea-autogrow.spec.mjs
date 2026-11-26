@@ -22,6 +22,21 @@ export async function run(t) {
   await t.type('b')
   await t.eventually(`${HEIGHT} > ${empty + 20}`, true, 'typing lines grows the box')
 
+  // FJS-4632: collapsing the box itself to measure it lays the whole page out
+  // twice a key, so a key that leaves the height alone writes no style at all.
+  await t.evaluate(`
+    const box = document.querySelector('#note');
+    window.__styleWrites = [];
+    new MutationObserver((rs) => { for (const r of rs) window.__styleWrites.push(box.getAttribute('style')) })
+      .observe(box, { attributes: true, attributeFilter: ['style'] });
+  `)
+  await t.type('cd')
+  await t.evaluate(`await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));`)
+  t.is(await t.evaluate(`return JSON.stringify(window.__styleWrites);`), '[]',
+    'a key that does not change the line count writes no height to the box')
+  t.is(await t.evaluate(`return document.querySelectorAll('#note').length;`), 1,
+    'the copy the height is read off carries no id of its own')
+
   await t.clickAt('#stage #clear')
   await t.eventually(`Math.abs(${HEIGHT} - ${empty}) < 2`, true,
     'clearing the value from code shrinks the box back to its empty height')

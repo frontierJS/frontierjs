@@ -397,7 +397,7 @@ const _unanswered = new Set()
 const _namedThrows = new WeakSet()
 let _onReadThrow = null
 
-function _reportUnanswered(node, e) {
+function _reportUnanswered(node, e, loader = null) {
   if (!_unanswered.size || !(e instanceof TypeError) || _namedThrows.has(e)) return
   const under = (owner) => {
     if (!owner || !node) return true
@@ -408,10 +408,14 @@ function _reportUnanswered(node, e) {
   if (!names.length) return
   _namedThrows.add(e)
   const list = names.map((n) => `'${n}'`).join(', ')
+  // A load is held only for what the compiler sees it read, so a boundary
+  // around it does not help; an argument does.
+  const fix = loader
+    ? `Pass the value to the load as an argument, so the load waits for it.`
+    : `Read it inside a <mesa:boundary>, or branch on $async.${names[0]}.loading.`
   console.error(
-    `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY: a read threw while ${list} had not answered its first ` +
-    `load, and an awaited const is undefined until then. Read it inside a <mesa:boundary>, ` +
-    `or branch on $async.${names[0]}.loading.`, e)
+    `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY: ${loader ? `the load of '${loader}'` : 'a read'} threw ` +
+    `while ${list} had not answered its first load, and an awaited const is undefined until then. ${fix}`, e)
 }
 
 function _catcherOf(node) {
@@ -5915,18 +5919,28 @@ function _localTrie(signalMap) {
 
 // ─── ASYNC STATE ──────────────────────────────────────────────────────────────
 
-// `upstream` is the states of the awaited consts this one reads. Its own run
-// starts only when one LANDS, so for that one's whole flight the value here is
-// stale; reading pending through them says so. Their own upstream is read
-// through theirs, so a chain is pending end to end.
+// `upstream` is the states of the awaited consts this one reads, through any
+// derived hops. On a refetch of one, this one re-runs only when it LANDS, so for
+// that whole flight the value here is stale; reading pending through them says
+// so, and a chain is pending end to end. `asyncDerived` holds the first run
+// until each has `_answered`.
+//
+// `_answered` is not `!loading`: a first load that failed is not loading, and a
+// refresh of it clears its error while it still has no value.
 //
 // `unshown` is the const's name when nothing in the component shows it failing
 // (`FJS-4290`); its rejection is then printed, in production too (`FJS-D2136`).
-export function makeAsyncState(upstream = [], unshown = null) {
+// An `adopted` error is an upstream's, printed where it failed or shown there,
+// so printing it again here named one `Error` twice (`FJS-D2396`).
+// `dependentShows` is a load only a dependent shows failing: the dependent
+// adopts a failed first load and nothing after it, so a refetch that fails
+// once this has answered reaches no one unless it prints.
+export function makeAsyncState(upstream = [], unshown = null, dependentShows = false) {
   const [loading, setLoading] = createSignal(true)
   const [pending, setPending] = createSignal(true)
   const [error, setError] = createSignal(null)
   const [status, setStatus] = createSignal('pending')
+  const [answered, setAnswered] = createSignal(false)
   const upstreamPending = () => {
     let any = false
     for (const u of upstream) if (u.pending) any = true
@@ -5934,6 +5948,10 @@ export function makeAsyncState(upstream = [], unshown = null) {
   }
   let waiters = null
   return {
+    _upstream: upstream,
+    get _answered() {
+      return answered()
+    },
     /** Resolves once the first load has landed, either way. */
     settled() {
       return untrack(loading) ? new Promise((r) => (waiters ??= []).push(r)) : Promise.resolve()
@@ -5951,7 +5969,7 @@ export function makeAsyncState(upstream = [], unshown = null) {
       const s = status()
       return s === 'success' && upstreamPending() ? 'pending' : s
     },
-    _update(phase, err = null) {
+    _update(phase, err = null, adopted = false) {
       if (phase === 'start') {
         setPending(true)
         setError(null)
@@ -5961,8 +5979,9 @@ export function makeAsyncState(upstream = [], unshown = null) {
         setPending(false)
         setStatus('success')
         if (waiters) { for (const r of waiters) r(); waiters = null }
+        setAnswered(true)
       } else {
-        if (unshown) console.error(`[Mesa] UNHANDLED_FAILURE: the load of '${unshown}' rejected and nothing shows it; read $async.${unshown}.error or wrap its read in a <mesa:boundary> with a failed snippet.`, err)
+        if (unshown && !adopted && !(dependentShows && !untrack(answered))) console.error(`[Mesa] UNHANDLED_FAILURE: the load of '${unshown}' rejected and nothing shows it; read $async.${unshown}.error or wrap its read in a <mesa:boundary> with a failed snippet.`, err)
         setLoading(false)
         setPending(false)
         setError(err)
@@ -6078,8 +6097,24 @@ export function makeCallState(handled = false) {
 // would otherwise subscribe that effect to them.
 //
 // `name` is the const's, held in `_unanswered` until the first run settles.
+//
+// A run waits for every upstream's first answer, and the effect reads
+// `_answered` so it starts when one lands with a value equal to what the deps
+// already held. An upstream whose first load failed is this load's failure,
+// adopted with the loader never called (`FJS-D2393`). A seed skips the wait.
 export function asyncDerived(getAsyncState, fn, deps, setValue, name, seed = null) {
   let controller = null
+  const up = deps && getAsyncState()._upstream || []
+  let adopted = up
+  const held = () => {
+    let wait = false
+    for (const u of up) {
+      if (u._answered) continue
+      if (u.status === 'error') return u
+      wait = true
+    }
+    return wait
+  }
   const entry = name ? { name, owner: _owner } : null
   const answered = () => { if (entry) _unanswered.delete(entry) }
   if (entry) {
@@ -6110,7 +6145,11 @@ export function asyncDerived(getAsyncState, fn, deps, setValue, name, seed = nul
       },
       (err) => {
         if (signal.aborted) return
+        // A read inside a function the loader calls is invisible to the gate
+        // and throws here, as a rejection no effect's catch sees (`FJS-D2397`).
+        // `answered()` first, or the loader would be named as its own cause.
         answered()
+        if (entry) _reportUnanswered(entry.owner, err, name)
         state._update('error', err)
       }
     )
@@ -6118,7 +6157,13 @@ export function asyncDerived(getAsyncState, fn, deps, setValue, name, seed = nul
   if (deps) {
     createEffect(() => {
       deps.forEach((d) => d())
-      run()
+      const h = seed || !up.length ? false : held()
+      if (!h) run()
+      else if (h !== true && adopted !== h.error) {
+        adopted = h.error
+        answered()
+        getAsyncState()._update('error', adopted, true)
+      }
       onCleanup(() => controller?.abort())
     })
   } else {
@@ -6128,7 +6173,7 @@ export function asyncDerived(getAsyncState, fn, deps, setValue, name, seed = nul
     untrack(run)
     if (_owner) onCleanup(() => controller?.abort())
   }
-  getAsyncState().refresh = () => { untrack(run) }
+  getAsyncState().refresh = () => { untrack(() => { if (!up.length || !held()) run() }) }
 }
 
 // ─── MISC ─────────────────────────────────────────────────────────────────────

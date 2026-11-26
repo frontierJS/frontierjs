@@ -35,6 +35,12 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d2340"></a>2026-11-26 · `FJS-D2340` — Should `fli check` name a `.env` whose `AUDIT_PATH` is the old folder form `./db/audit/` — Boot's own refusal is enough, and the owner edits each `.env` by hand.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (A check rule names the line and the file form to write).
+
+Against the recommendation (**A**): Owner's call: the old folder form lives only in prototype .env files, boot already refuses it loudly, and a check rule for a one-time migration is a permanent rule with no lasting caller. The thirteen prototype apps still on the folder form (`.env`, `.env.example`, quo's `.env.telnyx*`) were moved to `./db/audit.db` by hand on 2026-11-25.
+
 ### <a id="fjs-d2387"></a>2026-11-25 · `FJS-D2387` — Q7 — Whether `conduit-github` is admitted for publishing — `conduit-github` joins `ADMITTED` (`FJS-D2365`'s path): Basecamp is its runtime caller, and the owner tested connect and Import from repository on 2026-11-25. The release itself stays the owner's.
 
 Asked in [`IDEAS/conduit-github.md`](IDEAS/conduit-github.md) § Open questions. **A** was picked over **B** (It stays held out until the missing-grant refusal (step 0.3) is measured against real GitHub).
@@ -1932,6 +1938,18 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d2320"></a>2026-11-26 · `FJS-D2320` — Is there a sanctioned cross-tenant elevation for an operator who is a member of one account and must create a row in another — Rule it with `FJS-D1431` B and extend that ruling. On a custom method that declares `tenant: false`, the call's `$.db` is built without the tenant claim, so `$.db.asSystem()` is the unscoped tier by construction and `$.app.db` is not needed. `$.db` without `asSystem()` stays claim-less, so it matches no tenant's rows rather than every tenant's. Once the new tenant's root row exists, the body narrows to that tenant before writing its children, the shape of Laravel's `$tenant->run` and django-tenants' `tenant_context`. The spelling is settled at build after the probe. The method also requires a platform principal, a second claim whose name is derived as the admission claim's is (`<claim>Platform` beside `tenantAdmission`'s `<claim>Admitted`, `FJS-D1100`, `packages/litestone/src/core/tenancy.js`), so no tenant role can hold it. `tenantClaimGuard` (`packages/junction/src/core/litestone.ts`) checks it before its early return for a claim-bearing principal, and `withTenantDb` reads the `tenant: false` flag through the same resolver. `createApp` refuses a `tenant: false` method when the app resolves no platform claim. The gate floor still grades the operator, `manifest()` lists the method, and `service-as-system` stops warning only on `$.db.asSystem()` inside a method so declared, while `$.app.db` still warns everywhere. Red tests: a gate-8 admin of another account answers 403, the boot refusal, a `checks/data.js` fixture each way, and the trail names the operator.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (Keep `$.app.db.asSystem()` behind `gate: 7`, baselined, and fix the contradiction in `multi-tenancy.md`. Nothing declares which methods are the platform tier), **B** (A model-less platform service (`FJS-D49`, `FJS-D1431` A). The method moves to a greppable hub service, but it loses the gate floor, so the operator is graded by hand, and it still reaches the root client through `$.app`), **D** (`asSystem({ tenant: x })` or a `$withTenant(x)`. That is django-tenants' explicit context. It adds a litestone word, and it cannot create a tenant's first row unless the caller pre-mints the id).
+
+The paper's recommendation, taken as written: one declaration answers both rows, the tenant guard keeps its one owner (Invariant 4), and the multi-tenancy contradiction resolves in code. A is the fallback if `FJS-D1431` is ruled A. Unprobed: before building, check that a `tenant: false` call's `$.db.asSystem()` can create an `Account` for a tenant that does not exist yet, and that the trail still names the operator. Red tests: a no-claim principal on the method answers 200, a stranger is refused at the gate floor, `manifest()` lists it, and `checks/data.js` gets a fixture each way (`decision-rules`, confidence 2). - **Prior art** (read 2026-11-25) — django-tenants creates a tenant as an ordinary row and runs cross-tenant code inside an explicit `tenant_context(tenant)` (https://django-tenants.readthedocs.io/en/latest/use.html). Supabase's `service_role` bypasses RLS only server-side, and a `security definer` function declares a narrow elevation per function, which is C's shape (https://supabase.com/docs/guides/database/postgres/row-level-security). acts_as_tenant exempts only where the author wraps code in `without_tenant`, never by the caller, and its README says "to create records for another tenant, wrap them in `ActsAsTenant.with_tenant(other_tenant)`" (https://github.com/ErwinM/acts_as_tenant). Tenancy for Laravel creates the tenant with `Tenant::create`, whose model forces the central connection, and writes its first rows inside `$tenant->run(fn)`, which "return[s] to the previous context" afterward (https://tenancyforlaravel.com/docs/v3/tenants). Supabase's secret key "bypasses RLS only when the request carries no user access token", and Firebase's server libraries "bypass all Cloud Firestore Security Rules" and are authorized by IAM, so in both the elevated tier is a separate credential rather than a high app role (https://firebase.google.com/docs/firestore/security/get-started). The three tenancy libraries share one shape: the tenant row is created where tenant scoping does not apply, then the code switches into the new tenant explicitly for its children. That is C for the door plus D's switch after the first row, which answers D's pre-minted-id objection.
+
+### <a id="fjs-d1431"></a>2026-11-26 · `FJS-D1431` — Does a custom method on a row-tenant-scoped service get a per-method opt-out of the tenant guard, or is a platform-wide operation a model-less service (`FJS-D49`) — A boolean on the custom method, `tenant: false`, read by `tenantClaimGuard` to skip the refusal for that method only. Never on a CRUD verb, so every read stays one tenant's, and the method's model read-gate floor (`FJS-826`) still grades the caller. `manifest()` and `svc.describe()` carry it, so the methods spanning tenants are listable. The method reads through `asSystem()` since a caller-scoped client with no claim matches no row.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Keep `FJS-D49`: the platform-wide operation is a model-less service (`model: null`), which is what the etsy stressor's `platform.service.ts` already is. Close `FJS-3091` as accepted, add an `api-hazards` entry saying a method across tenants lives on its own service. The administrator is graded by hand there, since a model-less service has no gate floor), **C** (`scope: 'platform'` on the method, as the row words it. One word with two owners: `scope:` is already the API-key scope a key must hold (`FJS-D916`), so a method naming it would be read as a key's standing rather than a tenancy exemption).
+
+The paper's recommendation, taken as written: (confidence 2) — the caller cannot widen anything (the author states it on the method, greppable like `FJS-D49`'s hub service), the gate floor grades the administrator instead of a hand-written check, and C collides with `FJS-D916`; A is the reopen path if a second method wants it and the extra service per operation proves the lesser cost. No outside analogue declares it on a method: acts_as_tenant exempts by author-written call site, which B matches. - **Prior art** (read 2026-11-01) — acts_as_tenant has no per-action opt-out. Cross-tenant code is wrapped by its author in `ActsAsTenant.without_tenant`, and `require_tenant` can exempt a path or a model, never a caller ([README](https://github.com/ErwinM/acts_as_tenant)). In both cases the exemption is written by the developer in code, which is B's property, and none of them is a separate service. Nothing else read declares the flag on a method.
 
 ### <a id="fjs-d2208"></a>2026-11-26 · `FJS-D2208` — How does an owner write their own `@secret` column without the service reaching for `asSystem()` — No new word. A secret the owner pastes and never reads back is spelled `@encrypted @allow(write, <owner rule>)` plus a `@derived` "is it set" Boolean. `@secret` stays the system-only credential. `packages/litestone/docs/encryption.md` and `packages/litestone/docs/access-control.md` say which to pick. Paylode's `connectStripe` becomes a plain `$.db.product.update`, and `decorate` goes away.
 
@@ -5466,6 +5484,18 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d2071"></a>2026-11-26 · `FJS-D2071` — Can a `@@mirror` model follow a row whose key the Provider changed — a file that was moved — Key the mirror on a column that does not move: `@@mirror(key: id)`. `path` is then a plain `@system` column the scan rewrites under `asSystem()`, `@@unique([libraryId, path])` stays, and `missingSince` is still derived. Cost: one sentence in `modeling.md` saying the key is the identity the row keeps, which is the Provider's id when the Provider issues one and the row's own id when it does not. The sync then matches by its own rules instead of upserting by the key, which `FJS-D1180` already says is the sync's code, and it cannot use conduit's key-matched upsert (`packages/conduit/src/mirror.ts`). That is acceptable because no connector claims a file catalog. `$mirrorKey` (`introspect.js`) and `litestone mirror exit` report `id` as the key, which the doc sentence has to cover. The move needs a litestone test, since today only a scratch probe proves it.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **D** was picked over **A** (`@@mirror` stays for Providers that issue a stable id. A file-backed catalog is ordinary `@@gate(4.8.8.8)` models with a hand-declared `missingSince`, and `modeling.md` says so where `@@mirror` is introduced. This is what the app did. Cost: the derived `@system` on every column, `missingSince` and the sync bookkeeping are written by hand, and only the gate says the model is not caller-owned), **B** (the key may be declared movable, so the sync alone may rewrite it. Cost: an option with one caller, and `asSystem()` lifts an `@immutable` it is documented not to lift. Litestone still cannot tell a move from a delete plus a create. That is the app's matcher (inode, MusicBrainz id, audio hash), so the engine gains a permission and none of the judgment), **C** (the sync writes a superseding row and the engine re-points relations to it. Cost: the engine rewrites every column that names the old row, and the row id is exactly what the app needs to keep).
+
+The paper's recommendation, taken as written: it needs no engine change and no new word, and it keeps everything `@@mirror` derives, so access stays declared in the schema (Invariant 6) rather than hand-written as under A. B has no second caller: the only mirror claims in the tree (`conduit-mattermost`, `conduit-quo`) key on Provider ids that never move. C breaks the app's one requirement. The music app switches by changing one attribute and deleting its hand-declared `missingSince` and per-column `@system`. If the key is to mean only "the Provider's id", the answer is A and D's doc sentence is not written (`decision-rules` applied by hand, confidence 2). - **Prior art** (read 2026-11-25) — Where the source has a stable id, the id is the key and the path is data: Dropbox's file `id` survives a move while `path_lower` changes, and API v1, which had no ids, showed a move as a delete plus an add (https://developers.dropbox.com/dbx-file-access-guide). GitHub's repository `id` and `node_id` survive a rename or transfer. Where the source has none, matching is application code and the store keeps only the row's id: Navidrome keys a track on a persistent id built from tags and matches a missing file to a new one by tags, then that id, then the old path, so stars and play counts survive a move (https://www.navidrome.org/docs/usage/configuration/persistent-ids/). Jellyfin keys an item on its path, so a move makes a new item and loses its play count (https://github.com/jellyfin/jellyfin/issues/18238). Syncthing has no rename: a move is a delete plus a new file, and a rename is inferred when the block hashes match (https://forum.syncthing.net/t/file-renames-moves/20463). Fivetran marks the old row deleted and inserts a new one when a source's primary key changes (https://fivetran.com/docs/connectors/databases/oracle/oracle-connector).
+
+### <a id="fjs-d1816"></a>2026-11-26 · `FJS-D1816` — What clears a stamped column on the reverse move — A per-move word beside `@stamps`: `untrash: trashed -> active @clears(trashedAt)`. The engine writes `NULL` in the move's own UPDATE, as `@stamps` writes the clock (`moveStampSets`, `packages/litestone/src/core/client.js`). A payload naming the column is refused as it is under `@stamps`. Limit it at parse to a nullable column another move in the same `@@transitions` stamps, refuse an `@immutable`, File or required target, and have it clear a `@stamps(…, by:)` WHO column with its stamp (`FJS-D1699`).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (No new word. A check that pairs a state with its stamp runs one way, the stamp means "when it last entered the state", and the data-hazards transitions reference says so. Vellum already ships this), **C** (`transition(id, name, { data })` carries the paired columns, nulls included. `FJS-D975` rejected it as forgeable, and it puts the rule at every call site).
+
+The paper's recommendation, taken as written: under B, a restored row keeps a stamp that says it is trashed, and a `trashedAt IS NOT NULL` filter or report returns active rows. Vellum wrote the two-way check first, so the next author will too, and B's only guard is the app's own check failing on first use. A puts the clear beside the clock in `moveStampSets`, the one place a move writes engine-owned columns. `@@softDelete`'s `restore()` already clears `deletedAt`, so A is the move-level form of a choice litestone has made. The research pass leaned B as the cheaper road, at about 55 to 45, and `decision-rules` reversed it on Q9 (`decision-rules`, confidence 2). - **Prior art** (read 2026-11-25) — Where one nullable column is the state, restore clears it: the `discard` gem's `undiscard` sets `discarded_at` back to `nil` (https://github.com/jhawthorn/discard), and Laravel's `restore()` sets `deleted_at` to `null` (https://laravel.com/docs/12.x/eloquent#soft-deleting). Where state and time are separate, the author clears it in a per-transition hook: AASM fills `<state>_at` with `timestamps: true` and runs code in `after:` (https://github.com/aasm/aasm), and XState clears context with `assign` in an exit or transition action (https://stately.ai/docs/actions).
 
 ### <a id="fjs-d1818"></a>2026-11-26 · `FJS-D1818` — Can a tombstone drop its bytes and keep their digest — Declared per column: a named argument on `@digest` (say `@digest(sha256, keep: true)`, matching `@stamps(by:)` and `@immutable(after:)`) leaves the sibling alone on a clear. Without it the refusal stays loud, and parse refuses a required or `@immutable` sibling beside a clearable File that does not say `keep`.
 
@@ -9563,6 +9593,12 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d2339"></a>2026-11-26 · `FJS-D2339` — What is the one rule for a hand-registered helper that sits in `api/src/routes/`, now that the folder autoloads as file routes — C where the helper is one route, else A.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C where the helper is one route, else A*) over **A** (The helper moves out of `routes/` to a folder the autoloader does not read, the way calendly moved its hook to `api/src/webhooks/`), **B** (A leading underscore excuses the file. This is what `loader.ts:258` does today; the ruling would document it in junction's README).
+
+C as amended: a helper that is one route becomes a file route, any other helper moves out of routes/ as in A, and the _ skip becomes a refusal naming the file.
 
 ### <a id="fjs-d2358"></a>2026-11-23 · `FJS-D2358` — Q10 — What does a release hand an app so it can reach its Basecamp, and does the crash report carry a credential — No credential for now: release sets `BASECAMP_URL` (Outpost's name for *where I report to*) and `BASECAMP_APP_ID` (`App.id`), after the Variables so a stored one cannot override them; `notifications` posts to `${BASECAMP_URL}/hooks/crash/${BASECAMP_APP_ID}`, held to a per-app rate limit.
 
@@ -14938,6 +14974,60 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d2401"></a>2026-11-26 · `FJS-D2401` — Q18 — At boot, when any registered schema syncs; on first read or subscribe if no registry exists at boot.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (on the first method call or when a resource that holds writes is created, and document it).
+
+The paper's recommendation, taken as written: an empty list while writes wait on disk is a false "nothing waiting", and `FJS-1277` already rules the queue is built by the declaration, not the first write.
+
+### <a id="fjs-d2400"></a>2026-11-26 · `FJS-D2400` — Q17 — A compile error naming both.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (both stand: the script name wins in an expression and `{@render}` reaches the snippet).
+
+The paper's recommendation, taken as written: one name with two resolution rules resolves in silence to whichever the author did not mean; Svelte refuses it, and a rename costs one file.
+
+### <a id="fjs-d2399"></a>2026-11-26 · `FJS-D2399` — Q16 — The call takes what it reads: `picked.stateOf(rows, picked.keys)`, `keys` required.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (a live property on the handle, or the caller names `picked.keys` beside the call).
+
+The paper's recommendation, taken as written: the expression declares what it reads; A asks the caller to name a thing it does not pass, and a defaulted `keys` brings back the silent path.
+
+### <a id="fjs-d2398"></a>2026-11-26 · `FJS-D2398` — Q15 — Yes, every helper a `$:` calls is warned alike; the author names the read or passes it.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (silent when the call is a bare statement whose result is unused).
+
+The paper's recommendation, taken as written: whether a result is used says nothing about whether the helper's reads are tracked, and B makes `$: report()` go stale in silence.
+
+### <a id="fjs-d2397"></a>2026-11-26 · `FJS-D2397` — Q5 — The report `FJS-D2394` names cannot see the read — The loader's rejection handler hands the error to the existing report, scoped to the loader's component, and the message names the loader.
+
+Asked in [`IDEAS/mesa-ordered-awaits.md`](IDEAS/mesa-ordered-awaits.md) § Open questions. **A** was picked over **B** (document the edge only and drop the report clause from `FJS-D2394`).
+
+The paper's recommendation, taken as written: the report already takes a rejection from a delegated handler, so this is one call at the existing owner, and B leaves a load that is wrong with nothing saying so. `decision-rules` run 2026-11-25. Confidence 2.
+
+### <a id="fjs-d2396"></a>2026-11-26 · `FJS-D2396` — Q4 — What prints when a dependent adopts its upstream's error — A failure prints at most once, at the load that failed: the runtime does not print for an adopted error, and the compiler counts an upstream as shown when a dependent that adopts its error is shown.
+
+Asked in [`IDEAS/mesa-ordered-awaits.md`](IDEAS/mesa-ordered-awaits.md) § Open questions. **A** was picked over **B** (the runtime half only; Places still prints for `states`), **C** (leave it: every unshown load prints, adopted or not).
+
+The paper's recommendation, taken as written: B and C leave two origins for one `Error`, and the shown-through-a-dependent edge is derived from `asyncUpstream`, not a new concept. `decision-rules` run 2026-11-25. Confidence 2.
+
+### <a id="fjs-d2395"></a>2026-11-26 · `FJS-D2395` — Q3 — A load that reads a `let` a `$:` watch writes — Accept it as the rule's edge beside Q2, document it with its workaround (a derived `const x = a.n`), and pin it with a compiler test.
+
+Asked in [`IDEAS/mesa-ordered-awaits.md`](IDEAS/mesa-ordered-awaits.md) § Open questions. **A** was picked over **B** (the analyzer records an edge from each `let` a watch writes to that watch's deps, in a second map beside `v.deps`, and the closure walks it).
+
+The paper's recommendation, taken as written: a watch is an effect with a trigger, not a derivation; `FJS-D2379` rules a write is never a trigger, and B is a second origin of dependency truth beside `v.deps`. `decision-rules` run 2026-11-25. Confidence 2.
+
+### <a id="fjs-d2394"></a>2026-11-26 · `FJS-D2394` — Q2 — A loader that reads an async const only inside a called function — Accept it as the rule's edge, document it, and have the existing unanswered-read report (`_reportUnanswered`) name the loader in dev.
+
+Asked in [`IDEAS/mesa-ordered-awaits.md`](IDEAS/mesa-ordered-awaits.md) § Open questions. **A** was picked over **B** (gate at runtime as well: a loader whose synchronous part reads an unanswered async signal is abandoned and retried when that signal answers).
+
+The paper's recommendation, taken as written: B is a second mechanism for a case the compiler already warns about elsewhere, and `mesa-declared-reactivity` (proposed the same day) may rule that a call is not a dependency at all. Confidence 2.
+
+### <a id="fjs-d2393"></a>2026-11-26 · `FJS-D2393` — Q1 — When an upstream load fails, what does the dependent do — Takes the upstream's error as its own: `error` is the same `Error`, `status` is `'error'`, and the loader is never called. Whatever shows the dependent failing shows why.
+
+Asked in [`IDEAS/mesa-ordered-awaits.md`](IDEAS/mesa-ordered-awaits.md) § Open questions. **A** was picked over **B** (stays `loading` and idle, as TanStack's disabled query does. No error of its own, so a template that shows only the dependent shows a spinner that never ends), **C** (runs with `undefined`, as today. The `&&` problem comes back as a `TypeError` in `$async.x.error`).
+
+The paper's recommendation, taken as written: it is Svelte's and Solid's answer, it keeps the dependent's `status` true, and a `refresh()` of the upstream that succeeds then starts the dependent. Confidence 2.
 
 ### <a id="fjs-d2392"></a>2026-11-26 · `FJS-D2392` — Q14 — Only when the callee is a built-in array method that runs its callback at once: `map`, `filter`, `find`, `findIndex`, `findLast`, `some`, `every`, `reduce`, `reduceRight`, `flatMap`, `sort`, `forEach`. One named list beside `warnHelperReads`; a callee off it is treated as later. Amends `FJS-D2388`.
 
@@ -23504,6 +23594,30 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2405"></a>2026-11-26 · `FJS-D2405` — Q4 — Who invites the invitee — Calendly's mail and `.ics` stay the only invite; the Google event lists the invitee with `sendUpdates: 'none'` on create, move and cancel.
+
+Asked in [`IDEAS/google-calendar.md`](IDEAS/google-calendar.md) § Open questions. **A** was picked over **B** (Google sends the invite (`sendUpdates: 'all'`) whenever the host has a calendar connected, and calendly's mail drops its `.ics`; a host with none keeps today's mail), **C** (a per-event-type choice between A and B, as Calendly has).
+
+The paper's recommendation, taken as written: the booking row stays the one origin and the notification pipeline the one owner of telling the invitee (Invariant 4). Under B a grant lost before the 4.1 job runs leaves the invitee with no invite at all. B's live updates come from A too, since the `.ics` keeps its UID and bumps SEQUENCE on a move. Calendly's habit argues for C, not B, so C is the reopen path if a real host asks for Google-native invites.
+
+### <a id="fjs-d2404"></a>2026-11-26 · `FJS-D2404` — Q3 — When Google cannot be read — Fail open: offer slots from local bookings only, and tell the host.
+
+Asked in [`IDEAS/google-calendar.md`](IDEAS/google-calendar.md) § Open questions. **B** was picked over **A** (fail closed: offer no slots for that host; the page says the calendar could not be read, never an empty "no times available").
+
+Against the recommendation (**A**): the owner wants a host's booking page usable through a Google outage or a lost grant; the host is told, and a double booking is the accepted cost.
+
+### <a id="fjs-d2403"></a>2026-11-26 · `FJS-D2403` — Q2 — Live read or mirror — `freeBusy` at request time, cached briefly.
+
+Asked in [`IDEAS/google-calendar.md`](IDEAS/google-calendar.md) § Open questions. **A** was picked over **B** (mirror via push + sync tokens from the start).
+
+The paper's recommendation, taken as written: no webhook endpoint, channel renewal or sync cursor to own; Phase 5 keeps B if it is measured to be needed.
+
+### <a id="fjs-d2402"></a>2026-11-26 · `FJS-D2402` — Q1 — The package name — A module inside `conduit-gmail`, as ruled.
+
+Asked in [`IDEAS/google-calendar.md`](IDEAS/google-calendar.md) § Open questions. **A** was picked over **B** (rename the package (for example `conduit-google-account`) as calendar lands, moving every caller).
+
+The paper's recommendation, taken as written: the ruling anticipated exactly this, and a rename can ride with the next Google module (Drive) if the name starts to mislead.
 
 ### <a id="fjs-d2386"></a>2026-11-25 · `FJS-D2386` — Q5 — Whether `conduit-ahrefs` is admitted to releases (`FJS-D2365`'s path), and when it is first released — Admit it now by adding `conduit-ahrefs` to `ADMITTED` in `packages/cli/core/workspace-members.js`, and hold the first 0.1.0 release until the owner runs or approves it.
 

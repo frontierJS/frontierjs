@@ -134,11 +134,6 @@ const PROBE = `
   $('narrow').click();
   out.narrowAfterClick = $('narrow').textContent;
 
-  // client:media whose query can never match: must stay exactly as prerendered.
-  $('wide').click();
-  out.wideAfterClick = $('wide').textContent;
-  out.wideStillPrerendered = $('wide') === refs.wide;
-
   out.staticHeading  = document.querySelector('h1').textContent;
   out.inertUntouched = $('inert').textContent;
 
@@ -179,6 +174,12 @@ const PROBE = `
   // Outer's chunk, which is the right cost for nesting: one component, one
   // chunk, fetched once.
   out.fetchedAtEnd = fetched();
+
+  // client:media whose query never matches stays exactly as prerendered. Never
+  // click it: a click wakes an unmounted island (FJS-4428), so the fetch starts
+  // and a run slow enough sees Wide in the list above.
+  out.wideText = $('wide').textContent;
+  out.wideStillPrerendered = $('wide') === refs.wide;
 
   // A late mount must not adopt a copy of any of the three.
   out.styleIdsAfterScroll = linkedIds();
@@ -268,7 +269,7 @@ const expected = {
   afterOneClick:      'idle: 1',    // client:idle mounted too
   seenInViewport:     'Seen: 1',    // client:visible, intersecting from the start
   narrowAfterClick:   'Narrow: 1',  // client:media whose query matches
-  wideAfterClick:     'Wide: 0',    // client:media whose query never matches — never mounts
+  wideText:           'Wide: 0',    // client:media whose query never matches — never mounts
   belowAfterScroll:   'Below: 1',   // client:visible, mounted on scroll
   belowMounted:       true,
   wideStillPrerendered: true,   // never mounted, so still the prerendered node

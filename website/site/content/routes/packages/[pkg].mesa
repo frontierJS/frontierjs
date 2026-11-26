@@ -45,6 +45,9 @@ render: static
   </div>
   <p class="pitch">{d.pitch}</p>
   <div class="install"><pre>$ {d.install}</pre></div>
+  {#if d.repl}
+    <p class="tryit"><a class="btn primary raised" href={d.repl}>Try it in the REPL</a></p>
+  {/if}
 </div>
 
 <!-- The same container spacing would sit the feature column 2xl below the
@@ -137,6 +140,7 @@ render: static
   .phero .install { margin-top: 1.5rem; max-width: 34rem; }
   /* vscode's install line is wider than a phone. */
   .phero .install pre { overflow-x: auto; }
+  .phero .tryit { margin: 1rem 0 0; }
 
   /* minmax(0, …): a bare 1fr track floors at its widest code sample, and the
      page then scrolls sideways on a phone. */

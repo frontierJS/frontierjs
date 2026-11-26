@@ -57,13 +57,36 @@
   // Typing leaves an inline height behind, and a value written from code fires
   // no input event, so the fit has to follow `value` itself: a composer cleared
   // after a send otherwise kept the height of the message it had just sent.
+  //
+  // The height is read off a hidden copy and written only when it changes:
+  // collapsing the box itself to measure it lays the whole page out twice a
+  // key, 40 ms a key in WebKitGTK on a long page (FJS-4632). The copy keeps
+  // only the attributes that shape it, so it submits nothing, fails no
+  // validation and repeats no id.
+  const SHAPES = ['class', 'rows', 'cols', 'wrap', 'dir', 'lang', 'style']
+  let ruler = null
+  let fitted = 0
   function fit() {
-    if (!autogrow || !el) return
-    el.style.height = 'auto'
+    if (!autogrow || !el || !el.offsetWidth) return
+    if (!ruler) {
+      ruler = el.cloneNode(false)
+      for (const a of [...ruler.attributes]) if (!SHAPES.includes(a.name)) ruler.removeAttribute(a.name)
+      ruler.setAttribute('aria-hidden', 'true')
+      ruler.tabIndex = -1
+      ruler.inert = true
+      ruler.style.cssText += ';position:fixed;inset-block-start:0;inset-inline-start:0;visibility:hidden;pointer-events:none;block-size:auto;max-block-size:none;overflow:hidden'
+      el.parentNode.append(ruler)
+    }
+    ruler.style.inlineSize = `${el.offsetWidth}px`
+    ruler.value = el.value
     // scrollHeight leaves the border out and the box is border-box, so a bare
     // scrollHeight is two pixels short and the box scrolls.
-    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+    const height = ruler.scrollHeight + ruler.offsetHeight - ruler.clientHeight
+    if (height === fitted) return
+    fitted = height
+    el.style.height = `${height}px`
   }
+  $.onDestroy(() => ruler?.remove())
   $: value, () => { $.tick().then(fit) }
 
   function handleInput(e) {

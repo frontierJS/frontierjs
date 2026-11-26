@@ -43,6 +43,57 @@ For `const cities = await …`:
 To show a placeholder around the part that depends on it, use
 [`<mesa:boundary>`](../special-elements/boundary.md).
 
+## One load feeding another
+
+A load never starts until every awaited `const` it reads has had its first
+successful answer. It reads one directly, or through a derived `const` or a `$:`
+writable derived:
+
+```mesa
+<script>
+  const states = await getStates()
+  $: selectedState = states?.[0]
+  const cities = await getCities(selectedState)
+</script>
+
+<mesa:boundary>
+  {#snippet pending()}<p>Loading…</p>{/snippet}
+  {#snippet failed(error, reset)}<p>{error.message} <button onclick={reset}>Retry</button></p>{/snippet}
+
+  <select bind:value={selectedState}>
+    {#each states as state}<option>{state}</option>{/each}
+  </select>
+  <ul>{#each cities as city}<li>{city}</li>{/each}</ul>
+</mesa:boundary>
+```
+
+`getCities` is called once `states` lands, first with the real first state, and
+never with `undefined`. Until then `$async.cities.loading` is true and its loader
+has not run. No `&&` guard is needed in front of the call.
+
+After that first answer, a refetch of `states` does not hold `cities` back. It
+keeps its value and reports `pending` while `states` is in flight, then re-runs
+if `states` lands with a new value.
+
+A derived value is not deferred. `selectedState` runs while `states` is still
+`undefined`, so it keeps its `?.`: `$: selectedState = states?.[0]`.
+
+If the first load of `states` fails, `cities` takes that error as its own.
+`$async.cities.error` is the same `Error`, its `status` is `'error'`, and its
+loader is never called. A later successful `$async.states.refresh()` starts it.
+A load that starts from its hydrated server value does not wait.
+
+Two reads are invisible to the compiler, so a load that depends on them is not
+held and runs at once:
+
+- A read inside a called `function` declaration. The loader runs with the value
+  as it stands, `undefined` for an unanswered load; a `TypeError` from that read
+  prints `[Mesa] ASYNC_OUTSIDE_LOADING_BOUNDARY` naming the load and the
+  unanswered const. Pass the value in as an argument instead.
+- A `let` that a `$:` watch writes, as in `$: states, () => { first = states.n }`.
+  Read the value through a derived: `const first = states.n`, or
+  `$: first = states?.n`.
+
 ## A function can have `$async` too
 
 A top-level `async function` whose `$async` you read gets the same object, so a

@@ -690,7 +690,34 @@ describe('compile() output shape', () => {
     it('async derived reads the pending of an awaited const it depends on (FJS-3390)', async () => {
       const out = await cx(`<script>let x = 1; const a = await f(x); const b = await g(a);</script><p>{$async.b.pending}{b}{$async.b.error}</p>`)
       expect(out).toContain('const $$async_b = $$runtime.makeAsyncState([$$async_a]);')
-      expect(out).toContain(`const $$async_a = $$runtime.makeAsyncState([], 'a');`)
+      expect(out).toContain(`const $$async_a = $$runtime.makeAsyncState([], 'a', true);`)
+    })
+    describe('an awaited const is handed every awaited const it reads, through derived values', () => {
+      const upstreamOf = async (script, name) => {
+        const out = await cx(`<script>${script}</script><p>{${name}}</p>`)
+        acorn.parse(out, { ecmaVersion: 'latest', sourceType: 'module' })
+        return out.match(new RegExp(`const \\$\\$async_${name} = \\$\\$runtime\\.makeAsyncState\\((?:\\[([^\\]]*)\\])?`))[1] ?? ''
+      }
+      it('one hop through a $: writable derived (Places)', async () => {
+        expect(await upstreamOf(`const states = await getStates()\n$: selectedState = states?.[0]\nconst cities = await getCities(selectedState)`, 'cities')).toBe('$$async_states')
+      })
+      it('one hop through a derived const', async () => {
+        expect(await upstreamOf(`const a = await f()\nconst d = a?.x\nconst b = await g(d)`, 'b')).toBe('$$async_a')
+      })
+      it('two hops', async () => {
+        expect(await upstreamOf(`const a = await f()\nconst d = a?.x\nconst e = d + 1\nconst b = await g(e)`, 'b')).toBe('$$async_a')
+      })
+      it('stops at an awaited const, and lists a direct and a hopped read once each', async () => {
+        const script = `const a = await f()\nconst b = await g(a)\nconst d = b?.x\nconst c = await h(d, b)`
+        expect(await upstreamOf(script, 'c')).toBe('$$async_b')
+        expect(await upstreamOf(`const a = await f()\nconst d = a?.x\nconst b = await g(a, d)`, 'b')).toBe('$$async_a')
+      })
+      it('a chain with no awaited const upstream passes none', async () => {
+        expect(await upstreamOf(`let q = 1\nconst d = q * 2\n$: e = d + 1\nconst b = await g(e)`, 'b')).toBe('')
+      })
+      it('a let written by a $: watch is not followed (FJS-D2395)', async () => {
+        expect(await upstreamOf(`const a = await f()\nlet x = 0\n$: a, () => { x = a.n }\nconst b = await g(x)`, 'b')).toBe('')
+      })
     })
     it('async derived result is a signal', async () => {
       const out = await cx(`<script>let q = ''; const results = await search(q);</script><p>{results}</p>`)

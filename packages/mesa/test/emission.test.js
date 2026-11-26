@@ -635,6 +635,56 @@ describe('bind: to a member expression', () => {
     expect(c.querySelector('button').disabled).toBe(false)
     c.remove()
   })
+
+  // A row's item is an object the list's `let` holds, so a write into it
+  // notifies nobody either: the box ticked and `class:done` and the count
+  // stayed as they were (FJS-4646).
+  const tick = async (src, name, box) => {
+    const c = mount(await build(src, name))
+    const input = c.querySelectorAll('input')[box]
+    input.checked = true
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    $rt.flushSync()
+    const seen = [[...c.querySelectorAll('li')].map((li) => li.className), c.querySelector('p').textContent]
+    c.remove()
+    return seen
+  }
+
+  it('notifies the list a row came from (FJS-4646)', async () => {
+    expect(await tick(
+      `<script>let todos = [{ id: 1, done: true }, { id: 2, done: false }]
+ const remaining = todos.filter((t) => !t.done).length</script>
+<ul>{#each todos as todo (todo.id)}<li class:done={todo.done}><input type="checkbox" bind:checked={todo.done}></li>{/each}</ul>
+<p>{remaining}</p>`, 'Row.mesa', 1)).toEqual([['done', 'done'], '0'])
+  })
+
+  it('follows a nested row to the outer list', async () => {
+    expect(await tick(
+      `<script>let groups = [{ name: 'a', items: [{ id: 1, done: false }] }]
+ const remaining = groups.flatMap((g) => g.items).filter((t) => !t.done).length</script>
+<ul>{#each groups as g (g.name)}{#each g.items as todo (todo.id)}<li class:done={todo.done}><input type="checkbox" bind:checked={todo.done}></li>{/each}{/each}</ul>
+<p>{remaining}</p>`, 'Nested.mesa', 0)).toEqual([['done'], '0'])
+  })
+
+  it('refuses a row of a list no write can reach', async () => {
+    // A new array of the same objects never rebinds its rows (RULE 43), so the
+    // count would move and the row would not.
+    const shapes = {
+      call:    `<script>let todos = []</script>{#each todos.filter((t) => t) as todo}<input type="checkbox" bind:checked={todo.done}>{/each}`,
+      derived: `<script>let todos = []\n const shown = todos.filter((t) => t)</script>{#each shown as todo}<input type="checkbox" bind:checked={todo.done}>{/each}`,
+    }
+    for (const [shape, src] of Object.entries(shapes)) {
+      const { analysis } = await compile(src)
+      expect(analysis.errors.join('\n'), shape).toMatch(/bind:checked=\{todo\.done\} — cannot two-way bind: 'todo' is a row of/)
+    }
+  })
+
+  it('takes any member path as the list, nested brackets included', async () => {
+    const { analysis, result } = await compile(
+      `<script>let boards = [[{ items: [] }]]\n let at = [0]</script>{#each boards[at[0]][0]?.items as todo}<input type="checkbox" bind:checked={todo.done}>{/each}`)
+    expect(analysis.errors).toEqual([])
+    expect(result).toContain('$$runtime.set($$sig_boards, $$runtime.get($$sig_boards), true)')
+  })
 })
 
 describe('a const holding a function that writes to a reactive let', () => {

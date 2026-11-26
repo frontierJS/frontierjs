@@ -25,6 +25,7 @@ the section of [VISION.md](../../VISION.md) that states it in full.
 | 14b | `$: (a, b)` is a multi-path watch. `$: { }` is an auto-tracked block effect | [4.4](../../VISION.md#44-ordered-watch-groups) |
 | 15 | Components are ES modules, so top-level `await` is valid | [13.1](../../VISION.md#131-top-level-await) |
 | 16 | `$async.x` exists for a top-level `const x = await …` and a top-level `async function x()` | [13.2](../../VISION.md#132-async-state-object) |
+| 16a | A load never starts before every awaited `const` it reads, directly or through derived values, has had its first answer | [13.2](../../VISION.md#132-async-state-object) |
 | 17 | A non-`const` reactive variable can be assigned any time. Last write wins | [13.3](../../VISION.md#133-optimistic-updates) |
 | 18 | Builtins are reached through `$`, with no import | [17](../../VISION.md#17-built-in-functions-the--door) |
 | 18a | `$` cannot be destructured, aliased or shadowed | [17](../../VISION.md#17-built-in-functions-the--door) |

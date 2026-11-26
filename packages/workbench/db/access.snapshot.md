@@ -201,6 +201,7 @@ rather than refusing the row.
 | `Draft` | `fileExternalIds` | `@system` |
 | `Draft` | `createdAt` | `@system` |
 | `Draft` | `updatedAt` | `@system` |
+| `Draft` | `hiddenAt` | `@system` |
 | `Draft` | `missingSince` | `@system` |
 | `FileInfo` | `externalId` | `@system` |
 | `FileInfo` | `postExternalId` | `@system` |

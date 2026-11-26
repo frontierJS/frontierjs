@@ -450,6 +450,96 @@ describe('an awaited const whose failure nothing shows', () => {
     expect(seen[0][1].message).toBe('down')
   })
 
+  // FJS-D2396: a dependent adopts its upstream's failed first load, so the
+  // failure prints at most once, at the load that failed.
+  const stateArgs = (js, name) => js.match(new RegExp(`\\$\\$async_${name} = \\$\\$runtime\\.makeAsyncState\\(([^)]*)\\)`))[1]
+
+  it('counts a load as shown when a dependent shown in a boundary adopts its failure', async () => {
+    const ctx = await compile(`<script>const states = await getStates()
+  $: selectedState = states?.[0]
+  const cities = await getCities(selectedState)</script>
+<mesa:boundary><ul>{#each cities as c}<li>{c}</li>{/each}</ul>{#snippet failed(e, r)}<p>{e.message}</p>{/snippet}</mesa:boundary>`)
+    expect(ctx.analysis.errors).toEqual([])
+    parses(ctx.result)
+    expect(stateArgs(ctx.result, 'states')).toBe(`[], 'states', true`)
+    expect(stateArgs(ctx.result, 'cities')).toBe('[$$async_states]')
+  })
+
+  it('counts every load up a shown chain of three as shown', async () => {
+    const ctx = await compile(`<script>const a = await f()
+  const b = await g(a)
+  const c = await h(b)</script>
+<mesa:boundary><p>{c}</p>{#snippet failed(e, r)}<p>{e.message}</p>{/snippet}</mesa:boundary>`)
+    expect(ctx.analysis.errors).toEqual([])
+    parses(ctx.result)
+    expect(stateArgs(ctx.result, 'a')).toBe(`[], 'a', true`)
+    expect(stateArgs(ctx.result, 'b')).toBe(`[$$async_a], 'b', true`)
+    expect(stateArgs(ctx.result, 'c')).toBe('[$$async_b]')
+  })
+
+  it('leaves a load unshown when its only dependent is unshown too', async () => {
+    const ctx = await compile(`<script>const a = await f()
+  const b = await g(a)
+  const n = b?.x</script><p>{n}</p>`)
+    expect(ctx.analysis.errors).toEqual([])
+    parses(ctx.result)
+    expect(stateArgs(ctx.result, 'a')).toBe(`[], 'a'`)
+    expect(stateArgs(ctx.result, 'b')).toBe(`[$$async_a], 'b'`)
+  })
+
+  const CHAIN = `<script>const a = await globalThis.__failLoad()
+  const b = await globalThis.__dependent(a)
+  const n = b?.x</script><p>{n}</p>`
+  const chain = async (tpl) => {
+    const calls = []
+    globalThis.__dependent = (v) => { calls.push(v); return Promise.resolve({ x: v }) }
+    try {
+      return { seen: await rejecting(CHAIN + tpl)(), calls }
+    } finally {
+      delete globalThis.__dependent
+    }
+  }
+  const failures = (seen) => seen.filter((a) => /UNHANDLED_FAILURE/.test(String(a[0])))
+
+  it('prints once, naming the load that failed, when neither load is shown', async () => {
+    const { seen, calls } = await chain('')
+    expect(calls).toEqual([])
+    expect(failures(seen)).toHaveLength(1)
+    expect(failures(seen)[0][0]).toMatch(/the load of 'a' rejected/)
+  })
+
+  it('prints nothing for a dependent that adopts a failure its upstream shows', async () => {
+    const { seen, calls } = await chain(`{#if $async.a.error}<p>failed</p>{/if}`)
+    expect(calls).toEqual([])
+    expect(failures(seen)).toEqual([])
+  })
+
+  // A dependent adopts a failed first load only, so a refetch that fails after
+  // the first answer is shown by no one.
+  it('prints a failed refetch of a load only its dependent shows', () => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    try {
+      const first = $rt.makeAsyncState([], 'a', true)
+      first._update('error', new Error('down'))
+      expect(seen).toEqual([])
+      const state = $rt.makeAsyncState([], 'a', true)
+      state._update('done')
+      state._update('start')
+      state._update('error', new Error('refetch down'))
+    } finally {
+      console.error = spy
+    }
+    expect(failures(seen)).toHaveLength(1)
+    expect(seen[0][1].message).toBe('refetch down')
+  })
+
+  it('prints nothing when both loads are shown', async () => {
+    const { seen } = await chain(`{#if $async.a.error}<p>a</p>{/if}{#if $async.b.error}<p>b</p>{/if}`)
+    expect(failures(seen)).toEqual([])
+  })
+
   it('prints nothing when the template shows the failure', async () => {
     const seen = await rejecting(`<script>const user = await globalThis.__failLoad()</script>
 {#if $async.user.error}<p>failed</p>{:else if $async.user.loading}<p>…</p>{:else}<h1>{user.name}</h1>{/if}`)()
@@ -561,6 +651,49 @@ describe('an awaited const read before its first answer', () => {
     // Named, not swallowed: the rejection still reaches the page's own report.
     expect(rejected).toHaveLength(1)
     expect(rejected[0]).toBe(mesa[0][1])
+  })
+
+  // FJS-D2397: a read inside a function a loader calls is invisible to the
+  // gate, and its throw is the loader's rejection, which no effect's catch sees.
+  const loaderThrow = async (script, tpl = '') => {
+    const seen = []
+    const spy = console.error
+    console.error = (...a) => seen.push(a)
+    globalThis.__slowLoad = () => new Promise((r) => setTimeout(() => r({ name: 'Ada' }), 5))
+    globalThis.__echo = (v) => Promise.resolve(v)
+    try {
+      mount(await build(`<script>${script}</script>{#if $async.label.error}<p>failed</p>{/if}${tpl}`))
+      await settle()
+    } finally {
+      console.error = spy
+      await new Promise((r) => setTimeout(r, 10))
+      delete globalThis.__slowLoad
+      delete globalThis.__echo
+    }
+    return seen.filter((a) => /^\[Mesa\] ASYNC_OUTSIDE_LOADING_BOUNDARY/.test(String(a[0])))
+  }
+
+  it('names the loader and the unanswered const when a loader throws reading it', async () => {
+    const mesa = await loaderThrow(`const user = await globalThis.__slowLoad()
+  function nameOf() { return user.name }
+  const label = await globalThis.__echo(nameOf())`, SHOWN)
+    expect(mesa).toHaveLength(1)
+    expect(mesa[0][0]).toContain(`the load of 'label' threw while 'user' had not answered`)
+    expect(mesa[0][1]).toBeInstanceOf(TypeError)
+  })
+
+  it('says nothing when a loader rejects with an error that is not a TypeError', async () => {
+    const mesa = await loaderThrow(`const user = await globalThis.__slowLoad()
+  function nameOf() { if (!user) throw new Error('not yet'); return user.name }
+  const label = await globalThis.__echo(nameOf())`, SHOWN)
+    expect(mesa).toEqual([])
+  })
+
+  it('says nothing when a loader throws with no other load unanswered', async () => {
+    const mesa = await loaderThrow(`let box = null
+  function nameOf() { return box.name }
+  const label = await globalThis.__echo(nameOf())`)
+    expect(mesa).toEqual([])
   })
 
   it('says nothing when a binding throws with every load answered', async () => {

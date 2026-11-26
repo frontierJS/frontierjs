@@ -189,6 +189,11 @@ t('samples.textUnchanged', (() => {
 // reading "Home →" pointed at themselves after the hand-written pages were
 // deleted, through a build, a serve and a resolve check. Absolute is the one
 // spelling that cannot do that, and the layout already uses it throughout.
+//
+// The REPL is the exception: it is a page copied from the repo, not a route,
+// and it reaches its siblings by relative path so the same file works in both.
+// Its relative links are resolved from where it sits instead.
+const COPIED_PAGES = ['/packages/mesa/repl/']
 t('links.internal', (() => {
   const bad = { unresolved: [], relative: [] }
   const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
@@ -198,9 +203,12 @@ t('links.internal', (() => {
     const here = '/' + relative(DIST, file).replace(/index\.html$/, '')
     for (const [, href] of readFileSync(file, 'utf8').matchAll(/href="([^"]+)"/g)) {
       if (/^(?:https?:|mailto:|#|\/assets\/)/.test(href)) continue
-      const path = href.split('#')[0].split('?')[0]
+      let path = href.split('#')[0].split('?')[0]
       if (!path) continue
-      if (!path.startsWith('/')) { bad.relative.push(`${here} → ${href}`); continue }
+      if (!path.startsWith('/')) {
+        if (!COPIED_PAGES.includes(here)) { bad.relative.push(`${here} → ${href}`); continue }
+        path = new URL(path, 'http://site' + here).pathname
+      }
       const target = join(DIST, path.endsWith('/') ? path + 'index.html' : path)
       if (!existsSync(target) && !existsSync(join(DIST, path, 'index.html')))
         bad.unresolved.push(`${here} → ${href}`)
@@ -733,6 +741,33 @@ try {
              body: document.body.className,
              bg:   getComputedStyle(document.body).backgroundColor };
   `))
+
+  // ── the Mesa REPL ────────────────────────────────────────────────────────
+  // scripts/stage-repl.mjs copies it and every file it reaches by relative
+  // path. A file it missed is a 404 inside a module graph: the page stands,
+  // the editor never mounts, and one console line says why.
+  await goto(`${ORIGIN}/packages/mesa/repl/`)
+  const replReady = `document.getElementById('pvlbl')?.textContent !== 'compiling…'`
+  t('repl.boots', await evaluate(`
+    await waitFor(() => ${replReady});
+    return { editor:   !!document.querySelector('#cm-editor .cm-content'),
+             examples: document.querySelectorAll('#ex-drawer-body .ex-item').length > 20,
+             preview:  document.getElementById('pv-container').children.length > 0,
+             status:   !/error|failed/i.test(document.getElementById('pvlbl').textContent) };
+  `))
+
+  // The UI Library example fetches packages/ui source and compiles it in the
+  // page, and styles it with packages/css — the two siblings outside mesa/.
+  // Either missing still renders: an empty preview, or unstyled buttons.
+  t('repl.uiLibrary', await evaluate(`
+    document.querySelector('.ex-item[data-key="uiComponents"]').click();
+    await waitFor(() => document.querySelector('#pv-container button'));
+    const btn = document.querySelector('#pv-container button');
+    return { rendered: true,
+             styled:   getComputedStyle(btn).borderRadius !== '0px' };
+  `))
+  t('repl.linked', readFileSync(join(DIST, 'packages', 'mesa', 'index.html'), 'utf8')
+    .includes('href="/packages/mesa/repl/"'))
 
   // ── a package page, in a browser ────────────────────────────────────────
   await goto(`${ORIGIN}/packages/litestone/`)

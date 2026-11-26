@@ -400,6 +400,7 @@ export function makeEachBlock(data?: any, option?: any): {
 export function makeVirtualEachBlock(data?: any, option?: any): xNode;
 export class makeVirtualEachBlock {
     constructor(data?: any, option?: any);
+    _eachSources: any;
     accessors: any;
 }
 /**

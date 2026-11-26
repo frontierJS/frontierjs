@@ -5,8 +5,8 @@
   "description": "frontierjs.com \u2014 the public site. site/ is its content/ folder; @frontierjs/site-kit builds it, one HTML file per route, prerendered.",
   "type": "module",
   "scripts": {
-    "dev": "site-kit dev site --port 8690 --host",
-    "build": "site-kit build site",
+    "dev": "node scripts/stage-repl.mjs && site-kit dev site --port 8690 --host",
+    "build": "node scripts/stage-repl.mjs && site-kit build site",
     "serve": "site-kit serve site --port 8790",
     "verify": "bun run build && node tests/verify.mjs",
     "verify:ask": "bun tests/verify-ask.mjs",

@@ -699,14 +699,16 @@ export function inspect(...args: any[]): {
  * { dotPath: [read, fire] } map with '' for the whole object.
  */
 export function localWatchProxy(obj?: any, signalMap?: any): any;
-export function makeAsyncState(upstream?: any[], unshown?: any): {
+export function makeAsyncState(upstream?: any[], unshown?: any, dependentShows?: boolean): {
+    _upstream: any[];
+    readonly _answered: any;
     /** Resolves once the first load has landed, either way. */
     settled(): Promise<any>;
     readonly loading: any;
     readonly pending: any;
     readonly error: any;
     readonly status: any;
-    _update(phase: any, err?: any): void;
+    _update(phase: any, err?: any, adopted?: boolean): void;
 };
 /**
  * The `$async.<name>` state of a top-level `async function` — the same four

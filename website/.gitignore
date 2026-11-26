@@ -1,2 +1,5 @@
 # Raw images dropped here for Claude to optimize into site/content/media/images or public/. Never committed.
 /images-raw/
+
+# The Mesa REPL and the files it reaches, copied by scripts/stage-repl.mjs.
+/site/content/public/packages/

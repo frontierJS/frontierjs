@@ -184,7 +184,7 @@ warns on a `$:` that reads and writes one name.
 Goal: no live state behind a method.
 Done when: `bun run test` in `packages/sierra` and `example`'s `verify`.
 
-- [ ] 3.1 `presence()` returns a handle, not the raw signal: getters `members`,
+- [x] 3.1 `presence()` returns a handle, not the raw signal: getters `members`,
   `others`, `self`, `count` over the snapshot, plus `subscribe`, `updateMeta` and
   `leave`; `get()` and `set()` go (the roster is the server's to write). Agreed
   2026-11-25. Lands with or after Phase 1 — under today's compiler a property read
@@ -383,3 +383,30 @@ Done when: each app's drive passes on the new Mesa.
   - **Recommend B** — A's warning on a subscription gives advice that would
     freeze the value, C misses `items.filter(i => inRange(i))` where the stale
     read is real, and a wrong warning teaches people to ignore the right ones.
+- ~~**Q15**~~ **Answered 2026-11-26 (`FJS-D2398`): A — yes, every helper a `$:` calls is warned alike; the author names the read or passes it.** — Whether warning 2.1 fires for a helper a `$:` calls as a bare
+  action, `$: { if (session.level >= 5) load() }`, whose body reads state the
+  block does not name. **Recommend A.**
+  - **A** — yes, every helper a `$:` calls is warned alike; the author names the read or passes it
+  - **B** — silent when the call is a bare statement whose result is unused
+  - **Recommend A** — whether a result is used says nothing about whether the
+    helper's reads are tracked, and B makes `$: report()` go stale in silence.
+- ~~**Q16**~~ **Answered 2026-11-26 (`FJS-D2399`): B — the call takes what it reads: `picked.stateOf(rows, picked.keys)`, `keys` required.** — How `createSelection` in `packages/ui/selection.js` exposes the
+  tri-state a header checkbox shows, now that `picked.stateOf(shown)` is a
+  boundary and never follows the selection. **Recommend B.**
+  - **A** — a live property on the handle, or the caller names `picked.keys` beside the call
+  - **B** — the call takes what it reads: `picked.stateOf(rows, picked.keys)`, `keys` required
+  - **Recommend B** — the expression declares what it reads; A asks the caller
+    to name a thing it does not pass, and a defaulted `keys` brings back the silent path.
+- ~~**Q17**~~ **Answered 2026-11-26 (`FJS-D2400`): B — a compile error naming both.** — A `{#snippet}` sharing its name with a script binding, a prop or an
+  import in the same file (Slider's `const track` and `{#snippet track()}`).
+  **Recommend B.**
+  - **A** — both stand: the script name wins in an expression and `{@render}` reaches the snippet
+  - **B** — a compile error naming both
+  - **Recommend B** — one name with two resolution rules resolves in silence to
+    whichever the author did not mean; Svelte refuses it, and a rename costs one file.
+- ~~**Q18**~~ **Answered 2026-11-26 (`FJS-D2401`): B — at boot, when any registered schema syncs; on first read or subscribe if no registry exists at boot.** — When Sierra's `pendingQueue` starts its backing queue, now that it is
+  an imported object a screen may only read. **Recommend B.**
+  - **A** — on the first method call or when a resource that holds writes is created, and document it
+  - **B** — at boot, when any registered schema syncs; on first read or subscribe if no registry exists at boot
+  - **Recommend B** — an empty list while writes wait on disk is a false
+    "nothing waiting", and `FJS-1277` already rules the queue is built by the declaration, not the first write.

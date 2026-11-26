@@ -228,6 +228,7 @@ table `draft` · db `chat` · gate `3.8.8.8`
 | `createdAt` | `DateTime` | yes | — | @system |
 | `externalId` | `String` | no | — | unique · @system · **required on write** |
 | `fileExternalIds` | `Json` | no | — | @system · **required on write** |
+| `hiddenAt` | `DateTime` | yes | — | @system |
 | `id` | `Int` | no | — | id |
 | `message` | `String` | no | — | @system · **required on write** |
 | `missingSince` | `DateTime` | yes | — | @system |
