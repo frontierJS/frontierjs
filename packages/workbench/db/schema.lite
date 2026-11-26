@@ -491,7 +491,7 @@ model Reaction {
   @@index([profileExternalId])
   @@gate(3.3.8.3)
   @@allow(read, check(post))
-  @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId)
+  @@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && check(channel, 'read') && channelExternalId == post.channelExternalId)
   @@allow(delete, profileExternalId == auth().profileExternalId)
 }
 
@@ -532,7 +532,9 @@ model FileInfo {
 // One person's unsent text in one box: a room's (rootExternalId null) or a
 // thread's. The key is profile:channel:root, root '' for the room's box. Plain
 // columns, no relation: a draft may name a room or thread this copy has not
-// landed, and a relation would refuse the row.
+// landed, and a relation would refuse the row. hiddenAt is this copy's own
+// Delete: the server can refuse one or list it again, so the screens leave it
+// out until it is written again (updatedAt after hiddenAt).
 model Draft {
   id                Int       @id
   externalId        String
@@ -544,6 +546,7 @@ model Draft {
   fileExternalIds   Json
   createdAt         DateTime?
   updatedAt         DateTime?
+  hiddenAt          DateTime?
 
   @@db(chat)
   @@mirror(key: externalId)

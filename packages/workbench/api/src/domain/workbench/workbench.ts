@@ -94,7 +94,7 @@ import {
 } from 'node:fs'
 import { basename, isAbsolute, join, posix, relative } from 'node:path'
 import { fileURLToPath }               from 'node:url'
-import { claudeConfigDir, findSession, listSessions, readAskEvent, readImages, resumeCommand, runAsk, titleOf, type AskProfile, type Image } from '@frontierjs/claude'
+import { findSession, listSessions, readAskEvent, readImages, resumeCommand, runAsk, titleOf, type AskProfile, type Image } from '@frontierjs/claude'
 import { workbenchDir }                from '../../core/env.ts'
 import { resolveRoot }                 from '../local/local-git.ts'
 import { commitFiles, readDiff }       from './workbench-diff.ts'

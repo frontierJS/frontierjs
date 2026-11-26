@@ -12,7 +12,7 @@ import { buildNamedAggExpr, extractNamedAggs } from './query.js'
 export function makeAggregate(/** @type {any} */ shape, /** @type {any} */ ctx, /** @type {any} */ deps) {
   const { tableName, modelName } = shape
   const {
-    readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
+    readDb, plugins, refuseRecursive, refuseCountShape,
     refuseMixedCurrency, visibleWhere, _aggCol, needsTiming, fireQuery, hydrateCols, exactSum,
     buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue, refuseValueAggKeys,
   } = deps

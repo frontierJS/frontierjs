@@ -645,7 +645,7 @@ title: Home
   }
   .home-server-name { flex: 1; min-inline-size: 0; }
   .home-server-ports { flex: none; gap: var(--space-xs); }
-  .home-server-age { flex: none; min-inline-size: 5.5rem; text-align: end; }
+  .home-server-age { flex: none; min-inline-size: calc(5.5 * var(--rem)); text-align: end; }
   .home-pin-head { align-items: center; }
   .home-meter { display: grid; gap: var(--space-3xs); }
   .home-machine-facts { align-items: center; gap: var(--space-xs) var(--space-md); }

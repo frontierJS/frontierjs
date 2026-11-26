@@ -262,7 +262,7 @@
       asked.add(id)
       members.service.get(id)
         .then((row) => {
-          if (row.agent) agents = { ...agents, [id]: true }
+          if (row.isAgent) agents = { ...agents, [id]: true }
           nicks = { ...nicks, [id]: row.nick }
         })
         .catch(() => {})

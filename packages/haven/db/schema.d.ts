@@ -191,7 +191,7 @@ export interface Member {
    * (`FJS-D1651`), so the room can mark them. Written by the login alone: a
    * member flagging themselves would pass for a bot.
    */
-  agent: boolean
+  isAgent: boolean
   /**
    * The standing: `mod`, or none. Read off the row on every call and every
    * socket frame (`api/src/principal.ts`), written by the login from
@@ -234,9 +234,9 @@ export interface MemberCreate {
    * it names, since that would be a caller writing their own grade.
    */
   bannedAt?: string | Date | null
-  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'memberId'>, MessageUpdate>
-  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
-  votes?: __HasManyWrite<VoteWhere, Omit<VoteCreate, 'memberId'>, VoteUpdate>
+  messages?: __HasManyWrite<MessageWhere, __OmitEach<MessageCreate, 'memberId'>, MessageUpdate>
+  sessions?: __HasManyWrite<SessionWhere, __OmitEach<SessionCreate, 'memberId'>, SessionUpdate>
+  votes?: __HasManyWrite<VoteWhere, __OmitEach<VoteCreate, 'memberId'>, VoteUpdate>
 }
 
 export interface MemberUpdate {
@@ -245,20 +245,20 @@ export interface MemberUpdate {
   root?: string
   role?: string | null
   bannedAt?: string | Date | null
-  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'memberId'>, MessageUpdate>
-  sessions?: __HasManyWrite<SessionWhere, Omit<SessionCreate, 'memberId'>, SessionUpdate>
-  votes?: __HasManyWrite<VoteWhere, Omit<VoteCreate, 'memberId'>, VoteUpdate>
+  messages?: __HasManyWrite<MessageWhere, __OmitEach<MessageCreate, 'memberId'>, MessageUpdate>
+  sessions?: __HasManyWrite<SessionWhere, __OmitEach<SessionCreate, 'memberId'>, SessionUpdate>
+  votes?: __HasManyWrite<VoteWhere, __OmitEach<VoteCreate, 'memberId'>, VoteUpdate>
 }
 
 export interface MemberSystem {
-  agent?: boolean
+  isAgent?: boolean
 }
 
 export interface MemberWhere extends WhereBase {
   id?: number | WhereOp<number> | null
   nick?: string | WhereOp<string> | null
   root?: string | WhereOp<string> | null
-  agent?: boolean | WhereOp<boolean> | null
+  isAgent?: boolean | WhereOp<boolean> | null
   role?: string | WhereOp<string> | null
   bannedAt?: string | Date | WhereOp<string | Date> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
@@ -320,7 +320,7 @@ export interface RoomCreate {
    */
   pairLoId?: number | null
   pairHiId?: number | null
-  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'roomId'>, MessageUpdate>
+  messages?: __HasManyWrite<MessageWhere, __OmitEach<MessageCreate, 'roomId'>, MessageUpdate>
 }
 
 export interface RoomUpdate {
@@ -329,7 +329,7 @@ export interface RoomUpdate {
   name?: string
   pairLoId?: number | null
   pairHiId?: number | null
-  messages?: __HasManyWrite<MessageWhere, Omit<MessageCreate, 'roomId'>, MessageUpdate>
+  messages?: __HasManyWrite<MessageWhere, __OmitEach<MessageCreate, 'roomId'>, MessageUpdate>
 }
 
 export interface RoomWhere extends WhereBase {
@@ -376,9 +376,9 @@ export interface Message {
   toId?: number | null
 }
 
-export interface MessageCreate {
+export type MessageCreate = {
   id?: number
-  roomId: number
+  roomId?: number
   room?: __BelongsToWrite<RoomWhere, RoomCreate>
   member?: __BelongsToWrite<MemberWhere, MemberCreate>
   body: string
@@ -389,7 +389,7 @@ export interface MessageCreate {
    * sides. Whoever it names reads the line, and so does its speaker.
    */
   toId?: number | null
-}
+} & ({ roomId: number } | { room: __BelongsToWrite<RoomWhere, RoomCreate> })
 
 export interface MessageUpdate {
   id?: number
@@ -456,9 +456,9 @@ export interface Game {
   createdAt: string
 }
 
-export interface GameCreate {
+export type GameCreate = {
   id?: number
-  roomId: number
+  roomId?: number
   room?: __BelongsToWrite<RoomWhere, RoomCreate>
   /**
    * Red moves first and is the one who began the game; black is the other
@@ -477,7 +477,7 @@ export interface GameCreate {
   winnerId?: number | null
   /** The last move said back, `c3-e5`. */
   last?: string | null
-}
+} & ({ roomId: number } | { room: __BelongsToWrite<RoomWhere, RoomCreate> })
 
 export interface GameUpdate {
   id?: number
@@ -663,14 +663,14 @@ export interface Session {
   expiresAt: string
 }
 
-export interface SessionCreate {
+export type SessionCreate = {
   /**
    * Set by the owner, never cleared. A revoked grant is kept rather than
    * deleted so the audit trail still names what the token could reach.
    */
   revokedAt?: string | Date | null
   id?: number
-  memberId: number
+  memberId?: number
   member?: __BelongsToWrite<MemberWhere, MemberCreate>
   /**
    * Required where the trait leaves it open: the key re-mints one in a
@@ -678,7 +678,7 @@ export interface SessionCreate {
    * hole for a token that leaked.
    */
   expiresAt: string | Date
-}
+} & ({ memberId: number } | { member: __BelongsToWrite<MemberWhere, MemberCreate> })
 
 export interface SessionUpdate {
   revokedAt?: string | Date | null
@@ -758,19 +758,59 @@ type __Flat<T> = { [K in keyof T]: T[K] }
 
 /** The `@system` columns a write may carry in its data: the ones its `system` names. */
 type __SystemData<TSys, K> = NoInfer<Pick<TSys, Extract<K, keyof TSys>>>
+/** A `createMany` or `upsertMany` row. Both refuse a nested write, so the row names no relation, and the Create branch where a relation write stands in for a key is dropped: the key stays required. */
+type __BulkCreate<C, Rel> = C extends unknown ? ({} extends Pick<C, Extract<keyof Rel, keyof C>> ? Omit<C, keyof Rel> : never) : never
 /** The client `asSystem()` returns: it writes a `@system` column with no `system` naming it, so every table takes the column in data. It has no claim to stamp the tenancy column from, so a create names it (`_TSudoCreate`, a phantom only `infer` reads). */
-type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q> : T[K] }
+type __Sudo<T> = { [K in keyof T]: T[K] extends TableClient<infer R, infer C, infer U, infer W, infer Rel, infer M, infer S, infer D, infer Q, infer N> ? TableClient<R, C & D & Q, U & D, W, Rel, M, S, D, Q, N> : T[K] }
 
 /** What `include` may name: a relation, or `_count`. A relation takes `true` or its own read options. */
 export type IncludeArg<TRel> = { [K in keyof TRel]?: boolean | __RelOptions } & { _count?: boolean | Record<string, unknown> }
-/** What `select` may name: a column or a relation, `true` or an options object. */
-export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions }
+/** What `select` may name: a column or a relation, `true` or an options object — or a list of names and paths (FJS-D2332). */
+export type SelectArg<TRow, TRel> = { [K in keyof TRow | keyof TRel]?: boolean | __RelOptions } | readonly string[]
 // A nested `select` is typed as booleans so an inferred `false` stays `false`, which a
 // bare Record<string, unknown> widens to boolean and ReadShape would then read as on.
-type __RelOptions = { select?: Record<string, boolean>; [option: string]: unknown }
+type __RelOptions = { select?: { [field: string]: boolean | __RelOptions }; [option: string]: unknown }
+
+/** Each model's relations by name, and the model each one reaches: what a nested select and a select path hop through. */
+export interface __Models {
+  AuditTrail: { rel: AuditTrailRelations; hop: {  } }
+  Member: { rel: MemberRelations; hop: { messages: 'Message'; sessions: 'Session'; votes: 'Vote' } }
+  Room: { rel: RoomRelations; hop: { messages: 'Message'; game: 'Game' } }
+  Message: { rel: MessageRelations; hop: { room: 'Room'; member: 'Member' } }
+  Game: { rel: GameRelations; hop: { room: 'Room' } }
+  Vote: { rel: VoteRelations; hop: { member: 'Member' } }
+  Miss: { rel: MissRelations; hop: {  } }
+  Session: { rel: SessionRelations; hop: { member: 'Member' } }
+}
+type __Hop<N, K> = N extends keyof __Models ? K extends keyof __Models[N]['hop'] ? __Models[N]['hop'][K] : never : never
+type __RelOf<N> = [N] extends [never] ? {} : N extends keyof __Models ? __Models[N]['rel'] : {}
+type __RowOf<T> = T extends (infer E)[] ? E : NonNullable<T>
+
+// A select LIST is the object it stands for (FJS-D2332): `'id'` a column,
+// `'a.b:x+y'` a path whose every hop nests as `select`. Entries naming one
+// relation intersect, which is the merge the client does.
+type __Split<S extends string, D extends string> = S extends `${infer H}${D}${infer T}` ? [H, ...__Split<T, D>] : [S]
+type __PathSel<P, L> = P extends [infer H extends string] ? { [K in H]: L } : P extends [infer H extends string, ...infer R] ? { [K in H]: { select: __PathSel<R, L> } } : never
+type __EntrySel<E> = E extends `${infer P}:${infer F}` ? __PathSel<__Split<P, '.'>, { select: { [K in __Split<F, '+'>[number]]: true } }> : E extends string ? __PathSel<__Split<E, '.'>, true> : never
+type __U2I<U> = (U extends unknown ? (x: U) => void : never) extends (x: infer I) => void ? I : never
+type __Sel<S> = S extends readonly string[] ? __U2I<{ [I in keyof S]: __EntrySel<S[I]> }[number]> : S
+// A name the model lacks, a hop that is not a relation, or a leaf field the
+// last model lacks makes that entry `never`, so the call does not compile.
+type __CheckHops<P, Rel, N, F> = P extends [infer H extends string, ...infer R]
+  ? H extends keyof Rel
+    ? R extends [] ? ([F] extends [never] ? true : F extends string ? (__Split<F, '+'>[number] extends keyof __RowOf<Rel[H]> ? true : false) : false)
+      : __CheckHops<R, __RelOf<__Hop<N, H>>, __Hop<N, H>, F>
+    : false
+  : false
+type __CheckEntry<E, TRow, TRel, N> = E extends `${infer P}:${infer F}` ? __CheckHops<__Split<P, '.'>, TRel, N, F>
+  : E extends `${string}.${string}` ? __CheckHops<__Split<E, '.'>, TRel, N, never>
+  : E extends keyof TRow | keyof TRel ? true : false
+type __SelectCheck<S, TRow, TRel, N> = S extends readonly string[] ? { readonly [I in keyof S]: __CheckEntry<S[I], TRow, TRel, N> extends true ? S[I] : never } : unknown
 
 /** A nested write through a relation, each kind taking the operations the client runs for it. */
 type __BelongsToWrite<W, C> = { connect?: W; create?: C; connectOrCreate?: { where: W; create: C } }
+/** A Create is a union once a belongsTo key may be written as its relation, and a plain Omit would flatten it. */
+type __OmitEach<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 type __HasManyWrite<W, C, U> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; delete?: W | W[]; update?: { where: W; data: U } | Array<{ where: W; data: U }> }
 type __ManyToManyWrite<W, C> = { create?: C | C[]; connect?: W | W[]; disconnect?: W | W[]; set?: W | W[]; delete?: W | W[] }
 /** What `search()` adds to a hit: `_rank` unless `withRank: false`, and the `highlight` and `snippet` asked for. */
@@ -782,49 +822,51 @@ type __FtsMarks = { field: string; open?: string; close?: string }
  * in either case the relations `include` (or `select`) named. A relation takes its
  * own nested `select` to only the columns that names; a nested `include` adds nothing.
  */
-export type ReadShape<TRow, TRel, I, S> = __Flat<
+export type ReadShape<TRow, TRel, I, S, N = never> = __Shape<TRow, TRel, I, __Sel<S>, N>
+type __Shape<TRow, TRel, I, S, N> = __Flat<
   (undefined extends S ? TRow : __SelectedColumns<TRow, S>)
-  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>> }
+  & { [K in keyof TRel as __On<I, K> extends true ? K : __On<S, K> extends true ? K : never]: __Narrow<TRel[K], __RelOpts<I, S, K>, __Hop<N, K>> }
   & (__On<I, '_count'> extends true ? { _count: Record<string, number> } : {})
 >
 /** What a create, update or upsert answers: a read of the row written, or `null` under `select: false`. */
-export type WriteShape<TRow, TRel, I, S> = S extends false ? null : ReadShape<TRow, TRel, I, S>
+export type WriteShape<TRow, TRel, I, S, N = never> = S extends false ? null : ReadShape<TRow, TRel, I, S, N>
 type __On<A, K> = K extends keyof A ? (A[K] extends true | Record<string, unknown> ? true : false) : false
 type __RelOpts<I, S, K> = K extends keyof I ? (I[K] extends Record<string, unknown> ? I[K] : __RelOptsOf<S, K>) : __RelOptsOf<S, K>
 type __RelOptsOf<S, K> = K extends keyof S ? S[K] : {}
-type __Narrow<T, O> = [O] extends [{ select: infer NS }] ? __Rows<T, NS> : T
-type __Rows<T, NS> = T extends null ? null : T extends (infer E)[] ? __Flat<__SelectedColumns<E, NS>>[] : __Flat<__SelectedColumns<T, NS>>
+type __Narrow<T, O, M> = [O] extends [{ select: infer NS }] ? __Rows<T, NS, M> : T
+type __Rows<T, NS, M> = T extends null ? null : T extends (infer E)[] ? __Picked<E, NS, M>[] : __Picked<T, NS, M>
+type __Picked<E, NS, M> = __Flat<__SelectedColumns<E, NS> & { [K in keyof __RelOf<M> as __On<NS, K> extends true ? K : never]: __Narrow<__RelOf<M>[K], __RelOptsOf<NS, K>, __Hop<M, K>> }>
 type __SelectedColumns<TRow, S> = Pick<TRow, { [K in keyof S & keyof TRow]: S[K] extends __Off ? never : K }[keyof S & keyof TRow]>
 
-export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}> {
-  findMany<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>[]>
-  findFirst<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findUnique<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S> | null>
-  findFirstOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
-  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S>>
+export interface TableClient<TRow, TCreate, TUpdate, TWhere, TRel = {}, TMove extends string = never, TSys extends string = string, TSysData = {}, _TSudoCreate = {}, TName = never> {
+  findMany<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>[]>
+  findFirst<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findUnique<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName> | null>
+  findFirstOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
+  findUniqueOrThrow<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args: { where: TWhere; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<ReadShape<TRow, TRel, I, S, TName>>
   findManyCursor(args?: { where?: TWhere; orderBy?: any; limit?: number; cursor?: string }): Promise<CursorResult<TRow>>
   /** The cursor of a row already taken, for the ordering it was scanned in; `null` where the row lacks a sort key. Throws where the ordering is not total. */
   cursorFor(row: Partial<TRow> | null | undefined, orderBy: any): string | null
   count(args?: { where?: TWhere; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<number>
-  create<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
+  create<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { data: TCreate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
   /** `select` adds `rows`: the written rows the caller may read, in insert order; `count` stays the number written. */
-  createMany<S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; select?: S; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S>[] }>
-  update<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S> | null>
+  createMany<const S extends SelectArg<TRow, TRel> | undefined = undefined, K extends TSys = never>(args: { data: Array<__BulkCreate<TCreate, TRel> & __SystemData<TSysData, K>>; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<S extends undefined ? { count: number } : { count: number; rows: ReadShape<TRow, TRel, {}, S, TName>[] }>
+  update<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; data: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName> | null>
   updateMany<K extends TSys = never>(args: { where?: TWhere; data: TUpdate & __SystemData<TSysData, K>; system?: K[] }): Promise<{ count: number }>
-  upsert<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S>>
-  upsertMany<K extends TSys = never>(args: { data: Array<TCreate & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
+  upsert<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | false | undefined = undefined, K extends TSys = never>(args: { where: TWhere; create: TCreate & __SystemData<TSysData, K>; update: TUpdate & __SystemData<TSysData, K>; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; system?: K[] }): Promise<WriteShape<TRow, TRel, I, S, TName>>
+  upsertMany<K extends TSys = never>(args: { data: Array<__BulkCreate<TCreate, TRel> & __SystemData<TSysData, K>>; conflictTarget?: string[]; update?: string[]; system?: K[] }): Promise<{ count: number }>
   remove(args: { where: TWhere }): Promise<TRow | null>
   removeMany(args?: { where?: TWhere }): Promise<{ count: number }>
   restore(args: { where: TWhere }): Promise<{ count: number }>
   delete(args: { where: TWhere }): Promise<TRow | null>
   deleteMany(args?: { where?: TWhere }): Promise<{ count: number }>
-  search<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S> & __SearchHit)[]>
+  search<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(query: string, args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; raw?: boolean; prefix?: boolean; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName>; highlight?: __FtsMarks; snippet?: __FtsMarks & { ellipsis?: string; length?: number }; withRank?: boolean; withDeleted?: boolean; onlyDeleted?: boolean; withTemplates?: boolean; onlyTemplates?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<(ReadShape<TRow, TRel, I, S, TName> & __SearchHit)[]>
   optimizeFts(): Promise<{ optimized: boolean; table: string }>
 
   // Reads whose shape is not one row or a count. Emitted because an app
   // calls them: leaving one out types a real call as an error, which is
   // the failure that makes a generated .d.ts worse than no types at all.
-  findManyAndCount<I extends IncludeArg<TRel> = {}, S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S }): Promise<{ rows: ReadShape<TRow, TRel, I, S>[]; total: number }>
+  findManyAndCount<I extends IncludeArg<TRel> = {}, const S extends SelectArg<TRow, TRel> | undefined = undefined>(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: I; select?: S & __SelectCheck<S, TRow, TRel, TName> }): Promise<{ rows: ReadShape<TRow, TRel, I, S, TName>[]; total: number }>
   exists(args?: { where?: TWhere }): Promise<boolean>
   aggregate(args?: Record<string, unknown>): Promise<Record<string, any>>
   groupBy(args: Record<string, unknown>): Promise<Record<string, any>[]>
@@ -875,14 +917,14 @@ type __NamedKeys<T> = keyof { [K in keyof T as string extends K ? never : number
 
 export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<__NamedKeys<__PackageLitestoneClient>,
   'auditTrail' | 'member' | 'room' | 'message' | 'game' | 'vote' | 'miss' | 'session' | 'asSystem' | '$setAuth' | '$scopedBy' | '$checkWhere' | '$checkOrderBy' | '$protectedFields' | '$trailMarks' | '$transaction' | 'sql' | '$tapQuery' | '$tapEvents' | '$backup' | '$attach' | '$detach' | '$rotateKey' | '$close' | '$schema' | '$databases' | '$softDelete' | '$commitments' | '$enums' | '$cacheSize' | '$attached' | '$rawDbs' | '$walStatus' | '$backupStamp' | '$clearBackupStamp' | '$ping' | '$schemaGaps' | '$inTransaction' | '$now'>> {
-  readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate'>
-  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'agent' | 'role' | '@@gate', MemberSystem>
-  readonly room: TableClient<Room, RoomCreate, RoomUpdate, RoomWhere, RoomRelations, never, '@@gate'>
-  readonly message: TableClient<Message, MessageCreate, MessageUpdate, MessageWhere, MessageRelations, never, '@@gate'>
-  readonly game: TableClient<Game, GameCreate, GameUpdate, GameWhere, GameRelations, never, '@@gate'>
-  readonly vote: TableClient<Vote, VoteCreate, VoteUpdate, VoteWhere, VoteRelations, never, '@@gate'>
-  readonly miss: TableClient<Miss, MissCreate, MissUpdate, MissWhere, MissRelations, never, '@@gate'>
-  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem>
+  readonly auditTrail: TableClient<AuditTrail, AuditTrailCreate, AuditTrailUpdate, AuditTrailWhere, AuditTrailRelations, never, '@@gate', {}, {}, 'AuditTrail'>
+  readonly member: TableClient<Member, MemberCreate, MemberUpdate, MemberWhere, MemberRelations, never, 'isAgent' | 'role' | '@@gate', MemberSystem, {}, 'Member'>
+  readonly room: TableClient<Room, RoomCreate, RoomUpdate, RoomWhere, RoomRelations, never, '@@gate', {}, {}, 'Room'>
+  readonly message: TableClient<Message, MessageCreate, MessageUpdate, MessageWhere, MessageRelations, never, '@@gate', {}, {}, 'Message'>
+  readonly game: TableClient<Game, GameCreate, GameUpdate, GameWhere, GameRelations, never, '@@gate', {}, {}, 'Game'>
+  readonly vote: TableClient<Vote, VoteCreate, VoteUpdate, VoteWhere, VoteRelations, never, '@@gate', {}, {}, 'Vote'>
+  readonly miss: TableClient<Miss, MissCreate, MissUpdate, MissWhere, MissRelations, never, '@@gate', {}, {}, 'Miss'>
+  readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere, SessionRelations, never, 'tokenHash' | 'lastUsedAt' | '@@gate', SessionSystem, {}, 'Session'>
 
   // Auth scoping
   asSystem(): __Sudo<LitestoneClient>
@@ -917,10 +959,11 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   // lost belongs in a durable mechanism and not here (FJS-D247).
   $tapEvents(fn: (event: WriteEvent) => void): () => void
 
-  // Utilities
+  // Utilities. The four ops writes run on asSystem() only, and every other
+  // flavor refuses them by name (FJS-D2363).
   $backup(dest: string, opts?: { vacuum?: boolean }): Promise<{ path: string; size: number }>
-  $attach(path: string, alias: string): void
-  $detach(alias: string): void
+  $attach(path: string, alias: string): this
+  $detach(alias: string): this
   $rotateKey(newKey: string): Promise<Record<string, { rows: number; fields: number }>>
   $close(): void
 

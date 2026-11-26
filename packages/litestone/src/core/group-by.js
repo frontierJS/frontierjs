@@ -33,7 +33,7 @@ function buildAggHaving(expr, cond, params, exprParams = []) {
 export function makeGroupBy(shape, ctx, deps) {
   const { tableName, modelName } = shape
   const {
-    readDb, plugins, refuseRecursive, refuseAggregateKeys, namedAggFields, refuseCountShape,
+    readDb, plugins, refuseRecursive, refuseAggregateKeys, refuseCountShape,
     refuseMixedCurrency, col, visibleWhere, _derivedSql, _aggCol, needsTiming, fireQuery,
     hydrateCols, exactSum, buildWhereWithEncryption, isMemberSpec, memberAggCols, memberAggValue,
     memberAggExpr, refuseValueAggKeys,

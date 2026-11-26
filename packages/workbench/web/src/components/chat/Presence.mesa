@@ -27,7 +27,7 @@
     inset-block-end: calc(-0.125 * var(--rem));
     inset-inline-end: calc(-0.125 * var(--rem));
     padding: calc(0.125 * var(--rem));
-    border-radius: 999px;
+    border-radius: var(--pill-radius);
     background: var(--surface);
   }
 </style>

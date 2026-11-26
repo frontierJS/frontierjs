@@ -23,7 +23,7 @@ import {
 import type { FileSize, NewDraft, NewFile, PostRow } from '@frontierjs/conduit-mattermost'
 import type { App } from '@frontierjs/junction'
 import {
-  applyFrame, dropDraft, land, landDrafts, landFavorite, landFollow, landMuted, landPinned, landPosts, landSaved, landStatuses, landThreads, landUnread,
+  applyFrame, hideDraft, land, landDrafts, landFavorite, landFollow, landMuted, landPinned, landPosts, landSaved, landStatuses, landThreads, landUnread,
   queueBackfill, savedKey, syncMembers, syncSections, viewed,
 } from './sync.ts'
 
@@ -303,12 +303,15 @@ export async function saveDraftAs (app: App, profile: string, draft: NewDraft) {
   return r
 }
 
-/** Discard the caller's draft for one box -- sent, or emptied. */
+/**
+ * Discard the caller's draft for one box -- sent, or emptied. Hidden here
+ * whatever the server answers, since it refuses some and lists others again;
+ * the row leaves when its draft_deleted event or a whole listing says so.
+ */
 export async function deleteDraftAs (app: App, profile: string, channel: string, root: string | null) {
-  const r = await deleteDraft(asCaller(app), profile, channel, root)
-  // Already gone on the server is the outcome asked for.
-  if (!r.error || r.error.kind === 'gone') { await dropDraft(app, profile, channel, root); return { ok: true as const } }
-  return r
+  await hideDraft(app, profile, channel, root)
+  await deleteDraft(asCaller(app), profile, channel, root)
+  return { ok: true as const }
 }
 
 /** Save or unsave a post for the caller. */

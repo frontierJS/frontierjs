@@ -11007,7 +11007,7 @@ const BLOCK_TEMPLATE = '(\\$\\$tpl\\d+|\\$\\$runtime\\.dynamicElement\\([^\\n]*?
 // server's settled branch in its place -- so it stays the unflagged body, set
 // aside between these marks; an adopting half there takes keys no page holds.
 const FRESH_OPEN = '/*$$fresh{*/', FRESH_CLOSE = '/*}$$fresh*/'
-const FRESH_INNERMOST = /\/\*\$\$fresh\{\*\/((?:(?!\/\*\$\$fresh\{\*\/)[^])*?)\/\*\}\$\$fresh\*\//g
+const FRESH_INNERMOST = /\/\*\$\$fresh\{\*\/((?:(?!\/\*\$\$fresh\{\*\/)[\s\S])*?)\/\*\}\$\$fresh\*\//g
 const ADOPTING_CALLS = [['ifBlock', 'hydIf'], ['$$eachBlock', 'hydEach'], ['awaitBlock', 'hydAwait'], ['keyBlock', 'hydKey'], ['makeBlock', 'hydBlock'], ['boundaryBlock', 'hydBoundary']]
 
 function _adoptRoots(code, ctx) {
@@ -11023,7 +11023,7 @@ function _adoptRoots(code, ctx) {
   // The rest of one body, up to the line that closes it: a later body reuses
   // its walk's names, which would read here as unkeyed nodes this one reads.
   const bodyEnd = (str, from, ind) => {
-    const width = ind.replace(/^[^]*\n/, '').length
+    const width = ind.replace(/^[\s\S]*\n/, '').length
     const close = new RegExp('\\n[ \\t]{0,' + Math.max(width - 1, 0) + '}[})]', 'g')
     close.lastIndex = from
     return close.exec(str)?.index ?? str.length
@@ -11072,7 +11072,7 @@ function _adoptRoots(code, ctx) {
     /^(\s*)const \$\$parentElement = (\$\$tpl\d+)\(\);\n((?:\s+(?:(?:let|var) [^;\n]+|\$\$runtime\.pop\([^)\n]*\));\n)*)/mg,
     (whole, ind, tpl, walk, at, str) => {
       walk = walk.replace(/^([ \t]*)let /mg, '$1var ')
-      const { unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind.replace(/^[^]*\n/, ''))
+      const { unkeyed, adopt } = plan(walk, bodyAfter(str, at + whole.length, ind), ind.replace(/^[\s\S]*\n/, ''))
       const opts = `{ file: ${file}${ctx.css?.id ? `, scope: ${JSON.stringify(ctx.css.id)}` : ''}${ctx.config.dev ? ', dev: true' : ''}${unkeyed.length ? `, unkeyed: ${JSON.stringify(unkeyed.join(', '))}` : ''} }`
       const root = byName.has('$$parentElement') ? `$$h.take(${JSON.stringify(byName.get('$$parentElement'))})` : `$$h.root(${tpl})`
       return `${ind}const $$h = $$runtime.claim(__anchor, ${opts});\n` +

@@ -86,11 +86,11 @@
     inline-size: fit-content;
     min-inline-size: min(calc(24 * var(--rem)), 100%);
     border-radius: calc(var(--card-radius) * 2);
-    box-shadow: 0 calc(var(--space-xl) * 1) calc(var(--space-2xl) * 2) color-mix(in srgb, black 45%, transparent);
+    box-shadow: 0 calc(var(--space-xl) * 1) calc(var(--space-2xl) * 2) var(--scrim);
   }
   :global(.chat-viewer-frame)::backdrop {
-    background: color-mix(in srgb, black 40%, transparent);
-    backdrop-filter: blur(10px) saturate(1.2);
+    background: var(--scrim);
+    backdrop-filter: blur(calc(0.625 * var(--rem))) saturate(1.2);
   }
   :global(.chat-viewer-frame) > :global(.surface-header),
   :global(.chat-viewer-frame) > :global(.surface-footer) { background: transparent; border-color: transparent; }

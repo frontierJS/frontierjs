@@ -481,7 +481,6 @@ export async function explain(root: string, q: Queued, input: { ask?: unknown, b
   const running = [...explanations.values()].filter(e => e.state === 'working').length
   if (running >= EXPLAINING_MAX) return { refused: `Claude is already explaining ${running} questions — wait for one to finish` }
 
-  const f     = await loadFli()
   const entry: Explanation & { session: string | null } = held
     ?? { id: q.id, state: 'working', turns: [], cost: 0, error: null, startedAt: new Date().toISOString(), session: null }
   const turn: Turn = { ask: follow || null, text: '', steps: 0, doing: '' }

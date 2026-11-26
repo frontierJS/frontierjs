@@ -73,7 +73,6 @@ describe('lower()', () => {
           },
           el('ul', 'Counter.mesa:15:3', [{
             kind: 'each',
-        start: expect.any(Number),
             start: expect.any(Number),
             loc: 'Counter.mesa:16:5',
             items: { raw: 'items', code: '$$runtime.get($$sig_items)', reads: ['items'] },

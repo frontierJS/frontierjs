@@ -128,7 +128,7 @@ title: Messages
   .thread-resize:hover, .thread-resize:focus-visible, .room.resizing .thread-resize { background: var(--ring-color); opacity: 0.6; outline: none; }
   .room-col { --chat-gutter: max(var(--space-2xl), calc((100% - var(--container-narrow)) / 2)); display: flex; flex-direction: column; min-block-size: 0; min-inline-size: 0; }
   .room.has-thread .room-col { --chat-gutter: var(--space-lg); }
-  @media (max-width: 1024px) {
+  @media (max-width: 1023px) {
     .room.has-thread { grid-template-columns: minmax(0, 1fr); }
     .room.has-thread > .room-col { display: none; }
     .thread-resize { display: none; }

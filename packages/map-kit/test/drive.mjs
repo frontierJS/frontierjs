@@ -30,7 +30,7 @@
  * Run: bun run drive   (screenshots land in .cache/drive/, which git ignores)
  */
 import { createServer } from 'node:http'
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { extname, join, resolve, sep } from 'node:path'

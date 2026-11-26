@@ -19,7 +19,8 @@
 //               channelMembers.create and .remove
 //   saveDraft   the caller's draft for one box { channelExternalId,
 //               rootExternalId?, message, fileExternalIds? } -> the Draft row
-//   deleteDraft discard it { channelExternalId, rootExternalId? }
+//   deleteDraft discard it { channelExternalId, rootExternalId? }; hidden
+//               here even when the server refuses
 //   save        save or unsave a post { postExternalId, saved }
 //   saved       the saved list read whole and landed -> { postExternalIds },
 //               newest first
@@ -348,8 +349,7 @@ export default createService({
     serverOn(ctx)
     const profile = await callerProfile(ctx)
     const channel = idOf(ctx, 'channelExternalId')!, root = idOf(ctx, 'rootExternalId', true)
-    const r = await deleteDraftAs(ctx.app, profile, channel, root) as { error?: { kind: string, code?: string, message?: string } }
-    if (r.error) throw refused('deleteDraft', r.error.kind, r.error)
+    await deleteDraftAs(ctx.app, profile, channel, root)
     return { channelExternalId: channel, rootExternalId: root }
   },
 

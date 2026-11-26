@@ -56,7 +56,7 @@ model Member {
   /// A member the Haven lists in `HAVEN_AGENTS` rather than a person's chain
   /// (`FJS-D1651`), so the room can mark them. Written by the login alone: a
   /// member flagging themselves would pass for a bot.
-  agent     Boolean   @default(false) @system
+  isAgent   Boolean   @default(false) @system
 
   /// The standing: `mod`, or none. Read off the row on every call and every
   /// socket frame (`api/src/principal.ts`), written by the login from

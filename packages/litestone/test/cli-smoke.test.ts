@@ -743,7 +743,7 @@ model Vault {
     expect(await check()).toEqual({ fields: ['User.ssn'], values: ['User.ssn'], opens: null })
     expect((await check({ ENCRYPTION_KEY: key })).opens).toBe(true)
     expect((await check({ ENCRYPTION_KEY: 'b'.repeat(64) })).opens).toBe(false)
-  })
+  }, 20_000)   // seven cold CLI processes; a loaded machine took 5.5s
 
   test('--env-file loads keys from a custom file', async () => {
     // Regression guard for the auto .env loader. Bun reads ./.env on its own,

@@ -157,7 +157,7 @@ describe('the embedded data', () => {
 
   test('the root holds the render alone; the skip link and the data sit outside it', () => {
     const doc = wrapDocument('<main>m</main>', { hydrateJson: '{}', bodyEnd: '<i>end</i>' })
-    expect(doc).toMatch(/<a class="skip-link"[^]*<div data-sierra-root><main>m<\/main><\/div>\n<script type="application\/json" data-sierra-data>\{\}<\/script>\n<i>end<\/i>/)
+    expect(doc).toMatch(/<a class="skip-link"[\s\S]*<div data-sierra-root><main>m<\/main><\/div>\n<script type="application\/json" data-sierra-data>\{\}<\/script>\n<i>end<\/i>/)
   })
 })
 

@@ -458,12 +458,15 @@ export const saveDraft = ({ channelExternalId, rootExternalId, message, fileExte
 export const deleteDraft = ({ channelExternalId, rootExternalId }) =>
   say('deleteDraft', { channelExternalId, ...(rootExternalId ? { rootExternalId } : {}) })
 
+// A Delete hides the row (hiddenAt) whatever the server did with it; typing in that box again shows it.
+const shown = (d) => !d.hiddenAt || new Date(d.updatedAt ?? 0) > new Date(d.hiddenAt)
+
 /** The draft for one box, a room's (no root) or a thread's. */
 export const draftFor = (rows, channelExternalId, rootExternalId = null) =>
-  rows.find(d => d.channelExternalId === channelExternalId && (d.rootExternalId || null) === (rootExternalId || null)) ?? null
+  rows.find(d => shown(d) && d.channelExternalId === channelExternalId && (d.rootExternalId || null) === (rootExternalId || null)) ?? null
 
 /** A draft is a row with something typed; the server keeps no empty one. */
-export const liveDrafts = (rows) => rows.filter(d => String(d.message ?? '').trim())
+export const liveDrafts = (rows) => rows.filter(d => shown(d) && String(d.message ?? '').trim())
 
 const DRAFT_STALE_MS = 30 * 24 * 60 * 60 * 1000
 /**

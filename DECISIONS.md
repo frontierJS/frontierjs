@@ -1933,6 +1933,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d2208"></a>2026-11-26 · `FJS-D2208` — How does an owner write their own `@secret` column without the service reaching for `asSystem()` — No new word. A secret the owner pastes and never reads back is spelled `@encrypted @allow(write, <owner rule>)` plus a `@derived` "is it set" Boolean. `@secret` stays the system-only credential. `packages/litestone/docs/encryption.md` and `packages/litestone/docs/access-control.md` say which to pick. Paylode's `connectStripe` becomes a plain `$.db.product.update`, and `decorate` goes away.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (As built: a named service method writes through `asSystem()`, and the app baselines the warnings. Every app with a per-row provider secret repeats the baseline entry), **C** (Let `@secret` accept a field `@allow(write, …)`. It keeps the read audit `@secret` adds, but `@secret` would then mean both "only the system touches it" and "some callers may set it", against `access-control.md`'s "pick the one that describes the column").
+
+The paper's recommendation, taken as written: it is built and probed, needs no new word, and keeps access declared in the schema (Invariant 6). `@encrypted` logs `[redacted]` (Invariant 7). Two costs go into the ruling's text. B drops `@secret`'s `@trail(audit, reads: false)`, so an app that wants the read audit spells it beside the column, and a test should show the write still audits as `[redacted]`. And the webhook receiver still reads the secret through `asSystem()`, which becomes the one named, legitimate elevation. C is the reopen path if a second app finds the three-attribute spelling error-prone (`decision-rules`, confidence 2). - **Prior art** (read 2026-11-25) — Postgres grants privileges per column, and a table-wide grant covers every column (https://www.postgresql.org/docs/current/sql-grant.html). Supabase says RLS gives the row's owner every column and column privileges narrow it (https://supabase.com/docs/guides/database/postgres/column-level-security). Hasura sets column permissions per role, separately for insert, select and update (https://hasura.io/docs/2.0/auth/authorization/permissions/column-level-permissions/). PocketBase blocks a field's write with `@request.body.field:isset = false` but has no hidden-from-read field (https://pocketbase.io/docs/api-rules-and-filters/).
+
 ### <a id="fjs-d2363"></a>2026-11-25 · `FJS-D2363` — Does a client scoped by `$setAuth` refuse the ops methods without `asSystem()`, the way `$retain` already does — C, with root `$db` refused under `FJS-D52`'s condition.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C, with root `$db` refused under `FJS-D52`'s condition*) over **A** (Keep them as app trust: code holding any client is trusted with the file. Document it in `data-hazards` and leave the methods where they are. No junction route reaches them today), **B** (Refuse `$backup`, `$rotateKey`, `$attach`, `$detach` and `$db` on the `$setAuth` and `$scope` proxies with a `retainRefusal`-shaped message naming `db.asSystem().$X()`. `$walStatus`, `$backupStamp` and `$ping` stay readable. The root client keeps them, since rewriting root callers is a separate question).
@@ -5460,6 +5466,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d1818"></a>2026-11-26 · `FJS-D1818` — Can a tombstone drop its bytes and keep their digest — Declared per column: a named argument on `@digest` (say `@digest(sha256, keep: true)`, matching `@stamps(by:)` and `@immutable(after:)`) leaves the sibling alone on a clear. Without it the refusal stays loud, and parse refuses a required or `@immutable` sibling beside a clearable File that does not say `keep`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Derived: clearing the file leaves an `@immutable` or required sibling alone, and the digest becomes a record of what was held. A refusal turns into silent retention because of an attribute chosen for another reason), **C** (No change. The app keeps a second plain column for the never-twice index, which states one hash twice and leaves today's dangling ref).
+
+The paper's recommendation, taken as written: whether a deleted photo's hash survives is a retention choice, so the schema states it and the default fails closed. A changes what `@digest` means for every schema that happens to carry `@immutable`, and in an app with `@@unique([ownerId, sha256])` a silently kept hash could block a legitimate re-upload. Measured on a patched copy of `file-storage.js` (two lines): with `@immutable`, `update({ data: { status: 'deleted', file: null } })` succeeds, `sha256` is kept, the stored object count goes from 1 to 0, and a re-attach is still refused by `@immutable`. So vellum's by-hand delete goes away. Both A and B amend `FJS-D1292`'s sentence and the docs line that says the argument "is a column and never an algorithm" (`decision-rules`, confidence 2, leaning 3). - **Prior art** (read 2026-11-25) — Git LFS `prune` deletes local objects but never the pointer files, so the `oid sha256:` line stays in history (https://github.com/git-lfs/git-lfs/blob/main/docs/spec.md). IPFS `pin rm` plus `repo gc` frees the blocks while the CID stays a valid hash that verifies re-added bytes (https://docs.ipfs.tech/how-to/pin-files/). No source was found for Dropbox or Google Photos keeping a hash after a delete.
 
 ### <a id="fjs-d2345"></a>2026-11-23 · `FJS-D2345` — Which surface lists `@stale`'s sources per schema — Widen `fromReach`/`fromColumns` (`policy.js`) to include each `@stale` source model as whole-model (in `$fromReach`, absent from `$fromColumns`). Keep the name and reword its comment to "the models whose write moves a value on this one's rows without the client announcing it". Amend `FJS-D2307`'s sentence so the sources reach junction through `$fromReach`, and the per-field listing is the DDL comment. Proved by an introspect case and a junction case where a source write regrades a service holding the declaring model.
 
@@ -14926,6 +14938,18 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d2392"></a>2026-11-26 · `FJS-D2392` — Q14 — Only when the callee is a built-in array method that runs its callback at once: `map`, `filter`, `find`, `findIndex`, `findLast`, `some`, `every`, `reduce`, `reduceRight`, `flatMap`, `sort`, `forEach`. One named list beside `warnHelperReads`; a callee off it is treated as later. Amends `FJS-D2388`.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (every arrow handed to a call, as `FJS-D2388` is written), **C** (never).
+
+The paper's recommendation, taken as written: A's warning on a subscription gives advice that would freeze the value, C misses `items.filter(i => inRange(i))` where the stale read is real, and a wrong warning teaches people to ignore the right ones.
+
+### <a id="fjs-d2391"></a>2026-11-26 · `FJS-D2391` — Q13 — Page-wide: a read of an imported path waits on that path, a `$:` anywhere arms it, mount order is no input, and dev names the component whose `$:` armed it. Replaces `FJS-D2384`; amends `FJS-D2390`, an imported path being a possible trigger.
+
+Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **A** was picked over **B** (own file only, as `FJS-D2384`: the compiler names the file's watches as triggers and the proxy stops subscribing), **C** (the branch as it stands: cover by mount order, in the narrow case left).
+
+The paper's recommendation, taken as written: one registry is the model already taught, the order dependence was the defect `FJS-D2384` answered and A removes it, and the measured cost is 23 bindings.
 
 ### <a id="fjs-d2390"></a>2026-11-25 · `FJS-D2390` — Q12 — No: a path is a trigger when its root is reactive, a watched import path, or a handle (a resource, `presence()`, the router, the session — Q8's list); a plain import is not.
 

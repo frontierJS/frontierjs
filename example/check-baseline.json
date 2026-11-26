@@ -4,7 +4,8 @@
   "app-layout": 1,
   "//prose-assembled": "Adopted when the rule landed (FJS-D254): plural suffixes and `+` chains in markup, each a sentence a catalog could not translate. Each is a move to a whole-sentence pick, not a defence.",
   "prose-assembled": 15,
-  "schema-runs": 2,
+  "//schema-runs": "Two of the four are sync-reference-to-a-server-assigned-id on ProductVariant (InventoryMovement.variant, StocktakeCount.variant). Its @@sync(field) is for two online writers on different columns, price and stock; a variant is created online only (seed.ts, the admin), so no offline session queues one.",
+  "schema-runs": 4,
   "allow": {
     "test-port-literal:web/test/verify-replicate.mjs": "8333 is the port INSIDE the SeaweedFS container, mapped from the drive's own S3_PORT; nothing on the host binds it.",
     "test-port-literal:web/test/verify-tui.mjs": "7999 is a port nothing holds, on purpose: the drive proves the frame renders with the API unreachable.",

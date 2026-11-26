@@ -133,6 +133,8 @@ the chat prototype proved (`IDEAS/mirror-apps.md`), and Workbench hosts both.
 
 ---
 
+## Plan
+
 ### Phase 0 — What the server answers
 
 Goal: know which backing each extra gets before any model is written.

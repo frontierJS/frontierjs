@@ -131,20 +131,20 @@ Goal: the rule, emitted.
 Done when: `bun run test` in `packages/mesa` passes with the flipped tests, and
 compiler tests parse their output (Invariant 15).
 
-- [ ] 1.1 A call's arguments tracked and its body untracked — template, `const`,
+- [x] 1.1 A call's arguments tracked and its body untracked — template, `const`,
   prop and `$:`, on the `$: deps, handler` untrack machinery. A free name inside
   an inline arrow is a trigger (Q5). `new X(a)`, a tagged template and `a?.()` are
   calls; `{@render s(x)}` is not, since the snippet's own bindings track. A getter
   must not run twice per render when the triggers are read apart from the value.
   The boundary is decided on the SOURCE AST: a call the compiler emits —
   `$$ctxRead` for `$context`, a prop accessor, `$async` — is never one
-- [ ] 1.2 A property read in a `const` initializer derives it; `warnHandleReads`
+- [x] 1.2 A property read in a `const` initializer derives it; `warnHandleReads`
   goes
-- [ ] 1.3 Each binding gated on its own reads inside a shared `render()`
-- [ ] 1.4 `$: { }` and `$: expr` follow Q2's ruling; an assignment target — `=`,
+- [x] 1.3 Each binding gated on its own reads inside a shared `render()`
+- [x] 1.4 `$: { }` and `$: expr` follow Q2's ruling; an assignment target — `=`,
   `+=`, `++` — is never a trigger (Q7)
-- [ ] 1.5 Delete `WATCHED_CALLS`, `opaqueLocalCall` and `_isReactive`'s text guesses
-- [ ] 1.6 Flip `watch-follows-calls.test.js` and its siblings
+- [x] 1.5 Delete `WATCHED_CALLS`, `opaqueLocalCall` and `_isReactive`'s text guesses
+- [x] 1.6 Flip `watch-follows-calls.test.js` and its siblings
 
 ### Phase 2 — The warnings
 
@@ -154,25 +154,25 @@ Done when: a compiler test or a runtime dev-check test sees each step's shape
 warned and its fixed form quiet, and Phase 0's corpus names every site each new
 warning fires on.
 
-- [ ] 2.1 Compile time: a local helper reads state the expression does not name
+- [x] 2.1 Compile time: a local helper reads state the expression does not name
   (Q4) — each missed read is named, whether or not the expression names others;
   a helper passed by reference, not called, is never warned
-- [ ] 2.2 Dev runtime: an imported helper read a signal or watched path the
+- [x] 2.2 Dev runtime: an imported helper read a signal or watched path the
   expression does not name, partial or not (Q8) — router, session, presence and
   resources are signals
-- [ ] 2.3 `var` alone clears it for an intended one-time read; both `const` forms, destructuring included, are warned (Q6)
-- [ ] 2.4 Compile time: a top-level `var` assigned after init and read in a
+- [x] 2.3 `var` alone clears it for an intended one-time read; both `const` forms, destructuring included, are warned (Q6)
+- [x] 2.4 Compile time: a top-level `var` assigned after init and read in a
   binding or a derived `const` — always stale, since a binding re-runs only on its
   own reads (1.3); the fix named is `let`
-- [ ] 2.5 Compile time: a `let` read in a binding is mutated in place — a method
+- [x] 2.5 Compile time: a `let` read in a binding is mutated in place — a method
   that mutates (`push`, `splice`, `sort`, …) or a member write — with no `$:`
   covering the path and no `x = x` in the same function (RULE 43)
-- [ ] 2.6 Compile time: an inline arrow whose names are its expression's only
+- [x] 2.6 Compile time: an inline arrow whose names are its expression's only
   triggers re-runs what it is handed — `{@attach zone(() => ({ items: roster }))}`
   re-attaches, `const off = svc.on('*', () => …rows…)` re-subscribes. Q5 is
   unchanged; the warning names the re-run and offers a named function or `var`.
   `const cheap = items.filter(i => i.price < max)` is quiet: `items` is outside
-- [ ] 2.7 Dev runtime: a derived `const` re-derived and the value it dropped has
+- [x] 2.7 Dev runtime: a derived `const` re-derived and the value it dropped has
   `destroy`, `dispose`, `close`, `disconnect`, `unsubscribe` or `abort` — the old
   one leaked; the fix named is `var`, or a `$: deps, handler` returning cleanup
 
@@ -350,3 +350,36 @@ Done when: each app's drive passes on the new Mesa.
     list); a plain import is not
   - **Recommend B** — the rule's first sentence already lists the roots, and Q8's
     dev check catches an import the list misses.
+- ~~**Q13**~~ **Answered 2026-11-26 (`FJS-D2391`): A — page-wide: a read of an imported path waits on that path, a `$:` anywhere arms it, mount order is no input, and dev names the component whose `$:` armed it. Replaces `FJS-D2384`; amends `FJS-D2390`, an imported path being a possible trigger.** — Whose watch counts for a read of an imported object. `FJS-D2384`
+  ruled only the reading file's own; building it showed four mechanisms, each
+  with a cost, and the owner's model is the page's: a path is live for every
+  reader once any component declares `$:` on it, in any mount order, and inert
+  when none does. Measured: 23 written-once reads in 4 files become live here,
+  0 in TPM; no computed-key read of a watched import exists in either.
+  **Recommend A.**
+  - **A** — page-wide: a read of an imported path waits on that path, a `$:`
+    anywhere arms it, mount order is no input, and dev names the component whose
+    `$:` armed it. Replaces `FJS-D2384`; amends `FJS-D2390`, an imported path
+    being a possible trigger
+  - **B** — own file only, as `FJS-D2384`: the compiler names the file's watches
+    as triggers and the proxy stops subscribing
+  - **C** — the branch as it stands: cover by mount order, in the narrow case left
+  - **Recommend A** — one registry is the model already taught, the order
+    dependence was the defect `FJS-D2384` answered and A removes it, and the
+    measured cost is 23 bindings.
+- ~~**Q14**~~ **Answered 2026-11-26 (`FJS-D2392`): B — only when the callee is a built-in array method that runs its callback at once: `map`, `filter`, `find`, `findIndex`, `findLast`, `some`, `every`, `reduce`, `reduceRight`, `flatMap`, `sort`, `forEach`. One named list beside `warnHelperReads`; a callee off it is treated as later. Amends `FJS-D2388`.** — When warning 2.1 fires for a helper called inside an arrow handed
+  to a call. `FJS-D2388` warns every such arrow, "since it may run now", which
+  also warns a subscription callback, `svc.on('*', () => load())`, that runs
+  later and reads fresh. Kotlin's `callsInPlace` and Solid's lint keep a list of
+  callees that run a callback at once; TypeScript, Vue and Svelte assume later.
+  **Recommend B.**
+  - **A** — every arrow handed to a call, as `FJS-D2388` is written
+  - **B** — only when the callee is a built-in array method that runs its
+    callback at once: `map`, `filter`, `find`, `findIndex`, `findLast`, `some`,
+    `every`, `reduce`, `reduceRight`, `flatMap`, `sort`, `forEach`. One named
+    list beside `warnHelperReads`; a callee off it is treated as later. Amends
+    `FJS-D2388`
+  - **C** — never
+  - **Recommend B** — A's warning on a subscription gives advice that would
+    freeze the value, C misses `items.filter(i => inRange(i))` where the stale
+    read is real, and a wrong warning teaches people to ignore the right ones.

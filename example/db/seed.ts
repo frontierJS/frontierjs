@@ -724,7 +724,6 @@ async function seedBilling() {
     where: { planId: plan.id }, orderBy: { effectiveFrom: 'asc' },
   })
   const soldAt = versions[0]                  // the subscriber is on the OLD price
-  const buyerUser     = await sys.user.findFirst({ where: { email: DEMO.buyer.email } })
   const buyerCustomer = await reseed<any>(sys.customer, { email: DEMO.buyer.email })
   if (!soldAt || !buyerCustomer) return
 

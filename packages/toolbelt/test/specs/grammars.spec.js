@@ -593,32 +593,6 @@ describe('mesa', () => {
   })
 })
 
-// ─── convergence ─────────────────────────────────────────────────────────
-
-const nl = (s) => s.split('\n').length - 1
-
-function fresh(name, text) {
-  const lines = text.split('\n')
-  const out = [initialState(name)]
-  for (const l of lines) out.push(tokenizeLine(l, out[out.length - 1]))
-  return out.slice(0, lines.length)
-}
-
-function change(buf, states, from, to, text) {
-  buf.delete(from, to - from)
-  buf.insert(from, text)
-  states.edited(buf.positionAt(from).line, nl(text))
-}
-
-function rng(seed) {
-  let s = seed >>> 0
-  return () => {
-    s = (s * 1664525 + 1013904223) >>> 0
-    return s / 2 ** 32
-  }
-}
-
-
 describe('painting', () => {
   // Every type a rule can emit, walked from the grammars' own rules, so a new
   // type cannot ship as a bare span with no color and no class styled.

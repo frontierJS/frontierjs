@@ -54,6 +54,7 @@ const NON_ASCII = /[^\x20-\x7e]/
 export function assertHeaderValue(name: string, value: string): string {
   const v = String(value ?? '')
   if (/[\r\n]/.test(v)) throw new MimeRefusal(`header '${name}' contains a line break — refused as header injection`)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the control characters are what this pattern refuses
   if (/[\x00\x0b\x0c]/.test(v)) throw new MimeRefusal(`header '${name}' contains a control character`)
   return v.trim()
 }

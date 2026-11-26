@@ -121,7 +121,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Reaction`
 
 - allow **read** — `check(post)`
-- allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId`
+- allow **create** — `profileExternalId == auth().profileExternalId && check(post, 'read') && check(channel, 'read') && channelExternalId == post.channelExternalId`
 - allow **delete** — `profileExternalId == auth().profileExternalId`
 
 ### `SavedPost`

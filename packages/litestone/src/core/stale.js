@@ -99,7 +99,7 @@ export function staleProblems(model, schema) {
       if (!s.where) continue
       if (usesClock(s.where)) { errors.push(`${label} — where: reads the clock, and a trigger has none`); continue }
       try { compileFromWhere(hop.source, `${label} where:`, s.where, schema, model) }
-      catch (e) { errors.push(e.message) }
+      catch (e) { errors.push(e.message) }   // every source is graded; one that does not compile is one more error
     }
   }
   return errors

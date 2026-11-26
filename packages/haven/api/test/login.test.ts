@@ -64,7 +64,7 @@ describe('a member walks in', () => {
     const first = await signIn(env.port, 'sam')
     const { status, json } = await postLogin(env.port, await signedLogin(first.member.keys, chainOf(first.member)))
     expect(status).toBe(200)
-    expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null, agent: false })
+    expect(json.member).toEqual({ id: first.id, nick: 'sam', role: null, isAgent: false })
     expect(json.token).not.toBe(first.token)
     expect(await sessions()).toBe(2)
   })
@@ -133,7 +133,7 @@ describe('an agent', () => {
   test('a listed key walks in with no chain as the listed nick, flagged an agent, and is that member every time', async () => {
     const first = await postLogin(env.port, await signedLogin(ace, { nick: 'somebody' }))
     expect(first.status).toBe(200)
-    expect(first.json.member).toMatchObject({ nick: 'ace', agent: true })
+    expect(first.json.member).toMatchObject({ nick: 'ace', isAgent: true })
     const again = await postLogin(env.port, await signedLogin(ace, {}))
     expect(again.json.member.id).toBe(first.json.member.id)
     expect(await members()).toEqual(['ace'])
@@ -142,8 +142,8 @@ describe('an agent', () => {
     expect(sam.member).toBeTruthy()
     const seen = await whoami(sam.token)
     const rows = (seen.rows?.data ?? seen.rows) as any[]
-    expect(rows.find(r => r.nick === 'ace')?.agent).toBe(true)
-    expect(rows.find(r => r.nick === 'sam')?.agent).toBe(false)
+    expect(rows.find(r => r.nick === 'ace')?.isAgent).toBe(true)
+    expect(rows.find(r => r.nick === 'sam')?.isAgent).toBe(false)
   })
 
   test('a key the list does not name is refused as before, and a chain member is no agent', async () => {
@@ -180,11 +180,11 @@ describe('an agent', () => {
   test('a member cannot flag themselves an agent', async () => {
     const sam = await signIn(env.port, 'sam')
     await fetch(`http://localhost:${env.port}/members/${sam.id}`, {
-      method: 'PATCH', body: JSON.stringify({ agent: true }),
+      method: 'PATCH', body: JSON.stringify({ isAgent: true }),
       headers: { authorization: `Bearer ${sam.token}`, 'content-type': 'application/json' },
     })
-    const row = await sys.member.findFirst({ where: { id: sam.id }, select: { agent: true } })
-    expect(row.agent).toBe(false)
+    const row = await sys.member.findFirst({ where: { id: sam.id }, select: { isAgent: true } })
+    expect(row.isAgent).toBe(false)
   })
 })
 

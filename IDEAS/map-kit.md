@@ -481,9 +481,11 @@ Stages 2 and 3 are planned after Phase 4, from what Stage 1 taught.
   - **B** — MapLibre 6 for the interactive screens; Stage 1 stays for the
     static ones.
   - **C** — Leaflet for the interactive screens.
-  - **Recommend: rule after Stage 1**, by grading a port of Leaflet's gestures
-    on a real phone against Leaflet itself. terra-draw has adapters for every
-    option, so the drawing code does not change with the pick.
+  - **D** — rule after Stage 1, by grading a port of Leaflet's gestures on a
+    real phone against Leaflet itself.
+  - **Recommend D** — terra-draw has adapters for every option, so the drawing
+    code does not change with the pick, and the phone grade is what decides
+    between A and the others.
 - ~~**Q3 — Tiles and imagery, and whose key.**~~ **Answered 2026-11-23 (`FJS-D2335`): A — Esri World Imagery as an opt-in vendor keyed per account, about 30 cm, and NAIP as the free fallback where there is no key.**
   - **A** — Esri World Imagery as an opt-in vendor keyed per account, about
     30 cm, and NAIP as the free fallback where there is no key.
@@ -494,17 +496,23 @@ Stages 2 and 3 are planned after Phase 4, from what Stage 1 taught.
     free, and NAIP keeps a keyless app working. Nearmap can be added as another
     basemap descriptor once ELA's API access is verified.
 - **Q4 — Geocoding and autocomplete.**
-  - **Recommend: a conduit target.** Every surveyed framework keeps a provider
+  - **A** — a conduit target.
+  - **B** — a geocoder the kit calls itself.
+  - **Recommend A** — every surveyed framework keeps a provider
     registry apart from display, and conduit already is that registry. The kit
     ships the address field, and the app's property row holds the location.
 - **Q5 — What V1 is.** Stage 1 covers the embed, the property view and a
   read-only tracker. The measure map (ELA 24.9a) waits for Stage 3.
 - **Q6 — Is live crew position part of this?**
-  - **Recommend: no.** Live position needs a transport and a consent model, not
+  - **A** — no.
+  - **B** — yes, in this kit.
+  - **Recommend A** — live position needs a transport and a consent model, not
     a map. The tracker's route and visit pins are `shapes` and `markers` the app
     supplies.
 - **Q7 — The public embed.**
-  - **Recommend: Stage 1's static map.** It loads no library, which is what a
+  - **A** — Stage 1's static map.
+  - **B** — a static-image endpoint.
+  - **Recommend A** — it loads no library, which is what a
     static-image endpoint was for.
 - ~~**Q8 — How a keyed tile source reaches the page.**~~ **Answered 2026-11-23 (`FJS-D2336`): B — a tile proxy route in the app's API: the key stays on the server, tiles can be cached, and the browser only ever asks the app's own origin.** A static map's tile URLs
   sit in the HTML, so a key in them is public.

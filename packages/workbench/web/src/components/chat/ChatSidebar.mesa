@@ -354,9 +354,9 @@
   .chat-glyph { display: inline-flex; }
   .chat-tile { display: none; position: relative; }
   .chat-rail-toggle { opacity: 0.7; }
-  @media (max-width: 1024px) { .chat-rail-toggle { display: none; } }
+  @media (max-width: 1023px) { .chat-rail-toggle { display: none; } }
   /* The rail: a tile per room, the counts on its corner, the names on hover. One column below 1024px has no rail. */
-  @media (min-width: 1025px) {
+  @media (min-width: 1024px) {
     .rail { padding-inline: var(--space-2xs); overflow-x: hidden; align-items: center; }
     .rail .chat-top { flex-direction: column; gap: var(--space-xs); }
     .rail .chat-top > :first-child { flex: none; }

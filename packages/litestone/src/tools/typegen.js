@@ -1064,7 +1064,7 @@ function fieldUpdateSpec(field, schema, audience, modelNames) {
 }
 
 function fieldWhereSpec(field, schema, modelNames) {
-  const { name, type, attributes } = field
+  const { name, attributes } = field
   if (isRelation(field)) return null
 
   // @transient has no column, so the client refuses it in a `where` by name —

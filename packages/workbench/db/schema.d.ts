@@ -1218,6 +1218,7 @@ export interface Draft {
   fileExternalIds: unknown
   createdAt?: string | null
   updatedAt?: string | null
+  hiddenAt?: string | null
   missingSince?: string | null
 }
 
@@ -1237,6 +1238,7 @@ export interface DraftSystem {
   message?: string
   props?: unknown
   fileExternalIds?: unknown
+  hiddenAt?: string | Date | null
   missingSince?: string | Date | null
 }
 
@@ -1251,6 +1253,7 @@ export interface DraftWhere extends WhereBase {
   fileExternalIds?: unknown | WhereOp<unknown> | null
   createdAt?: string | Date | WhereOp<string | Date> | null
   updatedAt?: string | Date | WhereOp<string | Date> | null
+  hiddenAt?: string | Date | WhereOp<string | Date> | null
   missingSince?: string | Date | WhereOp<string | Date> | null
   AND?: DraftWhere[]
   OR?:  DraftWhere[]
@@ -1832,7 +1835,7 @@ export interface LitestoneClient extends Pick<__PackageLitestoneClient, Exclude<
   readonly thread: TableClient<Thread, ThreadCreate, ThreadUpdate, ThreadWhere, ThreadRelations, never, 'externalId' | 'rootExternalId' | 'profileExternalId' | 'replyCount' | 'lastReplyAt' | 'lastViewedAt' | 'unreadReplies' | 'unreadMentions' | 'isFollowing' | 'missingSince' | '@@gate', ThreadSystem, {}, 'Thread'>
   readonly reaction: TableClient<Reaction, ReactionCreate, ReactionUpdate, ReactionWhere, ReactionRelations, never, 'externalId' | 'postExternalId' | 'channelExternalId' | 'profileExternalId' | 'emojiName' | 'createdAt' | 'missingSince' | '@@gate', ReactionSystem, {}, 'Reaction'>
   readonly fileInfo: TableClient<FileInfo, FileInfoCreate, FileInfoUpdate, FileInfoWhere, FileInfoRelations, never, 'externalId' | 'postExternalId' | 'channelExternalId' | 'profileExternalId' | 'name' | 'extension' | 'size' | 'mimeType' | 'width' | 'height' | 'hasPreviewImage' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'missingSince' | '@@gate', FileInfoSystem, {}, 'FileInfo'>
-  readonly draft: TableClient<Draft, DraftCreate, DraftUpdate, DraftWhere, DraftRelations, never, 'externalId' | 'profileExternalId' | 'channelExternalId' | 'rootExternalId' | 'message' | 'props' | 'fileExternalIds' | 'createdAt' | 'updatedAt' | 'missingSince' | '@@gate', DraftSystem, {}, 'Draft'>
+  readonly draft: TableClient<Draft, DraftCreate, DraftUpdate, DraftWhere, DraftRelations, never, 'externalId' | 'profileExternalId' | 'channelExternalId' | 'rootExternalId' | 'message' | 'props' | 'fileExternalIds' | 'createdAt' | 'updatedAt' | 'hiddenAt' | 'missingSince' | '@@gate', DraftSystem, {}, 'Draft'>
   readonly savedPost: TableClient<SavedPost, SavedPostCreate, SavedPostUpdate, SavedPostWhere, SavedPostRelations, never, 'externalId' | 'profileExternalId' | 'postExternalId' | 'missingSince' | '@@gate', SavedPostSystem, {}, 'SavedPost'>
   readonly chatSection: TableClient<ChatSection, ChatSectionCreate, ChatSectionUpdate, ChatSectionWhere, ChatSectionRelations, never, 'externalId' | 'profileExternalId' | 'teamExternalId' | 'name' | 'kind' | 'sortOrder' | 'channelExternalIds' | 'missingSince' | '@@gate', ChatSectionSystem, {}, 'ChatSection'>
   readonly scheduledPost: TableClient<ScheduledPost, ScheduledPostCreate, ScheduledPostUpdate, ScheduledPostWhere, ScheduledPostRelations, never, 'memberId' | 'profileExternalId' | 'error' | 'sentPostExternalId' | 'sentAt' | '@@gate', ScheduledPostSystem, {}, 'ScheduledPost'>

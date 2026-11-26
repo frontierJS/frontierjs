@@ -42,8 +42,8 @@ export interface LoginOptions {
   agents?: Record<string, string>
 }
 
-type Member = { id: number, nick: string, role: string | null, agent: boolean }
-const MEMBER = { id: true, nick: true, role: true, agent: true }
+type Member = { id: number, nick: string, role: string | null, isAgent: boolean }
+const MEMBER = { id: true, nick: true, role: true, isAgent: true }
 
 /** `HAVEN_AGENTS`, `ace:<publicKey>,charles:<publicKey>`, as a nick → key map. */
 export function parseAgents (list: string | undefined): Record<string, string> {
@@ -120,11 +120,11 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     return { member: await made(sys, nick, root, true) }
   }
 
-  const made = async (sys: any, nick: string, root: string, agent = false): Promise<Member> => {
-    const member = await sys.member.create({ data: { nick, root, agent }, select: MEMBER })
+  const made = async (sys: any, nick: string, root: string, isAgent = false): Promise<Member> => {
+    const member = await sys.member.create({ data: { nick, root, isAgent }, select: MEMBER })
     // An agent is uncried: the crier's lines share one member's rate, so a
     // tavern of agents starting together would spend it and drop people's.
-    if (!agent) await opts.welcome?.(member.nick)
+    if (!isAgent) await opts.welcome?.(member.nick)
     return member
   }
 
@@ -159,6 +159,6 @@ export function loginRoute (db: Db, auth: HavenAuth, opts: LoginOptions = {}) {
     // A banned member is minted a session like anyone: the ban is a policy, so
     // they walk into an empty Haven rather than being told when to make a key.
     const { token, expiresAt } = await auth.mint(member.id)
-    return ctx.json({ token, expiresAt, member: { id: member.id, nick: member.nick, role, agent: member.agent } }, 200)
+    return ctx.json({ token, expiresAt, member: { id: member.id, nick: member.nick, role, isAgent: member.isAgent } }, 200)
   }
 }

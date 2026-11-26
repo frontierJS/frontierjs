@@ -324,6 +324,10 @@ export async function landDrafts(app: App, profile: string, rows: DraftRow[], wh
 
 export const dropDraft = (app: App, profile: string, channel: string, root?: string | null) => drop(app, 'Draft', { externalId: draftKey(profile, channel, root) })
 
+/** The reader's Delete, kept on this copy: a landing does not clear it, so a draft the server lists again stays hidden. */
+export const hideDraft = (app: App, profile: string, channel: string, root?: string | null) =>
+  table(app, 'Draft').updateMany({ where: { externalId: draftKey(profile, channel, root) }, data: { hiddenAt: new Date() } })
+
 /** A post saved or unsaved by a person, here or anywhere. */
 export async function landSaved(app: App, profile: string, post: string, saved: boolean): Promise<void> {
   const externalId = savedKey(profile, post)

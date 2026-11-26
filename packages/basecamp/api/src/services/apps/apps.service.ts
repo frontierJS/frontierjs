@@ -1206,8 +1206,8 @@ export default createService({
     // Graded on what the container is handed: NTFY_AUTH_TOKENS is composed
     // from params, so no single param holds it.
     if (bp.slug === 'ntfy') {
-      const valueOf = (key: string) => variables.find(v => v.key === key)?.value
-      const refusal = ntfyAuthRefusal(valueOf('NTFY_AUTH_USERS'), valueOf('NTFY_AUTH_TOKENS'))
+      const envValue = (key: string) => variables.find(v => v.key === key)?.value
+      const refusal = ntfyAuthRefusal(envValue('NTFY_AUTH_USERS'), envValue('NTFY_AUTH_TOKENS'))
       if (refusal) throw new BadRequest(refusal)
     }
 

@@ -306,7 +306,7 @@ test('workshop: on every bench with work a pile per severity, a slip in its colo
   }
 })
 
-test('workshop: a package with no issues takes no table, and is listed under (no work) in a row below every table', async () => {
+test('workshop: a package with no issues takes no table, and is listed under (no work) in rows below every table', async () => {
   const { LEDGER } = await import('../src/lib/hash/ledger.data.js')
   const stage = scenes.get('/workshop/')
   const idle = Object.keys(LEDGER).filter((n) => Object.values(LEDGER[n]).every((c) => c === 0)).sort()
@@ -316,7 +316,9 @@ test('workshop: a package with no issues takes no table, and is listed under (no
   const heading = stage.marks.find((m) => m.piece?.name === 'heading')
   expect(heading.piece.art).toBe('(no work)')
   const lowest = Math.max(...stage.marks.filter((m) => m.piece?.ledger).map((m) => m.y))
-  expect(listed.every((m) => m.y > lowest && m.y === heading.y)).toBe(true)
+  // The list starts on the heading's row and wraps at the wall onto rows below it.
+  expect(listed.every((m) => m.y > lowest && m.y >= heading.y)).toBe(true)
+  expect(listed.some((m) => m.y === heading.y)).toBe(true)
 })
 
 // His figure and the row he speaks on are the desk's, and a desk that sat on a

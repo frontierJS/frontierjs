@@ -475,7 +475,7 @@ table `reaction` · db `chat` · gate `3.3.8.3`
 @@index(channelExternalId)
 @@index(postExternalId)
 @@index(profileExternalId)
-@@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && channelExternalId == post.channelExternalId)
+@@allow(create, profileExternalId == auth().profileExternalId && check(post, 'read') && check(channel, 'read') && channelExternalId == post.channelExternalId)
 @@allow(delete, profileExternalId == auth().profileExternalId)
 @@allow(read, check(post))
 ```

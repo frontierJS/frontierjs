@@ -575,7 +575,7 @@ describe('prerenderRoutes — the read set comes from load()', () => {
 
   test('a flagged {#await} reading a GATED model is refused as load() data is', async () => {
     await expect(runFlagged(awaitScaffold('invoice'), fakeClient()))
-      .rejects.toThrow(/cannot be published as static HTML[^]*Invoice|Invoice[^]*cannot be published as static HTML/)
+      .rejects.toThrow(/cannot be published as static HTML[\s\S]*Invoice|Invoice[\s\S]*cannot be published as static HTML/)
   }, RENDER_TIMEOUT)
 
   test('a flagged page carrying {#await} state with no client wired is refused as unobservable', async () => {

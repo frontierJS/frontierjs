@@ -46,6 +46,10 @@
       "linter": { "rules": { "suspicious": { "noControlCharactersInRegex": "off" } } }
     },
     {
+      "includes": ["packages/basecamp/db/blueprints.js"],
+      "linter": { "rules": { "suspicious": { "noTemplateCurlyInString": "off" } } }
+    },
+    {
       "includes": ["**/*.d.ts"],
       "linter": {
         "rules": {

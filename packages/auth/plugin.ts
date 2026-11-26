@@ -708,7 +708,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
             ;({ identity, tokens, returnTo, link } = done)
             grant     = done.grant ?? null
             initiator = done.initiator ?? null
-          } catch (err) {
+          } catch (err) {  // any fault, a defect included, is reported and answered as one refusal
             reportOAuthFault('callback', provider, err)
             // One code for every refusal, deliberately. Which one it was is in
             // the audit trail; telling the browser whether a state existed, or
@@ -723,7 +723,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
             if (!oauthAuth.oauthGrant) return oauthFailure(ctx, oauth, 'unavailable')
             try {
               await oauthAuth.oauthGrant(provider, { tokens, identity, grant, initiator })
-            } catch (err) {
+            } catch (err) {  // reported, then answered as one refusal
               reportOAuthFault('grant', provider, err)
               return oauthFailure(ctx, oauth, 'exchange')
             }
@@ -741,7 +741,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
             let issued
             try {
               issued = await oauthAuth.confirmOAuthLink(link, provider, identity, signInOrigin(ctx))
-            } catch (err) {
+            } catch (err) {  // reported, then answered as one refusal
               reportOAuthFault('link', provider, err)
               return oauthFailure(ctx, oauth, 'state')
             }
@@ -761,7 +761,7 @@ export function auth(opts: AuthPluginOptions): Plugin {
           let resolved
           try {
             resolved = await oauthAuth.oauthResolve(provider, identity, signInOrigin(ctx))
-          } catch (err) {
+          } catch (err) {  // reported, then answered as one refusal
             reportOAuthFault('resolve', provider, err)
             return oauthFailure(ctx, oauth, 'exchange')
           }
