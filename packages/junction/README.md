@@ -135,7 +135,7 @@ packages/junction/
 ├── src/cache/index.ts    ← ICache — in-memory
 ├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
 ├── src/terminal/index.ts ← terminalSocket() — a shell over a raw socket (FJS-D2125)
-├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
+├── src/mail/index.ts     ← IMail + SMTP/Resend adapters + capture/log mailers
 ├── src/ai/index.ts       ← ai({ doors }) — named toolbelt Doors on app.ai
 ├── src/client/index.ts   ← browser/Sierra client — service(), resource()
 ├── src/testing/index.ts  ← createTestApp(), request(), withTestMeta()
@@ -2605,6 +2605,26 @@ await app.mail.send({
   html:    '<p>Click here to set a new password.</p>',
   text:    'Visit https://... to set a new password.',
 })
+```
+
+For a test or a dev run with no provider, two mailers send nothing and grade
+each message as the real ones do (a CRLF in an address, a bad header, a `cid`
+with no `html` all throw):
+
+```typescript
+import { mail, createCaptureMailer, createLogMailer } from '@frontierjs/junction/mail'
+
+// Tests and drives: what was sent is `mailer.sent`, oldest first.
+const mailer = createCaptureMailer({ from: 'Acme <noreply@acme.com>' })   // `log: true` also prints
+app.configure(mail({ mailer }))
+await app.mail.send({ to: 'alice@example.com', subject: 'Hi', text: 'Hello' })
+mailer.sent[0]                      // the message, plus the resolved `from`, `messageId`, `sentAt`
+mailer.to('alice@example.com')      // the sent messages addressed to her
+mailer.clear()
+
+// Dev: prints `[mail] -> to . subject` and the text body, so a link can be
+// clicked from the terminal. Hand it to `mail({ mailer })` in place of the above.
+const dev = createLogMailer()
 ```
 
 A message takes `from`, `replyTo`, `cc`, `bcc`, `headers`, `tags` and

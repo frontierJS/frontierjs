@@ -187,6 +187,30 @@ registration, for a handler that is not a job file — a closure, or a function
 imported from outside `jobs/`. A name is one schedule: registering it again
 replaces it rather than firing the job twice.
 
+### `retentionJob({ cron, client })`
+
+A database that declares `retention 90d` is swept once, inside `createClient`,
+so an API that stays up for a month prunes on the day it booted and never
+again. `retentionJob` is the job that sweeps on the clock — the whole of an
+app's `jobs/retention.job.ts`:
+
+```ts fragment
+// api/src/jobs/retention.job.ts
+import { retentionJob } from '@frontierjs/caravan'
+
+export default retentionJob({ cron: '0 4 * * *', client: () => import('../core/db.ts').then(m => m.sys) })
+```
+
+`cron` is required: unlike a queue option, there is no hour that suits every app.
+`client` is a thunk, `() => client | Promise<client>`, called when the job runs
+and not when the file loads. The queue loads job files at boot, and a module
+that holds the client opens the database on import, so a test that builds the
+app over `createTestEnv`'s client would otherwise open `db/app.db` through it.
+It needs only something with `$retain()` — Litestone's `db.asSystem()` — so
+Caravan takes no dependency on Litestone. A table that could not be swept is a
+`console.error` line naming it, a sweep that removed rows is one `console.log`
+summary, and a `$retain()` that throws fails the job, which the queue retries.
+
 `queue.nextRuns()` answers `{ name, cron, nextRun }` per schedule, which proves
 a schedule exists and nothing about the handler behind it —
 `POST /jobs/run/{name}` is how the behavior gets exercised.

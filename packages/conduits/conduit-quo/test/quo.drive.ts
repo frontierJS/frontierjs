@@ -17,7 +17,7 @@ import {
   getPhoneNumber, backfillPhoneNumbers, getPhoneNumberSettings, updatePhoneNumberSettings, getPhoneNumberMembers, availablePhoneNumbers,
   getUser, backfillUsers, getUserPhoneNumbers, getOrganization,
   getA2PRegistration, createA2PRegistration, updateA2PRegistration, submitA2PRegistration, a2pRegistration, type QuoA2PDraft,
-  toE164, verifyQuoSignature, signQuo, quoDialect, quoLegacyDialect, parseQuoEvent, QUO_EVENT_TYPES, type QuoEvent,
+  toE164, verifyQuoSignature, verifyQuoLegacySignature, signQuo, signQuoLegacy, quoDialect, quoLegacyDialect, parseQuoEvent, QUO_EVENT_TYPES, type QuoEvent,
   mirror, messageModel, callModel, conversationModel, contactModel, userModel, organizationModel, QUO_TARGET, type QuoCall, type QuoContact, type QuoConversation, type QuoMessage, type PhoneNumberRow,
 } from '../src/index.ts'
 
@@ -504,6 +504,24 @@ try {
     // Bytes a re-serialization rewrites: an escape JSON.stringify would not write back.
     rawBytes:  v({ raw: escaped, sig: signQuo(secret, 'msg_1', now, escaped) }),
     legacyHeaderOnStandardPath: verifyQuoSignature({ rawBody: body, headers: {}, secret, now }).ok,
+  })
+
+  // The legacy verifier alone. Its stamp is MILLISECONDS: a seconds stamp reads as decades stale, and `now` stays seconds.
+  const lkey = LEGACY_KEY, lms = now * 1000, lbody = JSON.stringify({ id: 'EV1', type: 'message.received', data: { object: { id: 'AC1', object: 'message' } } })
+  const lescaped = lbody.replace('"AC1"', '"AC1", "body": "caf\\u00e9"')
+  const lv = (o: { ms?: number; header?: string; raw?: string; key?: string; now?: number } = {}) =>
+    verifyQuoLegacySignature({ rawBody: o.raw ?? lbody, header: o.header ?? signQuoLegacy(lkey, o.ms ?? lms, o.raw ?? lbody), secret: o.key ?? lkey, now: o.now ?? now })
+  const stranger = signQuoLegacy(Buffer.from('x'.repeat(32)).toString('base64'), lms, lbody)
+  t('verify.legacy', {
+    fresh:     lv().ok,
+    tampered:  lv({ header: signQuoLegacy(lkey, lms, lbody), raw: lbody.replace('AC1', 'AC2') }).ok,
+    wrongKey:  lv({ key: Buffer.from('another-workspace-key-0000000001').toString('base64') }).ok,
+    stale:     lv({ now: now + 400 }).ok,
+    secondsStamp: (() => { const r = lv({ ms: now }); return r.ok ? 'ok' : r.reason.startsWith('timestamp is') })(),
+    anyOfSeveral: lv({ header: `${stranger},${signQuoLegacy(lkey, lms, lbody)}` }).ok,
+    rawBytes:  lv({ raw: lescaped }).ok && !lv({ raw: JSON.stringify(JSON.parse(lescaped)), header: signQuoLegacy(lkey, lms, lescaped) }).ok,
+    noKey:     verifyQuoLegacySignature({ rawBody: lbody, header: signQuoLegacy(lkey, lms, lbody), secret: undefined, now }).ok,
+    standardHeaderOnLegacyPath: verifyQuoLegacySignature({ rawBody: lbody, header: 'v1,abc', secret: lkey, now }).ok,
   })
 
   // ─── Mirror rows ───
@@ -1433,6 +1451,7 @@ process.exit(report(got, {
   'webhook.emptyNumbersIsEveryNumber': { otherNumber: false, emptied: ['*'], afterEmpty: true, disabled: false, enabledAgain: true },
   'webhook.lostUpdateIsReplayed':    { error: null, label: 'drive', asked: 2 },
   'verify.clockTamperRotation':      { fresh: true, stale: false, tampered: false, wrongKey: false, rotating: true, rawBytes: true, legacyHeaderOnStandardPath: false },
+  'verify.legacy':                   { fresh: true, tampered: false, wrongKey: false, stale: false, secondsStamp: true, anyOfSeveral: true, rawBytes: true, noKey: false, standardHeaderOnLegacyPath: false },
   'mirror.claimShape':               { provider: 'quo', models: ['Message', 'Conversation', 'Contact', 'Call', 'Recording', 'Task', 'PhoneNumber', 'User', 'Organization'], keys: true, targets: true, verbs: ['Contact.create', 'Contact.update', 'Contact.delete', 'Task.create', 'Task.update', 'Task.delete', 'PhoneNumber.update'] },
   'mirror.messageRowFromTheRead': {
     key: true, conversation: true, phoneNumber: true, user: 'USdev',

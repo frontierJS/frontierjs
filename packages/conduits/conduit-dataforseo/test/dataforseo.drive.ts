@@ -51,6 +51,7 @@ try {
   await ctl.reset(); await ctl.arm({ lost: true })
   const lost = await postTasks(send, SERP, [task('lost-1')])
   t('lostPost.notResent', { kind: lost.error?.kind, retryable: lost.error?.retryable, attempts: (await seen()).requests.length })
+  t('lostPost.isIndeterminate', { lost: lost.error?.indeterminate, rateLimited: limited.error?.indeterminate ?? null, noFunds: broke.error?.indeterminate ?? null })
 
   // The post that was lost still created its task: the caller's tag is how tasks_ready finds it (C6).
   await wait(80)
@@ -65,6 +66,8 @@ try {
   const done = await getTask(send, SERP, eid)
   const after = await tasksReady(send, SERP)
   t('getTask.notReadyThenCollected', { first: notYet.task?.kind, firstCode: notYet.task?.code, after: done.task?.kind, items: (done.task?.result as { items: unknown[] }[] | null)?.[0]?.items.length, leftList: !after.ready?.some(r => r.id === eid) })
+
+  t('answer.keepsTheRawTask', { tag: (done.task?.raw.data as { tag?: string } | undefined)?.tag, id: done.task?.raw.id === eid, status: done.task?.raw.status_code, items: (done.task?.raw.result as { items: unknown[] }[] | null)?.[0]?.items.length, posted: posted.tasks?.[0].raw.status_code })
 
   const one = await live(send, 'backlinks/referring_domains/live', { target: 'kobami.test', limit: 10 })
   t('live.oneTaskAnsweredInline', { kind: one.task?.kind, hasResult: Array.isArray(one.task?.result), costMicros: one.task?.costMicros })
@@ -85,8 +88,10 @@ process.exit(report(got, {
   'envelope.failedTwoHundredIsItsOwnKind':  { kind: 'no_funds', code: 40200, retryable: false, http: 200 },
   'rateLimited.handedToCallerWithWindow':   { kind: 'rate_limited', retryable: true, retryAfterMs: 60000, attempts: 1 },
   'lostPost.notResent':                     { kind: 'timeout', retryable: false, attempts: 1 },
+  'lostPost.isIndeterminate':               { lost: true, rateLimited: null, noFunds: null },
   'lostPost.resolvedByTagInTasksReady':     { found: true, readyIsFree: 200 },
   'getTask.notReadyThenCollected':          { first: 'not_ready', firstCode: 40602, after: 'ok', items: 3, leftList: true },
+  'answer.keepsTheRawTask':                 { tag: 'e', id: true, status: 20000, items: 3, posted: 40501 },
   'live.oneTaskAnsweredInline':             { kind: 'ok', hasResult: true, costMicros: 600 },
   'live.refusesStandardPath':               true,
   'cost.isMicrosNotCents':                  { sixHundred: 600, nothing: null, tenCents: 100000 },

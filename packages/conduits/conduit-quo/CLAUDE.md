@@ -155,7 +155,7 @@ Dialects, which hand a message, call or contact event over as a row. `src/types.
 
 ## Proving a change
 
-`bun run drive`: 115 rows. Mutants fail it: no version header, quota
+`bun run drive`: 116 rows. Mutants fail it: no version header, quota
 codes ignored, legacy milliseconds read as seconds, a re-serialized body, an
 unstable dedupe key, `findSent` ignoring the text, a call read off the
 message context, no incoming default, no side swap on an outgoing call, a

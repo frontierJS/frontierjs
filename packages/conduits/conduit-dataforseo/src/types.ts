@@ -25,7 +25,11 @@ export interface DataforseoEnvelope<R = unknown> {
   tasks?:          DataforseoTask<R>[]
 }
 
-/** A task as this connector hands it over: its own status read, its cost in micros. */
+/**
+ * A task as this connector hands it over: its own status read, its cost in micros.
+ * `raw` is the vendor's task whole — `data` (what was posted echoed back), `time`,
+ * `path` — for a caller that stores the answer as received and re-parses it later.
+ */
 export interface TaskAnswer<R = unknown> {
   id:         string
   tag?:       string
@@ -34,4 +38,5 @@ export interface TaskAnswer<R = unknown> {
   message:    string
   costMicros: number | null
   result:     R[] | null
+  raw:        DataforseoTask<R>
 }

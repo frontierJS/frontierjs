@@ -169,7 +169,7 @@ export function makePackageJson(spec) {
   }, null, 2) + '\n'
 }
 
-export function makeGitignore() {
+export function makeGitignore(useStorage = false) {
   return [
     'node_modules/',
     '.env',
@@ -178,6 +178,8 @@ export function makeGitignore() {
     'db/*.db-shm',
     'db/*.db-wal',
     'db/backups/',
+    // Uploaded bytes (--with storage); a deploy mounts STORAGE_PATH instead.
+    ...(useStorage ? ['storage/'] : []),
     // The JSON Schema `db:push`, `db:migrate` and `db:jsonschema` derive.
     'db/.json/',
     // What `db:types` writes from db/schema.lite; typecheck rewrites both
@@ -208,7 +210,7 @@ export function makeGitignore() {
   ].join('\n')
 }
 
-export function makeEnvExample(useAuth) {
+export function makeEnvExample(useAuth, useStorage = false) {
   const lines = [
     '# Required — generate with: openssl rand -hex 32',
     'ENCRYPTION_KEY=',
@@ -222,6 +224,12 @@ export function makeEnvExample(useAuth) {
     '# takes it.',
     'AUDIT_PATH=./db/audit.db',
     '',
+    ...(useStorage ? [
+      '# Where uploaded files are kept. Unset, storage/ at the app root; a deploy',
+      '# points it at the mounted volume.',
+      '# STORAGE_PATH=./storage',
+      '',
+    ] : []),
     '# App. The API binds FRONTIER_PORT_BE, the port fli dev hands it and web/',
     '# proxies /api to; a bare PORT (a PaaS sets one) is read only when that is',
     '# absent, and api/config/junction.config.js says 8100 when neither is.',

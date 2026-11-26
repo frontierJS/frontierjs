@@ -9,6 +9,7 @@
 - **Every accepted task bills and nothing collapses a replay.** A post is
   unkeyed and unreplayable; a lost one is resolved by the caller's `tag`
   through `tasksReady`, so a caller that posts without a tag cannot find it.
+- **`indeterminate` rides `DataforseoFailure`, read off conduit's error in `translate`**; `TaskAnswer.raw` is the vendor's task as received, so a caller does not re-ask for it.
 - **A 200 can be a refusal.** `envelope` refuses a top `status_code` that is
   not 20000; a TASK's refusal rides inside an OK envelope as its own `kind`.
 - **Cost is micros**, not minor units: a task is $0.0006 and cents round it to 0.
@@ -20,4 +21,4 @@
 
 ## Proving a change
 
-`bun run drive`: 12 rows.
+`bun run drive`: 14 rows.

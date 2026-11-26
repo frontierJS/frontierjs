@@ -1,6 +1,6 @@
 # conduit-quo — state
 
-**Sink-only, drive green (115 rows).** Receiving was extracted from the quo
+**Sink-only, drive green (116 rows).** Receiving was extracted from the quo
 prototype. Sending and webhook management are new. Call flattening was
 rebuilt from Quo's payload spec (`docs/PLAN.md` Phase 1). 2026-10-19.
 `retryMessage` added (2.1); `listDeliveries` and `getDelivery` (2.2);

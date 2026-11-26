@@ -7,6 +7,7 @@ examples:
   - fli new my-app --here
   - fli new my-app --no-auth
   - fli new my-app --auth --yes
+  - fli new my-app --with storage
   - fli new my-app --template api-only
   - fli new my-app --template web-only
   - fli new my-app --widgets
@@ -38,7 +39,7 @@ flags:
     defaultValue: full-stack
   with:
     type: string
-    description: "Comma-list of additional FJS packages: conduit,caravan,notifications"
+    description: "Comma-list of extras: the packages conduit,caravan,notifications, and storage (the FileStorage wiring in core/db.ts, no package)"
     defaultValue: ''
   minimal:
     type: boolean
@@ -317,11 +318,19 @@ const notAPackage = {
   litestream: 'a server binary, not a dependency — see `litestone replicate` and `fli deploy:setup`',
 }
 
+// `storage` is the other kind of extra: wiring, not a dependency. FileStorage
+// ships inside @frontierjs/litestone, which every app already has, so the value
+// writes core/db.ts and env.ts and adds nothing to the manifest. Not in
+// `--full`, which installs packages.
+const validWirings = ['storage']
+
 const withPkgs = []
+const withWirings = []
 for (const pkg of withInput) {
   if (validExtras.includes(pkg)) withPkgs.push(pkg)
+  else if (validWirings.includes(pkg)) withWirings.push(pkg)
   else if (notAPackage[pkg]) log.warn(`"${pkg}" is ${notAPackage[pkg]} — nothing to add here.`)
-  else log.warn(`Unknown package "${pkg}" — skipping. Valid: ${validExtras.join(', ')}`)
+  else log.warn(`Unknown package "${pkg}" — skipping. Valid: ${[...validExtras, ...validWirings].join(', ')}`)
 }
 if (flag.full) {
   for (const p of validExtras) if (!withPkgs.includes(p)) withPkgs.push(p)
@@ -476,7 +485,7 @@ echo(`  ${chalk.dim('CI:')}        ${flag.ci !== false ? 'yes (.github/workflows
 echo(`  ${chalk.dim('Tooling:')}   @frontierjs/config — tsconfig + Biome (linter only, no formatter)`)
 echo(`  ${chalk.dim('Install:')}   ${useInstall ? 'yes' : 'no'}`)
 echo(`  ${chalk.dim('Workspace:')} ${useWorkspace ? `yes (${process.env.WORKSPACE_DIR})` : 'no'}`)
-if (withPkgs.length) echo(`  ${chalk.dim('Extras:')}    ${withPkgs.join(', ')}`)
+if (withPkgs.length || withWirings.length) echo(`  ${chalk.dim('Extras:')}    ${[...withPkgs, ...withWirings].join(', ')}`)
 echo('')
 
 if (flag.dry) {
@@ -491,6 +500,7 @@ mkdirSync(finalTarget, { recursive: true })
 // A queue is what gives the audit trail's declared retention a clock after boot.
 const useQueue = useApi && withPkgs.includes('caravan')
 const useNotify = useApi && withPkgs.includes('notifications')
+const useStorage = useApi && withWirings.includes('storage')
 
 const dirs = []
 if (useDb) dirs.push('db')
@@ -518,7 +528,7 @@ for (const d of dirs) {
 
 const filesToWrite = [
   ['package.json',                _manifest],
-  ['.gitignore',                  makeGitignore()],
+  ['.gitignore',                  makeGitignore(useStorage)],
   ['.fli.json',                   makeFliJson(appName)],
   ['tsconfig.json',               appTsconfig({ useWeb, useSite, useWidgets, useExtension, useApi })],
   ['biome.json',                  appBiomeJson()],
@@ -533,7 +543,7 @@ const filesToWrite = [
 
 // What a database needs is the schema and the env that opens it.
 if (useDb) filesToWrite.push(
-  ['.env.example',                makeEnvExample(useAuth)],
+  ['.env.example',                makeEnvExample(useAuth, useStorage)],
   ['db/schema.lite',              makeSchemaLiteEmpty()],
 )
 
@@ -541,9 +551,9 @@ if (useApi) {
   filesToWrite.push(
     ['api/index.ts',                makeApiIndexTs()],
     ['api/src/app.ts',              makeApiAppTs(useAuth, useQueue, useNotify)],
-    ['api/src/core/env.ts',         makeApiEnvTs()],
+    ['api/src/core/env.ts',         makeApiEnvTs(useStorage)],
     ['api/src/core/gate.ts',        makeApiCoreGateTs(useQueue)],
-    ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue)],
+    ['api/src/core/db.ts',          makeApiCoreDbTs(useQueue, useStorage)],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
     ['api/src/core/principal.ts',   makeApiCorePrincipalTs()],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb, useQueue)],
@@ -600,7 +610,7 @@ if (flag.ci !== false) {
 // requires it with or without --auth, and auth:install is the only other writer,
 // so a --no-auth app left blank crashes at load on the first `bun run dev`.
 // Hex, because litestone parses this variable as hex.
-if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth)
+if (useDb) filesToWrite.push(['.env', makeEnvExample(useAuth, useStorage)
   .replace(/^ENCRYPTION_KEY=$/m, `ENCRYPTION_KEY=${randomBytes(32).toString('hex')}`)])
 
 const written = []

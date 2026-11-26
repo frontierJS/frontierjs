@@ -80,7 +80,11 @@ export const toMicros = (usd: unknown): number | null =>
 // the top, HTTP 200 for most of them, 401 for a bad login, 429 beside 40202.
 
 export type DataforseoFailureKind = 'no_funds' | 'not_ready' | 'refused' | ConduitError['kind']
-export interface DataforseoFailure { kind: DataforseoFailureKind; message: string; code?: number; retryable: boolean; retryAfterMs?: number }
+export interface DataforseoFailure {
+  kind: DataforseoFailureKind; message: string; code?: number; retryable: boolean; retryAfterMs?: number
+  /** A post whose answer was lost: the vendor may have created and billed the batch, and `tasksReady` finds it by tag. */
+  indeterminate?: boolean
+}
 
 /** The vendor's quota window: 2,000 calls a minute per login, and no `Retry-After`. */
 export const RATE_WINDOW_MS = 60_000
@@ -93,6 +97,7 @@ export function translate(error: ConduitError, status?: number): DataforseoFailu
     kind: error.kind, message: body?.status_message ?? error.message, retryable: error.retryable,
     ...(code !== undefined ? { code } : {}),
     ...(error.retry_after_ms !== undefined ? { retryAfterMs: error.retry_after_ms } : {}),
+    ...(error.indeterminate ? { indeterminate: true as const } : {}),
   }
   if (code === RATE_LIMITED || status === 429) return { ...base, kind: 'rate_limited', retryable: true, retryAfterMs: error.retry_after_ms ?? RATE_WINDOW_MS }
   if (code === BAD_LOGIN || status === 401)   return { ...base, kind: 'auth_failed', retryable: false }
@@ -115,7 +120,7 @@ export const envelope: ResponseValidator<DataforseoEnvelope> = {
 function answer<R>(task: DataforseoTask<R>): TaskAnswer<R> {
   const code = task.status_code
   const kind = code === OK || code === CREATED ? 'ok' : NOT_READY.has(code) ? 'not_ready' : NO_FUNDS.has(code) ? 'no_funds' : 'refused'
-  return { id: task.id, tag: task.data?.tag, kind, code, message: task.status_message, costMicros: toMicros(task.cost), result: task.result ?? null }
+  return { id: task.id, tag: task.data?.tag, kind, code, message: task.status_message, costMicros: toMicros(task.cost), result: task.result ?? null, raw: task }
 }
 
 // ─── The wire ────────────────────────────────────────────────────────────

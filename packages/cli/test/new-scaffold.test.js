@@ -92,7 +92,7 @@ test('a caravan app is scaffolded with the job that runs its declared retention'
   const app = scaffold('with-queue', '--full')
   const job = join(app, 'api/src/jobs/retention.job.ts')
   expect(existsSync(job)).toBe(true)
-  expect(readFileSync(job, 'utf8')).toContain('$retain()')
+  expect(readFileSync(job, 'utf8')).toContain('retentionJob({')
   expect(readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')).toMatch(/export const sys\s*=\s*db\.asSystem\(\)/)
   expect(readFileSync(join(app, 'api/src/app.ts'), 'utf8')).toContain('caravan(')
   // jobs/ loads from beside createApp({ root }) (FJS-D1080), so the config names no folder.
@@ -159,6 +159,31 @@ test('an app with neither package wires neither plugin', () => {
   expect(appTs).not.toContain('SYSTEM')
   expect(readFileSync(join(app, 'api/src/core/gate.ts'), 'utf8')).not.toContain('SYSTEM')
   expect(existsSync(join(app, 'api/src/notifications'))).toBe(false)
+}, 60_000)
+
+// --with storage is wiring, not a package: FileStorage ships inside litestone.
+// The path is anchored to the file, because a site/ build runs from its own surface.
+test('--with storage wires FileStorage into db.ts, STORAGE_PATH into env.ts and storage/ into .gitignore', () => {
+  const app = scaffold('with-storage', '--with', 'storage')
+  const db  = readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')
+  expect(db).toContain("import { FileStorage }  from '@frontierjs/litestone/storage'")
+  expect(db).toMatch(/^export const storage = \{$/m)
+  expect(db).toContain("new URL('../../../storage', import.meta.url)")
+  expect(db).toMatch(/plugins:\s+\[gate, FileStorage\(storage\)\],/)
+  expect(readFileSync(join(app, 'api/src/core/env.ts'), 'utf8')).toMatch(/STORAGE_PATH: \{ type: 'string', default: '' \}/)
+  expect(readFileSync(join(app, '.env.example'), 'utf8')).toContain('# STORAGE_PATH=')
+  expect(readFileSync(join(app, '.gitignore'), 'utf8').split('\n')).toContain('storage/')
+  // Not a package: the manifest and the README's package list gain nothing.
+  expect(readFileSync(join(app, 'package.json'), 'utf8')).not.toContain('frontierjs/storage')
+}, 60_000)
+
+test('an app without --with storage has no FileStorage, no STORAGE_PATH and no storage/ ignore', () => {
+  const app = scaffold('no-storage', '--minimal')
+  const db  = readFileSync(join(app, 'api/src/core/db.ts'), 'utf8')
+  expect(db).not.toContain('FileStorage')
+  expect(db).toMatch(/plugins:\s+\[gate\],/)
+  expect(readFileSync(join(app, 'api/src/core/env.ts'), 'utf8')).not.toContain('STORAGE_PATH')
+  expect(readFileSync(join(app, '.gitignore'), 'utf8').split('\n')).not.toContain('storage/')
 }, 60_000)
 
 // FJS-1618 — an app whose only surface is web/ was a full-stack scaffold taken

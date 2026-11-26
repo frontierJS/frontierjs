@@ -1613,3 +1613,41 @@ export function defineJob<T = unknown>(
 
   return def
 }
+
+// ─── retentionJob ─────────────────────────────────────────────────────────────
+//
+// `retention 90d` on a database is swept once inside createClient, so an API
+// that stays up for a month prunes on the day it booted and never again. This
+// is the job that sweeps on the clock. It needs only something with `$retain()`,
+// so caravan takes no dependency on litestone.
+//
+// `client` is a thunk because the module that holds the client opens the
+// database when it is imported: the queue loads a job file at boot, and a test
+// that builds the app over createTestEnv's client would otherwise open
+// db/app.db through `import { sys } from '../core/db.ts'`.
+
+/** One row of litestone's `$retain()`, the part this job reads. */
+export type RetentionRow = { model: string; removed: number; error?: string }
+
+/** Anything that can sweep its declared retention policies — litestone's `db.asSystem()`. */
+export type RetentionClient = { $retain(): Promise<RetentionRow[]> }
+
+export function retentionJob(
+  spec: { cron: string; client: () => RetentionClient | Promise<RetentionClient> }
+): JobDefinition {
+  return defineJob({
+    cron: spec.cron,
+    handler: async () => {
+      const swept   = await (await spec.client()).$retain()
+      const removed = swept.reduce((n, r) => n + r.removed, 0)
+
+      // A table it could not sweep is a declared policy quietly not applying,
+      // which is the failure this job exists to stop being invisible.
+      for (const row of swept.filter(r => r.error))
+        console.error(`[retention] ${row.model}: ${row.error}`)
+
+      if (removed)
+        console.log(`[retention] removed ${removed} row(s) across ${swept.filter(r => r.removed).length} table(s)`)
+    },
+  })
+}

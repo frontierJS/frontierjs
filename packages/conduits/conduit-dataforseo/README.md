@@ -19,7 +19,7 @@ account was called; the shapes are theirs and docs.dataforseo.com's.
 | error mapping | `translate(error, status)` — table below |
 | money | `toMicros(0.0006)` → 600; a `@scale(6)` column's unit, because a task is under a cent |
 | sink | `sink.ts` — accounts map, `readyAfterMs`, `costUsd` |
-| drive | `bun run drive` — 12 rows, sink only; a fixture would bill |
+| drive | `bun run drive` — 14 rows, sink only; a fixture would bill |
 
 ## Errors
 
@@ -36,12 +36,19 @@ account was called; the shapes are theirs and docs.dataforseo.com's.
 ## Lost posts
 
 A post is unkeyed and the vendor collapses nothing, so a lost answer is
-`indeterminate`: the tasks may exist and may have billed. The caller puts its
+`indeterminate` (`DataforseoFailure.indeterminate: true`, set only then): the tasks may exist and may have billed. The caller puts its
 own `tag` on every task, and `tasksReady` — free, replayable — lists what was
 created by that tag. The drive proves a post applied under a lost answer is
 found there. A post WITHOUT a tag has no resolving read, which is why the
 README says it rather than the connector minting one: a tag the caller does
 not keep resolves nothing.
+
+## The raw task
+
+`TaskAnswer.raw` is the vendor's task whole: `data` (what was posted, echoed
+back, `tag` included), `time`, `path` and the `result` as received. A caller
+that stores the answer as it arrived and re-parses it later reads it there;
+`result`, `kind` and `costMicros` are the read of it.
 
 ## What stays the app's
 

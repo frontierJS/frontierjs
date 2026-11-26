@@ -47,7 +47,7 @@ and each call chooses its own generation. Callers never choose.
 | backfill | `backfillMessages(quo, { since?, after?, pages? })`, `backfillCalls` and `backfillConversations` the same, `backfillContacts(quo, { after?, pages? })`. Each returns `{ rows, truncated, after, error? }`: mirror rows, 50 a page, at most `pages` (20) a pass, `after` to resume. `since` is inclusive. Conversations are read by when they changed, oldest first; contacts take no time bound, so a pass is the whole book. `getContactProperties(quo, contactId)` returns `{ row }`, a contact's `phoneNumbers` and `emails`, read to the last page, or no row at all |
 | mirror | `mirror`, the claim for `app.conduit.mirror()`: `Message`, `Conversation`, `Contact`, `Call`, `Recording`, `Task`, `PhoneNumber`, `User` and `Organization` rows keyed on `externalId`, relations as `<relation>ExternalId`, times as `Date`, empty as `null`. `Contact` has `create`, `update` and `delete`, in the row's names (`sourceId` goes out as Quo's `externalId`); with `sourceId` and `source` stated, a second create is Quo's 409, never a second contact. `Task` has the three too: create is unreplayed, update sends the title and description together, and delete is a status, so the row stays `deleted`. A task row from a write or an event holds only what it names. `PhoneNumber` has `update` alone, the name and business hours, replayed; a patch naming a setting is refused naming `updatePhoneNumberSettings`. The other six are Quo's to write |
 | sink | `sink.ts`. It mints a `whsec_` key per webhook created and signs every delivery with that key |
-| drive | `bun run drive`, 115 rows, against the sink only |
+| drive | `bun run drive`, 116 rows, against the sink only |
 
 ## Errors
 

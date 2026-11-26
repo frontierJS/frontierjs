@@ -177,7 +177,12 @@ export const principal: PrincipalResolver[] = []
 `
 }
 
-export function makeApiEnvTs() {
+export function makeApiEnvTs(useStorage = false) {
+  const storagePath = useStorage ? `
+  // Where uploaded files are kept (core/db.ts). Unset, \`storage/\` at the app
+  // root; a deploy points it at the mounted volume.
+  STORAGE_PATH: { type: 'string', default: '' },
+` : ''
   return `// api/src/core/env.ts
 // Validated at module load — a missing required var crashes the app
 // before anything else runs. Import this from app.ts and other places
@@ -202,7 +207,7 @@ export const env = defineEnv({
   // deploy has to be able to put it on the mounted volume without editing the
   // schema.
   AUDIT_PATH: { type: 'string', default: './db/audit.db' },
-
+${storagePath}
   // fli auth:install generates this into .env. Declared so defineEnv can see it
   // — the name is one of three it warns about for length and placeholder values
   // — and NOT required, because no code in @frontierjs/auth or junction reads it:
@@ -403,12 +408,27 @@ describe('User', () => {
 `
 }
 
-export function makeApiCoreDbTs(useQueue = false) {
+export function makeApiCoreDbTs(useQueue = false, useStorage = false) {
   const sys = useQueue ? `
 // The documented bypass: no gate, no row policy. A job has no caller to grade,
 // so retention.job.ts reaches the database through this and says so.
 export const sys = db.asSystem()
 ` : ''
+  const storageImport = useStorage ? `\nimport { FileStorage }  from '@frontierjs/litestone/storage'` : ''
+  const storage = useStorage ? `// Where a \`File\` column's bytes live: local disk under \`storage/\` at the app
+// root unless STORAGE_PATH names somewhere else; a deploy names a bucket here
+// and no model changes. Anchored to THIS FILE for the reason schemaPath is: a
+// \`site/\` build runs from its own surface, and a relative path would write the
+// bytes beside it. No \`publicBase\`, so a ref resolves to no URL and a route
+// serves the bytes after the caller's own read of the row.
+export const storage = {
+  provider:   'local',
+  localPath:  env.STORAGE_PATH || fileURLToPath(new URL('../../../storage', import.meta.url)),
+  keyPattern: ':model/:field/:uuid/:filename',
+} as const
+
+` : ''
+  const plugins = useStorage ? '[gate, FileStorage(storage)]' : '[gate]'
   return `// api/src/core/db.ts
 // One Litestone client for the whole app, graded by the resolver in gate.ts.
 //
@@ -417,7 +437,7 @@ export const sys = db.asSystem()
 
 import { fileURLToPath } from 'node:url'
 
-import { createClient } from '@frontierjs/litestone'
+import { createClient } from '@frontierjs/litestone'${storageImport}
 import { env }  from './env.ts'
 import { gate } from './gate.ts'
 
@@ -432,7 +452,7 @@ import { gate } from './gate.ts'
 // since that is the directory above the schema's own.
 const schemaPath = fileURLToPath(new URL('../../../db/schema.lite', import.meta.url))
 
-// No \`db:\` here on purpose. That option is an OVERRIDE and is resolved against
+${storage}// No \`db:\` here on purpose. That option is an OVERRIDE and is resolved against
 // the process — \`database main\` in the seed already declares
 // \`env("DATABASE_URL", "./db/app.db")\`, which is the same variable, anchored to
 // the app root by \`resolveFrom\` above. Passing it here would put the database
@@ -446,52 +466,16 @@ export const db = await createClient({
   path:          schemaPath,
   resolveFrom:   'schema',
   encryptionKey: env.ENCRYPTION_KEY,
-  plugins:       [gate],
+  plugins:       ${plugins},
 })
 ${sys}`
 }
 
 export function makeRetentionJobTs() {
-  return `// api/src/jobs/retention.job.ts
-//
-// \`db/schema.lite\` says \`database audit { … retention 90d }\`, and without this
-// file that sentence is true for exactly one moment: litestone sweeps once
-// inside createClient, so an API that stays up for a month pruned on the day it
-// booted and never again. The declaration is the policy; the schedule is the
-// app's, because the clock belongs to the queue and litestone cannot import it.
-//
-// The file name is the job's name, \`cron\` is when it runs, and autoloading from
-// api/src/jobs/ is the rest.
+  return `// Without this, the schema's \`retention 90d\` sweeps only at boot, never again.
+import { retentionJob } from '@frontierjs/caravan'
 
-import { defineJob } from '@frontierjs/caravan'
-
-/**
- * Sweep every declared retention policy.
- *
- * \`sys\` because it is a DELETE against the base table and applies no gate, no
- * row policy and no \`@@softDelete\`. Answers one row per table it touched.
- * Imported when the job RUNS: the queue loads this file at boot, and a test
- * that builds the app over createTestEnv's client would otherwise open
- * db/app.db through it.
- *
- * 04:00 daily, the hour an app is quietest.
- */
-export default defineJob({
-  cron: '0 4 * * *',
-  handler: async () => {
-    const { sys } = await import('../core/db.ts')
-    const swept   = await sys.$retain()
-    const removed = swept.reduce((n, r) => n + r.removed, 0)
-
-    // A table it could not sweep is a declared policy quietly not applying,
-    // which is the failure this job exists to stop being invisible.
-    for (const row of swept.filter(r => r.error))
-      console.error(\`[retention] \${row.model}: \${row.error}\`)
-
-    if (removed)
-      console.log(\`[retention] removed \${removed} row(s) across \${swept.filter(r => r.removed).length} table(s)\`)
-  },
-})
+export default retentionJob({ cron: '0 4 * * *', client: () => import('../core/db.ts').then(m => m.sys) })
 `
 }
 

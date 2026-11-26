@@ -64,6 +64,9 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   plugin also grades every `app.mail` send — addresses, cids, a cid with no
   `html` — before any adapter sees it, so a conduit mailer that imports nothing
   from junction is still covered (`FJS-D2411`, `test/mail-plugin-grades.test.ts`).
+  `createCaptureMailer` and `createLogMailer` run the same grading themselves, so
+  a double never accepts what SMTP would refuse, and a batch is graded whole
+  before any of it is kept or printed (`test/mail-dev-mailers.test.ts`).
 - **A reply tag threads a reply onto its record and proves only that the
   holder RECEIVED our mail** — attribution also needs `from` to be the address
   the mail went to; an expired or forged tag still delivers, unthreaded, and a
