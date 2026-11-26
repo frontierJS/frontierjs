@@ -81,6 +81,7 @@ export function copyBeforeMigrating(rawDb, dbPath, migrationsDir, log) {
     // the same across that loop, so it names the run `prune` protects.
     writeFileSync(runMark(dest), pending[pending.length - 1])
   } catch (err) {
+    // Any failure leaves a copy nobody can restore from, so it goes and the boot stops.
     rmSync(dest, { force: true })
     rmSync(runMark(dest), { force: true })
     throw new Error(`[litestone] the copy before migrating failed, so nothing was migrated: ${/** @type {Error} */ (err).message} — ${dest}`)
@@ -128,5 +129,5 @@ function prune(dir, run) {
 
 /** @param {string} copy */
 function readMark(copy) {
-  try { return readFileSync(runMark(copy), 'utf8') } catch { return null }
+  try { return readFileSync(runMark(copy), 'utf8') } catch { return null }  // an unreadable mark only loses the copy its crash-loop protection; it must not stop a boot
 }

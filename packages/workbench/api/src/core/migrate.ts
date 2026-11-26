@@ -5,9 +5,9 @@
 // this a watched API ran fifteen hours on a chat.db missing a column, and the
 // only trace was dead jobs.
 
-import { Database } from 'bun:sqlite'
-import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync }      from 'node:fs'
+import { join }            from 'node:path'
+import { openWalDatabase } from '@frontierjs/litestone/engine'
 import { apply, copyBeforeMigrating, declaredDatabasePaths } from '@frontierjs/litestone/migrations'
 
 const log = { info: (msg: string, meta?: object) => console.log(`[workbench] ${msg}`, meta ?? '') }
@@ -17,7 +17,10 @@ export async function migrateAtBoot (schemaPath: string, migrationsRoot: string)
   for (const { name, path } of declaredDatabasePaths(schemaPath, { resolveFrom: 'schema' })) {
     const dir = join(migrationsRoot, name)
     if (!existsSync(dir)) continue
-    const raw = new Database(path, { create: true })
+    // Two boots at once (the API and a worker, or CI's snapshot generators side
+    // by side) both write the tracking table; a handle with no busy wait fails
+    // the second with "database is locked".
+    const raw = openWalDatabase(path, { create: true })
     try {
       copyBeforeMigrating(raw, path, dir, log)
       const r = await apply(raw, dir)
