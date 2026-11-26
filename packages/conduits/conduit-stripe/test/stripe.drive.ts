@@ -12,7 +12,7 @@ import { createConduit, createStaticResolver } from '@frontierjs/conduit'
 import { results, report, control, DRIVE_RESILIENCE } from '../../lib/drive.ts'
 import { startStripeSink, parseForm } from '../sink.ts'
 import { stripeTarget, bindSend, createPaymentIntent, createRefund, verifyStripeSignature, stripeDialect, stripeObject, tax,
-  createConnectedAccount, createAccountLink, retrieveAccountStatus, accountStatus, createCheckoutSession, retrieveBalanceTransaction, type StripeAccountStatus, type StripeCharge } from '../src/index.ts'
+  createConnectedAccount, createAccountLink, retrieveAccountStatus, accountStatus, createCheckoutSession, retrieveBalanceTransaction, retrievePaymentIntent, type StripeAccountStatus, type StripeCharge } from '../src/index.ts'
 
 const { got, t } = results()
 const KEY = 'sk_test_dev', HOOK_SECRET = 'whsec_dev', CONNECT_SECRET = 'whsec_connect_dev'
@@ -118,6 +118,14 @@ try {
   const { events } = await ctl.seen() as unknown as { events: { type: string; status: number | null }[] }
   const succeeded = events.filter(e => e.type === 'payment_intent.succeeded')
   t('webhook.duplicateDeliveryAcceptedOnce', { deliveries: succeeded.length, answered: succeeded.map(e => e.status), processed: received.filter(r => r.startsWith('payment_intent.succeeded:')).length })
+
+  // ── read back: the pending intent's client secret, asked for again ─────
+  const readBack = await retrievePaymentIntent(send, { id: made.intent!.id })
+  const strayIntent = await retrievePaymentIntent(send, { id: 'pi_nosuch' })
+  let badIntentThrows = false
+  try { await retrievePaymentIntent(send, { id: '../accounts/acct_x' }) } catch (e) { badIntentThrows = e instanceof TypeError }
+  t('retrieve.readsBackTheIntent', { sameIntent: readBack.intent?.id === made.intent!.id, clientSecret: !!readBack.intent?.client_secret && readBack.intent.client_secret === made.intent!.client_secret,
+    status: readBack.intent?.status, unknown: strayIntent.error?.kind, unknownCode: strayIntent.error?.code, badIdThrows: badIntentThrows })
 
   // ── the refusals, against the pure function with the clock moved ───────
   const body = JSON.stringify({ id: 'evt_x', object: 'event', type: 'payment_intent.succeeded', created: 1, data: { object: {} } })
@@ -241,6 +249,11 @@ try {
   t('connect.balance.feeOnTheCharge', { fee: bt.balanceTransaction?.fee, net: bt.balanceTransaction?.net, amount: bt.balanceTransaction?.amount, ofThisCharge: !!feeCharge && bt.balanceTransaction?.source === feeCharge.id,
     elsewhere: btElsewhere.error?.kind, achFee: achBt.balanceTransaction?.fee, badIdThrows: badTxnThrows })
 
+  // A direct charge's intent is found on the club's account and nowhere else.
+  const clubIntent = await retrievePaymentIntent(send, { id: feePi.intent!.id, account: club })
+  const clubIntentElsewhere = await retrievePaymentIntent(send, { id: feePi.intent!.id })
+  t('connect.retrieve.intentOnTheClubsAccount', { found: clubIntent.intent?.id === feePi.intent!.id, status: clubIntent.intent?.status, elsewhere: clubIntentElsewhere.error?.kind })
+
   const cBody = JSON.stringify({ id: 'evt_c', object: 'event', type: 'account.updated', created: 1, account: 'acct_club1', data: { object: {} } })
   const cHeader = `t=${now},v1=${createHmac('sha256', CONNECT_SECRET).update(`${now}.${cBody}`).digest('hex')}`
   const withConnect  = verifyStripeSignature({ rawBody: cBody, header: cHeader, secret: CONNECT_SECRET, now })
@@ -309,6 +322,7 @@ process.exit(report(got, {
   'refund.keyCollapsesAndConflicts':      { sameId: true, conflict: 'idempotency_conflict', headerName: 'ORD-1:r1' },
   'refund.overdrawnIsRefused':            { kind: 'refused', saysHowMuch: true },
   'webhook.duplicateDeliveryAcceptedOnce': { deliveries: 2, answered: [200, 200], processed: 1 },
+  'retrieve.readsBackTheIntent':          { sameIntent: true, clientSecret: true, status: 'succeeded', unknown: 'refused', unknownCode: 'resource_missing', badIdThrows: true },
   'verify.forged':      false,
   'verify.swappedBody': false,
   'verify.movedClock':  { past: false, future: false, edge: true },
@@ -328,6 +342,7 @@ process.exit(report(got, {
     events: ['completed', 'completed', 'async_payment_succeeded', 'async_payment_failed'], told: [['succeeded'], ['payment_failed']] },
   'connect.noPlatformFee':                  { refusedBeforeSending: 3, bodiesOnTheClub: 7, carryingAFeeKey: 0 },
   'connect.balance.feeOnTheCharge':         { fee: 88, net: 1912, amount: 2000, ofThisCharge: true, elsewhere: 'refused', achFee: 40, badIdThrows: true },
+  'connect.retrieve.intentOnTheClubsAccount': { found: true, status: 'succeeded', elsewhere: 'refused' },
   'connect.webhook.connectSecretAndAccount': { ok: true, account: 'acct_club1', platformSecretRefuses: false, platformEventAccount: null, crossedEndpoints: 401 },
   'tax.calculation.statesTheTaxAndRecordsIt':      { ok: true, total: 16_588, tax: 1_088, rate: '7.25', lines: [725, 363], expiresSoon: true, notYet: false },
   'tax.transaction.keyCollapsesAndConflicts':      { sameId: true, conflict: 'idempotency_conflict', filed: 1 },

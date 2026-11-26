@@ -5,7 +5,7 @@ render: static
 ---
 <!--
   The Basecamp page: the product, argued in five sections. Prerendered, no
-  script beyond the layout's theme swatches.
+  script beyond the layout's dark toggle.
 
   ── Section contract ───────────────────────────────────────────────────
   Each section is a component in components/basecamp/, and its root is

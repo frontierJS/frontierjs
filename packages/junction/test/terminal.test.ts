@@ -69,6 +69,15 @@ describe('frames', () => {
     expect(resized).toEqual([[2, 200], [80, 40]])
   })
 
+  test.skipIf(!Bun.which('tmux'))('the app\'s tmux commands run on the server before the session attaches', async () => {
+    const app2 = { ws(_p: string, handlers: any) { mounted = { handlers } } }
+    terminalSocket(app2, '/t', { refuse: { open: () => null }, cwd: () => '/tmp', session: () => 's', env: () => ({}), tmux: [['set-option', '-g', 'pane-border-style', 'fg=#444']] })
+    await mounted.handlers.open(ctx({}))
+    const at = spawned.argv.indexOf('pane-border-style')
+    expect(spawned.argv.slice(at - 2, at + 3)).toEqual(['set-option', '-g', 'pane-border-style', 'fg=#444', ';'])
+    expect(at).toBeLessThan(spawned.argv.indexOf('new-session'))
+  })
+
   test('a refusal at open closes with its code and spawns nothing', async () => {
     terminalSocket(app, '/t', { refuse: { open: () => ({ code: 4009, reason: 'no folder' }) }, cwd: noop, session: noop, env })
     spawned = null

@@ -248,6 +248,13 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         }
       }
 
+      const oneIntent = path.match(/^\/v1\/payment_intents\/([^/]+)$/)
+      if (oneIntent && req.method === 'GET') {
+        // A direct charge's intent lives on the connected account: asked for from anywhere else it does not exist.
+        const intent = intents.get(oneIntent[1])
+        answer = intent && intent.account === acting ? json(intent) : stripeError('invalid_request_error', `No such payment_intent: '${oneIntent[1]}'`, 404, { code: 'resource_missing' })
+      }
+
       if (path === '/v1/refunds' && req.method === 'POST') {
         // A direct charge lives on the connected account: asked for from anywhere else it does not exist.
         const intent = intents.get(String(form.payment_intent ?? ''))

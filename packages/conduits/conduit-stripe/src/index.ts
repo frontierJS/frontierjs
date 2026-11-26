@@ -133,6 +133,25 @@ export async function createPaymentIntent(send: Send, req: {
 }
 
 /**
+ * Read one PaymentIntent back. A second press of Pay finds the pending
+ * payment row, and the browser needs that intent's `client_secret` again, which
+ * the app never stored. A direct charge's intent lives on the connected
+ * account, so `account` is required to find it there; without it the read
+ * looks on the platform and answers not found.
+ */
+export async function retrievePaymentIntent(send: Send, req: {
+  id:       string
+  account?: string
+}): Promise<{ intent?: PaymentIntent; error?: StripeFailure }> {
+  // The id is a path segment: a stored provider reference is caller data and must not walk to another resource.
+  if (typeof req.id !== 'string' || !/^pi_[A-Za-z0-9_]+$/.test(req.id))
+    throw new TypeError(`stripe: a payment intent id is pi_…, got ${JSON.stringify(req.id)}`)
+  const result = await send<PaymentIntent>({ method: 'GET', path: `/v1/payment_intents/${req.id}`, ...onAccount(req.account) })
+  if (result.error) return { error: translate(result.error) }
+  return { intent: result.data }
+}
+
+/**
  * Refund, in whole or in part. The one call where a retry costs real money,
  * so the key is REQUIRED: what makes two attempts the same refund is the
  * shop's intention, and a uuid minted here would be unique and guard nothing.

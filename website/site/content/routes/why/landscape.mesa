@@ -62,11 +62,11 @@ render: static
     <div class="controls">
       <div class="segmented" data-factors role="group" aria-label="Size the cloud by">
         {#each d.factors as f}
-          <button data-factor={f.key} data-label={f.label} data-help={f.help}
+          <button data-factor={f.key} data-label={f.label} data-help={f.help} title={f.help}
                   aria-pressed={f.key === 'closeness'}>{f.label}</button>
         {/each}
       </div>
-      <span class="what" data-factor-help>How literally similar the code and vocabulary are.</span>
+      <span class="what" data-factor-help>How alike it looks: the shape of its code and the words it uses.</span>
 
       <div class="legend" aria-label="Tier">
         <span><i style="background:var(--tier-1)"></i> Tier 1 · direct lineage</span>

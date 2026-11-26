@@ -55,7 +55,7 @@ export interface IMail {
 // ─── Mail builder ─────────────────────────────────────────────────────────
 // Fluent API — same feel as Total.js mail builder.
 
-import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId, messageIdFor } from './smtp.ts'
+import { assertMessageAddresses, assertHeaderValue, assertHeaderName, assertContentId, messageIdFor, SmtpError } from './smtp.ts'
 
 // Re-exported because a test double implementing `IMail` has to accept exactly
 // what the real mailer accepts. A double that took a message SMTP would refuse
@@ -421,6 +421,24 @@ import { warnEffectInDrain } from '../core/context.ts'
 //   // Then anywhere in hooks or services:
 //   await ctx.app.mail?.send({ to, subject, html })
 
+/**
+ * What no mailer may be handed, whichever one `mail()` wraps: an address that
+ * is not one, a line break in a subject, a bad content id, an inline image with
+ * no HTML to draw it. A mailer an app wrote (a stub, a capture double, a
+ * connector's adapter) graded none of these, and a CRLF in a `cc` is a header
+ * of the sender's choosing once the provider writes the message out.
+ *
+ * `from` is graded only if stated: each adapter fills in its own default, and
+ * grades that one itself.
+ */
+function assertMessageAcceptable(msg: MailMessage): void {
+  assertMessageAddresses(msg)
+  const inline = (msg.attachments ?? []).filter(a => a.cid !== undefined)
+  for (const a of inline) assertContentId(a.cid!)
+  if (inline.length && !msg.html)
+    throw new SmtpError('Mail: an inline attachment (cid) needs an html body to draw it — a plain-text body has nowhere to put an image')
+}
+
 export function mail({ mailer }: { mailer: IMail }): import('../core/app.ts').Plugin {
   return {
     name: 'mailer',
@@ -429,12 +447,111 @@ export function mail({ mailer }: { mailer: IMail }): import('../core/app.ts').Pl
       // send runs, which no adapter knows.
       // Object.create keeps a class-instance mailer's own methods reachable.
       const wrapped = Object.assign(Object.create(mailer), {
-        send:  (m: MailMessage)   => { warnEffectInDrain('app.mail.send()');  return mailer.send(m) },
-        batch: (ms: MailMessage[]) => { warnEffectInDrain('app.mail.batch()'); return mailer.batch(ms) },
+        send:  async (m: MailMessage)   => { warnEffectInDrain('app.mail.send()');  assertMessageAcceptable(m); return mailer.send(m) },
+        batch: async (ms: MailMessage[]) => { warnEffectInDrain('app.mail.batch()'); ms.forEach(assertMessageAcceptable); return mailer.batch(ms) },
       })
       if (typeof app.own === 'function') app.own('mail', wrapped)
       else app.mail = wrapped
     }
+  }
+}
+
+// ─── Dev and test mailers ─────────────────────────────────────────────────
+// Two `IMail`s that send nothing. They grade what a real mailer grades — the
+// address and header rules, a cid with no html, a `from` that is not a
+// mailbox — so a message either accepts is one SMTP would accept too. A double
+// more permissive than production passes in a test and fails in the field
+// (`FJS-904`). A batch is graded whole before any of it is kept or printed,
+// so a bad message leaves nothing behind, as a rejected batch would.
+
+export interface DevMailerOptions {
+  /** Stands in for the adapter's configured sender. Default `mail@localhost`. */
+  from?: string
+}
+
+export interface CaptureMailerOptions extends DevMailerOptions {
+  /** Also print each message as `createLogMailer` does. A function takes the
+   *  text instead of `console.log`. */
+  log?: boolean | ((text: string) => void)
+}
+
+export interface LogMailerOptions extends DevMailerOptions {
+  /** Where the text goes. Default `console.log`. */
+  write?: (text: string) => void
+}
+
+/** What the capture mailer kept: the message as handed in, with the sender and
+ *  Message-ID it would have gone out under and when it was handed in. */
+export type SentMail = MailMessage & { from: string, messageId: string, sentAt: string }
+
+export interface CaptureMailer extends IMail {
+  /** Every message sent since the last `clear()`, oldest first. Live: read it
+   *  after the send, not before. */
+  readonly sent: readonly SentMail[]
+  /** The sent messages with `address` among their `to`. */
+  to(address: string): SentMail[]
+  clear(): void
+}
+
+function stampDevMessage(message: MailMessage, defaultFrom: string): { from: string, messageId: string } {
+  const from = message.from ?? defaultFrom
+  assertMessageAcceptable({ ...message, from })
+  assertMessageHeaders(message)
+  return { from, messageId: messageIdFor({ from, headers: message.headers }).id }
+}
+
+// One line a person can click through from a terminal, then the text body.
+// `[mail] -> to . subject` is what a drive that reads the API's log splits on.
+function transcribe(message: MailMessage): string {
+  const to       = Array.isArray(message.to) ? message.to.join(', ') : message.to
+  const attached = (message.attachments ?? []).map(a => `${a.filename}${a.type ? ` (${a.type})` : ''}`)
+  return `[mail] -> ${to} . ${message.subject}\n${message.text ?? ''}` +
+    (attached.length ? `\n[attached] ${attached.join(', ')}` : '')
+}
+
+/**
+ * A mailer that keeps what it is handed, for a test or a drive to read:
+ * `mailer.sent`, `mailer.to(address)`, `mailer.clear()`.
+ */
+export function createCaptureMailer(opts: CaptureMailerOptions = {}): CaptureMailer {
+  const { from: defaultFrom = 'mail@localhost', log } = opts
+  const write = typeof log === 'function' ? log : log ? (t: string) => console.log(t) : null
+  const sent: SentMail[] = []
+
+  const stamp = (m: MailMessage) => stampDevMessage(m, defaultFrom)
+  const keep = (m: MailMessage, stamped: { from: string, messageId: string }): SendResult => {
+    sent.push({ ...m, ...stamped, sentAt: new Date().toISOString() })
+    write?.(transcribe(m))
+    return { id: `capture-${sent.length}`, messageId: stamped.messageId, message: 'captured' }
+  }
+
+  return {
+    sent,
+    to: address => sent.filter(m => (Array.isArray(m.to) ? m.to : [m.to]).includes(address)),
+    clear: () => { sent.length = 0 },
+    async send(message) { return keep(message, stamp(message)) },
+    async batch(messages) {
+      const stamped = messages.map(stamp)
+      return messages.map((m, i) => keep(m, stamped[i]))
+    },
+  }
+}
+
+/** A mailer that prints each message instead of sending it, for dev with no
+ *  provider configured. */
+export function createLogMailer(opts: LogMailerOptions = {}): IMail {
+  const { from: defaultFrom = 'mail@localhost', write = (t: string) => console.log(t) } = opts
+  let seq = 0
+  const print = (m: MailMessage, stamped: { messageId: string }): SendResult => {
+    write(transcribe(m))
+    return { id: `log-${++seq}`, messageId: stamped.messageId, message: 'logged' }
+  }
+  return {
+    async send(message) { return print(message, stampDevMessage(message, defaultFrom)) },
+    async batch(messages) {
+      const stamped = messages.map(m => stampDevMessage(m, defaultFrom))
+      return messages.map((m, i) => print(m, stamped[i]))
+    },
   }
 }
 

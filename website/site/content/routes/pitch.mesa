@@ -5,7 +5,7 @@ render: static
 ---
 <!--
   The pitch, prerendered. Every byte a visitor gets is in the file; there
-  is no JavaScript on this page except the theme swatches in the layout, which
+  is no JavaScript on this page except the dark toggle in the layout, which
   are an island.
 
   ── Why the code samples are not in this file ──────────────────────────

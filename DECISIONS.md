@@ -9594,6 +9594,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2407"></a>2026-11-26 · `FJS-D2407` — Q2 — The home of the retention job helper (P2) — `@frontierjs/caravan`, a `retentionJob({ cron, client })` beside `defineJob`.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (`@frontierjs/junction`, handing back a plain job object).
+
+The paper's recommendation, taken as written: caravan owns `defineJob` and sits above junction; the helper needs only a client with `$retain`, so it adds no dependency, and the scaffold's reason (the clock belongs to the queue) stays true.
+
 ### <a id="fjs-d2339"></a>2026-11-26 · `FJS-D2339` — What is the one rule for a hand-registered helper that sits in `api/src/routes/`, now that the folder autoloads as file routes — C where the helper is one route, else A.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked as the recommendation qualifies it (*C where the helper is one route, else A*) over **A** (The helper moves out of `routes/` to a folder the autoloader does not read, the way calendly moved its hook to `api/src/webhooks/`), **B** (A leading underscore excuses the file. This is what `loader.ts:258` does today; the ruling would document it in junction's README).
@@ -18663,6 +18669,30 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d2411"></a>2026-11-26 · `FJS-D2411` — Q6 — Where the full address check runs once transit's mailer goes (T4, step 2.2) — Junction's `mail()` plugin runs `assertMessageAddresses` and `assertContentId` on every `send`/`batch` in the wrapper it already installs, so every mailer is checked at one owner; conduit-resend keeps its CRLF check for direct `sendEmail` calls.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (conduit-resend takes junction as a peer dependency and calls the check itself), **C** (conduit-resend carries its own copy of the rules).
+
+The paper's recommendation, taken as written: one owner (invariant 4), every adapter covered, and no first conduit→junction edge.
+
+### <a id="fjs-d2410"></a>2026-11-26 · `FJS-D2410` — Q5 — Does conduit-quo export `QUO_WEBHOOK_PATH` (T7, step 2.8) — No; quo's `domain/doors.ts` owns the constant.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (conduit-quo exports it as a default path).
+
+The paper's recommendation, taken as written: no conduit exports a webhook path; where the door lives is the app's choice.
+
+### <a id="fjs-d2409"></a>2026-11-26 · `FJS-D2409` — Q4 — serpgrid's per-agency DataForSEO login (T6, step 2.7) — Convert to the conduit's `perCaller: true` and a `getFor(ref, who)` resolver; `engine.test.ts`'s pins move with it.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (keep the ambient resolver).
+
+The paper's recommendation, taken as written: it is the conduit README's way, a per-caller answer cannot be cached across agencies the way a by-ref one can, and Phase 3's serpgrid Telnyx takes the same answer.
+
+### <a id="fjs-d2408"></a>2026-11-26 · `FJS-D2408` — Q3 — quo's dead Quo provider (T7) — Delete `quo/api/src/providers/quo/` and its test; repoint the two domain importers at `conduit-quo`.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (keep it).
+
+The paper's recommendation, taken as written: its own header says "NOT THE PRODUCT'S DIRECTION … Do not extend it", and conduit-quo holds the half worth keeping.
+
 ### <a id="fjs-d2048"></a>2026-11-25 · `FJS-D2048` — What triggers the disk sweep nobody runs by hand: a nightly fleet cron, a sweep after each release, or a disk-percent threshold — Queue the sweep from the end of `deployment-run.job.ts` for the release's server, as the person who deployed (`runsAsCaller` keeps working, actor and tenant are in scope). Reclaims exactly when disk is spent, but `build_cache` is a default target, so every release throws away the cache the next build wants; it would have to drop `build_cache` from the post-release set, leaving the largest figure (5.2 GB of 8.6 on yuma) to a manual run.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a nightly cron job (`cleanup-sweep.job.ts`, `runsAsApp`, the `server-reachability` shape) that reads every `online` server across workspaces and queues the default targets with `keepImages` 3 through one shared `queueSweep` the `run` method also calls; `maintenance-run.job.ts` gains the app-mode path `job-run.job.ts` has (`requestedBy` null, written as the app). Bounded cost (one sweep a night), deploys stay fast, but up to a day of builds (about 0.9 GB each) accumulate between sweeps), **C** (a threshold: `server-reachability`'s heartbeat path (or `platform-observe`) queues the sweep when `server.diskPercent` crosses a setting. Spends nothing on a quiet machine, but adds a setting and a hysteresis rule, and acts only after the disk is already high — the same place `FJS-3908`'s headroom check wants a warning, not a delete).
@@ -23594,6 +23624,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2406"></a>2026-11-26 · `FJS-D2406` — Q1 — Where Telnyx voice lives (P1) — Grow `conduit-telnyx` into call control, credentials and media stream beside SMS.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (a separate `conduit-telnyx-voice`).
+
+The paper's recommendation, taken as written: one client, one `translate`, one invalid-destination set; the carrier codes the apps learned apply to both halves.
 
 ### <a id="fjs-d2405"></a>2026-11-26 · `FJS-D2405` — Q4 — Who invites the invitee — Calendly's mail and `.ics` stay the only invite; the Google event lists the invitee with `sendUpdates: 'none'` on create, move and cancel.
 

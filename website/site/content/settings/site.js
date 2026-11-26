@@ -18,11 +18,10 @@ export default {
   // robots.txt carries no Sitemap line.
   siteUrl: 'https://frontierjs.com',
 
-  // The switcher doubles as a live demo of @frontierjs/css, which is half the
-  // reason this site exists — it is that package's second consumer. A subset of
-  // the themes it ships.
+  // Two of the themes @frontierjs/css ships, so the header's switch is a plain
+  // light/dark toggle. A stored name not in this list falls back to the default.
   theme: {
-    themes:  ['theme-default', 'theme-sunset', 'theme-expedition', 'theme-catppuccin', 'theme-dark', 'theme-elite'],
+    themes:  ['theme-default', 'theme-dark'],
     default: 'theme-default',
     persist: true,
     key:     'fjs-theme',

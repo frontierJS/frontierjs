@@ -6,7 +6,7 @@
   the conversion buys.
 
   A layout on a static target holds no state: there is no application around
-  these pages. Everything here is markup except the swatches, which are an
+  these pages. Everything here is markup except the dark toggle, which is an
   island for exactly that reason.
 -->
 <script>
@@ -112,9 +112,10 @@
 
   .topbar {
     position: sticky; top: 0; z-index: 50;
-    background: color-mix(in srgb, var(--surface) 88%, transparent);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--rule);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
+    -webkit-backdrop-filter: blur(7px) saturate(160%);
+    backdrop-filter: blur(7px) saturate(160%);
+    border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
     /* @frontierjs/css sets no font on body, so the bar took the browser's
        serif while the menu's popover, a surface, took --font-primary. */
     font-family: var(--font-primary);
@@ -190,11 +191,7 @@
       background: none; padding: 0 0 .5rem 1rem;
     }
     .navmenu .popover a { padding: .6rem .5rem; font-size: .95rem; }
-    .sitemenu :global(.swatches) {
-      gap: .75rem; padding: 1rem .5rem 0; margin-top: .5rem;
-      border-top: 1px solid var(--rule);
-    }
-    .sitemenu :global(.swatches .swatch) { width: 2rem; height: 2rem; }
+    .sitemenu :global(.themetoggle) { --knob: 2rem; margin: 1rem .5rem 0; }
 
     .navtoggle {
       display: grid; place-items: center; width: 2.75rem; height: 2.75rem;

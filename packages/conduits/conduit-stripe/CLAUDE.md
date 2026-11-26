@@ -19,4 +19,4 @@ reader of `error.raw`) · `src/verify.ts` (pure verifier and `stripeDialect`) ·
 
 ## Proving a change
 
-`bun run drive`. Green means 40 rows; there is no fixture.
+`bun run drive`. Green means 42 rows; there is no fixture.

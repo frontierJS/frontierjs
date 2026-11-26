@@ -73,6 +73,10 @@ try {
   // The IMail adapter: a throw a job can read.
   const mailer = createResendMailer(send, { from: 'no-reply@example.com' })
   const r = await mailer.send({ to: 'b@example.com', subject: 's', text: 't' })
+  const wireHeaders = JSON.parse((await seen()).requests.at(-1)!.body).headers
+  t('imail.messageIdMatchesTheHeaderSent', { minted: /^<[0-9a-f-]{36}@example\.com>$/.test(r.messageId), onWire: wireHeaders['Message-ID'] === r.messageId })
+  const stated = await mailer.send({ to: 'b@example.com', subject: 's', text: 't', from: 'Shop <s@shop.test>', headers: { 'message-id': '<mine@shop.test>' } })
+  t('imail.statedMessageIdWins', stated.messageId)
   await ctl.arm({ quota: true })
   let thrown: { kind?: string; retryable?: boolean } = {}
   try { await mailer.send({ to: 'b@example.com', subject: 's', text: 't' }) } catch (e) { thrown = e as typeof thrown }
@@ -107,6 +111,8 @@ process.exit(report(got, {
   'lostResponse.notReplayed':     { kind: 'timeout', retryable: false, emailsSent: 1, attempts: 1 },
   'serverError.notReplayedEither': { kind: 'server_error', retryable: false },
   'imail.sendsAndThrowsReadably': { sent: 'sent', thrownKind: 'quota', retryable: false },
+  'imail.messageIdMatchesTheHeaderSent': { minted: true, onWire: true },
+  'imail.statedMessageIdWins':    '<mine@shop.test>',
   'batch.answersEveryId':         { count: 2 },
   'bounce.rotatedSecretDeliveredTwiceSuppressedOnce': { deliveries: 2, answered: [200, 200], suppressed: [{ email: 'gone@bounce.example', reason: 'bounce' }] },
   'verify.movedClock':            { fresh: true, past: false, future: false },

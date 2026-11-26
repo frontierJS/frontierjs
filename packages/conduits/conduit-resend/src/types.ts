@@ -24,7 +24,9 @@ export interface MailAttachment {
   cid?:     string
 }
 
-export interface SendResult { id: string; message: string }
+/** Structurally junction's `SendResult`: `id` is Resend's handle, `messageId`
+ *  the Message-ID the mail went out under. */
+export interface SendResult { id: string; messageId: string; message: string }
 
 /** What Resend reads. `reply_to`, `content_type`, `content_id` are its spellings. */
 export interface ResendEmail {

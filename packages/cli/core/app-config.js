@@ -509,6 +509,15 @@ ${genLines.length ? `
 | --- | --- |
 ${genLines.join('\n')}
 ` : ''}
+## Look for it in the framework first
+
+Before writing a vendor client, a mailer, a sink, a recurring job or a date,
+rank or shell helper inside this app, look for the framework's: a vendor has a
+\`@frontierjs/conduit-<vendor>\` package (Stripe, Resend, Anthropic, Telnyx,
+Microsoft and more), and mail, jobs, dates and ranks live in junction, caravan,
+mesa and toolbelt. When the shared one is missing a call this app needs, add it
+there, not here. A copy in an app misses every fix the shared one gets later.
+
 ## What a generic habit gets wrong here
 
 The rule id in brackets is the \`fli check\` rule that reports a violation.

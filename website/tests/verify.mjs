@@ -229,7 +229,7 @@ t('head.themeScript', html.includes('id="sierra-theme"'))
 t('head.bodyClass',   (html.match(/<body class="([^"]*)"/) ?? [])[1])
 
 // FJS-501 in the dev shell: a theme class on its body re-declares every theme
-// token under <html>, so the swatches do nothing in `bun run dev` while every
+// token under <html>, so the theme toggle does nothing in `bun run dev` while every
 // built-page probe below passes.
 t('devShell.noBodyTheme', readFileSync(join(KIT, 'index.html'), 'utf8')
   .match(/<body[^>]*>/)?.[0], (tag) => !/theme-/.test(tag ?? ''))
@@ -659,11 +659,11 @@ try {
     return { italic: cs.fontStyle, shifted: cs.verticalAlign };
   `))
 
-  // The island hydrated. Six buttons that do nothing look exactly like six that
-  // work, so this asks whether a listener is attached by using one.
+  // The island hydrated. A toggle that does nothing looks exactly like one that
+  // works, so theme.switches below asks whether a listener is attached by using it.
   t('island.mounted', await evaluate(`
-    await waitFor(() => document.querySelectorAll('.swatch').length === 6);
-    return document.querySelectorAll('.swatch').length;
+    await waitFor(() => !!document.querySelector('.themetoggle'));
+    return true;
   `))
 
   // THE assertion. What must change is what a person sees, so this reads a
@@ -677,7 +677,7 @@ try {
       ink:  getComputedStyle(document.body).color,
     });
     const before = read();
-    document.querySelectorAll('.swatch')[4].click();   // theme-dark
+    document.querySelector('.themetoggle').click();   // theme-dark
     await sleep(120);
     const after = read();
     return { before, after, changed: before.bg !== after.bg };
@@ -698,10 +698,11 @@ try {
     // The theme probe above left the page on theme-dark, so this puts it back
     // before reading — otherwise both readings are the same theme and the
     // check passes by measuring nothing.
-    document.querySelectorAll('.swatch')[0].click();   // theme-default
+    const toggle = document.querySelector('.themetoggle');
+    if (toggle.getAttribute('aria-checked') === 'true') toggle.click();   // theme-default
     await sleep(120);
     const light = kw();
-    document.querySelectorAll('.swatch')[4].click();   // theme-dark
+    toggle.click();   // theme-dark
     await sleep(120);
     const dark = kw();
     return { light, dark,
@@ -709,23 +710,20 @@ try {
              legible: dark.keyword !== dark.ink && dark.value !== dark.ink };
   `))
 
-  // FJS-501 — four of the six are refused by name, because the theme block in
-  // content/settings/site.js never reaches a prerendered page: initTheme() is called by
-  // virtual:sierra, which a static build does not load, so the island bundle
-  // keeps the module's own DEFAULT_THEMES.
-  // Read --color-primary rather than a background: only three of the six
-  // redefine --surface, so a background probe reads four working themes as
-  // dead. Every theme in the package changes the accent.
-  t('theme.FJS501_everySwatch', await evaluate(`
-    const tone = () => getComputedStyle(document.documentElement)
-      .getPropertyValue('--color-primary').trim();
-    const out = {};
-    for (const b of document.querySelectorAll('.swatch')) {
-      const before = tone(); b.click(); await sleep(100);
-      const inPage = getComputedStyle(document.querySelector('.brand span')).color;
-      out[b.title] = { onHtml: tone(), inBody: inPage };
-    }
-    return out;
+  // The toggle goes both ways and its switch state follows the class on <html>.
+  // A one-way toggle passes theme.switches and strands a reader in the dark.
+  t('theme.toggleRoundTrip', await evaluate(`
+    const toggle = document.querySelector('.themetoggle');
+    const read = () => ({ html: document.documentElement.className,
+                          checked: toggle.getAttribute('aria-checked') });
+    const start = read();
+    toggle.click(); await sleep(100);
+    const flipped = read();
+    toggle.click(); await sleep(100);
+    const back = read();
+    return { start, flipped, back,
+             flips:   start.html !== flipped.html && start.checked !== flipped.checked,
+             returns: start.html === back.html && start.checked === back.checked };
   `))
 
   // The other half of FJS-501: the pre-paint script the build injected reads
@@ -1023,7 +1021,7 @@ try {
     const shown = (el) => el.getBoundingClientRect().height > 0;
     const closedAtLoad = !shown(menu) && shown(btn) && document.querySelector('.topbar').getBoundingClientRect().height <= 70;
     btn.click(); await sleep(50);
-    const opens = shown(menu) && shown(menu.querySelector('a[href="/start/"]')) && shown(menu.querySelector('.swatch'));
+    const opens = shown(menu) && shown(menu.querySelector('a[href="/start/"]')) && shown(menu.querySelector('.themetoggle'));
     btn.click(); await sleep(50);
     return { closedAtLoad, opens, closes: !shown(menu) };
   `))

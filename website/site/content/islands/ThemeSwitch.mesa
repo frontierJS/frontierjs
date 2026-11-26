@@ -1,11 +1,12 @@
 <!--
-  The theme swatches — the one interactive thing in the site shell, and
+  The dark toggle — the one interactive thing in the site shell, and
   therefore the one thing in it that has to be an island.
 
   A prerendered page ships no JavaScript, so the hand-written site's approach
   (a <script> at the bottom of every page, copied thirteen times) has nowhere
-  to run. This is the whole of that script, once: Sierra owns the persistence
-  and the class on <html>, and this only says which name was clicked.
+  to run. Sierra owns the persistence and the class on <html>. The two names
+  are set outright: toggleTheme cycles whatever list the running config holds,
+  and a dev server keeps the list it started with.
 -->
 <script>
   import { theme, setTheme } from '@frontierjs/sierra/theme'
@@ -13,35 +14,59 @@
   // theme is a plain object, not a signal — a path watch is what makes it
   // reactive here (Mesa VISION §4.1).
   $: theme.value
-
-  const SWATCHES = [
-    { name: 'theme-default',    label: 'Default',    swatch: '#0d83dd' },
-    { name: 'theme-sunset',     label: 'Sunset',     swatch: '#e07a3f' },
-    { name: 'theme-expedition', label: 'Expedition', swatch: '#a8b58a' },
-    { name: 'theme-catppuccin', label: 'Catppuccin', swatch: '#cba6f7' },
-    { name: 'theme-dark',       label: 'Dark',       swatch: '#1c1b18' },
-    { name: 'theme-elite',      label: 'Elite',      swatch: '#8b6f2e' },
-  ]
 </script>
 
-<div class="swatches" role="group" aria-label="Theme">
-  {#each SWATCHES as s}
-    <button
-      class="swatch"
-      title={s.label}
-      aria-label={s.label}
-      aria-pressed={theme.value === s.name}
-      style="background:{s.swatch}"
-      onclick={() => setTheme(s.name)}
-    ></button>
-  {/each}
-</div>
+<button
+  class="themetoggle"
+  role="switch"
+  aria-checked={theme.value === 'theme-dark'}
+  aria-label="Dark theme"
+  title={theme.value === 'theme-dark' ? 'Switch to the light theme' : 'Switch to the dark theme'}
+  onclick={() => setTheme(theme.value === 'theme-dark' ? 'theme-default' : 'theme-dark')}
+>
+  <span class="knob" aria-hidden="true"></span>
+  <svg class="sun" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="12" r="4.5" fill="currentColor" />
+    <path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>
+  <svg class="moon" viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor" />
+  </svg>
+</button>
 
 <style>
-  .swatches { display: flex; gap: .3rem; }
-  .swatch {
-    width: 1.1rem; height: 1.1rem; border-radius: 50%;
-    border: 1px solid var(--rule-strong); cursor: pointer; padding: 0;
+  /* The icons sit above the knob, so the one under it reads as the
+     active mode and the other stays muted on the track. */
+  .themetoggle {
+    --knob: 1.4rem;
+    box-sizing: border-box;
+    position: relative; display: flex; align-items: center;
+    width: calc(var(--knob) * 2 + 6px); height: calc(var(--knob) + 6px);
+    padding: 0; border-radius: 999px; cursor: pointer;
+    border: 1px solid var(--rule-strong);
+    background: color-mix(in srgb, var(--ink) 10%, transparent);
+    color: color-mix(in srgb, var(--ink) 45%, transparent);
   }
-  .swatch[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .themetoggle:hover { background: color-mix(in srgb, var(--ink) 16%, transparent); }
+  .knob {
+    position: absolute; top: 2px; left: 2px;
+    width: var(--knob); height: var(--knob); border-radius: 50%;
+    background: var(--surface);
+    box-shadow: 0 1px 3px color-mix(in srgb, #000 35%, transparent);
+    transition: transform .2s ease;
+  }
+  .sun, .moon {
+    position: absolute; top: 2px; z-index: 1;
+    width: var(--knob); height: var(--knob); padding: .25rem; box-sizing: border-box;
+    transition: color .2s ease;
+  }
+  .sun  { left: 2px; color: var(--ink); }
+  .moon { right: 2px; }
+  .themetoggle[aria-checked="true"] .knob { transform: translateX(var(--knob)); }
+  .themetoggle[aria-checked="true"] .sun  { color: inherit; }
+  .themetoggle[aria-checked="true"] .moon { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) {
+    .knob, .sun, .moon { transition: none; }
+  }
 </style>

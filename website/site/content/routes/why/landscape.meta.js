@@ -16,11 +16,11 @@ const PROXIMITY = { 1: 100, 2: 60, 3: 25 }
 
 export const FACTORS = [
   { key: 'closeness',   label: 'how close it is',
-    help: 'How literally similar the code and vocabulary are.' },
+    help: 'How alike it looks: the shape of its code and the words it uses.' },
   { key: 'inspiration', label: 'how much was taken',
-    help: 'How much of it actually ended up in FrontierJS.' },
+    help: 'How much of it FrontierJS actually borrowed, however different it looks.' },
   { key: 'proximity',   label: 'how near the thesis',
-    help: 'Tier — 1 is the same argument, 3 is a mental-model ancestor.' },
+    help: 'How close its core idea is: the same argument, a partial overlap, or a distant ancestor.' },
 ]
 
 export async function load() {

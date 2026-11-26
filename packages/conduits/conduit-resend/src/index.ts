@@ -87,6 +87,17 @@ export async function sendBatch(send: Send, emails: ResendEmail[]): Promise<{ id
   return { ids: r.data.data.map(d => d.id) }
 }
 
+/** Junction's `messageIdFor`, by structure; keep the two in step by hand. A
+ *  stated Message-ID wins, else `<uuid@the From's domain>` is minted and sent as
+ *  the header, so the id a reply names is the one that went out. */
+function withMessageId(email: ResendEmail): { email: ResendEmail; messageId: string } {
+  const stated = Object.keys(email.headers ?? {}).find(k => k.toLowerCase() === 'message-id')
+  if (stated) return { email, messageId: email.headers![stated] }
+  const address = /<([^<>]*)>\s*$/.exec(email.from)?.[1] ?? email.from
+  const messageId = `<${crypto.randomUUID()}@${address.split('@').pop()}>`
+  return { email: { ...email, headers: { ...email.headers, 'Message-ID': messageId } }, messageId }
+}
+
 /** Junction's `IMail`, by structure. A failure THROWS, as the battery's did,
  *  with `retryable` and `indeterminate` copied onto the error for a job to read. */
 export function createResendMailer(send: Send, defaults: { from: string; replyTo?: string }) {
@@ -96,14 +107,16 @@ export function createResendMailer(send: Send, defaults: { from: string; replyTo
   }
   return {
     async send(message: MailMessage): Promise<SendResult> {
-      const r = await sendEmail(send, toResendPayload(message, defaults))
+      const { email, messageId } = withMessageId(toResendPayload(message, defaults))
+      const r = await sendEmail(send, email)
       if (r.error) raise(r.error)
-      return { id: r.id!, message: 'sent' }
+      return { id: r.id!, messageId, message: 'sent' }
     },
     async batch(messages: MailMessage[]): Promise<SendResult[]> {
-      const r = await sendBatch(send, messages.map(m => toResendPayload(m, defaults)))
+      const prepared = messages.map(m => withMessageId(toResendPayload(m, defaults)))
+      const r = await sendBatch(send, prepared.map(p => p.email))
       if (r.error) raise(r.error)
-      return r.ids!.map(id => ({ id, message: 'sent' }))
+      return r.ids!.map((id, i) => ({ id, messageId: prepared[i].messageId, message: 'sent' }))
     },
   }
 }

@@ -60,7 +60,10 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   dedupe means applied, not seen** — a `receive` that throws leaves the receipt
   unapplied and answers 500 (`FJS-D1087`, `test/webhooks.test.ts` § receiving).
 - **A CRLF in a mail address or header is refused at the builder AND at
-  `sendMessage()`** (`FJS-677`, `test/mail-injection.test.ts`).
+  `sendMessage()`** (`FJS-677`, `test/mail-injection.test.ts`). The `mail()`
+  plugin also grades every `app.mail` send — addresses, cids, a cid with no
+  `html` — before any adapter sees it, so a conduit mailer that imports nothing
+  from junction is still covered (`FJS-D2411`, `test/mail-plugin-grades.test.ts`).
 - **A reply tag threads a reply onto its record and proves only that the
   holder RECEIVED our mail** — attribution also needs `from` to be the address
   the mail went to; an expired or forged tag still delivers, unthreaded, and a

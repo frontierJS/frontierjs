@@ -22,7 +22,7 @@ Each names its pin; the full wording and every test file is `docs/hazards.md`
 - **Every socket bound is the socket's own** (`FJS-705`, `FJS-704`); presence is opt-in, batched (`FJS-703`); a reconnect is a gap (`FJS-701`); an unverified WS token closes 4001 (`FJS-702`); an unfinished shutdown exits 1 (`FJS-693`).
 - **A config key reaches the app only where `loadConfig` maps it** (`FJS-1066`, `FJS-D256`). **A route registers once** (`FJS-225`).
 - **A webhook destination is graded at registration and before every attempt** (`FJS-681`, `FJS-D193`); a subscription dedupes on the SIGNED body id, and dedupe means applied (`FJS-D1087`).
-- **A CRLF in a mail address is refused at the builder AND `sendMessage()`** (`FJS-677`); a reply tag proves only receipt (`FJS-D1091`, `FJS-D1092`); mail arrives through a conduit Receiver, never a route.
+- **A CRLF in a mail address is refused at the builder, at `sendMessage()`, and by `mail()` for every adapter** (`FJS-677`, `FJS-D2411`); a reply tag proves only receipt (`FJS-D1091`, `FJS-D1092`); mail arrives through a conduit Receiver, never a route.
 - **The static server serves inside its root**, symlinks resolved (`FJS-746`); vectors shared with sierra (`FJS-D653`).
 - **`$` throws outside a call, and an ended call is outside it** (`FJS-687`).
 - **A guest's claims never become `ctx.user`** (`FJS-D113`); **`principal` may be a list**, a name two emit refused (`FJS-D522`, `FJS-D694`); a grant is minted through `bearerClaim`'s `mint`/`redeem` (`FJS-D819`), a session beside one is 400 unless `session: 'merge'` (`FJS-D832`).

@@ -5,7 +5,7 @@ render: static
 ---
 <!--
   The Litestone page: the Data realm, argued in five sections. Prerendered,
-  no script beyond the layout's theme swatches. Same shape as
+  no script beyond the layout's dark toggle. Same shape as
   routes/basecamp.mesa; the shared structure is components/ProductFrame.mesa.
 
   ── Section contract ───────────────────────────────────────────────────

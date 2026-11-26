@@ -17,7 +17,7 @@ inversion). Junction keeps its copy.
 | error mapping | `translate(ConduitError) → ResendFailure` |
 | verifier | `verifyResendSignature({ rawBody, headers, secret, now })`, `suppressionFor(event)` |
 | sink | `sink.ts`; an address under `@bounce.example` bounces |
-| drive | `bun run drive` — 12 rows, sink only |
+| drive | `bun run drive` — 14 rows, sink only |
 
 ## Errors
 

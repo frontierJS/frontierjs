@@ -12,8 +12,10 @@
   `daily_quota_exceeded` is `quota`, not retryable today.
 - **`MailMessage` is declared here**, structurally junction's, so this package
   imports nothing from junction. Keep the two in step by hand.
+- **Address grading is junction's `mail()` plugin's** (`FJS-D2411`), not this package's: `app.mail.send` grades every message before this mailer sees it. A direct `sendEmail` or `createResendMailer` call keeps only the CRLF check here.
+- **`SendResult.messageId` is minted here** and sent as the `Message-ID` header, by hand-kept copy of junction's `messageIdFor`.
 - **Arm after reset.** `/_sink/reset` clears what is armed.
 
 ## Proving a change
 
-`bun run drive`: 12 rows. No fixture exists.
+`bun run drive`: 14 rows. No fixture exists.

@@ -47,6 +47,12 @@ export interface TerminalOptions {
   env:     (ctx: WsContext) => Record<string, string | undefined>
   /** The tmux server's name (`tmux -L <socket>`), so the app's sessions are not the operator's. */
   socket?: string
+  /**
+   * tmux commands run on the server each time a socket attaches, after the
+   * operator's ~/.tmux.conf, so they win over it: each an argv without the
+   * `tmux` itself, e.g. `['set-option', '-g', 'pane-border-style', 'fg=#444']`.
+   */
+  tmux?: string[][]
 }
 
 interface AppWs { ws(path: string, handlers: WsHandlerSet, opts?: WsRouteOptions): unknown }
@@ -89,11 +95,12 @@ const untrim = (tmux: string) => {
 }
 
 /** The argv a socket spawns: tmux attached-or-created when tmux is on PATH, a login shell when it is not. */
-export function shellArgv(socket: string, session: string, cwd: string): string[] {
+export function shellArgv(socket: string, session: string, cwd: string, extra: string[][] = []): string[] {
   const tmux = Bun.which('tmux')
   if (!tmux) return [process.env.SHELL || '/bin/bash', '-l']
   return [tmux, '-L', socket, 'start-server', ';', 'set-option', '-s', 'default-terminal', 'tmux-256color', ';',
           ...RESIZE_HOOKS.flatMap((hook) => ['set-hook', '-g', hook, untrim(tmux), ';']),
+          ...extra.flatMap((cmd) => [...cmd, ';']),
           'new-session', '-A', '-s', safe(session), '-c', cwd]
 }
 
@@ -117,7 +124,7 @@ export function terminalSocket(app: AppWs, path: string, opts: TerminalOptions):
       const cwd = opts.cwd(ctx)
       // A UTF-8 character split across two reads must not become two U+FFFDs.
       const decoder = new TextDecoder()
-      const proc = Bun.spawn(shellArgv(socket, opts.session(ctx), cwd), {
+      const proc = Bun.spawn(shellArgv(socket, opts.session(ctx), cwd, opts.tmux), {
         cwd,
         env: { ...opts.env(ctx), TERM: 'xterm-256color', COLORTERM: 'truecolor' },
         terminal: {
