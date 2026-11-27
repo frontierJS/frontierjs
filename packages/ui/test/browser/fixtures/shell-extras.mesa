@@ -1,0 +1,68 @@
+<script>
+  // shell-extras.mesa — the Shell's opt-in props: `palette` (⌘K), `ontheme`
+  // (the light/dark switch) and `toasts` / `confirm` (the mounted providers).
+  //
+  // The props are what the spec varies, so each is a flag here: `palette` is a
+  // snippet only when `withPalette` is set, and `ontheme` is a function only
+  // when `withSwitch` is, because Shell tests them for presence. The ontheme
+  // stand-in does what Sierra's setTheme does, writing the choice back into
+  // `theme`. The one group is for members, so a signed-out Shell draws no
+  // frame. `extraToaster` mounts a second Toaster beside Shell's.
+  //
+  // The bar's rows: `bare` passes no `topbar` snippet and `title` a title, so a
+  // sidebar Shell can have a bar with nothing but the drawer toggle. `hide`
+  // sets `hideLabel` on the labeled group, `withHead` passes a `head` snippet
+  // that marks where it was drawn, and `foldable` / `collapsible` / `collapsed`
+  // are Shell's own.
+  import Shell from '../../../components/layout/Shell.mesa'
+  import Toaster from '../../../components/feedback/Toaster.mesa'
+
+  export let user        = null
+  export let checked     = true
+  export let withPalette = false
+  export let withSwitch  = false
+  export let theme       = 'theme-default'
+  export let toasts      = false
+  export let confirm     = false
+  export let extraToaster = false
+  export let layout      = 'topbar'
+  export let bare        = false
+  export let title       = ''
+  export let hide        = false
+  export let withHead    = false
+  export let foldable    = false
+  export let collapsible = false
+  export let collapsed   = false
+
+  let picked = ''
+  function pick(next) { picked = next; theme = next }
+
+  $: groups = [
+    { label: null, show: ({ user }) => !!user, entries: [{ href: '/', label: 'Today', exact: true }] },
+    ...(hide || withHead || foldable ? [{ label: 'Reports', hideLabel: hide, entries: [{ href: '/reports/', label: 'Reports' }] }] : []),
+  ]
+  const isActive = () => true
+</script>
+
+{#snippet topBody()}<span id="top-right">right</span>{/snippet}
+{#snippet headBody(where)}<div class="head-mark" data-where={where}>Search</div>{/snippet}
+{#snippet brandBody()}<span class="brand-mark">Brand</span>{/snippet}
+
+{#snippet paletteBody(close)}
+  <div id="palette"><button type="button" id="palette-close" onclick={close}>Close</button></div>
+{/snippet}
+
+<output id="picked">{picked}</output>
+<output id="theme">{theme}</output>
+
+<Shell {groups} {isActive} {user} {checked} {layout} {theme} {title} {foldable} {collapsible} bind:collapsed
+       brand={withHead ? brandBody : null}
+       head={withHead ? headBody : null}
+       topbar={bare ? null : topBody}
+       palette={withPalette ? paletteBody : null}
+       ontheme={withSwitch ? pick : undefined}
+       {toasts} {confirm}>
+  <p id="page">Page</p>
+</Shell>
+
+{#if extraToaster}<Toaster />{/if}

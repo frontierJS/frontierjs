@@ -429,6 +429,18 @@
 }
 
 /*
+ * A bar holding nothing but the drawer toggle has nothing to show where the
+ * sidebar is back, and drawn anyway it is an empty strip over the screen. The
+ * structure is the test, so no class has to be remembered; a bar with a
+ * second cluster, a title or anything beside the toggle is kept.
+ */
+@media (min-width: 768px) {
+  .topbar:has(> .cluster:only-child > .sidebar-toggle:only-child) {
+    display: none;
+  }
+}
+
+/*
  * A peeking rail opens under the pointer or the keyboard's focus, and a
  * touch screen has neither (a tap is not :focus-visible), so at md and up
  * a rail of either kind shows its icons and never their names. The toggle

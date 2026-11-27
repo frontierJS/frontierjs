@@ -39,6 +39,33 @@ dated: 2026-11-26
   - **B** — conduit-resend takes junction as a peer dependency and calls the check itself.
   - **C** — conduit-resend carries its own copy of the rules.
   - **Recommend A** — one owner (invariant 4), every adapter covered, and no first conduit→junction edge.
+- ~~**Q7 — How conduit-telnyx carries ela's and sstime's per-account key (P1, step 3.1).**~~ **Answered 2026-11-26 (`FJS-D2412`): A — `telnyxTarget({ perCaller: true })`, declared once; the app's resolver answers `getFor(ref, who)` off the account's Integration row. ela's lazily registered `telnyx:<account>` targets and `telnyx-key:` refs go.**
+  - **A** — `telnyxTarget({ perCaller: true })`, declared once; the app's resolver answers `getFor(ref, who)` off the account's Integration row. ela's lazily registered `telnyx:<account>` targets and `telnyx-key:` refs go.
+  - **B** — fold ela's scheme as-is: `accountTelnyxTarget`, `ensureTelnyxTarget` and a `telnyxKeys` ref router.
+  - **Recommend A** — `per_caller` is conduit's one owner of whose credential a send spends (`FJS-D848`), every sibling conduit spells it `perCaller` (D2409 did the same for serpgrid), and a 401 is no breaker fault, so one account's bad key cannot stop another's texts.
+- ~~**Q8 — Whether Shell mounts Toaster and ConfirmProvider unasked (P3, step 4.1).**~~ **Answered 2026-11-27 (`FJS-D2413`): A — opt-in props: `toasts` (true or a position) and `confirm`; the scaffold passes both.**
+  - **A** — opt-in props: `toasts` (true or a position) and `confirm`; the scaffold passes both.
+  - **B** — on by default, `toasts={false}` / `confirm={false}` to opt out.
+  - **Recommend A** — chronicle, ela, sstime and example each mount their own, and a second Toaster draws every toast twice with nothing saying so; `collapsible` and `foldable` are the opt-in precedent. Revisit B once every Shell app is converted.
+- ~~**Q9 — The theme switch in Shell (P3, step 4.1).**~~ **Answered 2026-11-27 (`FJS-D2414`): A — Shell draws the ☀/☾ button from `theme` (the current value) and `ontheme(next)`, and `next` is `THEMES[theme].pair`, else a flip by `scheme`.**
+  - **A** — Shell draws the ☀/☾ button from `theme` (the current value) and `ontheme(next)`, and `next` is `THEMES[theme].pair`, else a flip by `scheme`.
+  - **B** — the same button, calling the app's own `toggleTheme`, which cycles every configured theme.
+  - **C** — no built-in switch; it stays in each app's `topbar` snippet.
+  - **Recommend A** — the button is what nearly every app hand-writes, `topbar` already is the slot so a `tools` snippet would be a second name for it, and a cycle of eleven has no "other one"; an app that wants the cycle keeps its own button in `topbar`.
+- ~~**Q10 — How a sidebar Shell drops an empty topbar (P3, step 4.4).**~~ **Answered 2026-11-27 (`FJS-D2415`): A — derived: Shell draws the bar with only the drawer toggle when it has no title, section, `topbar`, theme switch or railed Sign out, and one frame.css rule beside `.sidebar-toggle` hides such a bar at md and up.** serpgrid's rail frame has no bar at md and up, and with no drawer toggle it draws no nav at all below md.
+  - **A** — derived: Shell draws the bar with only the drawer toggle when it has no title, section, `topbar`, theme switch or railed Sign out, and one frame.css rule beside `.sidebar-toggle` hides such a bar at md and up.
+  - **B** — an explicit `bar={false}` prop.
+  - **C** — the app hides `.topbar` at md and up in its own CSS.
+  - **Recommend A** — Shell already holds every input, `bar={false}` restates it and could hide a passed title, and C copies the 768px literal into the app; below md the bar stays and serpgrid gains the drawer it lacks.
+- ~~**Q11 — How a nav group hides its heading (P3, step 4.4).**~~ **Answered 2026-11-27 (`FJS-D2416`): A — a NavGroup `hideLabel: true`, drawn as `<ul aria-label>`; ignored with a warning under `foldable`, whose `<summary>` needs a visible label.** serpgrid's rail draws no group headings; the label is only the list's accessible name.
+  - **A** — a NavGroup `hideLabel: true`, drawn as `<ul aria-label>`; ignored with a warning under `foldable`, whose `<summary>` needs a visible label.
+  - **B** — the app hides `.navlist-label` in its own CSS.
+  - **Recommend A** — Table's column `hideLabel` is the same word for the same thing, `label` stays the one field the palette and the list's name read, and B reaches into a kit class.
+- ~~**Q12 — Where a sidebar's search trigger goes (P3, step 4.4).**~~ **Answered 2026-11-27 (`FJS-D2417`): A — a `head(where)` snippet mirroring `foot(where)`, drawn after the brand and fold line and before the groups, in the sidebar, rail and drawer; not in the topbar layout, where `topbar` is that slot.** serpgrid draws one under the brand line; fiddle wanted the same slot in 4.2.
+  - **A** — a `head(where)` snippet mirroring `foot(where)`, drawn after the brand and fold line and before the groups, in the sidebar, rail and drawer; not in the topbar layout, where `topbar` is that slot.
+  - **B** — Shell draws a Search button whenever `palette` is set.
+  - **C** — the app puts it inside `brand`.
+  - **Recommend A** — no new concept, the app keeps its own trigger; B adds a button to every existing Shell with `palette` and needs an open hook for serpgrid's preloaded rows, and C sets the fold control beside a two-row block.
 
 ## Plan
 
@@ -102,19 +129,27 @@ Done when: thod, transit, calendly, grouppi and the 20 retention apps import the
 Goal: quo and serpgrid run call control, WebRTC credentials and the media stream from conduit-telnyx; ela and sstime take their per-account SMS client from it.
 Done when: conduit-telnyx's tests cover the new modules, quo and serpgrid build and pass, and one live call on each is the owner's check.
 
-- [ ] 3.1 Add carrier code `10039` to the invalid-destination set, and ela's per-account target and key resolver.
-- [ ] 3.2 Promote serpgrid's `index.ts`, `stream.ts`, `sink.ts` as call, credentials and stream modules (Q1). `calls.ts` stays in each app.
-- [ ] 3.3 serpgrid onto it (8 import sites). The conduit's verify is async and takes headers, so every call site changes.
-- [ ] 3.4 quo onto it (8 import sites).
-- [ ] 3.5 ela and sstime onto the per-account SMS client.
+- [x] 3.1 Add carrier code `10039` to the invalid-destination set; `telnyxTarget` takes `perCaller` and a `resilience` the app passes (no default: call control shares the target and its `command_id` replays need retries; a text is already never replayed once it may have left) (Q7). A test sends for two tenants and asserts each carries its own key.
+- [x] 3.2 Promote serpgrid's `index.ts`, `stream.ts`, `sink.ts` as call, credentials and stream modules (Q1). `calls.ts` stays in each app.
+- [x] 3.3 serpgrid onto it (8 import sites). The conduit's verify is async and takes headers, so every call site changes.
+- [x] 3.4 quo onto it (8 import sites).
+- [x] 3.5 ela and sstime onto the per-account SMS client.
+
+**Built 2026-11-26; the owner's live call on quo and serpgrid is open.** conduit-telnyx drive 28 rows; serpgrid 263/0, quo 146/0, grouppi 140/0, sstime 19/8 (the same 8 files fail to load, `hours.xlsx.ts`), ela build + typecheck at its 22. Each app's `providers/telnyx/` is one `index.ts` of 79–85 lines (was 1,100+). `credentialToken` still bypasses conduit (an untyped JWT); a drive row flips when conduit can take it. `sendMessage` gained `messagingProfileId` for serpgrid. quo now sends a typed number normalized (`(555) 123-4567` → `+15551234567`) where it sent it raw, so two `consent.test.ts` pins moved. `sendText` in ela and sstime opens the account's tenant scope itself; junction's conduit plugin refuses an explicit `who`. sstime gained a copy of ela's `account-key.ts` (30 lines), a twin that goes when sstime merges into ela. ela's own tests are unrun (live data): `text-gate`, `outbound`, `surveys-*`, `document-send`, `survey-token`, `messages-page`, `automation-listeners`.
 
 ### Phase 4 — Shell grows what apps add by hand (P3)
 
 Goal: `@frontierjs/ui` `Shell.mesa` mounts the palette, a theme/tools slot and optional Toaster/Confirm, and the 6 hand-built shells use it.
 Done when: each converted app's drive passes and a screenshot of each matches its pre-conversion screen.
 
-- [ ] 4.1 Shell gains a palette hook, a tools snippet and optional Toaster/ConfirmProvider mounts; the scaffold stops hand-writing them.
-- [ ] 4.2 Convert remnant, notion and fiddle.
+- [x] 4.1 Shell gains a palette hook, a tools snippet and optional Toaster/ConfirmProvider mounts; the scaffold stops hand-writing them.
+  - Built 2026-11-26, uncommitted. Shell takes `palette(close)` (it owns ⌘K/Ctrl+K, bound only with the snippet and only while framed), `theme` + `ontheme` (the pair switch, `FJS-D2414`; no `tools` snippet, as `topbar` is that slot) and opt-in `toasts` / `confirm` (`FJS-D2413`). Toaster warns on a second live mount. The scaffold's route module passes `theme={theme.value} ontheme={setTheme} toasts confirm`. Proof: `shell-extras.spec.mjs` 43 rows, ui `bun run test` 2695 passing, cli `generated-mesa.test.js` now compiles and parses the three route-module templates (64 pass).
+- [x] 4.2 Convert remnant, notion and fiddle.
+  - Built 2026-11-27, uncommitted, in `../fjs-prototypes`. Before and after screenshots match except where Shell's frame differs: Sign out moves to the sidebar foot, the ☾ switch sits ahead of the topbar snippet, and notion's workspace picker moves to the bar's right.
+    - **remnant**: `_module.mesa` 145→117 lines, topbar layout, the reader's focus mode hides `.topbar` from the app's own CSS. Build, typecheck and test 136/3 skip/0 are the same as before.
+    - **notion**: 135→121 lines, sidebar layout, the page tree in `foot`. `nav.js` entries are members-only, since without `show` the sign-in page drew the sidebar. Its suite reads 8 pass/5 fail/1 error before and after; the API does not boot in that repo (a shadowed `links` service).
+    - **fiddle**: 113→101 lines, plus `Palette.mesa` 87→71. Its gate contract finds nav links by `data-gate="nav"`, and the gate files are locked by `measure/gates.lock`, so a nav entry now takes `attrs` and Shell puts them on the link, minus `href`, `class`, `prefetch` and `aria-current`. The owner picked this over editing the gate (2026-11-27). There is a `shell.spec.mjs` row for it. The frame draws the nav twice (sidebar and drawer), so `verify-screens.js` dedupes hrefs. Proof: verify:screens 60/0, palette 93/0, pages 245/0 (was 199/1), player 15/0, review 26/0, gate 5 `--small` 47/0. `verify` fails on "the API badge to settle" before and after.
+  - Gaps the conversions found, none built: Shell cannot hide its own topbar; a nav `show` sees only `{user, level}` (notion's Trash follows the workspace, so the layout rebuilds `groups`); there is no slot for a palette trigger and no second palette key (fiddle's "/" stays in its layout).
 - [ ] 4.3 Convert portal (after a ui release; it pins 0.1.9).
 - [ ] 4.4 Convert serpgrid and linear (custom rails and switchers).
 - [ ] 4.5 Mark `IDEAS/app-shell.md` shipped.

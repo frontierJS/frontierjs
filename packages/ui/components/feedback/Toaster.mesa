@@ -1,3 +1,9 @@
+<script module>
+  // Live Toasters in this page. Counted on mount, not at creation, so a
+  // server render that never destroys one leaves the count alone.
+  let live = 0
+</script>
+
 <script>
   // Toaster.mesa
   // Mount once near your app root. Watches toastStore.items and renders each
@@ -8,6 +14,8 @@
   // DIRECT child — the previous version wrapped each in a div, which broke
   // the `>` selector so every toast kept `position: fixed` and they stacked
   // on top of one another in the same corner.
+  //
+  // Shell's `toasts` prop mounts one; do not mount another beside it.
   //
   // Usage:
   //   <!-- App.mesa -->
@@ -24,6 +32,12 @@
 
   export let position = 'bottom-right'  // 'top-right'|'top-left'|'bottom-right'|'bottom-left'|'top-center'|'bottom-center'
   export let max      = 5               // max simultaneous toasts shown
+
+  $.onMount(() => {
+    if (++live > 1)
+      console.warn('[Toaster] a second Toaster is mounted, so every toast is drawn twice — mount one: Shell\'s `toasts` prop or your own <Toaster />, not both')
+  })
+  $.onDestroy(() => { live-- })
 
   // Watch the items array — re-renders when toasts.add() replaces it
   $: toasts.items

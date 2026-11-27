@@ -30,6 +30,7 @@ const { parse: parseJs } = await import(resolve(HERE, '../../mesa/node_modules/a
 const { listPage, createPage, editPage, resourceRoutePage, routeUrl } = await import(resolve(HERE, '../core/crud-templates.js'))
 const { resourceFile } = await import(resolve(HERE, '../core/resource-template.js'))
 const { homePage, isStarterHome } = await import(resolve(HERE, '../core/home-template.js'))
+const { makeRouteModule } = await import(resolve(HERE, '../core/scaffold/web.js'))
 
 // What `fli make:home` writes for two models, the people last.
 const HOME_AREAS = [
@@ -93,6 +94,11 @@ const GENERATED = {
   'make:route — create': resourceRoutePage({ path: 'orders/create', model: 'Order', service: 'orders' }).content,
   'make:route — detail': resourceRoutePage({ path: 'orders/[id]', model: 'Order', service: 'orders' }).content,
   'make:home — home page': home,
+  // `fli new`'s routes/_module.mesa, one per template branch: the Shell's
+  // props and snippets differ between them.
+  'new — route module, auth':         makeRouteModule('Shop', true, true),
+  'new — route module, api, no auth': makeRouteModule('Shop', false, true),
+  'new — route module, no api':       makeRouteModule('Shop', false, false),
 }
 
 describe('what the generators write', () => {

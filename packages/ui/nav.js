@@ -39,12 +39,17 @@
  * @property {(path: string, query: Record<string, string>) => boolean} [match]
  *   current where a path alone cannot say; overrides `href` and `exact`
  * @property {string} [sub]    the palette's second line; the nav does not draw it
+ * @property {Record<string, string>} [attrs]  put on the link, e.g. a test hook
+ *   an outside harness selects on; the shell's own `href`, `class`, `prefetch`
+ *   and `aria-current` win over it
  * @property {(session: any) => boolean} [show]  an affordance; throwing counts as true
  */
 
 /**
  * @typedef {object} NavGroup
  * @property {string | null} label  `null` for an unlabeled first group
+ * @property {boolean} [hideLabel]  draw no heading; the list is named by `label`
+ *   instead. Shell ignores it, with a warning, under `foldable`
  * @property {NavEntry[]} entries
  * @property {(session: any) => boolean} [show]  an affordance; throwing counts as true
  */

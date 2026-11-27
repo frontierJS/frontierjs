@@ -38,6 +38,12 @@ export type NavEntry = {
      */
     sub?: string;
     /**
+     * put on the link, e.g. a test hook
+     * an outside harness selects on; the shell's own `href`, `class`, `prefetch`
+     * and `aria-current` win over it
+     */
+    attrs?: Record<string, string>;
+    /**
      * an affordance; throwing counts as true
      */
     show?: (session: any) => boolean;
@@ -47,6 +53,11 @@ export type NavGroup = {
      * `null` for an unlabeled first group
      */
     label: string | null;
+    /**
+     * draw no heading; the list is named by `label`
+     * instead. Shell ignores it, with a warning, under `foldable`
+     */
+    hideLabel?: boolean;
     entries: NavEntry[];
     /**
      * an affordance; throwing counts as true

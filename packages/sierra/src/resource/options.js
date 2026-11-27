@@ -29,6 +29,23 @@ function labelOf(row, shown, alt = [], parts = null) {
   return undefined
 }
 
+// ── which cached lists a write makes stale ──────────────────────────────────
+//
+// A cached list is a copy of another model's rows, so it is stale the moment
+// one of them is written. It was held for the life of the tab, so the list a
+// picker read while that model had no rows was the list it offered after the
+// first ones were made: a person opened a new PostingRule, found no
+// LedgerAccount to pick, made two, came back, and the picker was still empty
+// until a reload. The model the list reads leads its key, and a resource that
+// lands a write drops every entry keyed by its model, in every resource.
+export const optionsKey = (model, rest) => `${model}|${rest}`
+
+/** Drop the cached lists of `model`'s rows from one resource's cache. */
+export function dropOptionsOf(cache, model) {
+  const lead = `${model}|`
+  for (const k of [...cache.keys()]) if (k.startsWith(lead)) cache.delete(k)
+}
+
 // ── the order a picker offers ────────────────────────────────────────────────
 //
 // One owner for a question three call sites answered separately with the same
@@ -352,7 +369,9 @@ export function makeOptions({ serviceName, app, fields, throughFilters, relatedR
       }
       // The held value is part of the key: the answer can carry a pinned entry
       // for it, so two records asking about one field are two questions.
-      const key   = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}|${JSON.stringify(record?.[fieldName] ?? null)}`
+      // The listed model leads the key, so a write to it drops the entry
+      // (`optionsKey`).
+      const key   = search ? null : optionsKey(vs.model, `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}|${JSON.stringify(record?.[fieldName] ?? null)}`)
       if (key && !reload && _options.has(key)) return _options.get(key)
 
       const setService = relatedResource(serviceNameFor(vs.model) ?? vs.model, vs.model)
@@ -414,7 +433,7 @@ export function makeOptions({ serviceName, app, fields, throughFilters, relatedR
     // keystroke would leave an entry behind for the life of the resource, and
     // the answer is the one thing here guaranteed to be superseded a moment
     // later. The unsearched list is the one worth holding.
-    const key = search ? null : `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}|${JSON.stringify(record?.[fieldName] ?? null)}`
+    const key = search ? null : optionsKey(ref.model, `${fieldName}|${JSON.stringify(query ?? null)}|${labelField ?? ''}|${JSON.stringify(record?.[fieldName] ?? null)}`)
     if (key && !reload && _options.has(key)) return _options.get(key)
 
     const relatedService = serviceNameFor(ref.model) ?? ref.model

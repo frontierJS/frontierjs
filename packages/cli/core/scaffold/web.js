@@ -308,7 +308,7 @@ siteName: ${appName}
 <script>
   import { goto, isActive, page } from '@frontierjs/sierra/router'
   import { status, session, signOut } from '@frontierjs/sierra/resource'
-  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+  import { theme, setTheme } from '@frontierjs/sierra/theme'
   import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
 ${DOT_IMPORT}
   import { groups } from '../lib/nav.js'
@@ -343,16 +343,13 @@ ${DOT_IMPORT}
 <Shell {groups} layout="topbar"
        path={page.pathname} query={page.query}
        user={session.user} level={session.level} checked={session.checked}
-       {isActive} onsignout={out}>
+       {isActive} onsignout={out}
+       theme={theme.value} ontheme={setTheme} toasts confirm>
   {#snippet brand()}
     <strong>{page.siteName}</strong>
   {/snippet}
 
   {#snippet topbar()}
-    <button class="btn ghost square" onclick={toggleTheme}
-            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-      {theme.value === 'theme-dark' ? '☀' : '☾'}
-    </button>
     {#if session.user}
       <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
     {:else}
@@ -370,7 +367,7 @@ siteName: ${appName}
 ---
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
-${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
+${useApi ? "  import { status } from '@frontierjs/sierra/resource'\n" : ''}  import { theme, setTheme } from '@frontierjs/sierra/theme'
   import Shell from '@frontierjs/ui/components/layout/Shell.mesa'
 ${useApi ? DOT_IMPORT : ''}
   import { groups } from '../lib/nav.js'
@@ -392,18 +389,15 @@ ${useApi ? `  // Naming a property in a $: line is what SUBSCRIBES this componen
 -->
 <Shell {groups} layout="topbar"
        path={page.pathname} query={page.query}
-       {isActive}>
+       {isActive}
+       theme={theme.value} ontheme={setTheme} toasts confirm>
   {#snippet brand()}
     <strong>{page.siteName}</strong>
   {/snippet}
-
+${useApi ? `
   {#snippet topbar()}
-    <button class="btn ghost square" onclick={toggleTheme}
-            aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
-      {theme.value === 'theme-dark' ? '☀' : '☾'}
-    </button>
-${useApi ? LIVE_DOT : ''}  {/snippet}
-
+${LIVE_DOT}  {/snippet}
+` : ''}
   <slot />
 </Shell>
 `

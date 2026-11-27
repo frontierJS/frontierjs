@@ -58,6 +58,9 @@ export async function run(t) {
   `), 'a labeled group names its list')
   t.is(await t.evaluate(`return document.querySelectorAll('#stage .sidebar .navlist-label').length;`), 1,
     'an unlabeled group draws no label')
+  // The fixture's Leads entry carries attrs that try to take href and class.
+  t.is(await t.evaluate(`return [...document.querySelectorAll('#stage .sidebar a[data-gate="nav"]')].map(a => a.getAttribute('href') + ' ' + a.classList.contains('navlink') + ' ' + a.classList.contains('stolen')).join('|');`),
+    '/leads/ true false', 'an entry\'s attrs reach its link, and the shell\'s href and class win over them')
   t.is(await t.evaluate(`return document.querySelectorAll('#stage .sidebar .navlink [data-icon]').length;`), 4,
     'the app\'s icon snippet draws each entry that names an icon, and only those')
   t.ok(await t.evaluate(`return !!document.querySelector('#stage .sidebar [data-brand]') && !!document.querySelector('#stage .sidebar [data-foot="sidebar"]');`),

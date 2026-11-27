@@ -31,12 +31,16 @@ export async function verifyTelnyxSignature(opts: {
   const sig = headers['telnyx-signature-ed25519'], ts = headers['telnyx-timestamp']
   if (!sig || !ts) return { ok: false, reason: 'telnyx signature headers are missing' }
   const seconds = Number(ts)
-  if (!Number.isFinite(seconds)) return { ok: false, reason: 'timestamp is not a number' }
+  if (!Number.isInteger(seconds)) return { ok: false, reason: 'timestamp is not a whole number of seconds' }
   const skew = Math.abs(now - seconds)
   if (skew > toleranceSeconds) return { ok: false, reason: `timestamp is ${skew}s out, tolerance is ${toleranceSeconds}s` }
+  const sigBytes = Buffer.from(sig, 'base64')
+  // An Ed25519 signature is 64 bytes; anything else cannot match and is not
+  // worth a curve operation.
+  if (sigBytes.length !== 64) return { ok: false, reason: 'signature is not 64 bytes' }
   let ok = false
   try {
-    ok = await crypto.subtle.verify('Ed25519', await publicKey(opts.publicKey), Buffer.from(sig, 'base64'), new TextEncoder().encode(`${ts}|${rawBody}`))
+    ok = await crypto.subtle.verify('Ed25519', await publicKey(opts.publicKey), sigBytes, new TextEncoder().encode(`${ts}|${rawBody}`))
   } catch { return { ok: false, reason: 'public key or signature is malformed' } }
   if (!ok) return { ok: false, reason: 'signature does not match' }
   try {

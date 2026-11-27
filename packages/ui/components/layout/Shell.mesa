@@ -13,12 +13,15 @@
   //   <Shell {groups} {sections}
   //          path={page.pathname} query={page.query} title={page.title}
   //          user={session.user} level={session.level} checked={session.checked}
-  //          {isActive} onsignout={out}>
+  //          {isActive} onsignout={out}
+  //          theme={theme.value} ontheme={setTheme} toasts confirm>
   //     {#snippet brand()}<a href="/"><img src="/logo.svg" alt="ELA — home" /></a>{/snippet}
   //     {#snippet icon(name)}<Icon {name} />{/snippet}
   //     {#snippet badge(entry)}{#if entry.href === '/leads/'}<Badge>{open}</Badge>{/if}{/snippet}
+  //     {#snippet head(where)}{#if where !== 'rail'}<SearchTrigger />{/if}{/snippet}
   //     {#snippet foot(where)}{#if where === 'sidebar'}<Bell />{/if}{/snippet}
   //     {#snippet topbar()}…the right-hand cluster…{/snippet}
+  //     {#snippet palette(close)}<CommandPalette items={COMMANDS} onclose={close} />{/snippet}
   //     <slot />
   //   </Shell>
   //
@@ -38,6 +41,23 @@
   // while mounted: collapsing a sidebar to a rail for good is the app
   // flipping it.
   // `foot(where)` is told `'sidebar'`, `'rail'`, `'drawer'` or `'topbar'`.
+  // `head(where)` is its mirror at the top: drawn after the brand and fold
+  // line and before the first group, told `'sidebar'`, `'rail'` or `'drawer'`.
+  // The topbar layout's bar never draws it, as `topbar` is that slot, but that
+  // layout's drawer runs through the same nav and does, told `'drawer'`; an
+  // app that wants nothing there returns nothing for it.
+  //
+  // A group with `hideLabel: true` draws no heading and names its list with
+  // `aria-label` instead, in the sidebar, the rail and the drawer. `foldable`
+  // ignores it, with a warning, because a <summary> with no visible text is
+  // a control nobody can read. `label` stays the one field the palette and the
+  // list's name read.
+  //
+  // A sidebar frame whose bar would hold only the drawer toggle (no `title`,
+  // no section tabs or action, no `topbar` snippet, no `ontheme`, no railed
+  // Sign out) draws exactly that, and frame.css hides such a bar from md up.
+  // Shell sees whether a `topbar` snippet was passed, not what it renders, so
+  // a snippet that renders nothing still keeps the bar.
   //
   // `collapsible` puts a fold control at the head of a `sidebar` and
   // `bind:collapsed` is the choice. Folded, the sidebar is a plain rail and
@@ -53,9 +73,27 @@
   // away has no "you are here". A rail does not fold, as its icons are the
   // group, and a topbar's bar does not, as its group is already one menu;
   // its drawer does.
+  //
+  // `palette` is drawn while ⌘K / Ctrl+K has it open, and given a `close`.
+  // With no `palette` nothing is bound, so an app with its own ⌘K listener
+  // is unaffected.
+  //
+  // `ontheme` draws a light/dark switch ahead of the `topbar` snippet and is
+  // called with the next theme name: the current theme's `pair` in
+  // @frontierjs/css/themes.js, else Default or Dark. The app passes Sierra's
+  // `setTheme` and the current value as `theme`. An Observer (FJS-D06 §1):
+  // it receives the choice and cannot refuse it.
+  //
+  // `toasts` mounts the one <Toaster /> (true, or a position) and `confirm`
+  // the one <ConfirmProvider />, outside the frame so the signed-out page has
+  // them. A second Toaster draws every toast twice.
 
   import { sectionFor, visible } from '../../nav.js'
   import { uid } from '../../utils.js'
+  import { commandPalette } from '../../stores/commandPaletteStore.js'
+  import { THEMES } from '@frontierjs/css/themes.js'
+  import Toaster         from '../feedback/Toaster.mesa'
+  import ConfirmProvider from '../overlay/ConfirmProvider.mesa'
   import Drawer       from '../overlay/Drawer.mesa'
   import DropdownItem from '../overlay/DropdownItem.mesa'
   import DropdownMenu from '../overlay/DropdownMenu.mesa'
@@ -79,8 +117,14 @@
   export let brand     = null   // snippet ()
   export let icon      = null   // snippet (name)
   export let badge     = null   // snippet (entry) — a count, drawn after the label
+  export let head      = null   // snippet (where) — 'sidebar' | 'rail' | 'drawer'
   export let foot      = null   // snippet (where) — 'sidebar' | 'rail' | 'drawer' | 'topbar'
   export let topbar    = null   // snippet ()
+  export let palette   = null   // snippet (close) — drawn while ⌘K has it open
+  export let theme     = undefined  // the current theme value, e.g. 'theme-dark'
+  export let ontheme   = undefined  // Observer (next) — the app's setTheme
+  export let toasts    = false  // true, or a Toaster position
+  export let confirm   = false
 
   const LAYOUTS = ['sidebar', 'rail', 'topbar']
   if (!LAYOUTS.includes(layout))
@@ -89,6 +133,17 @@
     console.warn(`[Shell] collapsible folds a sidebar; layout="${layout}" draws no fold control`)
   $: shape = LAYOUTS.includes(layout) ? layout : 'sidebar'
 
+  // A <summary> is the only thing a reader can open a folded group by.
+  const warned = new Set()
+  function warnHiddenLabels(foldable, groups) {
+    if (!foldable) return
+    for (const group of groups)
+      if (group.hideLabel && group.label && !warned.has(group.label)) {
+        warned.add(group.label)
+        console.warn(`[Shell] foldable draws a summary for each labeled group; hideLabel on "${group.label}" is ignored`)
+      }
+  }
+
   // With no isActive nothing is ever current, and a nav with no current page
   // looks like a working nav.
   if (typeof isActive !== 'function' && (groups.length || sections.length))
@@ -96,6 +151,7 @@
 
   $: shown   = visible(groups, { user, level })
   $: section = sectionFor(sections, path)
+  $: warnHiddenLabels(foldable, shown)
   $: framed  = Boolean(user) || shown.length > 0
   $: folded  = shape === 'sidebar' && collapsible && collapsed
   // Folded is a rail: the foot is told so, and Sign out leaves for the bar.
@@ -107,6 +163,11 @@
     if (entry.match) return Boolean(entry.match(path, query ?? {}))
     return Boolean(isActive?.(entry.href, entry.exact ? { exact: true } : undefined))
   }
+
+  // A spread lands after the element's own attributes, so a key the link
+  // already sets is dropped here or it would take the link's class or target.
+  const OWN = new Set(['href', 'class', 'prefetch', 'aria-current'])
+  const linkAttrs = (entry) => entry.attrs && Object.fromEntries(Object.entries(entry.attrs).filter(([k]) => !OWN.has(k)))
 
   // Navigating with the drawer open leaves it over the page it went to. A
   // query-only move (`/contacts/` to `/contacts/?kind=customer`) is a
@@ -130,6 +191,21 @@
     const here = shown.find(group => group.label && group.entries.some(current))
     if (here && chosen[here.label] === false) chosen = { ...chosen, [here.label]: true }
   }
+
+  // Naming commandPalette.open here is what subscribes this component to it.
+  $: commandPalette.open
+  const closePalette = () => commandPalette.hide()
+  // Unframed, the key is ignored rather than toggled: the store would hold the
+  // flag, and the palette would open by itself once the frame drew.
+  function onkey(e) {
+    if (!palette || !checked || !framed) return
+    if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'k') return
+    e.preventDefault()
+    commandPalette.toggle()
+  }
+
+  const isDark = () => THEMES[theme]?.scheme === 'dark'
+  const flip   = () => ontheme(THEMES[theme]?.pair ?? (isDark() ? 'theme-default' : 'theme-dark'))
 
   let signingOut = false
   async function signOut() {
@@ -158,7 +234,7 @@
   app it is an inert attribute.
 -->
 {#snippet entryLink(entry)}
-  <a class="navlink" href={entry.href} prefetch="hover"
+  <a {...linkAttrs(entry)} class="navlink" href={entry.href} prefetch="hover"
      aria-current={current(entry) ? 'page' : null}
   >{#if entry.icon}{@render icon?.(entry.icon)}{/if}<span class="navlink-text">{entry.label}</span>{@render badge?.(entry)}</a>
 {/snippet}
@@ -175,6 +251,17 @@
 <!-- frame.css shows this below md only, and at every width on a touch
      screen beside a rail, which no hover ever opens; opening the drawer is
      ours. -->
+<!-- Mesa takes an expression's dependencies from its text, so `theme` is read
+     first: isDark() alone names nothing reactive. -->
+{#snippet themeSwitch()}
+  {#if ontheme}
+    <button class="btn ghost square" type="button" onclick={flip}
+            aria-label={(theme, isDark()) ? 'Switch to light theme' : 'Switch to dark theme'}>
+      {(theme, isDark()) ? '☀' : '☾'}
+    </button>
+  {/if}
+{/snippet}
+
 {#snippet drawerToggle()}
   <button class="btn ghost square sidebar-toggle" type="button"
           aria-label="Open navigation" aria-expanded={navOpen}
@@ -215,6 +302,7 @@
   {:else}
     {@render brand?.()}
   {/if}
+  {@render head?.(where)}
   {#each shown as group, gi}
     {#if foldable && group.label && where !== 'rail'}
       <!-- The open state is read with (path, query) first, for the same
@@ -230,10 +318,12 @@
       </details>
     {:else}
       <div>
-        {#if group.label}
+        {#if group.label && !(group.hideLabel && !foldable)}
           <div class="navlist-label" id="{ids}-{where}-{gi}">{group.label}</div>
         {/if}
-        <ul class="navlist" aria-labelledby={group.label ? `${ids}-${where}-${gi}` : null}>
+        <ul class="navlist"
+            aria-labelledby={group.label && !(group.hideLabel && !foldable) ? `${ids}-${where}-${gi}` : null}
+            aria-label={group.label && group.hideLabel && !foldable ? group.label : null}>
           {#each group.entries as entry}
             <li>{@render entryLink(entry)}</li>
           {/each}
@@ -264,6 +354,11 @@
     </nav>
   {/if}
 {/snippet}
+
+<mesa:window onkeydown={onkey} />
+
+{#if toasts === true}<Toaster />{:else if toasts}<Toaster position={toasts} />{/if}
+{#if confirm}<ConfirmProvider />{/if}
 
 {#if !checked}
   <!-- The restore is in flight: drawing the signed-out frame now is a flash
@@ -305,6 +400,7 @@
         </nav>
       </div>
       <div class="cluster">
+        {@render themeSwitch()}
         {@render topbar?.()}
         {@render foot?.('topbar')}
         {@render signOutButton()}
@@ -331,8 +427,9 @@
         {@render drawerToggle()}
         {@render sectionBar()}
       </div>
-      {#if topbar || (railed && onsignout && user)}
+      {#if topbar || ontheme || (railed && onsignout && user)}
         <div class="cluster">
+          {@render themeSwitch()}
           {@render topbar?.()}
           {#if railed}{@render signOutButton()}{/if}
         </div>
@@ -351,6 +448,10 @@
       <slot />
     </div>
   </main>
+{/if}
+
+{#if palette && commandPalette.open && checked && framed}
+  {@render palette(closePalette)}
 {/if}
 
 <style>

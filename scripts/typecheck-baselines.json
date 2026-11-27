@@ -9,6 +9,5 @@
   "conduit-n8n": 2,
   "conduit-oidc": 12,
   "conduit-openai": 2,
-  "conduit-s3": 1,
-  "conduit-telnyx": 1
+  "conduit-s3": 1
 }

@@ -145,7 +145,7 @@ import { createTethered, ownsRows } from './tethered.js'
 import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { listCache, listKey } from './list-cache.js'
-import { makeOptions } from './options.js'
+import { makeOptions, dropOptionsOf } from './options.js'
 import { readBaseline } from './read-baseline.js'
 import { declareOffline }      from './offline.js'
 import { writeThrough, readLocal, readMark, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
@@ -400,6 +400,15 @@ const _liveResources = new Set()
  * Called on a token change or a support episode starting or ending. Not on a reconnect and not on
  * a navigation: those do not change who is asking.
  */
+// Each live resource's picker cache, so a write landed by one resource can drop
+// the lists another holds of the written model (`dropOptionsOf`). Held for the
+// life of the tab, as `_liveResources` is, since a resource is made at import.
+const _optionCaches = new Set()
+
+function _dropOptionsEverywhere(model) {
+  for (const cache of _optionCaches) dropOptionsOf(cache, model)
+}
+
 export function resetResourcesForIdentityChange() {
   for (const reset of _liveResources) {
     try { reset() } catch (err) {
@@ -1245,6 +1254,10 @@ export function createResource(serviceName, opts = {}, ...extra) {
     // resource sees the one that just came back rather than the previous read.
     _rememberRows(ctx.result)
     if (ENTRY_WRITES.has(method)) _writeEntry(ctx.result)
+
+    // Any landed write — a create, an edit, a removal, a custom method that may
+    // change a label — makes a cached list of this model's rows stale.
+    if (method !== 'find' && method !== 'get') _dropOptionsEverywhere(model)
   }
 
   // A failed pipeline: mark a post-commit failure, run the error hooks, and
@@ -1940,6 +1953,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
   // different columns and may be filtered differently — but a re-render does
   // not ask again, which is what a component looping over fields would do.
   const _options = new Map()
+  _optionCaches.add(_options)
 
   // One report per field, not per call — `options()` runs on every render of a
   // form and the message is about the schema, which does not change between two

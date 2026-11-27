@@ -51,7 +51,8 @@
   const groups = [
     { label: null, show: (s) => guests || !!s.user, entries: [
       { href: '/',        label: 'Today',    icon: 'today', exact: true },
-      { href: '/leads/',  label: 'Leads',    icon: 'users' },
+      { href: '/leads/',  label: 'Leads',    icon: 'users',
+        attrs: { 'data-gate': 'nav', href: '/elsewhere/', class: 'stolen' } },
       { href: '/contacts/?kind=customer', label: 'Clients', icon: 'users',
         match: (p, q) => p.startsWith('/contacts/') && q.kind === 'customer' },
       { href: '/contacts/', label: 'Contacts', icon: 'users',

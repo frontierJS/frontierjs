@@ -14981,6 +14981,36 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d2417"></a>2026-11-27 · `FJS-D2417` — Q12 — Where a sidebar's search trigger goes (P3, step 4.4) — A `head(where)` snippet mirroring `foot(where)`, drawn after the brand and fold line and before the groups, in the sidebar, rail and drawer; not in the topbar layout, where `topbar` is that slot.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (Shell draws a Search button whenever `palette` is set), **C** (the app puts it inside `brand`).
+
+The paper's recommendation, taken as written: no new concept, the app keeps its own trigger; B adds a button to every existing Shell with `palette` and needs an open hook for serpgrid's preloaded rows, and C sets the fold control beside a two-row block.
+
+### <a id="fjs-d2416"></a>2026-11-27 · `FJS-D2416` — Q11 — How a nav group hides its heading (P3, step 4.4) — A NavGroup `hideLabel: true`, drawn as `<ul aria-label>`; ignored with a warning under `foldable`, whose `<summary>` needs a visible label.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (the app hides `.navlist-label` in its own CSS).
+
+The paper's recommendation, taken as written: Table's column `hideLabel` is the same word for the same thing, `label` stays the one field the palette and the list's name read, and B reaches into a kit class.
+
+### <a id="fjs-d2415"></a>2026-11-27 · `FJS-D2415` — Q10 — How a sidebar Shell drops an empty topbar (P3, step 4.4) — Derived: Shell draws the bar with only the drawer toggle when it has no title, section, `topbar`, theme switch or railed Sign out, and one frame.css rule beside `.sidebar-toggle` hides such a bar at md and up.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (an explicit `bar={false}` prop), **C** (the app hides `.topbar` at md and up in its own CSS).
+
+The paper's recommendation, taken as written: Shell already holds every input, `bar={false}` restates it and could hide a passed title, and C copies the 768px literal into the app; below md the bar stays and serpgrid gains the drawer it lacks.
+
+### <a id="fjs-d2414"></a>2026-11-27 · `FJS-D2414` — Q9 — The theme switch in Shell (P3, step 4.1) — Shell draws the ☀/☾ button from `theme` (the current value) and `ontheme(next)`, and `next` is `THEMES[theme].pair`, else a flip by `scheme`.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (the same button, calling the app's own `toggleTheme`, which cycles every configured theme), **C** (no built-in switch; it stays in each app's `topbar` snippet).
+
+The paper's recommendation, taken as written: the button is what nearly every app hand-writes, `topbar` already is the slot so a `tools` snippet would be a second name for it, and a cycle of eleven has no "other one"; an app that wants the cycle keeps its own button in `topbar`.
+
+### <a id="fjs-d2413"></a>2026-11-27 · `FJS-D2413` — Q8 — Whether Shell mounts Toaster and ConfirmProvider unasked (P3, step 4.1) — Opt-in props: `toasts` (true or a position) and `confirm`; the scaffold passes both.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (on by default, `toasts={false}` / `confirm={false}` to opt out).
+
+The paper's recommendation, taken as written: chronicle, ela, sstime and example each mount their own, and a second Toaster draws every toast twice with nothing saying so; `collapsible` and `foldable` are the opt-in precedent. Revisit B once every Shell app is converted.
+
 ### <a id="fjs-d2401"></a>2026-11-26 · `FJS-D2401` — Q18 — At boot, when any registered schema syncs; on first read or subscribe if no registry exists at boot.
 
 Asked in [`IDEAS/mesa-declared-reactivity.md`](IDEAS/mesa-declared-reactivity.md) § Open questions. **B** was picked over **A** (on the first method call or when a resource that holds writes is created, and document it).
@@ -18668,6 +18698,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d2412"></a>2026-11-26 · `FJS-D2412` — Q7 — How conduit-telnyx carries ela's and sstime's per-account key (P1, step 3.1) — `telnyxTarget({ perCaller: true })`, declared once; the app's resolver answers `getFor(ref, who)` off the account's Integration row. ela's lazily registered `telnyx:<account>` targets and `telnyx-key:` refs go.
+
+Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (fold ela's scheme as-is: `accountTelnyxTarget`, `ensureTelnyxTarget` and a `telnyxKeys` ref router).
+
+The paper's recommendation, taken as written: `per_caller` is conduit's one owner of whose credential a send spends (`FJS-D848`), every sibling conduit spells it `perCaller` (D2409 did the same for serpgrid), and a 401 is no breaker fault, so one account's bad key cannot stop another's texts.
 
 ### <a id="fjs-d2411"></a>2026-11-26 · `FJS-D2411` — Q6 — Where the full address check runs once transit's mailer goes (T4, step 2.2) — Junction's `mail()` plugin runs `assertMessageAddresses` and `assertContentId` on every `send`/`batch` in the wrapper it already installs, so every mailer is checked at one owner; conduit-resend keeps its CRLF check for direct `sendEmail` calls.
 

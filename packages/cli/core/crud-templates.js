@@ -502,7 +502,7 @@ ${idFieldLine(o.res)}${watch}
   // ask names none. Its column is a PATH into the Json column (fields.key),
   // which no flat record[name] reaches, so a value is read by walking it.
   let facts = []
-  const showFacts = () => { facts = ${o.res}.summary().columns }
+  const showFacts = () => { facts = ${o.res}.summary({ except: [idField] }).columns }
   showFacts()
   ${o.res}.declaredFields().then(showFacts, () => {})
 
@@ -531,14 +531,14 @@ ${SC}
 {#if failed}<Alert tone="danger">{failed}</Alert>{/if}
 
 ${o.gate ? gateNotice(o.res, 'patch') : ''}{#if record && facts.length}
-  <dl class="facts">
-    {#each facts as c}
-      <div>
+  <div class="card">
+    <dl class="facts divided">
+      {#each facts as c}
         <dt>{c.label}</dt>
         <dd><Cell value={factOf(record, c.name)} column={c} {record} /></dd>
-      </div>
-    {/each}
-  </dl>
+      {/each}
+    </dl>
+  </div>
 {/if}
 
 {#if record && movesOf(record).length}

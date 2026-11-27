@@ -1,10 +1,10 @@
-// @frontierjs/conduit-telnyx — Telnyx messaging over conduit.
+// @frontierjs/conduit-telnyx — Telnyx over conduit: texts, call control,
+// WebRTC credentials and the media stream.
 //
-// NEW on this machine: the brief named `fjs-prototypes/quo/api/src/providers/
-// telnyx/` as the extraction source and it is not present here, so this is
-// written from the v2 API. Bearer over JSON, an Ed25519 webhook — the second
-// signature family after Stripe's HMAC, which is what it brings to the
-// contract argument.
+// Extracted from the quo and serpgrid providers, which ran against the live
+// carrier. Bearer over JSON, an Ed25519 webhook — the second signature family
+// after Stripe's HMAC. Every call takes the bound `send` first; an app's
+// environment, its default country and its connection ids stay in the app.
 //
 // `sent` and `delivered` are two columns. The send answers `queued`/`sent`;
 // `delivered` arrives on `message.finalized` minutes later, and a connector
@@ -17,6 +17,9 @@ import type { TelnyxMessage } from './types.ts'
 export * from './types.ts'
 export * from './errors.ts'
 export * from './verify.ts'
+export * from './calls.ts'
+export * from './credentials.ts'
+export * from './stream.ts'
 
 export const TELNYX_TARGET  = 'provider:telnyx'
 export const TELNYX_ADDRESS = 'https://api.telnyx.com'
@@ -26,13 +29,20 @@ export function bindSend(conduit: { send<T>(req: ConduitRequest): Promise<Condui
   return req => conduit.send({ target, ...req })
 }
 
-export function telnyxTarget(opts: { ref?: string; address?: string; id?: string } = {}): TargetDescriptor {
+/**
+ * `perCaller` asks the resolver `getFor(ref, who)`, so one account's key is
+ * never sent for another tenant's call (`FJS-D848`). `resilience` has no
+ * default: call control shares this target and its `command_id` replays need
+ * retries, while a text is never replayed once it may have left.
+ */
+export function telnyxTarget(opts: { ref?: string; address?: string; id?: string; perCaller?: boolean; resilience?: TargetDescriptor['resilience'] } = {}): TargetDescriptor {
   return {
     id:            opts.id ?? TELNYX_TARGET,
     kind:          'provider',
     protocol:      'http',
     address:       opts.address ?? TELNYX_ADDRESS,
-    auth:          { type: 'bearer', ref: opts.ref ?? 'TELNYX_API_KEY' },
+    auth:          { type: 'bearer', ref: opts.ref ?? 'TELNYX_API_KEY', ...(opts.perCaller ? { per_caller: true as const } : {}) },
+    ...(opts.resilience ? { resilience: opts.resilience } : {}),
     registered_at: Date.now(),
     last_seen_at:  null,
   }
@@ -57,6 +67,9 @@ export function toE164(input: string, defaultCountry?: string): string {
   return out
 }
 
+/** `+` and 7–15 digits, as the carrier spells a number back; `toE164` is the stricter check on what an app is about to send. */
+export const isE164 = (s: unknown): s is string => typeof s === 'string' && /^\+[1-9]\d{6,14}$/.test(s)
+
 export async function sendMessage(send: Send, req: {
   from:            string
   to:              string
@@ -64,6 +77,8 @@ export async function sendMessage(send: Send, req: {
   mediaUrls?:      string[]
   /** Where Telnyx POSTs `message.sent` and `message.finalized`. */
   webhookUrl?:     string
+  /** Overrides the profile the `from` number sits on; absent, Telnyx uses that one. */
+  messagingProfileId?: string
   defaultCountry?: string
 }): Promise<{ message?: TelnyxMessage; error?: TelnyxFailure }> {
   const to = toE164(req.to, req.defaultCountry), from = toE164(req.from, req.defaultCountry)
@@ -73,6 +88,7 @@ export async function sendMessage(send: Send, req: {
     ...(req.text ? { text: req.text } : {}),
     ...(req.mediaUrls?.length ? { media_urls: req.mediaUrls } : {}),
     ...(req.webhookUrl ? { webhook_url: req.webhookUrl } : {}),
+    ...(req.messagingProfileId ? { messaging_profile_id: req.messagingProfileId } : {}),
   } })
   if (r.error) return { error: translate(r.error) }
   return { message: r.data.data }

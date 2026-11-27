@@ -3,8 +3,8 @@
 // Two refusals matter more than the rest and both are 4xx `client_error` to
 // conduit: a recipient who texted STOP (sending again is a legal problem, not a
 // retry) and a number that is not a number. The CODES below are the ones the
-// sink answers; they are copied from Telnyx's error catalog from memory and
-// `PROJECT_STATE.md` marks them as unverified against a real account.
+// sink answers; `40300` and `10039` were seen against the live carrier, the rest
+// are from Telnyx's catalog, and this is the one place to correct them.
 
 import type { ConduitError } from '@frontierjs/conduit'
 import type { TelnyxErrorBody } from './types.ts'
@@ -14,7 +14,7 @@ export type TelnyxFailureKind = 'opted_out' | 'invalid_destination' | 'refused' 
 export interface TelnyxFailure { kind: TelnyxFailureKind; code?: string; message: string; retryable: boolean; retryAfterMs?: number }
 
 export const OPTED_OUT_CODES          = new Set(['40300'])
-export const INVALID_DESTINATION_CODES = new Set(['40001', '40310', '40311'])
+export const INVALID_DESTINATION_CODES = new Set(['40001', '40310', '40311', '10039'])
 
 export function translate(error: ConduitError): TelnyxFailure {
   let body: TelnyxErrorBody | null = null

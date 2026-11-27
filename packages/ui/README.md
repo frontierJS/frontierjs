@@ -110,7 +110,7 @@ compose freely, so Button takes each as its own prop:
 `Avatar` `AvatarGroup` `AttachmentList` `FileType` `Stat` `StatCard` `Table` `Bar` `Sparkline`
 `AccountStatus` `SignatureView` `Json` (read, or `editable`) `ThemeSwatch` `ThemePicker`
 
-**layout** — `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
+**layout** — `Shell` `Card` `Accordion` `AccordionItem` `Tabs` `TabList` `Tab` `TabPanel`
 
 **overlay** — `Modal` `Drawer` `Window` `Popover` `Tooltip` `HoverCard` `DropdownMenu`
 `DropdownItem` `DropdownGroup` `DropdownSeparator` `DropdownSubmenu` `CommandPalette`
@@ -123,7 +123,8 @@ compose freely, so Button takes each as its own prop:
 
 ## A destructive action confirms itself
 
-Mount `<ConfirmProvider />` once near the root, beside `<Toaster />`. After that
+Mount `<ConfirmProvider />` once near the root, beside `<Toaster />` (an app
+framed by `Shell` passes it `confirm` and `toasts` instead). After that
 any element asks for a confirmation by writing an attribute — no wiring, no
 component, and it works on an element this kit does not own:
 
