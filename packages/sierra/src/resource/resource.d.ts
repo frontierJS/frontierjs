@@ -24,14 +24,6 @@ export function tetherOf(resource?: any): any;
  *        the caller — a server-filled default — is not seeded.
  */
 export function createMakeFromSchema(properties: object, skip?: string[], resolve?: (ref: string) => object | null, foreignKeys?: string[], required?: string[]): any;
-/**
- * Drop everything every live resource is holding on behalf of the previous
- * principal — the tether, the remembered revisions, the cached picker
- * lists, and the ids this resource has read.
- *
- * Called on a token change or a support episode starting or ending. Not on a reconnect and not on
- * a navigation: those do not change who is asking.
- */
 export function resetResourcesForIdentityChange(): void;
 /**
  * Create a resource wrapper for a Junction service with a full 4-phase
@@ -44,7 +36,7 @@ export function resetResourcesForIdentityChange(): void;
  * as it arrives rather than keying rows by a column that does not exist
  * (`FJS-998`).
  *
- * Returns { service, tethered, record, make, save, fields, relations, gate, can,
+ * Returns { service, tethered, record, make, save, fields, relations, gate, can, offers,
  *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
  *           hooks, … }
  *   service  — pass-through of the Junction client: find() gives the list
@@ -262,6 +254,7 @@ export function createResource(serviceName?: any, opts?: {}, ...extra: any[]): {
     labelAlt: any[];
     gate: any;
     can: () => boolean;
+    offers: () => boolean;
     transitions: () => any[];
     commitments: () => any[];
     sealedFields: () => any[];
@@ -389,6 +382,7 @@ export function createResource(serviceName?: any, opts?: {}, ...extra: any[]): {
         delete: number;
     };
     can: (operation: string, level?: number, row?: object) => boolean;
+    offers: (op: string) => boolean;
     transitions: (row: any, level: any) => {
         allowed: boolean;
         refusedBy: any;

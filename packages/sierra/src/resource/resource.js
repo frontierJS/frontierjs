@@ -146,6 +146,7 @@ import { liveRecord } from './record.js'
 import { pendingQueue, unreachable } from './pending.js'
 import { listCache, listKey } from './list-cache.js'
 import { makeOptions, dropOptionsOf } from './options.js'
+import { offeredNow, offered } from './offers.js'
 import { readBaseline } from './read-baseline.js'
 import { declareOffline }      from './offline.js'
 import { writeThrough, readLocal, readMark, dropRows, answeredWhole, localDbConfigured } from './local-db.js'
@@ -452,7 +453,7 @@ function refuseOtherShapes(serviceName, opts, extra) {
  * as it arrives rather than keying rows by a column that does not exist
  * (`FJS-998`).
  *
- * Returns { service, tethered, record, make, save, fields, relations, gate, can,
+ * Returns { service, tethered, record, make, save, fields, relations, gate, can, offers,
  *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
  *           hooks, … }
  *   service  — pass-through of the Junction client: find() gives the list
@@ -945,6 +946,19 @@ export function createResource(serviceName, opts = {}, ...extra) {
     if (!canAtLevel(gate, operation, level)) return false
     const key = ROW_ANSWER[operation]
     return !key || row?._can?.[key] !== false
+  }
+
+  /**
+   * Does this resource's service offer `op` at all — is it in the service's
+   * `methods:`? `can()` is whether the caller's level clears the gate; this
+   * is whether the verb exists, which only the app knows, so it is asked of
+   * the app once and is `true` until it answers. A UI affordance only.
+   *
+   * @param {string} op   a service method name: `patch`, `remove`, `approve`
+   * @returns {boolean}
+   */
+  function offers(op) {
+    return offeredNow(client, serviceName, op)
   }
 
   /**
@@ -1985,7 +1999,8 @@ export function createResource(serviceName, opts = {}, ...extra) {
     return r
   }
 
-  const { options } = makeOptions({ serviceName, app, fields, throughFilters, relatedResource, _options, _labelWarned, _headWarned })
+  const { options } = makeOptions({ serviceName, app, fields, throughFilters, relatedResource, _options, _labelWarned, _headWarned,
+    offered: (service, op) => offered(client, service, op) })
 
 
   /**
@@ -2431,7 +2446,7 @@ export function createResource(serviceName, opts = {}, ...extra) {
      * because the call could not arrive.
      */
     cachedAt: () => _cachedAt,
-    fields, collations, relations, gate, can, transitions, commitments, validate, normalize, coerce,
+    fields, collations, relations, gate, can, offers, transitions, commitments, validate, normalize, coerce,
     version, versionField: versionOf, templateField, conflict,
     formFields, columns, declaredFields, summary, children, filters, options, sealedFields, requiredFields, preview, declined,
     withheld: withheldFor,
@@ -2499,6 +2514,7 @@ function _emptyResource(name) {
     // in the app, which is also what `session.level = 0` next door refuses to
     // do for a caller with no session.
     can:         () => false,
+    offers:      () => false,
     transitions: () => [],
     commitments: () => [],
     // A create form is making a draft and nothing is sealed, which is the same

@@ -419,9 +419,11 @@ export function normalizeTableDdl(sql) {
 // would still fool the depth count. It is a column list, so that is a shape
 // nothing in this repo can emit and a converter reading one is told rather than
 // guessed at — `isIndexExpression` is how the caller sees it is not a name.
+// `[ArtistId]` is SQLite's third quoting, and Chinook writes every name in it;
+// left on, each plain foreign-key index read as an expression and was dropped.
 export function parseIndexColumns(sql) {
   return rawIndexMembers(sql)
-    .map(c => stripSort(c.trim()).member.replace(/^["'`]|["'`]$/g, ''))
+    .map(c => stripSort(c.trim()).member.replace(/^\[([^\]]*)\]$/, '$1').replace(/^["'`]|["'`]$/g, ''))
     .filter(Boolean)
 }
 

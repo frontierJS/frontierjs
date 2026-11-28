@@ -272,6 +272,20 @@ describe('a live list keeps its page', () => {
     expect(stale.get()).toBe(1)
   })
 
+  it('a removal before a later page of a filtered list re-asks the page', async () => {
+    // The frame is the key alone (FJS-D2418), so the filter cannot say whether
+    // the row was one of this query's, and every row behind it may have shifted.
+    const { restore } = mockList([{ id: 5, status: 'open' }, { id: 6, status: 'open' }], { limit: 2, offset: 4, total: 9 })
+    const match = (r: Record<string, unknown>, q: Record<string, unknown>) => r.status === q.status
+    const { service, tether, load, stale } = client().resource('items', { match })
+    await load({ status: 'open' }, { limit: 2, offset: 4 })
+    restore()
+
+    service._receive('removed', { id: 1 })
+    expect(tether.get().map(r => r.id)).toEqual([5, 6])
+    expect(stale.get()).toBe(1)
+  })
+
   it('a removal from a list that IS everything leaves no gap', async () => {
     const { restore } = mockList([{ id: 1 }, { id: 2 }], { limit: 20, offset: 0, total: 2 })
     const { service, load, stale } = client().resource('items')

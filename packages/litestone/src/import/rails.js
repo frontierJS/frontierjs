@@ -16,6 +16,9 @@
 import { singularize, camel, modelName } from '@frontierjs/toolbelt/inflect'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
+import { toMinorUnits, scaleOf } from './scale.js'
+import { carriesArray, ARRAY_ELEMENT_EMITTED } from './array.js'
+import { translateCheck } from './sql.js'
 import { predicateToLite } from '../core/migrate.js'
 
 // Rails column type → .lite type. `decimal` is handled separately (it carries a
@@ -60,7 +63,7 @@ function readTables(/** @type {string} */ src, /** @type {any} */ gap) {
     const open = line.match(/^create_table "([^"]+)"(?:, (.*?))? do \|t\|$/)
     if (open) {
       const [, table, opts = ''] = open
-      cur = { table, model: modelName(table), cols: [], indexes: [], fks: [], opts }
+      cur = { table, model: modelName(table), cols: [], indexes: [], checks: [], fks: [], opts }
       tables.set(table, cur)
 
       // `id: false` is a join table or a table keyed by something else; .lite
@@ -81,6 +84,9 @@ function readTables(/** @type {string} */ src, /** @type {any} */ gap) {
     if (cur && line === 'end') { cur = null; continue }
 
     if (cur && line.startsWith('t.index ')) { cur.indexes.push(line); continue }
+    // Before the column branch: `t.check_constraint "calls_count >= 0"` has a
+    // column's shape, and read as one it emitted a field named `callsCount>=0`.
+    if (cur && line.startsWith('t.check_constraint ')) { cur.checks.push(line); continue }
     if (cur && line.startsWith('t.')) { cur.cols.push(line); continue }
   }
   return tables
@@ -172,6 +178,13 @@ function emitTable(/** @type {any} */ t, /** @type {any} */ tables, /** @type {a
     out.push(`  ${a}`)
   }
 
+  for (const raw of t.checks) {
+    const src = raw.match(/^t\.check_constraint "((?:[^"\\]|\\.)*)"/)?.[1]?.replace(/\\"/g, '"')
+    if (!src) { gap('unparsed-line', t.model, null, raw.slice(0, 80), 'dropped'); continue }
+    const expr = translateCheck(src, (/** @type {string} */ id) => byColumn.has(id) || id === 'id', gap, t.model)
+    if (expr !== null) out.push(`  @@check(${JSON.stringify(expr)})`)
+  }
+
   out.push('}', '')
   return out.join('\n')
 }
@@ -216,11 +229,22 @@ function readColumn(/** @type {string} */ raw, /** @type {any} */ t, /** @type {
       gap('json-object-default', t.model, name, `default: ${def}`,
           `@default("${def.replace(/"/g, '\\"')}") is the .lite spelling for a Json default — emitted as a string`)
     else if (def === 'nil') { /* nothing to say */ }
-    else extra.push(`@default(${railsDefault(def, type)})`)
+    else {
+      // schema.rb quotes a decimal default — `default: "0.0"`.
+      const places = scaleOf(extra)
+      const minor  = places === null ? railsDefault(def, type) : toMinorUnits(def.replace(/^"|"$/g, ''), places)
+      if (minor === null) gap('default-over-scale', t.model, name, `default: ${def}`, `dropped — more places than @scale(${places}) holds`)
+      else extra.push(`@default(${minor})`)
+    }
   }
 
   // The source spelling travels: whether a `t.bigint` is worth reporting turns
   // on whether it is a foreign key, which is a fact about the TABLE.
+  if (isArray && !carriesArray(type, false, extra)) {
+    gap('array-element-type', t.model, name, `t.${railsType} array: true`, ARRAY_ELEMENT_EMITTED)
+    const kept = extra.filter(a => !a.startsWith('@scale'))
+    return { name, type: 'Json', optional, isArray: false, extra: kept, relation: /** @type {any} */ (null), railsType }
+  }
   return { name, type, optional, isArray, extra, relation: /** @type {any} */ (null), railsType }
 }
 

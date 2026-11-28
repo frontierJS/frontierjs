@@ -1,10 +1,11 @@
 // mastodon — the data model of mastodon/mastodon, expressed in .lite.
 //
-// Derived mechanically from db/schema.rb (AGPL-3.0) by
+// Derived mechanically from db/schema.rb (AGPL-3.0) at
+// f93c069094a6 (2026-11-25) by
 // `litestone import --from rails`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
-// gaps.json. 116 models. Regenerate with fetch.mjs.
+// gaps.json. 123 models. Regenerate with fetch.mjs.
 
 model AccountAlias {
   id Int @id @default(autoincrement())
@@ -23,7 +24,7 @@ model AccountConversation {
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   conversationId Int @map("conversation_id")
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  lastStatusId Int? @map("last_status_id")
+  lastStatusId Int? @map("last_status_id") @big
   lockVersion Int @map("lock_version") @default(0)
   participantAccountIds Int[] @map("participant_account_ids")
   statusIds Int[] @map("status_ids")
@@ -57,7 +58,7 @@ model AccountMigration {
   account Account? @relation(fields: [accountId], references: [id], onDelete: Cascade)
   acct String @default("")
   createdAt DateTime @map("created_at")
-  followersCount Int @map("followers_count") @default(0)
+  followersCount Int @map("followers_count") @default(0) @big
   targetAccountId Int? @map("target_account_id")
   targetAccount Account? @relation(fields: [targetAccountId], references: [id], onDelete: SetNull)
   updatedAt DateTime @map("updated_at")
@@ -103,6 +104,18 @@ model AccountPin {
   @@index([targetAccountId])
 }
 
+model AccountReachFilter {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bloomFilter Bytes? @map("bloom_filter")
+  createdAt DateTime @map("created_at")
+  salt String
+  saturated Boolean @default(false)
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId])
+}
+
 model AccountRelationshipSeveranceEvent {
   id Int @id @default(autoincrement())
   accountId Int @map("account_id")
@@ -122,10 +135,10 @@ model AccountStat {
   accountId Int @map("account_id")
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   createdAt DateTime @map("created_at")
-  followersCount Int @map("followers_count") @default(0)
-  followingCount Int @map("following_count") @default(0)
+  followersCount Int @map("followers_count") @default(0) @big
+  followingCount Int @map("following_count") @default(0) @big
   lastStatusAt DateTime? @map("last_status_at")
-  statusesCount Int @map("statuses_count") @default(0)
+  statusesCount Int @map("statuses_count") @default(0) @big
   updatedAt DateTime @map("updated_at")
   @@unique([accountId])
   @@index([lastStatusAt, accountId])
@@ -163,6 +176,7 @@ model AccountWarningPreset {
   text String @default("")
   title String @default("")
   updatedAt DateTime @map("updated_at")
+  actionCategory String @map("action_category") @default("all_actions")
 }
 
 model AccountWarning {
@@ -179,6 +193,7 @@ model AccountWarning {
   targetAccount Account? @relation(fields: [targetAccountId], references: [id], onDelete: Cascade)
   text String @default("")
   updatedAt DateTime @map("updated_at")
+  includeRuleViolations Boolean @map("include_rule_violations") @default(true)
   @@index([accountId])
   @@index([targetAccountId])
 }
@@ -223,7 +238,6 @@ model Account {
   movedToAccount Account? @relation(fields: [movedToAccountId], references: [id], onDelete: SetNull)
   note String @default("")
   outboxUrl String @map("outbox_url") @default("")
-  privateKey String? @map("private_key")
   protocol Int @default(0)
   publicKey String @map("public_key") @default("")
   requestedDeletionAt DateTime? @map("requested_deletion_at")
@@ -262,15 +276,30 @@ model AdminActionLog {
   action String @default("")
   createdAt DateTime @map("created_at")
   humanIdentifier String? @map("human_identifier")
+  moderationSubscriptionId Int? @map("moderation_subscription_id")
   permalink String?
   recordedChanges Json? @map("recorded_changes")
   recordedChangesFormat String? @map("recorded_changes_format")
   routeParam String? @map("route_param")
-  targetId Int? @map("target_id")
+  targetId Int? @map("target_id") @big
   targetType String? @map("target_type")
   updatedAt DateTime @map("updated_at")
   @@index([accountId])
+  @@index([moderationSubscriptionId], where: moderationSubscriptionId != null)
   @@index([targetType, targetId])
+}
+
+model AdminServerCheck {
+  id Int @id @default(autoincrement())
+  key String
+  status Int @default(0)
+  severity Int @default(0)
+  ignored Boolean @default(false)
+  data Json?
+  checkedAt DateTime? @map("checked_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([key])
 }
 
 model AnnouncementMute {
@@ -318,7 +347,7 @@ model Announcement {
 model AnnualReportStatusesPerAccountCount {
   id Int @id @default(autoincrement())
   accountId Int @map("account_id")
-  statusesCount Int @map("statuses_count")
+  statusesCount Int @map("statuses_count") @big
   year Int
   @@unique([year, accountId])
 }
@@ -349,7 +378,7 @@ model Backup {
   createdAt DateTime @map("created_at")
   dumpContentType String? @map("dump_content_type")
   dumpFileName String? @map("dump_file_name")
-  dumpFileSize Int? @map("dump_file_size")
+  dumpFileSize Int? @map("dump_file_size") @big
   dumpUpdatedAt DateTime? @map("dump_updated_at")
   processed Boolean @default(false)
   updatedAt DateTime @map("updated_at")
@@ -439,8 +468,10 @@ model CollectionItem {
   updatedAt DateTime @map("updated_at")
   uri String?
   @@unique([accountId, collectionId], nullsDistinct: true)
+  @@unique([approvalUri], where: approvalUri != null)
   @@index([collectionId])
   @@index([state])
+  @@unique([uri], where: uri != null)
 }
 
 model CollectionReport {
@@ -476,6 +507,7 @@ model Collection {
   url String?
   @@index([accountId])
   @@index([tagId])
+  @@unique([uri], where: uri != null)
 }
 
 model ConversationMute {
@@ -490,10 +522,12 @@ model ConversationMute {
 model Conversation {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
-  parentAccountId Int? @map("parent_account_id")
-  parentStatusId Int? @map("parent_status_id")
+  parentAccountId Int? @map("parent_account_id") @big
+  parentStatusId Int? @map("parent_status_id") @big
   updatedAt DateTime @map("updated_at")
   uri String?
+  @@unique([parentStatusId], where: parentStatusId != null)
+  @@unique([uri], where: uri != null)
 }
 
 model CustomEmojiCategory {
@@ -508,7 +542,7 @@ model CustomEmojiCategory {
 
 model CustomEmojis {
   id Int @id @default(autoincrement())
-  categoryId Int? @map("category_id")
+  categoryId Int? @map("category_id") @big
   createdAt DateTime @map("created_at")
   disabled Boolean @default(false)
   domain String?
@@ -565,14 +599,19 @@ model DomainAllow {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
   domain String @default("")
+  moderationSubscriptionId Int? @map("moderation_subscription_id")
+  moderationSubscription ModerationSubscription? @relation(fields: [moderationSubscriptionId], references: [id], onDelete: SetNull)
   updatedAt DateTime @map("updated_at")
   @@unique([domain])
+  @@index([moderationSubscriptionId])
 }
 
 model DomainBlock {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
   domain String @default("")
+  moderationSubscriptionId Int? @map("moderation_subscription_id")
+  moderationSubscription ModerationSubscription? @relation(fields: [moderationSubscriptionId], references: [id], onDelete: SetNull)
   obfuscate Boolean @default(false)
   privateComment String? @map("private_comment")
   publicComment String? @map("public_comment")
@@ -581,6 +620,7 @@ model DomainBlock {
   severity Int? @default(0)
   updatedAt DateTime @map("updated_at")
   @@unique([domain])
+  @@index([moderationSubscriptionId])
 }
 
 model EmailDomainBlock {
@@ -605,6 +645,7 @@ model EmailSubscription {
   locale String
   updatedAt DateTime @map("updated_at")
   @@unique([accountId, email])
+  @@unique([confirmationToken], where: confirmationToken != null)
 }
 
 model FaspBackfillRequest {
@@ -618,6 +659,18 @@ model FaspBackfillRequest {
   maxCount Int @map("max_count") @default(100)
   updatedAt DateTime @map("updated_at")
   @@index([faspProviderId])
+}
+
+model FaspCapability {
+  id Int @id @default(autoincrement())
+  createdAt DateTime @map("created_at")
+  enabled Boolean @default(false)
+  faspProviderId Int @map("fasp_provider_id")
+  faspProvider FaspProvider @relation(fields: [faspProviderId], references: [id])
+  name String
+  updatedAt DateTime @map("updated_at")
+  version String
+  @@unique([faspProviderId, name, version])
 }
 
 model FaspDebugCallback {
@@ -646,7 +699,6 @@ model FaspFollowRecommendation {
 model FaspProvider {
   id Int @id @default(autoincrement())
   baseUrl String @map("base_url")
-  capabilities Json
   confirmed Boolean @default(false)
   contactEmail String? @map("contact_email")
   createdAt DateTime @map("created_at")
@@ -698,7 +750,7 @@ model FeaturedTag {
   createdAt DateTime @map("created_at")
   lastStatusAt DateTime? @map("last_status_at")
   name String?
-  statusesCount Int @map("statuses_count") @default(0)
+  statusesCount Int @map("statuses_count") @default(0) @big
   tagId Int @map("tag_id")
   tag Tag @relation(fields: [tagId], references: [id], onDelete: Cascade)
   updatedAt DateTime @map("updated_at")
@@ -893,7 +945,7 @@ model LoginActivity {
 model Marker {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
-  lastReadId Int @map("last_read_id") @default(0)
+  lastReadId Int @map("last_read_id") @default(0) @big
   lockVersion Int @map("lock_version") @default(0)
   timeline String @default("")
   updatedAt DateTime @map("updated_at")
@@ -932,6 +984,7 @@ model MediaAttachment {
   updatedAt DateTime @map("updated_at")
   @@index([accountId, statusId])
   @@index([scheduledStatusId], where: scheduledStatusId != null)
+  @@unique([shortcode], where: shortcode != null)
   @@index([statusId])
 }
 
@@ -946,6 +999,49 @@ model Mention {
   updatedAt DateTime @map("updated_at")
   @@unique([accountId, statusId])
   @@index([statusId])
+}
+
+model ModerationSubscriptionAdvisory {
+  id Int @id @default(autoincrement())
+  action Int
+  createdAt DateTime @map("created_at")
+  moderationSubscriptionId Int @map("moderation_subscription_id")
+  moderationSubscription ModerationSubscription @relation(fields: [moderationSubscriptionId], references: [id])
+  targetKey String @map("target_key")
+  targetType Int @map("target_type")
+  updatedAt DateTime @map("updated_at")
+  @@index([moderationSubscriptionId])
+  @@unique([targetType, targetKey, moderationSubscriptionId])
+}
+
+model ModerationSubscription {
+  id Int @id @default(autoincrement())
+  applyAutomatically Boolean @map("apply_automatically") @default(false)
+  createdAt DateTime @map("created_at")
+  lastSyncedAt DateTime? @map("last_synced_at")
+  listAction Int? @map("list_action")
+  name String?
+  overrideUnattributed Boolean @map("override_unattributed") @default(false)
+  preserveRelationships Boolean @map("preserve_relationships") @default(true)
+  priority Int?
+  retractAutomatically Boolean @map("retract_automatically") @default(true)
+  type Int
+  updatedAt DateTime @map("updated_at")
+  url String
+}
+
+model ModerationSuggestion {
+  id Int @id @default(autoincrement())
+  moderationSubscriptionId Int? @map("moderation_subscription_id")
+  moderationSubscription ModerationSubscription? @relation(fields: [moderationSubscriptionId], references: [id], onDelete: SetNull)
+  state Int @default(0)
+  action Int
+  targetType Int @map("target_type")
+  targetKey String @map("target_key")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([moderationSubscriptionId])
+  @@unique([targetType, targetKey, action])
 }
 
 model Mute {
@@ -998,7 +1094,7 @@ model NotificationRequest {
   fromAccount Account @relation(fields: [fromAccountId], references: [id], onDelete: Cascade)
   lastStatusId Int? @map("last_status_id")
   lastStatus Status? @relation(fields: [lastStatusId], references: [id], onDelete: SetNull)
-  notificationsCount Int @map("notifications_count") @default(0)
+  notificationsCount Int @map("notifications_count") @default(0) @big
   updatedAt DateTime @map("updated_at")
   @@unique([accountId, fromAccountId])
   @@index([fromAccountId])
@@ -1009,7 +1105,7 @@ model Notification {
   id Int @id @default(autoincrement())
   accountId Int @map("account_id")
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  activityId Int @map("activity_id")
+  activityId Int @map("activity_id") @big
   activityType String @map("activity_type")
   createdAt DateTime @map("created_at")
   filtered Boolean @default(false)
@@ -1056,6 +1152,7 @@ model OauthAccessToken {
   revokedAt DateTime? @map("revoked_at")
   scopes String?
   token String
+  @@unique([refreshToken], where: refreshToken != null)
   @@index([resourceOwnerId], where: resourceOwnerId != null)
   @@unique([token])
 }
@@ -1086,7 +1183,7 @@ model PgheroSpaceStat {
   database String?
   relation String?
   schema String?
-  size Int?
+  size Int? @big
   @@index([database, capturedAt])
 }
 
@@ -1119,8 +1216,8 @@ model Poll {
   statusId Int @map("status_id")
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
   updatedAt DateTime @map("updated_at")
-  votersCount Int? @map("voters_count")
-  votesCount Int @map("votes_count") @default(0)
+  votersCount Int? @map("voters_count") @big
+  votesCount Int @map("votes_count") @default(0) @big
   @@index([accountId])
   @@index([statusId])
 }
@@ -1131,7 +1228,7 @@ model PreviewCardProvider {
   domain String @default("")
   iconContentType String? @map("icon_content_type")
   iconFileName String? @map("icon_file_name")
-  iconFileSize Int? @map("icon_file_size")
+  iconFileSize Int? @map("icon_file_size") @big
   iconUpdatedAt DateTime? @map("icon_updated_at")
   requestedReviewAt DateTime? @map("requested_review_at")
   reviewedAt DateTime? @map("reviewed_at")
@@ -1192,7 +1289,7 @@ model PreviewCard {
 model PreviewCardsStatus {
   id Int @id @default(autoincrement())
   previewCardId Int @map("preview_card_id")
-  statusId Int @map("status_id")
+  statusId Int @map("status_id") @big
   url String?
 }
 
@@ -1213,6 +1310,7 @@ model Quote {
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
   updatedAt DateTime @map("updated_at")
   @@index([accountId, quotedAccountId])
+  @@unique([activityUri], where: activityUri != null)
   @@index([approvalUri], where: approvalUri != null)
   @@index([quotedAccountId])
   @@index([quotedStatusId])
@@ -1229,6 +1327,19 @@ model RelationshipSeveranceEvent {
   @@index([type, targetName])
 }
 
+model RelayPreference {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  relayId Int @map("relay_id")
+  relay Relay @relation(fields: [relayId], references: [id], onDelete: Cascade)
+  enabled Boolean @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, relayId])
+  @@index([relayId])
+}
+
 model Relay {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
@@ -1236,6 +1347,12 @@ model Relay {
   inboxUrl String @map("inbox_url") @default("")
   state Int @default(0)
   updatedAt DateTime @map("updated_at")
+  uri String @default("")
+  direction Int @default(0)
+  requiresOptIn Boolean @map("requires_opt_in") @default(false)
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  @@unique([uri])
 }
 
 model ReportNote {
@@ -1425,14 +1542,14 @@ model StatusPin {
 model StatusStat {
   id Int @id @default(autoincrement())
   createdAt DateTime @map("created_at")
-  favouritesCount Int @map("favourites_count") @default(0)
-  quotesCount Int @map("quotes_count") @default(0)
-  reblogsCount Int @map("reblogs_count") @default(0)
-  repliesCount Int @map("replies_count") @default(0)
+  favouritesCount Int @map("favourites_count") @default(0) @big
+  quotesCount Int @map("quotes_count") @default(0) @big
+  reblogsCount Int @map("reblogs_count") @default(0) @big
+  repliesCount Int @map("replies_count") @default(0) @big
   statusId Int @map("status_id")
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
-  untrustedFavouritesCount Int? @map("untrusted_favourites_count")
-  untrustedReblogsCount Int? @map("untrusted_reblogs_count")
+  untrustedFavouritesCount Int? @map("untrusted_favourites_count") @big
+  untrustedReblogsCount Int? @map("untrusted_reblogs_count") @big
   updatedAt DateTime @map("updated_at")
   @@unique([statusId])
 }
@@ -1455,7 +1572,7 @@ model Status {
   id Int @id @default(autoincrement())
   accountId Int @map("account_id")
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  applicationId Int? @map("application_id")
+  applicationId Int? @map("application_id") @big
   conversationId Int? @map("conversation_id")
   createdAt DateTime @map("created_at")
   deletedAt DateTime? @map("deleted_at")
@@ -1489,6 +1606,7 @@ model Status {
   @@index([inReplyToAccountId], where: inReplyToAccountId != null)
   @@index([inReplyToId], where: inReplyToId != null)
   @@index([reblogOfId, accountId])
+  @@unique([uri], where: uri != null)
 }
 
 model StatusesTag {
@@ -1527,7 +1645,7 @@ model TaggedObject {
   id Int @id @default(autoincrement())
   apType String @map("ap_type")
   createdAt DateTime @map("created_at")
-  objectId Int? @map("object_id")
+  objectId Int? @map("object_id") @big
   objectType String? @map("object_type")
   statusId Int @map("status_id")
   status Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
@@ -1561,6 +1679,7 @@ model TermsOfService {
   publishedAt DateTime? @map("published_at")
   text String @default("")
   updatedAt DateTime @map("updated_at")
+  @@unique([effectiveDate], where: effectiveDate != null)
 }
 
 model Tombstone {
@@ -1600,7 +1719,7 @@ model UserRole {
   createdAt DateTime @map("created_at")
   highlighted Boolean @default(false)
   name String @default("")
-  permissions Int @default(0)
+  permissions Int @default(0) @big
   position Int @default(0)
   require2fa Boolean @map("require_2fa") @default(false)
   updatedAt DateTime @map("updated_at")
@@ -1662,6 +1781,7 @@ model User {
   @@unique([confirmationToken])
   @@index([createdByApplicationId], where: createdByApplicationId != null)
   @@unique([email])
+  @@unique([resetPasswordToken], where: resetPasswordToken != null)
   @@index([roleId], where: roleId != null)
   @@index([unconfirmedEmail], where: unconfirmedEmail != null)
 }
@@ -1699,7 +1819,7 @@ model WebauthnCredential {
   externalId String @map("external_id")
   nickname String
   publicKey String @map("public_key")
-  signCount Int @map("sign_count") @default(0)
+  signCount Int @map("sign_count") @default(0) @big
   updatedAt DateTime @map("updated_at")
   userId Int? @map("user_id")
   user User? @relation(fields: [userId], references: [id], onDelete: Cascade)

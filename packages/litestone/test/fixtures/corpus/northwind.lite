@@ -1,0 +1,148 @@
+// northwind — the data model of pthom/northwind_psql, expressed in .lite.
+//
+// Derived mechanically from northwind.sql (Ms-PL) at
+// 4aa7967a33b8 (2022-10-07) by
+// `litestone import --from sql`. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 14 models. Regenerate with fetch.mjs.
+
+model Category {
+  categoryId Int @map("category_id") @id
+  categoryName String @map("category_name")
+  description String?
+  picture Bytes?
+}
+
+model CustomerCustomerDemo {
+  customerId String @map("customer_id")
+  customerTypeId String @map("customer_type_id")
+
+  @@id([customerId, customerTypeId])
+}
+
+model CustomerDemographic {
+  customerTypeId String @map("customer_type_id") @id
+  customerDesc String? @map("customer_desc")
+}
+
+model Customer {
+  customerId String @map("customer_id") @id
+  companyName String @map("company_name")
+  contactName String? @map("contact_name")
+  contactTitle String? @map("contact_title")
+  address String?
+  city String?
+  region String?
+  postalCode String? @map("postal_code")
+  country String?
+  phone String?
+  fax String?
+}
+
+model Employee {
+  employeeId Int @map("employee_id") @id
+  lastName String @map("last_name")
+  firstName String @map("first_name")
+  title String?
+  titleOfCourtesy String? @map("title_of_courtesy")
+  birthDate DateTime? @map("birth_date")
+  hireDate DateTime? @map("hire_date")
+  address String?
+  city String?
+  region String?
+  postalCode String? @map("postal_code")
+  country String?
+  homePhone String? @map("home_phone")
+  extension String?
+  photo Bytes?
+  notes String?
+  reportsTo Int? @map("reports_to")
+  photoPath String? @map("photo_path")
+}
+
+model EmployeeTerritory {
+  employeeId Int @map("employee_id")
+  territoryId String @map("territory_id")
+
+  @@id([employeeId, territoryId])
+}
+
+model OrderDetail {
+  orderId Int @map("order_id")
+  productId Int @map("product_id")
+  unitPrice Float @map("unit_price")
+  quantity Int
+  discount Float
+
+  @@id([orderId, productId])
+}
+
+model Order {
+  orderId Int @map("order_id") @id
+  customerId String? @map("customer_id")
+  employeeId Int? @map("employee_id")
+  orderDate DateTime? @map("order_date")
+  requiredDate DateTime? @map("required_date")
+  shippedDate DateTime? @map("shipped_date")
+  shipVia Int? @map("ship_via")
+  freight Float?
+  shipName String? @map("ship_name")
+  shipAddress String? @map("ship_address")
+  shipCity String? @map("ship_city")
+  shipRegion String? @map("ship_region")
+  shipPostalCode String? @map("ship_postal_code")
+  shipCountry String? @map("ship_country")
+}
+
+model Product {
+  productId Int @map("product_id") @id
+  productName String @map("product_name")
+  supplierId Int? @map("supplier_id")
+  categoryId Int? @map("category_id")
+  quantityPerUnit String? @map("quantity_per_unit")
+  unitPrice Float? @map("unit_price")
+  unitsInStock Int? @map("units_in_stock")
+  unitsOnOrder Int? @map("units_on_order")
+  reorderLevel Int? @map("reorder_level")
+  discontinued Int
+}
+
+model Region {
+  regionId Int @map("region_id") @id
+  regionDescription String @map("region_description")
+}
+
+model Shipper {
+  shipperId Int @map("shipper_id") @id
+  companyName String @map("company_name")
+  phone String?
+}
+
+model Supplier {
+  supplierId Int @map("supplier_id") @id
+  companyName String @map("company_name")
+  contactName String? @map("contact_name")
+  contactTitle String? @map("contact_title")
+  address String?
+  city String?
+  region String?
+  postalCode String? @map("postal_code")
+  country String?
+  phone String?
+  fax String?
+  homepage String?
+}
+
+model Territory {
+  territoryId String @map("territory_id") @id
+  territoryDescription String @map("territory_description")
+  regionId Int @map("region_id")
+}
+
+model UsState {
+  stateId Int @map("state_id") @id
+  stateName String? @map("state_name")
+  stateAbbr String? @map("state_abbr")
+  stateRegion String? @map("state_region")
+}

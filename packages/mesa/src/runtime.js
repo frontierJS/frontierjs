@@ -82,9 +82,11 @@ function _safeGroup(list) {
   if (!list) return
   for (const fn of list) _safeCall(fn)
 }
+// From the end: a list cleared last-built-first finds each item at the tail, where
+// `indexOf` scanned the whole list. A miss is -1, which `>>> 0` turns into an
+// index past the end, so `splice` removes nothing.
 function _remove(arr, item) {
-  const i = arr.indexOf(item)
-  if (i >= 0) arr.splice(i, 1)
+  arr.splice(arr.lastIndexOf(item) >>> 0, 1)
 }
 
 let _listener = null
@@ -591,11 +593,11 @@ export function createEffect(fn, opts) {
     // already failed on the next write, and inside a root component nothing
     // ever collects it (`FJS-879`).
     _onReadThrow?.(node, e)
-    _disposeNode(node, true)
+    _disposeNode(node)
     _unwindComponents(comps, ctxs)
     throw e
   }
-  return () => _disposeNode(node, true)
+  return () => _disposeNode(node)
 }
 
 /*
@@ -645,7 +647,7 @@ export function createRoot(fn) {
   _owner = node
   _listener = null
   try {
-    return fn(() => _disposeNode(node, true))
+    return fn(() => _disposeNode(node))
   } finally {
     _owner = prevOwner
     _listener = prevListener
@@ -710,7 +712,7 @@ function _makeNode(fn) {
       for (let i = this._children.length - 1; i >= 0; i--) {
         const child = this._children[i]
         if (!child._selfOwned) continue
-        _disposeNode(child, false)
+        _disposeNode(child, true)
         this._children.splice(i, 1)
       }
       _runCleanups(this._cleanups)
@@ -756,13 +758,15 @@ function _makeNode(fn) {
   return node
 }
 
-function _disposeNode(node, removeFromOwner) {
+// `parentGone`: the caller already emptied or is emptying the owner's `_children`,
+// so there is nothing to detach from.
+function _disposeNode(node, parentGone) {
   // Children first (inner-to-outer), and the last-built child first: parent
   // cleanups may reference DOM or subscriptions owned by children, and a
   // sibling built later may hold objects on one built earlier — an
   // {@attach} that owns a renderer and the components after it that put
   // geometry on it (`FJS-4176`).
-  for (const child of node._children.splice(0).reverse()) _disposeNode(child, false)
+  for (const child of node._children.splice(0).reverse()) _disposeNode(child, true)
   // This node's cleanups run after all children are disposed, LIFO.
   _runCleanups(node._cleanups)
   node._cleanups = []
@@ -776,7 +780,7 @@ function _disposeNode(node, removeFromOwner) {
   node._disposed = true
   _queue.delete(node)
   _roots?.delete(node)
-  if (removeFromOwner && node._owner) _remove(node._owner._children, node)
+  if (node._owner && !parentGone) _remove(node._owner._children, node)
 }
 
 /**
@@ -873,7 +877,7 @@ export function createMemo(fn, opts) {
     for (let i = memoNode._children.length - 1; i >= 0; i--) {
       const child = memoNode._children[i]
       if (!child._selfOwned) continue
-      _disposeNode(child, false)
+      _disposeNode(child, true)
       memoNode._children.splice(i, 1)
     }
     for (let i = memoNode._cleanups.length - 1; i >= 0; i--) _safeCall(memoNode._cleanups[i])
@@ -2162,7 +2166,7 @@ export function portal(getTarget, blockFactory) {
     // Remove from old target
     removeContent()
     unregisterRoot?.()
-    if (contentNode) _disposeNode(contentNode, true)
+    if (contentNode) _disposeNode(contentNode)
 
     // A target-scoped owner, the same shape ifBlock's branch node has. Built
     // straight under this effect instead, the portal's content is what the
@@ -2210,7 +2214,7 @@ export function portal(getTarget, blockFactory) {
   onCleanup(() => {
     removeContent()
     unregisterRoot?.()
-    if (contentNode) { _disposeNode(contentNode, true); contentNode = null }
+    if (contentNode) { _disposeNode(contentNode); contentNode = null }
   })
 }
 
@@ -2925,7 +2929,7 @@ export function makeComponent(init) {
       },
 
       destroy() {
-        _disposeNode(rootNode, false)
+        _disposeNode(rootNode, true)
         rootNode._cleanups = []
       }
     }
@@ -3084,7 +3088,7 @@ function _adopt(h, opts, what, make) {
     if (!(e instanceof HydrationMismatch)) throw e
     _unwindComponents(comps, ctxs)
     _owner = prev
-    _disposeNode(owner, true)
+    _disposeNode(owner)
     _hydWarn(opts, `${e.message}; re-rendered ${what}`)
     return _fresh(make)
   } finally {
@@ -3660,7 +3664,7 @@ export function $$virtualEach(anchor, getItems, keyFn, makeRow, options = {}) {
       },
       dispose() {
         for (const n of nodes) n.remove()
-        _disposeNode(owner, true)
+        _disposeNode(owner)
       }
     }
   }
@@ -3924,7 +3928,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     removeElements(elseNodeFirst, elseNodeLast)
     elseNode?.dispose?.()
     if (elseOwner) {
-      _disposeNode(elseOwner, true)
+      _disposeNode(elseOwner)
       elseOwner = null
     }
     elseNode = elseNodeFirst = elseNodeLast = null
@@ -3958,7 +3962,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
         setIndex(newIdx)
         result?.rebind?.(newItem, newIdx)
       },
-      dispose() { _disposeNode(blockOwner, true) }
+      dispose() { _disposeNode(blockOwner) }
     }
   }
 
@@ -4037,14 +4041,18 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
     // ── Fast path: clear ────────────────────────────────────────────────────
     if (newLen === 0) {
       if (blocks.size > 0) {
-        // Snapshot each block's DOM range before disposing anything, so the
-        // removal below knows exactly which nodes belong to this {#each}.
+        // Collect each block's DOM range so the removal below knows exactly
+        // which nodes belong to this {#each}. Dispose reactive owners FIRST so
+        // their effects unsubscribe before any other signals in this batch fire
+        // (e.g. selected = 0 after clear). Without this, class:danger effects on
+        // all 10k rows re-run unnecessarily. Last row first: each owner is then
+        // the last of the outer owner's children, so `_remove` finds it at once;
+        // first-to-last was an `indexOf` plus `splice` per row, quadratic.
         const ranges = []
-        for (const [, b] of blocks) if (b.$domFirst) ranges.push([b.$domFirst, b.$domLast])
-        // Dispose reactive owners FIRST so their effects unsubscribe before
-        // any other signals in this batch fire (e.g. selected = 0 after clear).
-        // Without this, class:danger effects on all 10k rows re-run unnecessarily.
-        for (const [, b] of blocks) b.dispose()
+        for (const [, b] of [...blocks].reverse()) {
+          if (b.$domFirst) ranges.push(b)
+          b.dispose()
+        }
         blocks.clear()
         // Remove only the {#each} items — NOT parent.textContent = '' which would
         // destroy sibling anchors (e.g. a {#if} anchor after this {#each}).
@@ -4059,7 +4067,7 @@ export function $$eachBlock(anchor, mode, getArray, keyFn, makeItem, elseBlock) 
             // emptying the array also destroyed any static markup or other
             // blocks' content that happened to precede it — a `<h2>` and a
             // toolbar `<div>` above an {#each} both vanished on clear.
-            for (const [first, last] of ranges) removeElements(first, last)
+            for (const b of ranges) removeElements(b.$domFirst, b.$domLast)
           }
         } else {
           anchor.textContent = ''
@@ -4373,7 +4381,7 @@ export function ifBlock(anchor, condFn, blocks, noAnchor) {
     // NOTE: attach cleanup runs here and may set el.__mesa_exit on elements
     // that have exit animations in flight.
     if (currentBranchNode) {
-      _disposeNode(currentBranchNode, true)
+      _disposeNode(currentBranchNode)
       currentBranchNode = null
     }
 
@@ -4498,7 +4506,7 @@ export function keyBlock(anchor, keyFn, makeBlock, noAnchor) {
 
   const _remove = () => {
     // Dispose effects before removing DOM — cleanups may touch the nodes.
-    if (blockNode) { _disposeNode(blockNode, true); blockNode = null }
+    if (blockNode) { _disposeNode(blockNode); blockNode = null }
     if (startMarker == null) return
     _removeRange(startMarker, noAnchor ? null : anchor)
     startMarker = null
@@ -4644,7 +4652,7 @@ export function awaitBlock(anchor, getPromise, pendingBlock, thenBlock, catchBlo
 
   const _disposeContent = () => {
     if (!contentNode) return
-    _disposeNode(contentNode, true)
+    _disposeNode(contentNode)
     contentNode = null
   }
 
@@ -4829,7 +4837,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   // the failed branch is mounted by the boundary's own effect when it re-runs.
   const _catch = (e) => {
     if (branchNode) {
-      _disposeNode(branchNode, true)
+      _disposeNode(branchNode)
       branchNode = null
     }
     caught = e
@@ -4885,7 +4893,7 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   const _mountBranch = (outerOwner, factory, ...args) => {
     pendingUp = false
     if (branchNode) {
-      _disposeNode(branchNode, true)
+      _disposeNode(branchNode)
       branchNode = null
     }
     if (!factory) { _swap(null); return }
@@ -6579,7 +6587,7 @@ export function captureRemount(anchor) {
   return (fn, props) => {
     const registered = _componentRegistry.has(anchor) || _componentExports.has(anchor)
     const latest = _lastPushed.get(anchor) ?? props
-    if (child) _disposeNode(child, true)
+    if (child) _disposeNode(child)
     const prevOwner = _owner, prevListener = _listener
     _owner = owner
     _listener = null
@@ -6900,7 +6908,7 @@ export function hydIsland(anchor, load, props, meta) {
     } catch (e) {
       if (!(e instanceof HydrationMismatch) || !site) throw e
       _unwindComponents(comps, ctxs)
-      for (const c of owner._children.splice(0)) _disposeNode(c, true)
+      for (const c of owner._children.splice(0)) _disposeNode(c)
       anchor.__claim = null
       _takeRange(site.open, site.close)
       _hydWarn({ dev: e.dev || site.opts?.dev }, `${e.message}; re-rendered the client:${meta.directive} <${meta.component}>`)

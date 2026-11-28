@@ -48,6 +48,8 @@ let delayMs  = 0
 let pageSize = null
 let stuckAt  = null
 let failAt   = null
+// An unordered list: junction offers no cursor, so a page is reached by offset.
+let noCursor = false
 let many     = []
 // A server that honors a `status` filter, so two lists over one resource can be
 // told apart by the rows each was answered.
@@ -69,8 +71,14 @@ globalThis.fetch = (async (url, init) => {
   const one = u.pathname.match(/^\/invoices\/(\d+)$/)
   if (one) return json(data.find(r => r.id === Number(one[1])))
   if (pageSize) {
+    // Junction refuses a `$limit` above paginate.max rather than clamping it.
+    if (Number(u.searchParams.get('$limit') ?? 0) > pageSize) {
+      return new Response(JSON.stringify({ message: 'above max' }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+    }
     // A string that reads as a number crosses quoted (`toolbelt/query`).
-    const from = Number(JSON.parse(u.searchParams.get('$after') ?? '0'))
+    const from = noCursor
+      ? Number(u.searchParams.get('$offset') ?? 0)
+      : Number(JSON.parse(u.searchParams.get('$after') ?? '0'))
     if (from && from === failAt) {
       return new Response(JSON.stringify({ message: 'refused' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
     }
@@ -78,7 +86,7 @@ globalThis.fetch = (async (url, init) => {
     const end   = from + slice.length
     const hasMore = (from && from === stuckAt) || end < many.length
     return json({ kind: 'list', object: 'invoices', data: slice, errors: [], total: many.length,
-      limit: pageSize, offset: 0, hasMore, endCursor: hasMore ? String(end) : null })
+      limit: pageSize, offset: 0, hasMore, endCursor: hasMore && !noCursor ? String(end) : null })
   }
   return json({ kind: 'list', object: 'invoices', data, errors: [], total, limit: 20, offset: 0 })
 })
@@ -173,6 +181,7 @@ beforeEach(() => {
   extra = null
   delayMs = 0
   pageSize = stuckAt = failAt = null
+  noCursor = false
   many = []
   byStatus = false
 })
@@ -770,7 +779,7 @@ describe('composed: the rows carry what a push does not', () => {
     expect(list.total).toBe(1)
   })
 
-  test('growing the window widens the limit and re-reads from the top', async () => {
+  test('growing the window re-reads from the top, a page at a time', async () => {
     await boot('/invoices/')
     total = 10
     const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
@@ -779,7 +788,8 @@ describe('composed: the rows carry what a push does not', () => {
 
     await list.more()
     await settle()
-    expect(last().get('$limit')).toBe('23')
+    // The server answered a page of 20; a $limit past its page can be a 400.
+    expect(last().get('$limit')).toBe('20')
     expect(last().get('$after')).toBe(null)
 
     // A change of state is a new question and starts from its own limit.
@@ -790,7 +800,7 @@ describe('composed: the rows carry what a push does not', () => {
 
   test('a window past the server\'s page cap is walked by cursor, not asked as one limit (FJS-2627)', async () => {
     await boot('/invoices/')
-    // The mock answers `pageSize` rows whatever `$limit` says: a paginate.max.
+    // The mock answers `pageSize` rows and refuses a `$limit` above it: a paginate.max.
     pageSize = 3
     many = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, number: `INV-${i + 1}`, status: 'open', total: 1 }))
     const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
@@ -815,6 +825,22 @@ describe('composed: the rows carry what a push does not', () => {
     await settle()
     expect(list.rows).toHaveLength(10)
     expect(list.hasMore).toBe(false)
+  })
+
+  test('a window past the page on a list with no cursor is walked by offset', async () => {
+    await boot('/invoices/')
+    pageSize = 3
+    noCursor = true
+    many = Array.from({ length: 7 }, (_, i) => ({ id: i + 1, number: `INV-${i + 1}`, status: 'open', total: 1 }))
+    const list = track(invoicesResource().tethered({ state: 'local', composed: true }))
+    await settle()
+    await list.more()
+    await settle()
+    await list.more()
+    await settle()
+    expect(list.rows.map(r => r.id)).toEqual([1, 2, 3, 4, 5, 6, 7])
+    expect(list.hasMore).toBe(false)
+    expect(list.error).toBe(null)
   })
 
   test('a reconnect re-reads; a list that is not composed leaves that to the tether', async () => {

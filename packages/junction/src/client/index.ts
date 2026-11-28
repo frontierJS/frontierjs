@@ -2047,11 +2047,14 @@ export class JunctionClient extends EventEmitter {
       tether.place(record, key, cmp, limit ?? undefined)
     }
 
-    const drop = (record: T | null, id: unknown): void => {
+    const drop = (record: T | null, id: unknown, keyOnly = false): void => {
       if (!tether.get().some((r) => r[key] === id)) {
         // Not one of this page's rows. Page 1's contents do not depend on a row
         // further down the query, but a later page's window does — every row
-        // behind it shifts by one.
+        // behind it shifts by one. A removal frame carries only the key
+        // (FJS-D2418), and a filter judged against a bare key answers false, so
+        // the page is re-asked and the count left to the answer.
+        if (offset > 0 && keyOnly) { stale.bump(); return }
         if (offset > 0 && record && verdict(record) === true) {
           if (total !== null) total--
           stale.bump()
@@ -2108,7 +2111,7 @@ export class JunctionClient extends EventEmitter {
       offs.push(svc.on('patched',  apply))
       offs.push(svc.on('removed',  (raw: unknown) => {
         const record = unwrap(raw)
-        drop(record, record?.[key])
+        drop(record, record?.[key], true)
       }))
     }
 

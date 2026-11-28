@@ -9077,6 +9077,12 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d2425"></a>2026-11-28 · `FJS-D2425` — Does a derived index name distinguish two indexes over the same columns that differ in direction or predicate — No: columns-only naming stands (`packages/litestone/docs/schema.md` § indexes), and a reader collapses the pair as it does now.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the derived name gains a suffix digesting the predicate and directions, so both survive. Cost: `ddl.js` naming and the `idx_`/`uniq_` ownership test (`FJS-614`) move, and every existing partial index is renamed on the next migration), **C** (columns-only stands, and a reader emits `@@index(name:)` where two names collide).
+
+The paper's recommendation, taken as written: the plain index serves every query the partial one does and SQLite scans an index backwards, so the loss is size and speed, never correctness, and the gap report names each one.
+
 ### <a id="fjs-d2313"></a>2026-11-23 · `FJS-D2313` — What do `split` and a create-a-parent `backfill` look like in the operations document, and where in a created file do they run — Use D683's option A shapes as written. `{ op: 'split', model: 'Page', column: 'body', into: 'Block', field: 'body', link: 'pageId' }` is one `INSERT INTO Block (pageId, body) SELECT id, body FROM Page WHERE body IS NOT NULL`, placed after new tables and before rebuilds, where the target table and the source column both exist, with a `-- check` row count after it. `{ op: 'backfill', model, field, create: { Company: { name: 'Imported' } } }` is one INSERT in the same slot, which `backfillExpression` then reads as `first` does. Oracle's `was: 'Page.body'` becomes the split entry when the target entity is new and links to the source, and stays refused otherwise.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Build `split` only and leave `create` out. A person creates the parent row before the migration, and `first` carries it. One new slot, but the measured jazzhr/linear answers still refuse at apply, because their parents are new), **C** (Build neither. A move stays refused toward `risk: migration`, and the person does it as two migrations with an app script between them (`FJS-D518`: add `Block`, copy, then drop `Page.body`). No litestone change, and Notion's case stays a refusal rather than a carried move).
@@ -9594,11 +9600,19 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2420"></a>2026-11-28 · `FJS-D2420` — How does the browser learn which methods a service offers, when `methods:` lives in api/src/services and not in the schema — An always-on `GET /_services` answering `{ name, methods }[]`, built by the one function the manifest's service list also calls (`offeredMethods()` over `svc.describe()` and `isMethodAllowed()`, so a verb answered 405 is never listed). Not filtered by caller: the gate stays the per-caller answer. Sierra reads it once per app over `client.fetch` as `resource.offers(op)`, permissive until it arrives like `x-gate`; `options()` skips a relation whose service is absent or offers no `find`; the generated edit page wraps Save in `offers('patch')` and Delete in `offers('remove')`. Cost: service names and their methods become readable to any caller, which the URLs already show.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (read the services at generation time: `fli make:scaffold` parses `methods:` and leaves the buttons out of the file. Cost: a page goes stale when `methods:` changes, and `options()` is not helped at runtime), **C** (a quiet picker: `options()` stops warning on a 404 or 405 and the page keeps both buttons. Cost: the 405 on Save stays, and *none* and *could not ask* look the same again (`FJS-570`)), **D** (a schema flag stating a model's offered verbs in the `.lite` file. Cost: a second statement of `methods:` that can disagree with the service, in the Data realm, about an API fact).
+
+The paper's recommendation, taken as written: one owner for *what a service offers*, already written for the manifest and already policy-filtered, so the browser asks the same predicate the router answers by; B and D are second copies of it and C hides the defect.
+
 ### <a id="fjs-d2418"></a>2026-11-28 · `FJS-D2418` — What does a `removed` live-update frame carry — The primary key alone, every column `db.$primaryKey(accessor)` names (`id` without a Data boundary), on every path that encodes one: the graded fan-out, the ungraded fallback and the tap's `sendGraded`. A row the key cannot name sends no frame. Every other frame kind keeps its row.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the row through `$readAs` with `@personal` and every protected column stripped. Keeps the fields a client might filter on, but a removal still tells each reader what was just erased).
 
 The paper's recommendation, taken as written: a client drops a removed row by its key, and a row that is gone owes no reader its contents; the owner ruled A on 2026-11-27.
+
+**The client's half (owner, 2026-11-27).** A key-only frame cannot be judged against a filter: a bare key answers false. When a later page (offset past 0) receives a removal of a row it does not hold, the browser client therefore marks the page stale and leaves the total for the refetch to correct, rather than judging the row (**B**). That was picked over **A**, leave it until the page's next load, and **C**, send the filter fields on removal, which reopens what this ruling closed. *Lives in:* `packages/junction/src/client/index.ts` `drop`; pinned in `test/live-order.test.ts`.
 
 ### <a id="fjs-d2407"></a>2026-11-26 · `FJS-D2407` — Q2 — The home of the retention job helper (P2) — `@frontierjs/caravan`, a `retentionJob({ cron, client })` beside `defineJob`.
 
@@ -23666,6 +23680,30 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d2424"></a>2026-11-28 · `FJS-D2424` — Q2. Who owns the things on the shelf — **Recommend.** Both the group and members. That is the open ground: only ToolPool.Garden does both today, and it has no queue or due dates.
+
+Asked in [`IDEAS/group-lending.md`](IDEAS/group-lending.md) § Open questions. **A** was picked over **B** (The group only, as every library-of-things tool does).
+
+owner, 2026-11-27, with the recommendation: group-owned and member-owned things on one shelf is the open ground; only ToolPool.Garden mixes them and it has no queue or due dates.
+
+### <a id="fjs-d2423"></a>2026-11-28 · `FJS-D2423` — Q1. What happens when an item is late — **Recommend.** No fines. Borrowing is blocked while something is overdue past a grace, and a lost item is charged at replacement cost. This is the fine-free library practice (ALA 2019 resolution; Toledo, Holbrook, Oak Park) and Chicago Tool Library's rule. Evidence that fines bring things back is thin (13.9% vs 14.2% overdue in a 1983 study).
+
+Asked in [`IDEAS/group-lending.md`](IDEAS/group-lending.md) § Open questions. **A** was picked over **B** (A per-day fee capped at the replacement cost, charged at return (myTurn's model, $1–$4 a day)), **C** (The group chooses A or B per policy).
+
+owner, 2026-11-27, with the recommendation: fine-free with a borrowing block is the library norm (ALA 2019; Toledo, Holbrook, Chicago Tool Library) and fines barely moved overdue rates; a lost item gets a replacement-cost payment link.
+
+### <a id="fjs-d2422"></a>2026-11-28 · `FJS-D2422` — Q4. Deposits — A card authorization hold. It lasts 7 days at most for an online card, up to 30 with extended authorization where eligible, so it only fits short loans. It needs `capture_method` in `conduit-stripe`. myTurn has added this.
+
+Asked in [`IDEAS/group-lending.md`](IDEAS/group-lending.md) § Open questions. **B** was picked over **A** (**Recommend.** None. A lost or broken item gets a replacement-cost payment link (Chicago Tool Library, Circulate)), **C** (Charge the deposit and refund it at return (Lend Engine). The group pays Stripe's fee on money it hands back).
+
+owner, 2026-11-27: a card authorization hold protects the lender without charging the borrower; conduit-stripe gains capture_method, and loans past the hold's window (7 days online, up to 30 with extended authorization) need a rule of their own.
+
+### <a id="fjs-d2421"></a>2026-11-28 · `FJS-D2421` — Q3. Can members charge each other — Yes, into the owner's own Stripe account by direct charge with no fee. `FJS-D2200` holds unchanged, but every lending member does Stripe's identity check and bears their own disputes.
+
+Asked in [`IDEAS/group-lending.md`](IDEAS/group-lending.md) § Open questions. **B** was picked over **A** (**Recommend for v1.** No. Member-owned things are lent free, and only the group charges for its own Items (Phase 4). Buy Nothing, Peerby's free tier and ToolPool all work this way), **C** (The group collects and pays the owner out (a destination charge, or separate charges and transfers). Sharetribe and Airbnb work this way. It puts Stripe's fees, refunds and chargebacks on the platform's balance (Stripe's Connect charges page), and it needs the `transfer_data` key `conduit-stripe` refuses today).
+
+owner, 2026-11-27: members may rent their own things to each other; a direct charge on the lending member's own Stripe account keeps FJS-D2200 whole (the kit takes nothing), and each lender carries their own identity check and disputes.
 
 ### <a id="fjs-d2406"></a>2026-11-26 · `FJS-D2406` — Q1 — Where Telnyx voice lives (P1) — Grow `conduit-telnyx` into call control, credentials and media stream beside SMS.
 

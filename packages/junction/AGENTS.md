@@ -441,6 +441,12 @@ service over the `@@tenant(none)` membership model, because every tenant-scoped
 service refuses a call that names no account (sierra's README, *A header on every
 call*).
 
+**A broadcast carries no header**, so a claim read by `tenantFrom: header(...)`
+is absent from every socket, and a frame whose rule needs it is refused. Name the
+tenant in the channel (`shop:<id>`) and state what a socket holds there with
+`channels(setup, { claims })`, which re-reads the membership per channel; the
+boot warns when a header claim has no such resolver (`FJS-4683`).
+
 **A bearer's claims are not on `$.me`.** With no session `ctx.user` stays
 `null` — promoting the claims to a user would grade every guest CREATOR(3) — so the
 claims reach only the Data boundary, through `$.db`. A `gate: 0` method that needs

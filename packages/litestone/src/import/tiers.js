@@ -50,6 +50,7 @@ const CHANGED = [
   'partitioned-table',        // N physical tables became one
   'unvalidated-foreign-key',  // Postgres NOT VALID emitted as enforced — existing rows may violate it
   'unknown-fieldtype',        // → String, and the values are unknown
+  'bigint-array',             // bigint[] → Int[]: JSON's number is the double, so past 2^53 the value reads back changed
   'ignored-model',            // Prisma's @@ignore keeps its table OUT of the client; .lite has no opt-out,
                               // so the model below is one the source deliberately did not expose
 ]
@@ -68,6 +69,7 @@ const LOST = [
   'index-collapsed',
   'index-name',
   'array-default',            // .lite refuses every array default, the empty one included (FJS-564)
+  'array-element-type',       // DateTime[], Float[], Boolean[] → Json: the same JSON text, its elements no longer typed
   'dbgenerated-default',
   'view',
   'native-type',
@@ -97,6 +99,9 @@ const LOST = [
   'generated-expression',     // a GENERATED column whose SQL holds a double quote: @generated takes a
                               // string, so the expression is handed over as a comment rather than mangled
   'foreign-key-action',       // ON DELETE SET DEFAULT — SQLite has it and .lite has no word for it
+  'fulltext-index',           // MySQL FULLTEXT KEY — the .lite answer is @@fts, a different engine on a different table
+  'check-postgres-operator',  // the CHECK dropped — a regex match, containment or ILIKE is not SQLite
+  'default-over-scale',       // a decimal default with more places than @scale keeps — dropped rather than rounded
   'collation',                // a COLLATE other than the three @collate names, or on a column that is not String
 ]
 
@@ -118,6 +123,8 @@ const NOTED = [
   'submit-workflow',
   'enum-name-collision',      // the derived enum name was a doctype; the SET is intact and the name is the reader's
   'fulltext',                 // @@fulltext → @@fts: a different search engine, the same declaration
+  'second-arc',               // a table's second exclusive arc, emitted as the @@check it was written as
+  'partition-folded',         // a partition is storage: its rows live in the parent's one table, graded there
   'arc-member-required',      // an exclusive arc emitted as a plain @@check — SQLite enforces it either way
   'unlabelled-one-to-one',    // an explicit @relation name on both sides; identical in meaning (FJS-563)
   'bigint',                   // → Int @big. It was `changed` while the boundary narrowed the value

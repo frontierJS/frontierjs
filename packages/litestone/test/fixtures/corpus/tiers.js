@@ -23,8 +23,11 @@
 // `fixtures/corpus/README.md` § What is committed says why the split falls where
 // it does. Adding a fixture means adding it HERE, and both readers pick it up.
 
-export const COMMITTED = ['triggerdev', 'discourse', 'mastodon', 'lago', 'erpnext', 'hrms']
-export const FETCHED   = ['calcom', 'documenso']
+export const COMMITTED = ['triggerdev', 'discourse', 'mastodon', 'lago', 'erpnext', 'hrms',
+                          'chinook', 'sakila', 'pagila', 'northwind', 'adventureworks',
+                          'chatwoot', 'umami', 'hoppscotch']
+// `gitlab` is fetched for its size, not its licence: 1,100 models, near 900 KB.
+export const FETCHED   = ['calcom', 'documenso', 'employees', 'gitlab']
 export const LOCAL     = ['maidtech']
 
 // `fixtures/scale/openmrp.lite` is committed and is not corpus: it asks whether

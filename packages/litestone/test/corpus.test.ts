@@ -13,9 +13,10 @@
 // inheritance and partial indexes; `sql.js` for a Postgres dump, the only source
 // carrying CHECK constraints, views and native enums; and `frappe.js`, the only
 // one where the schema DECLARES whether a polymorphic target set is closed.
+// `chinook` arrives as a SQLite database and is read by introspect instead.
 //
-// It is therefore also the widest test of the SHIPPED importer: 1,377 models of
-// input nobody here wrote, through the same code an app runs.
+// It is therefore also the widest test of the SHIPPED importer: every fixture
+// `tiers.js` names, input nobody here wrote, through the same code an app runs.
 //
 // Which fixtures exist and on whose machine is `fixtures/corpus/tiers.js`, and
 // `introspect-roundtrip.test.ts` reads the same module — a roster written twice
@@ -84,11 +85,17 @@ describe('the corpus — schemas converted from real applications', () => {
       continue
     }
 
+    // The count is the one fetch.mjs wrote into the header from the reader's
+    // own tally, so a model the parser folds or drops fails here. A fixed floor
+    // could not ask it: the textbook samples are 6 to 16 models, and a floor low
+    // enough for them passes 1,100 GitLab models losing a hundred.
+    const stated = source.match(/^\/\/ .*?(\d+) models\. Regenerate/m)?.[1]
     test(`${name} parses, and every model is a model`, () => {
       const parsed = parse(source)
       expect(parsed.errors).toEqual([])
       expect(parsed.valid).toBe(true)
-      expect(parsed.schema.models.length).toBeGreaterThan(20)
+      if (stated) expect(parsed.schema.models.length).toBe(+stated)
+      else expect(parsed.schema.models.length).toBeGreaterThan(0)
     })
 
     // `litestone types` refuses a model whose generated shapes collide with

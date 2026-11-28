@@ -15,8 +15,9 @@ reader of `error.raw`) · `src/verify.ts` (pure verifier and `stripeDialect`) ·
 - **The dialect checks the signature alone.** `verifyStripeSignature` also refuses a body that is not an event; the dialect must not, because conduit answers a non-event 200 and a 401 retries for days.
 - **Connect's controller values are permanent on an account** (`FJS-D2200`): they are the `STANDARD_LIKE_CONTROLLER` constant, never an argument. No input type offers `PLATFORM_FEE_KEYS`, and `refusePlatformFee` refuses them at runtime; a new charge-creating call runs it on both its input and its built body.
 - **A connected account's events are signed with the Connect endpoint's secret**, a different `whsec_…` at a different path, so the app registers a second Receiver under its own provider; `verifyStripeSignature` and `stripeDialect` stay the one verifier and surface `account`.
+- **A capture and a cancel each require the caller's key.** Stripe answers a second capture or cancel `payment_intent_unexpected_state`, so an unkeyed replay after a lost response reads as a failure of a step that succeeded. Capture takes `application_fee_amount` and `transfer_data` at Stripe, so it runs `refusePlatformFee` like a charge does.
 - **The rates in the sink's tax paths are the sink's**, not any jurisdiction's. `tax.isExpired` takes the clock; `taxExpiresInSeconds: 1` is how the drive reaches the 90-minute case.
 
 ## Proving a change
 
-`bun run drive`. Green means 42 rows; there is no fixture.
+`bun run drive`. Green means 48 rows; there is no fixture.

@@ -4,3 +4,4 @@ export function convert(src?: any, label?: string): {
     gaps: any[];
     models: any[];
 };
+export function translateCheck(src?: string, isColumn?: (id: string) => boolean, gap?: any, model?: string): string;

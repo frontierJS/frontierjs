@@ -1,10 +1,11 @@
 // erpnext — the data model of frappe/erpnext, expressed in .lite.
 //
-// Derived mechanically from erpnext/**/doctype/*/*.json (GPL-3.0) by
+// Derived mechanically from erpnext/**/doctype/*/*.json (GPL-3.0) at
+// ab8ba3a117e9 (2026-11-28) by
 // `litestone import --from frappe`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
-// gaps.json. 534 models. Regenerate with fetch.mjs.
+// gaps.json. 537 models. Regenerate with fetch.mjs.
 
 enum RequestForQuotationStatus {
   Draft
@@ -20,6 +21,7 @@ enum PurchaseOrderApplyDiscountOn {
 enum PurchaseOrderStatus {
   Draft
   "On Hold"
+  "To Pay"
   "To Receive and Bill"
   "To Bill"
   "To Receive"
@@ -44,6 +46,8 @@ enum SupplierQuotationApplyDiscountOn {
 enum SupplierQuotationStatus {
   Draft
   Submitted
+  "Partially Ordered"
+  Ordered
   Stopped
   Cancelled
   Expired
@@ -525,6 +529,12 @@ enum StockEntryDetailSecondaryItemType {
   "Additional Finished Good"
 }
 
+enum StockEntryDetailValuationType {
+  "Valuation Rate"
+  "% of Component Cost"
+  Manual
+}
+
 enum QualityInspectionInspectionType {
   Incoming
   Outgoing
@@ -552,6 +562,7 @@ enum StockClosingEntryStatus {
   Queued
   "In Progress"
   Completed
+  Outdated
   Failed
   Cancelled
 }
@@ -620,6 +631,7 @@ enum InventoryDimensionTypeOfTransaction {
 enum StockReconciliationPurpose {
   "Opening Stock"
   "Stock Reconciliation"
+  "Adjustment Entry"
 }
 
 enum DeliveryTripStatus {
@@ -662,6 +674,7 @@ enum StockReservationEntryReservationBasedOn {
 enum StockReservationEntryFromVoucherType {
   "Pick List"
   "Purchase Receipt"
+  "Purchase Invoice"
   "Stock Entry"
   "Work Order"
   "Production Plan"
@@ -759,7 +772,6 @@ enum VideoProvider {
 }
 
 enum VideoSettingsFrequency {
-  "30 mins"
   "1 hr"
   "6 hrs"
   Daily
@@ -1138,6 +1150,7 @@ enum QualityGoalDate {
   "28"
   "29"
   "30"
+  "31"
 }
 
 enum QualityGoalWeekday {
@@ -1147,6 +1160,7 @@ enum QualityGoalWeekday {
   Thursday
   Friday
   Saturday
+  Sunday
 }
 
 enum QualityActionResolutionStatus {
@@ -1253,15 +1267,34 @@ enum BOMSecondaryItemSecondaryItemType {
   "Additional Finished Good"
 }
 
+enum BOMSecondaryItemValuationType {
+  "Valuation Rate"
+  "% of Component Cost"
+  Manual
+}
+
 enum BlanketOrderBlanketOrderType {
   Selling
   Purchasing
+}
+
+enum BlanketOrderStatus {
+  Draft
+  Submitted
+  Closed
+  Cancelled
 }
 
 enum ProductionPlanSubAssemblyItemTypeOfManufacturing {
   "In House"
   Subcontract
   "Material Request"
+}
+
+enum BOMCreatorMaterialStorage {
+  Tank
+  Silo
+  Sacks
 }
 
 enum BOMUpdateLogUpdateType {
@@ -1275,6 +1308,16 @@ enum BOMUpdateLogStatus {
   Completed
   Failed
   Cancelled
+}
+
+enum BOMCreatorItemSource {
+  "CAD File"
+  Manual
+}
+
+enum BOMCreatorItemChangeType {
+  Added
+  "Quantity Changed"
 }
 
 enum ManufacturingSettingsBackflushRawMaterialsBasedOn {
@@ -1328,6 +1371,7 @@ enum BOMCreatorStatus {
   "In Progress"
   Completed
   Failed
+  Superseded
   Cancelled
 }
 
@@ -1343,6 +1387,45 @@ enum WorkstationStatus {
   Problem
   Maintenance
   Setup
+}
+
+enum WorkstationTypeMachineModel {
+  Mixer
+  "Steam Kettle"
+  Reactor
+  Fermenter
+  Mill
+  Dryer
+  Cooler
+  "Filling Line"
+  "Bagging Line"
+}
+
+enum WorkstationTypeShapeShape {
+  Box
+  Tank
+  "Open Tank"
+  Band
+  Agitator
+  Steam
+  Bubbles
+  Fizz
+  "Flow Strip"
+}
+
+enum WorkstationTypeShapeFinish {
+  Steel
+  Dark
+  Plate
+  Product
+  Heat
+  Red
+  Amber
+  Cream
+  Blue
+  Green
+  Violet
+  Gray
 }
 
 enum JobCardStatus {
@@ -1416,6 +1499,12 @@ enum SubcontractingReceiptItemSecondaryItemType {
   "By-Product"
   Scrap
   "Additional Finished Good"
+}
+
+enum SubcontractingReceiptItemValuationType {
+  "Valuation Rate"
+  "% of Component Cost"
+  Manual
 }
 
 enum SubcontractingOrderStatus {
@@ -1776,6 +1865,11 @@ enum BankStatementImportLogDetectedAmountFormat {
 enum BankStatementImportLogStatus {
   "Not Started"
   Completed
+}
+
+enum AccountingDimensionFilterAccountingDimension {
+  "Cost Center"
+  Project
 }
 
 enum AccountingDimensionFilterAllowOrRestrict {
@@ -2549,8 +2643,8 @@ enum ProjectPercentCompleteMethod {
 }
 
 enum ProjectPriority {
-  Medium
   Low
+  Medium
   High
 }
 
@@ -2917,6 +3011,7 @@ model PurchaseOrder {
   partyAccountCurrency String? @map("party_account_currency")
   interCompanyOrderReference String? @map("inter_company_order_reference")
   interCompanyOrderReferenceRef SalesOrder? @relation(fields: [interCompanyOrderReference], references: [id])
+  remarks String?
   perReceived Float? @map("per_received")
   perBilled Float? @map("per_billed")
   letterHead String? @map("letter_head")
@@ -3132,6 +3227,7 @@ model PurchaseOrderItem {
   receivedQty Float? @map("received_qty")
   returnedQty Float? @map("returned_qty")
   billedAmt Float? @map("billed_amt")
+  closed Boolean? @default(false)
   itemTaxRate String? @map("item_tax_rate")
   expenseAccount String? @map("expense_account")
   expenseAccountRef Account? @relation(fields: [expenseAccount], references: [id])
@@ -3169,6 +3265,7 @@ model PurchaseOrderItem {
   jobCard String? @map("job_card")
   jobCardRef JobCard? @relation(fields: [jobCard], references: [id])
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   subcontractedQty Float? @map("subcontracted_qty") @default(0)
   owner String?
   creation DateTime?
@@ -3301,6 +3398,7 @@ model SupplierQuotationItem {
   uomRef UOM @relation(fields: [uom], references: [id])
   conversionFactor Float @map("conversion_factor")
   stockQty Float? @map("stock_qty")
+  orderedQty Float @map("ordered_qty") @default(0)
   basePriceListRate Float? @map("base_price_list_rate")
   rate Float?
   amount Float?
@@ -3344,6 +3442,7 @@ model SupplierQuotationItem {
   costCenter String? @map("cost_center")
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   marginType SupplierQuotationItemMarginType? @map("margin_type")
   marginRateOrAmount Float? @map("margin_rate_or_amount")
   rateWithMargin Float? @map("rate_with_margin")
@@ -3410,7 +3509,6 @@ model BuyingSettings {
   roleToOverrideStopAction String? @map("role_to_override_stop_action")
   billForRejectedQuantityInPurchaseInvoice Boolean? @map("bill_for_rejected_quantity_in_purchase_invoice") @default(true)
   disableLastPurchaseRate Boolean? @map("disable_last_purchase_rate") @default(false)
-  showPayButton Boolean? @map("show_pay_button") @default(true)
   setLandedCostBasedOnPurchaseInvoiceRate Boolean? @map("set_landed_cost_based_on_purchase_invoice_rate") @default(false)
   useTransactionDateExchangeRate Boolean? @map("use_transaction_date_exchange_rate") @default(false)
   blanketOrderAllowance Float? @map("blanket_order_allowance") @default(0)
@@ -3426,6 +3524,7 @@ model BuyingSettings {
   allowNegativeRatesForItems Boolean? @map("allow_negative_rates_for_items") @default(false)
   namingSeriesDetails String? @map("naming_series_details")
   overOrderAllowance Float? @map("over_order_allowance")
+  loadSupplierOverview Boolean? @map("load_supplier_overview") @default(true)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -3909,6 +4008,8 @@ model AssetShiftAllocation {
   assetRef Asset @relation(fields: [asset], references: [id])
   financeBook String? @map("finance_book")
   financeBookRef FinanceBook? @relation(fields: [financeBook], references: [id])
+  previousDepreciationSchedule String? @map("previous_depreciation_schedule")
+  previousDepreciationScheduleRef AssetDepreciationSchedule? @relation(fields: [previousDepreciationSchedule], references: [id])
   namingSeries String @map("naming_series")
   owner String?
   creation DateTime?
@@ -4074,7 +4175,9 @@ model AssetFinanceBook {
   depreciationStartDate DateTime? @map("depreciation_start_date")
   expectedValueAfterUsefulLife Float? @map("expected_value_after_useful_life") @default(0)
   valueAfterDepreciation Float? @map("value_after_depreciation")
+  valueAdjustmentAmount Float? @map("value_adjustment_amount")
   rateOfDepreciation Float? @map("rate_of_depreciation")
+  isRateOfDepreciationEntered Boolean? @map("is_rate_of_depreciation_entered") @default(false)
   salvageValuePercentage Float? @map("salvage_value_percentage")
   dailyProrataBased Boolean? @map("daily_prorata_based") @default(false)
   shiftBased Boolean? @map("shift_based") @default(false)
@@ -4122,7 +4225,7 @@ model AssetValueAdjustment {
 
 model MaintenanceTeamMember {
   id String @id @map("name")
-  teamMember String @map("team_member") @unique
+  teamMember String @map("team_member")
   fullName String? @map("full_name")
   maintenanceRole String @map("maintenance_role")
   owner String?
@@ -4195,8 +4298,8 @@ model AssetCapitalization {
   title String?
   targetItemCode String? @map("target_item_code")
   targetItemCodeRef Item? @relation(fields: [targetItemCode], references: [id])
-  targetAsset String? @map("target_asset")
-  targetAssetRef Asset? @relation(fields: [targetAsset], references: [id])
+  targetAsset String @map("target_asset")
+  targetAssetRef Asset @relation(fields: [targetAsset], references: [id])
   targetAssetName String? @map("target_asset_name")
   company String
   companyRef Company @relation(fields: [company], references: [id])
@@ -4401,6 +4504,7 @@ model Asset {
   isFullyDepreciated Boolean? @map("is_fully_depreciated") @default(false)
   totalAssetCost Float? @map("total_asset_cost")
   additionalAssetCost Float? @map("additional_asset_cost") @default(0)
+  valueAdjustmentAmount Float? @map("value_adjustment_amount")
   purchaseAmount Float? @map("purchase_amount")
   openingNumberOfBookedDepreciations Int? @map("opening_number_of_booked_depreciations")
   purchaseReceiptItem String? @map("purchase_receipt_item")
@@ -4476,6 +4580,7 @@ model AssetMaintenance {
   assetName String @map("asset_name") @unique
   assetNameRef Asset @relation(fields: [assetName], references: [id])
   assetCategory String? @map("asset_category")
+  assetCategoryRef AssetCategory? @relation(fields: [assetCategory], references: [id])
   itemCode String? @map("item_code")
   itemName String? @map("item_name")
   company String
@@ -4529,6 +4634,7 @@ model AssetRepair {
   projectRef Project? @relation(fields: [project], references: [id])
   totalRepairCost Float? @map("total_repair_cost")
   increaseInAssetLife Int? @map("increase_in_asset_life")
+  assetValueUpdated Boolean? @map("asset_value_updated") @default(false)
   company String?
   companyRef Company? @relation(fields: [company], references: [id])
   consumedItemsCost Float? @map("consumed_items_cost")
@@ -5023,7 +5129,7 @@ model QuickStockBalance {
 
 model SerialNo {
   id String @id @map("name")
-  serialNo String @map("serial_no") @unique
+  serialNo String @map("serial_no")
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
@@ -5105,6 +5211,8 @@ model PackedItem {
   pageBreak Boolean? @map("page_break") @default(false)
   prevdocDoctype String? @map("prevdoc_doctype")
   parentDetailDocname String? @map("parent_detail_docname")
+  salesOrderPackedItem String? @map("sales_order_packed_item")
+  returnAgainstPackedItem String? @map("return_against_packed_item")
   actualBatchQty Float? @map("actual_batch_qty")
   incomingRate Float? @map("incoming_rate")
   conversionFactor Float? @map("conversion_factor")
@@ -5112,6 +5220,7 @@ model PackedItem {
   orderedQty Float? @map("ordered_qty")
   pickedQty Float? @map("picked_qty")
   packedQty Float? @map("packed_qty") @default(0)
+  receivedQty Float? @map("received_qty") @default(0)
   serialAndBatchBundle String? @map("serial_and_batch_bundle")
   serialAndBatchBundleRef SerialAndBatchBundle? @relation(fields: [serialAndBatchBundle], references: [id])
   useSerialBatchFields Boolean? @map("use_serial_batch_fields") @default(false)
@@ -5248,6 +5357,7 @@ model DeliveryNoteItem {
   siDetail String? @map("si_detail")
   installedQty Float? @map("installed_qty")
   billedAmt Float? @map("billed_amt")
+  closed Boolean? @default(false)
   pageBreak Boolean? @map("page_break") @default(false)
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
@@ -5273,6 +5383,7 @@ model DeliveryNoteItem {
   batchNoRef Batch? @relation(fields: [batchNo], references: [id])
   useSerialBatchFields Boolean? @map("use_serial_batch_fields") @default(false)
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   companyTotalStock Float? @map("company_total_stock")
   againstPickList String? @map("against_pick_list")
   againstPickListRef PickList? @relation(fields: [againstPickList], references: [id])
@@ -5702,6 +5813,10 @@ model SerialAndBatchEntry {
   isCancelled Boolean? @map("is_cancelled") @default(false)
   itemCode String? @map("item_code")
   itemCodeRef Item? @relation(fields: [itemCode], references: [id])
+  fgSerialNo String? @map("fg_serial_no")
+  fgSerialNoRef SerialNo? @relation(fields: [fgSerialNo], references: [id])
+  fgBatchNo String? @map("fg_batch_no")
+  fgBatchNoRef Batch? @relation(fields: [fgBatchNo], references: [id])
   owner String?
   creation DateTime?
   modified DateTime?
@@ -5781,6 +5896,7 @@ model StockSettings {
   namingSeriesDetails String? @map("naming_series_details")
   namingSeriesPreview String? @map("naming_series_preview")
   useInlineSerialBatchEditor Boolean? @map("use_inline_serial_batch_editor") @default(true)
+  autoMapRawMaterialsToFinishedGoods Boolean? @map("auto_map_raw_materials_to_finished_goods") @default(false)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -5902,10 +6018,10 @@ model PriceList {
 
 model ItemAlternative {
   id String @id @map("name")
-  itemCode String? @map("item_code")
-  itemCodeRef Item? @relation(fields: [itemCode], references: [id])
-  alternativeItemCode String? @map("alternative_item_code")
-  alternativeItemCodeRef Item? @relation(fields: [alternativeItemCode], references: [id])
+  itemCode String @map("item_code")
+  itemCodeRef Item @relation(fields: [itemCode], references: [id])
+  alternativeItemCode String @map("alternative_item_code")
+  alternativeItemCodeRef Item @relation(fields: [alternativeItemCode], references: [id])
   twoWay Boolean? @map("two_way") @default(false)
   itemName String? @map("item_name")
   alternativeItemName String? @map("alternative_item_name")
@@ -6077,13 +6193,13 @@ model ShipmentParcel {
 model Batch {
   id String @id @map("name")
   disabled Boolean? @default(false)
-  batchId String @map("batch_id") @unique
+  batchId String @map("batch_id")
   item String
   itemRef Item @relation(fields: [item], references: [id])
   image String?
   parentBatch String? @map("parent_batch")
   parentBatchRef Batch? @relation(fields: [parentBatch], references: [id])
-  manufacturingDate DateTime? @map("manufacturing_date") @default(now())
+  manufacturingDate DateTime? @map("manufacturing_date")
   expiryDate DateTime? @map("expiry_date")
   supplier String?
   supplierRef Supplier? @relation(fields: [supplier], references: [id])
@@ -6305,7 +6421,7 @@ model StockEntryDetail {
   againstFgRef SubcontractingInwardOrderItem? @relation(fields: [againstFg], references: [id])
   secondaryItemType StockEntryDetailSecondaryItemType? @map("secondary_item_type")
   bomSecondaryItem String? @map("bom_secondary_item")
-  isLegacyScrapItem Boolean? @map("is_legacy_scrap_item") @default(false)
+  valuationType StockEntryDetailValuationType? @map("valuation_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -6330,7 +6446,7 @@ model QualityInspection {
   itemSerialNoRef SerialNo? @relation(fields: [itemSerialNo], references: [id])
   batchNo String? @map("batch_no")
   batchNoRef Batch? @relation(fields: [batchNo], references: [id])
-  sampleSize Float @map("sample_size")
+  sampleSize Float @map("sample_size") @default(1)
   itemName String? @map("item_name")
   description String?
   inspectedBy String @map("inspected_by")
@@ -6359,11 +6475,11 @@ model QualityInspection {
 model StockClosingEntry {
   id String @id @map("name")
   namingSeries String? @map("naming_series")
-  company String?
-  companyRef Company? @relation(fields: [company], references: [id])
+  company String
+  companyRef Company @relation(fields: [company], references: [id])
   status StockClosingEntryStatus?
   fromDate DateTime? @map("from_date")
-  toDate DateTime? @map("to_date")
+  toDate DateTime @map("to_date")
   amendedFrom String? @map("amended_from")
   amendedFromRef StockClosingEntry? @relation(fields: [amendedFrom], references: [id])
   owner String?
@@ -6405,6 +6521,8 @@ model RepostItemValuation {
   vouchersPosted Int? @map("vouchers_posted")
   repostingDataFile String? @map("reposting_data_file")
   recalculateValuationRate Boolean? @map("recalculate_valuation_rate") @default(false)
+  skipUnchangedEntries Boolean? @map("skip_unchanged_entries") @default(false)
+  createdByScheduler Boolean? @map("created_by_scheduler") @default(false)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -6450,6 +6568,7 @@ model PurchaseReceipt {
   shippingAddressDisplay String? @map("shipping_address_display")
   currency String
   conversionRate Float @map("conversion_rate")
+  useTransactionDateExchangeRate Boolean? @map("use_transaction_date_exchange_rate") @default(false)
   buyingPriceList String? @map("buying_price_list")
   buyingPriceListRef PriceList? @relation(fields: [buyingPriceList], references: [id])
   priceListCurrency String? @map("price_list_currency")
@@ -6600,6 +6719,7 @@ model Item {
   sampleQuantity Int? @map("sample_quantity")
   hasSerialNo Boolean? @map("has_serial_no") @default(false)
   serialNoSeries String? @map("serial_no_series")
+  useSerialNoWiseValuation Boolean? @map("use_serial_no_wise_valuation") @default(true)
   hasVariants Boolean? @map("has_variants") @default(false)
   variantBasedOn ItemVariantBasedOn? @map("variant_based_on")
   isPurchaseItem Boolean? @map("is_purchase_item") @default(true)
@@ -6640,7 +6760,6 @@ model Item {
   grantCommission Boolean? @map("grant_commission") @default(true)
   isGroupedAsset Boolean? @map("is_grouped_asset") @default(false)
   allowNegativeStock Boolean? @map("allow_negative_stock") @default(false)
-  productionCapacity Int? @map("production_capacity")
   purchaseTaxWithholdingCategory String? @map("purchase_tax_withholding_category")
   purchaseTaxWithholdingCategoryRef TaxWithholdingCategory? @relation(fields: [purchaseTaxWithholdingCategory], references: [id])
   salesTaxWithholdingCategory String? @map("sales_tax_withholding_category")
@@ -6698,6 +6817,7 @@ model StockReconciliation {
   company String
   companyRef Company @relation(fields: [company], references: [id])
   purpose StockReconciliationPurpose
+  isMadeFromValuationComparison Boolean? @map("is_made_from_valuation_comparison") @default(false)
   postingDate DateTime @map("posting_date") @default(now())
   postingTime DateTime @map("posting_time") @default(now())
   setPostingTime Boolean? @map("set_posting_time") @default(false)
@@ -6999,6 +7119,7 @@ model PurchaseReceiptItem {
   purchaseOrderItem String? @map("purchase_order_item")
   allowZeroValuationRate Boolean? @map("allow_zero_valuation_rate") @default(false)
   billedAmt Float? @map("billed_amt")
+  closed Boolean? @default(false)
   landedCostVoucherAmount Float? @map("landed_cost_voucher_amount")
   brand String?
   brandRef Brand? @relation(fields: [brand], references: [id])
@@ -7030,6 +7151,7 @@ model PurchaseReceiptItem {
   receivedStockQty Float? @map("received_stock_qty")
   stockUomRate Float? @map("stock_uom_rate")
   deliveryNoteItem String? @map("delivery_note_item")
+  deliveryNotePackedItem String? @map("delivery_note_packed_item")
   marginType PurchaseReceiptItemMarginType? @map("margin_type")
   marginRateOrAmount Float? @map("margin_rate_or_amount")
   rateWithMargin Float? @map("rate_with_margin")
@@ -7060,6 +7182,7 @@ model PurchaseReceiptItem {
   returnQtyFromRejectedWarehouse Boolean? @map("return_qty_from_rejected_warehouse") @default(false)
   salesIncomingRate Float? @map("sales_incoming_rate")
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   amountDifferenceWithPurchaseInvoice Float? @map("amount_difference_with_purchase_invoice")
   owner String?
   creation DateTime?
@@ -7190,6 +7313,10 @@ model LandedCostTaxesAndCharges {
   operationId String? @map("operation_id")
   qty Float?
   operatingComponent String? @map("operating_component")
+  itemRow String? @map("item_row")
+  workOrder String? @map("work_order")
+  workOrderRef WorkOrder? @relation(fields: [workOrder], references: [id])
+  subcontractingOrderCost String? @map("subcontracting_order_cost")
   costCenter String? @map("cost_center")
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
   project String?
@@ -7521,6 +7648,7 @@ model VideoSettings {
   enableYoutubeTracking Boolean? @map("enable_youtube_tracking") @default(false)
   apiKey String? @map("api_key")
   frequency VideoSettingsFrequency?
+  lastYoutubeUpdate DateTime? @map("last_youtube_update")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -8136,6 +8264,7 @@ model GlobalDefaults {
   demoCompany String? @map("demo_company")
   demoCompanyRef Company? @relation(fields: [demoCompany], references: [id])
   usePostingDatetimeForNamingDocuments Boolean? @map("use_posting_datetime_for_naming_documents") @default(true)
+  enableItemSearchIndex Boolean? @map("enable_item_search_index") @default(false)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -8204,7 +8333,7 @@ model HolidayList {
   holidayListName String @map("holiday_list_name") @unique
   fromDate DateTime @map("from_date")
   toDate DateTime @map("to_date")
-  totalHolidays Int? @map("total_holidays")
+  totalHolidays Float? @map("total_holidays")
   weeklyOff HolidayListWeeklyOff? @map("weekly_off")
   color String?
   country String?
@@ -8489,7 +8618,6 @@ model SalesOrderItem {
   productBundle String? @map("product_bundle")
   productBundleRef ProductBundle? @relation(fields: [productBundle], references: [id])
   customerItemCode String? @map("customer_item_code")
-  ensureDeliveryBasedOnProducedSerialNo Boolean? @map("ensure_delivery_based_on_produced_serial_no") @default(false)
   itemName String @map("item_name")
   description String?
   deliveryDate DateTime? @map("delivery_date")
@@ -8538,6 +8666,7 @@ model SalesOrderItem {
   itemGroup String? @map("item_group")
   itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
   billedAmt Float? @map("billed_amt")
+  closed Boolean? @default(false)
   valuationRate Float? @map("valuation_rate")
   grossProfit Float? @map("gross_profit")
   blanketOrder String? @map("blanket_order")
@@ -8575,6 +8704,7 @@ model SalesOrderItem {
   productionPlanQty Float? @map("production_plan_qty")
   isStockItem Boolean? @map("is_stock_item") @default(false)
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   companyTotalStock Float? @map("company_total_stock")
   costCenter String? @map("cost_center")
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
@@ -8637,6 +8767,8 @@ model Customer {
   industry String?
   industryRef IndustryType? @relation(fields: [industry], references: [id])
   isFrozen Boolean? @map("is_frozen") @default(false)
+  onHold Boolean? @map("on_hold") @default(false)
+  releaseDate DateTime? @map("release_date")
   loyaltyProgram String? @map("loyalty_program")
   loyaltyProgramRef LoyaltyProgram? @relation(fields: [loyaltyProgram], references: [id])
   loyaltyProgramTier String? @map("loyalty_program_tier")
@@ -8728,7 +8860,9 @@ model SellingSettings {
   deliverSecondaryItems Boolean? @map("deliver_secondary_items") @default(false)
   enableProformaInvoice Boolean? @map("enable_proforma_invoice") @default(false)
   defaultProformaPrintFormat String? @map("default_proforma_print_format")
+  proformaEmailTemplate String? @map("proforma_email_template")
   namingSeriesDetails String? @map("naming_series_details")
+  loadCustomerOverview Boolean? @map("load_customer_overview") @default(true)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -8753,6 +8887,7 @@ model ProformaInvoiceItem {
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
+  description String?
   qty Float
   uom String?
   uomRef UOM? @relation(fields: [uom], references: [id])
@@ -8916,10 +9051,14 @@ model Quotation {
   customerName String? @map("customer_name")
   amendedFrom String? @map("amended_from")
   amendedFromRef Quotation? @relation(fields: [amendedFrom], references: [id])
+  revisionOf String? @map("revision_of")
+  revisionOfRef Quotation? @relation(fields: [revisionOf], references: [id])
+  isLatestRevision Boolean? @map("is_latest_revision") @default(false)
   company String
   companyRef Company @relation(fields: [company], references: [id])
   transactionDate DateTime @map("transaction_date") @default(now())
   validTill DateTime? @map("valid_till")
+  isActive Boolean? @map("is_active") @default(true)
   orderType QuotationOrderType @map("order_type")
   customerAddress String? @map("customer_address")
   addressDisplay String? @map("address_display")
@@ -9308,6 +9447,7 @@ model QuotationItem {
   isAlternative Boolean? @map("is_alternative") @default(false)
   hasAlternativeItem Boolean? @map("has_alternative_item") @default(false)
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   companyTotalStock Float? @map("company_total_stock")
   orderedQty Float @map("ordered_qty") @default(0)
   owner String?
@@ -9463,7 +9603,7 @@ model QualityFeedbackTemplate {
 
 model QualityFeedbackTemplateParameter {
   id String @id @map("name")
-  parameter String?
+  parameter String
   owner String?
   creation DateTime?
   modified DateTime?
@@ -9530,7 +9670,7 @@ model QualityGoalObjective {
 model QualityFeedbackParameter {
   id String @id @map("name")
   parameter String?
-  rating QualityFeedbackParameterRating
+  rating QualityFeedbackParameterRating?
   feedback String?
   owner String?
   creation DateTime?
@@ -9632,7 +9772,6 @@ model WorkOrder {
   productBundleItemRef Item? @relation(fields: [productBundleItem], references: [id])
   amendedFrom String? @map("amended_from")
   amendedFromRef WorkOrder? @relation(fields: [amendedFrom], references: [id])
-  updateConsumedMaterialCostInProject Boolean? @map("update_consumed_material_cost_in_project") @default(true)
   sourceWarehouse String? @map("source_warehouse")
   sourceWarehouseRef Warehouse? @relation(fields: [sourceWarehouse], references: [id])
   leadTime Float? @map("lead_time")
@@ -9669,6 +9808,7 @@ model BOMItem {
   operationRef Operation? @relation(fields: [operation], references: [id])
   bomNo String? @map("bom_no")
   bomNoRef BOM? @relation(fields: [bomNo], references: [id])
+  setRateOfSubAssemblyItemBasedOnBom Boolean? @map("set_rate_of_sub_assembly_item_based_on_bom") @default(true)
   sourceWarehouse String? @map("source_warehouse")
   sourceWarehouseRef Warehouse? @relation(fields: [sourceWarehouse], references: [id])
   description String?
@@ -9744,6 +9884,7 @@ model WorkOrderOperation {
   operationRef Operation @relation(fields: [operation], references: [id])
   bom String?
   bomRef BOM? @relation(fields: [bom], references: [id])
+  bomOperation String? @map("bom_operation")
   description String?
   completedQty Float? @map("completed_qty")
   status WorkOrderOperationStatus?
@@ -9767,6 +9908,7 @@ model WorkOrderOperation {
   bomNoRef BOM? @relation(fields: [bomNo], references: [id])
   finishedGood String? @map("finished_good")
   finishedGoodRef Item? @relation(fields: [finishedGood], references: [id])
+  outputQty Float? @map("output_qty")
   wipWarehouse String? @map("wip_warehouse")
   wipWarehouseRef Warehouse? @relation(fields: [wipWarehouse], references: [id])
   fgWarehouse String? @map("fg_warehouse")
@@ -9798,6 +9940,7 @@ model JobCardOperation {
   subOperation String? @map("sub_operation")
   subOperationRef Operation? @relation(fields: [subOperation], references: [id])
   completedQty Float? @map("completed_qty")
+  processLossQty Float? @map("process_loss_qty")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -9876,7 +10019,7 @@ model ProductionPlanSalesOrder {
 
 model BOMSecondaryItem {
   id String @id @map("name")
-  secondaryItemType BOMSecondaryItemSecondaryItemType? @map("secondary_item_type")
+  secondaryItemType BOMSecondaryItemSecondaryItemType @map("secondary_item_type")
   itemCode String @map("item_code")
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
@@ -9893,8 +10036,7 @@ model BOMSecondaryItem {
   processLossPer Float @map("process_loss_per") @default(0)
   description String?
   baseCost Float @map("base_cost") @default(0)
-  isLegacy Boolean? @map("is_legacy") @default(false)
-  rate Float?
+  valuationType BOMSecondaryItemValuationType @map("valuation_type")
   processLossQty Float @map("process_loss_qty") @default(0)
   owner String?
   creation DateTime?
@@ -9921,6 +10063,15 @@ model BlanketOrder {
   toDate DateTime @map("to_date")
   company String
   companyRef Company @relation(fields: [company], references: [id])
+  status BlanketOrderStatus?
+  currency String
+  conversionRate Float @map("conversion_rate")
+  sellingPriceList String? @map("selling_price_list")
+  sellingPriceListRef PriceList? @relation(fields: [sellingPriceList], references: [id])
+  buyingPriceList String? @map("buying_price_list")
+  buyingPriceListRef PriceList? @relation(fields: [buyingPriceList], references: [id])
+  priceListCurrency String? @map("price_list_currency")
+  plcConversionRate Float? @map("plc_conversion_rate")
   amendedFrom String? @map("amended_from")
   amendedFromRef BlanketOrder? @relation(fields: [amendedFrom], references: [id])
   tcName String? @map("tc_name")
@@ -9967,6 +10118,7 @@ model ProductionPlanSubAssemblyItem {
   projectedQty Float? @map("projected_qty")
   woProducedQty Float? @map("wo_produced_qty")
   requiredQty Float? @map("required_qty")
+  processLossPercentage Float? @map("process_loss_percentage")
   stockReservedQty Float? @map("stock_reserved_qty")
   orderedQty Float? @map("ordered_qty")
   salesOrder String? @map("sales_order")
@@ -10061,6 +10213,7 @@ model JobCardTimeLog {
   toTime DateTime? @map("to_time")
   timeInMins Float? @map("time_in_mins")
   completedQty Float? @map("completed_qty") @default(0)
+  processLossQty Float? @map("process_loss_qty") @default(0)
   employee String?
   employeeRef Employee? @relation(fields: [employee], references: [id])
   operation String?
@@ -10082,10 +10235,40 @@ model BlanketOrderItem {
   itemCodeRef Item @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
   qty Float?
+  stockUom String? @map("stock_uom")
+  stockUomRef UOM? @relation(fields: [stockUom], references: [id])
+  priceListRate Float? @map("price_list_rate")
+  basePriceListRate Float? @map("base_price_list_rate")
   rate Float
+  baseRate Float @map("base_rate")
   orderedQty Float? @map("ordered_qty")
+  closed Boolean? @default(false)
   termsAndConditions String? @map("terms_and_conditions")
   partyItemCode String? @map("party_item_code")
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
+model BOMCreatorMaterial {
+  id String @id @map("name")
+  bomNodeId Int? @map("bom_node_id") @default(0)
+  operationId Int? @map("operation_id")
+  fromOperationId Int? @map("from_operation_id")
+  partNodeId Int? @map("part_node_id")
+  itemCode String? @map("item_code")
+  itemCodeRef Item? @relation(fields: [itemCode], references: [id])
+  qty Float
+  uom String?
+  uomRef UOM? @relation(fields: [uom], references: [id])
+  isBalanceItem Boolean? @map("is_balance_item") @default(false)
+  storage BOMCreatorMaterialStorage?
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10105,6 +10288,7 @@ model ProductionPlanItem {
   bomNo String @map("bom_no")
   bomNoRef BOM @relation(fields: [bomNo], references: [id])
   plannedQty Float @map("planned_qty")
+  processLossPercentage Float? @map("process_loss_percentage")
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   plannedStartDate DateTime @map("planned_start_date") @default(now())
@@ -10210,7 +10394,7 @@ model SalesForecastItem {
   uom String?
   uomRef UOM? @relation(fields: [uom], references: [id])
   deliveryDate DateTime? @map("delivery_date")
-  demandQty Float @map("demand_qty")
+  demandQty Float? @map("demand_qty")
   warehouse String?
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   owner String?
@@ -10268,6 +10452,7 @@ model WorkOrderItem {
   rate Float?
   amount Float?
   returnedQty Float? @map("returned_qty")
+  subcontractedQty Float? @map("subcontracted_qty")
   operationRowId Int? @map("operation_row_id")
   stockUom String? @map("stock_uom")
   stockUomRef UOM? @relation(fields: [stockUom], references: [id])
@@ -10324,36 +10509,43 @@ model PlantFloor {
 
 model BOMCreatorItem {
   id String @id @map("name")
-  itemCode String @map("item_code")
-  itemCodeRef Item @relation(fields: [itemCode], references: [id])
+  partNumber String? @map("part_number")
+  partName String? @map("part_name")
+  qty Float? @default(1)
+  designQuantity Float? @map("design_quantity")
+  nodeId Int? @map("node_id")
+  parentNodeId Int? @map("parent_node_id")
+  isExpandable Boolean? @map("is_expandable") @default(false)
+  source BOMCreatorItemSource?
+  changeType BOMCreatorItemChangeType? @map("change_type")
+  excludeFromBom Boolean? @map("exclude_from_bom") @default(false)
+  description String?
+  itemCode String? @map("item_code")
+  itemCodeRef Item? @relation(fields: [itemCode], references: [id])
   itemName String? @map("item_name")
   itemGroup String? @map("item_group")
   itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
-  fgItem String @map("fg_item")
-  fgItemRef Item @relation(fields: [fgItem], references: [id])
-  isExpandable Boolean? @map("is_expandable") @default(false)
-  description String?
-  qty Float?
-  rate Float?
+  isPhantomItem Boolean? @map("is_phantom_item") @default(false)
+  sourcedBySupplier Boolean? @map("sourced_by_supplier") @default(false)
+  bomCreated Boolean? @map("bom_created") @default(false)
   uom String?
   uomRef UOM? @relation(fields: [uom], references: [id])
   stockQty Float? @map("stock_qty")
   conversionFactor Float? @map("conversion_factor")
   stockUom String? @map("stock_uom")
   stockUomRef UOM? @relation(fields: [stockUom], references: [id])
+  rate Float?
   amount Float?
-  doNotExplode Boolean? @map("do_not_explode") @default(true)
-  instruction String?
-  baseAmount Float? @map("base_amount")
   baseRate Float? @map("base_rate")
-  sourcedBySupplier Boolean? @map("sourced_by_supplier") @default(false)
-  fgReferenceId String? @map("fg_reference_id")
-  parentRowNo String? @map("parent_row_no")
-  bomCreated Boolean? @map("bom_created") @default(false)
+  baseAmount Float? @map("base_amount")
+  doNotExplode Boolean? @map("do_not_explode") @default(true)
+  bomNo String? @map("bom_no")
+  bomNoRef BOM? @relation(fields: [bomNo], references: [id])
   operation String?
   operationRef Operation? @relation(fields: [operation], references: [id])
-  isSubcontracted Boolean? @map("is_subcontracted") @default(false)
-  isPhantomItem Boolean? @map("is_phantom_item") @default(false)
+  instruction String?
+  modelFile String? @map("model_file")
+  placements Json?
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10370,7 +10562,7 @@ model ManufacturingSettings {
   allowOvertime Boolean? @map("allow_overtime") @default(false)
   allowProductionOnHolidays Boolean? @map("allow_production_on_holidays") @default(false)
   capacityPlanningForDays Int? @map("capacity_planning_for_days") @default(30)
-  minsBetweenOperations Int? @map("mins_between_operations")
+  minsBetweenOperations Int? @map("mins_between_operations") @default(10)
   overproductionPercentageForSalesOrder Float? @map("overproduction_percentage_for_sales_order")
   overproductionPercentageForWorkOrder Float? @map("overproduction_percentage_for_work_order")
   backflushRawMaterialsBasedOn ManufacturingSettingsBackflushRawMaterialsBasedOn? @map("backflush_raw_materials_based_on")
@@ -10387,6 +10579,7 @@ model ManufacturingSettings {
   allowEditingOfItemsAndQuantitiesInWorkOrder Boolean? @map("allow_editing_of_items_and_quantities_in_work_order") @default(false)
   allowAlternativeFinishedGoods Boolean? @map("allow_alternative_finished_goods") @default(false)
   setOpCostAndSecondaryItemsFromSubAssemblies Boolean? @map("set_op_cost_and_secondary_items_from_sub_assemblies") @default(false)
+  enableOperationsAndJobCards Boolean? @map("enable_operations_and_job_cards") @default(false)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10606,6 +10799,34 @@ model MasterProductionScheduleItem {
   parentfield String?
 }
 
+model BOMCreatorOperation {
+  id String @id @map("name")
+  operationId Int? @map("operation_id")
+  bomNodeId Int? @map("bom_node_id") @default(0)
+  operation String
+  operationRef Operation @relation(fields: [operation], references: [id])
+  workstationType String? @map("workstation_type")
+  workstationTypeRef WorkstationType? @relation(fields: [workstationType], references: [id])
+  timeInMins Float? @map("time_in_mins")
+  outputNodeId Int? @map("output_node_id")
+  outputItem String? @map("output_item")
+  outputItemRef Item? @relation(fields: [outputItem], references: [id])
+  outputQuantity Float? @map("output_quantity") @default(1)
+  workstation String?
+  workstationRef Workstation? @relation(fields: [workstation], references: [id])
+  sequenceId Int? @map("sequence_id")
+  yieldPercentage Float? @map("yield_percentage") @default(100)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
+}
+
 model Operation {
   id String @id @map("name")
   workstation String?
@@ -10628,37 +10849,48 @@ model Operation {
 
 model BOMCreator {
   id String @id @map("name")
+  designName String? @map("design_name")
+  itemCode String @map("item_code")
+  itemCodeRef Item @relation(fields: [itemCode], references: [id])
   company String
   companyRef Company @relation(fields: [company], references: [id])
+  designFile String? @map("design_file")
+  trackSemiFinishedGoods Boolean? @map("track_semi_finished_goods") @default(false)
+  qty Float @default(1)
   rmCostAsPer BOMCreatorRmCostAsPer @map("rm_cost_as_per")
   buyingPriceList String? @map("buying_price_list")
   buyingPriceListRef PriceList? @relation(fields: [buyingPriceList], references: [id])
   priceListCurrency String? @map("price_list_currency")
   plcConversionRate Float? @map("plc_conversion_rate")
+  setRateBasedOnWarehouse Boolean? @map("set_rate_based_on_warehouse") @default(false)
+  defaultWarehouse String? @map("default_warehouse")
+  defaultWarehouseRef Warehouse? @relation(fields: [defaultWarehouse], references: [id])
   currency String
   conversionRate Float? @map("conversion_rate") @default(1)
   rawMaterialCost Float? @map("raw_material_cost")
-  remarks String?
+  namingSeries String @map("naming_series")
+  itemGroup String? @map("item_group")
+  itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
+  partNumber String? @map("part_number")
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
-  itemCode String @map("item_code")
-  itemCodeRef Item @relation(fields: [itemCode], references: [id])
-  qty Float
+  isPhantom Boolean? @map("is_phantom") @default(false)
+  routing String?
+  routingRef Routing? @relation(fields: [routing], references: [id])
+  revision Int? @default(1)
+  previousRevision String? @map("previous_revision")
+  previousRevisionRef BOMCreator? @relation(fields: [previousRevision], references: [id])
   itemName String? @map("item_name")
   uom String?
   uomRef UOM? @relation(fields: [uom], references: [id])
-  itemGroup String? @map("item_group")
-  itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
+  status BOMCreatorStatus?
+  remarks String?
+  errorLog String? @map("error_log")
   amendedFrom String? @map("amended_from")
   amendedFromRef BOMCreator? @relation(fields: [amendedFrom], references: [id])
-  defaultWarehouse String? @map("default_warehouse")
-  defaultWarehouseRef Warehouse? @relation(fields: [defaultWarehouse], references: [id])
-  setRateBasedOnWarehouse Boolean? @map("set_rate_based_on_warehouse") @default(false)
-  status BOMCreatorStatus?
-  errorLog String? @map("error_log")
-  routing String?
-  routingRef Routing? @relation(fields: [routing], references: [id])
-  isPhantom Boolean? @map("is_phantom") @default(false)
+  rawMaterialWarehouse String? @map("raw_material_warehouse")
+  rawMaterialWarehouseRef Warehouse? @relation(fields: [rawMaterialWarehouse], references: [id])
+  formulaTolerance Float? @map("formula_tolerance") @default(2)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10740,6 +10972,7 @@ model Workstation {
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   totalWorkingHours Float? @map("total_working_hours")
   disabled Boolean? @default(false)
+  batchCapacity Float? @map("batch_capacity")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -10798,12 +11031,38 @@ model WorkstationType {
   workstationType String @map("workstation_type") @unique
   hourRate Float? @map("hour_rate")
   description String?
+  machineModel WorkstationTypeMachineModel? @map("machine_model")
   owner String?
   creation DateTime?
   modified DateTime?
   modifiedBy String? @map("modified_by")
   docstatus Int?
   idx Int?
+}
+
+model WorkstationTypeShape {
+  id String @id @map("name")
+  shape WorkstationTypeShapeShape
+  finish WorkstationTypeShapeFinish?
+  x Float?
+  y Float?
+  z Float?
+  width Float?
+  depth Float?
+  radius Float?
+  height Float?
+  showsLevel Boolean? @map("shows_level") @default(true)
+  isSmall Boolean? @map("is_small") @default(false)
+  shakes Boolean? @default(false)
+  owner String?
+  creation DateTime?
+  modified DateTime?
+  modifiedBy String? @map("modified_by")
+  docstatus Int?
+  idx Int?
+  parent String?
+  parenttype String?
+  parentfield String?
 }
 
 model JobCard {
@@ -10930,6 +11189,7 @@ model ProductionPlan {
   subAssemblyWarehouseRef Warehouse? @relation(fields: [subAssemblyWarehouse], references: [id])
   considerMinimumOrderQty Boolean? @map("consider_minimum_order_qty") @default(false)
   reserveStock Boolean? @map("reserve_stock") @default(false)
+  considerProcessLoss Boolean? @map("consider_process_loss") @default(false)
   noOfShifts Int? @map("no_of_shifts")
   owner String?
   creation DateTime?
@@ -10954,7 +11214,6 @@ model BOM {
   withOperations Boolean? @map("with_operations") @default(false)
   inspectionRequired Boolean? @map("inspection_required") @default(false)
   allowAlternativeItem Boolean? @map("allow_alternative_item") @default(false)
-  setRateOfSubAssemblyItemBasedOnBom Boolean? @map("set_rate_of_sub_assembly_item_based_on_bom") @default(true)
   qualityInspectionTemplate String? @map("quality_inspection_template")
   qualityInspectionTemplateRef QualityInspectionTemplate? @relation(fields: [qualityInspectionTemplate], references: [id])
   company String
@@ -11006,6 +11265,7 @@ model BOM {
   costAllocation Float? @map("cost_allocation")
   costAllocationPer Float? @map("cost_allocation_per") @default(100)
   backflushBasedOn BOMBackflushBasedOn? @map("backflush_based_on")
+  formulaTolerance Float? @map("formula_tolerance")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -11131,6 +11391,7 @@ model SubcontractingReceiptItem {
   warehouseRef Warehouse? @relation(fields: [warehouse], references: [id])
   rejectedWarehouse String? @map("rejected_warehouse")
   rejectedWarehouseRef Warehouse? @relation(fields: [rejectedWarehouse], references: [id])
+  returnQtyFromRejectedWarehouse Boolean? @map("return_qty_from_rejected_warehouse") @default(false)
   qualityInspection String? @map("quality_inspection")
   qualityInspectionRef QualityInspection? @relation(fields: [qualityInspection], references: [id])
   subcontractingOrder String? @map("subcontracting_order")
@@ -11175,7 +11436,8 @@ model SubcontractingReceiptItem {
   serviceExpenseAccountRef Account? @relation(fields: [serviceExpenseAccount], references: [id])
   secondaryItemType SubcontractingReceiptItemSecondaryItemType? @map("secondary_item_type")
   secondaryItemsCostPerQty Float? @map("secondary_items_cost_per_qty") @default(0)
-  isLegacyScrapItem Boolean? @map("is_legacy_scrap_item") @default(false)
+  valuationType SubcontractingReceiptItemValuationType? @map("valuation_type")
+  bomSecondaryItem String? @map("bom_secondary_item")
   processLossQty Float? @map("process_loss_qty") @default(0)
   owner String?
   creation DateTime?
@@ -11250,6 +11512,8 @@ model SubcontractingOrderServiceItem {
   qty Float
   rate Float
   amount Float
+  baseRate Float? @map("base_rate")
+  baseAmount Float? @map("base_amount")
   fgItem String @map("fg_item")
   fgItemRef Item @relation(fields: [fgItem], references: [id])
   fgItemQty Float @map("fg_item_qty") @default(1)
@@ -11312,6 +11576,7 @@ model SubcontractingOrder {
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
   supplierCurrency String? @map("supplier_currency")
+  conversionRate Float? @map("conversion_rate") @default(1)
   reserveStock Boolean? @map("reserve_stock") @default(false)
   productionPlan String? @map("production_plan")
   owner String?
@@ -11713,6 +11978,7 @@ model ProcessPaymentReconciliation {
 model ChequePrintTemplate {
   id String @id @map("name")
   hasPrintFormat Boolean? @map("has_print_format") @default(false)
+  printFormatCreation DateTime? @map("print_format_creation")
   bankName String @map("bank_name") @unique
   chequeSize ChequePrintTemplateChequeSize? @map("cheque_size")
   startingPositionFromTopEdge Float? @map("starting_position_from_top_edge")
@@ -13195,6 +13461,7 @@ model PurchaseInvoiceItem {
   materialRequestItem String? @map("material_request_item")
   salesIncomingRate Float? @map("sales_incoming_rate")
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   taxWithholdingCategory String? @map("tax_withholding_category")
   taxWithholdingCategoryRef TaxWithholdingCategory? @relation(fields: [taxWithholdingCategory], references: [id])
   deliveredBySupplier Boolean? @map("delivered_by_supplier") @default(false)
@@ -13344,7 +13611,7 @@ model PartyAccount {
 
 model AccountingDimensionFilter {
   id String @id @map("name")
-  accountingDimension String @map("accounting_dimension")
+  accountingDimension AccountingDimensionFilterAccountingDimension @map("accounting_dimension")
   allowOrRestrict AccountingDimensionFilterAllowOrRestrict @map("allow_or_restrict")
   disabled Boolean? @default(false)
   company String
@@ -13472,6 +13739,7 @@ model OpeningInvoiceCreationToolItem {
   postingDate DateTime? @map("posting_date") @default(now())
   dueDate DateTime? @map("due_date") @default(now())
   itemName String? @map("item_name") @default("Opening Invoice Item")
+  currency String?
   outstandingAmount Float @map("outstanding_amount") @default(0)
   qty String? @default("1")
   costCenter String? @map("cost_center")
@@ -14457,6 +14725,7 @@ model PaymentEntry {
   costCenterRef CostCenter? @relation(fields: [costCenter], references: [id])
   modeOfPayment String? @map("mode_of_payment")
   modeOfPaymentRef ModeOfPayment? @relation(fields: [modeOfPayment], references: [id])
+  modeOfPaymentType String? @map("mode_of_payment_type")
   partyType String? @map("party_type")
   party String?
   partyName String? @map("party_name")
@@ -14465,9 +14734,13 @@ model PaymentEntry {
   paidFrom String @map("paid_from")
   paidFromRef Account @relation(fields: [paidFrom], references: [id])
   paidFromAccountCurrency String @map("paid_from_account_currency")
+  paidFromBankAccount String? @map("paid_from_bank_account")
+  paidFromBankAccountRef BankAccount? @relation(fields: [paidFromBankAccount], references: [id])
   paidTo String @map("paid_to")
   paidToRef Account @relation(fields: [paidTo], references: [id])
   paidToAccountCurrency String @map("paid_to_account_currency")
+  paidToBankAccount String? @map("paid_to_bank_account")
+  paidToBankAccountRef BankAccount? @relation(fields: [paidToBankAccount], references: [id])
   paidAmount Float @map("paid_amount")
   sourceExchangeRate Float @map("source_exchange_rate")
   basePaidAmount Float @map("base_paid_amount")
@@ -14525,6 +14798,8 @@ model PaymentEntry {
   taxWithholdingGroupRef TaxWithholdingGroup? @relation(fields: [taxWithholdingGroup], references: [id])
   ignoreTaxWithholdingThreshold Boolean? @map("ignore_tax_withholding_threshold") @default(false)
   overrideTaxWithholdingEntries Boolean? @map("override_tax_withholding_entries") @default(false)
+  paymentTermDiscountsCalculated Boolean? @map("payment_term_discounts_calculated") @default(false)
+  totalOutstandingAmount Float? @map("total_outstanding_amount")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -14739,8 +15014,12 @@ model PaymentReconciliation {
   party String
   receivablePayableAccount String @map("receivable_payable_account")
   receivablePayableAccountRef Account @relation(fields: [receivablePayableAccount], references: [id])
+  currency String?
   bankCashAccount String? @map("bank_cash_account")
   bankCashAccountRef Account? @relation(fields: [bankCashAccount], references: [id])
+  totalInvoiceAmount Float? @map("total_invoice_amount")
+  totalPaymentAmount Float? @map("total_payment_amount")
+  differenceAmount Float? @map("difference_amount")
   fromInvoiceDate DateTime? @map("from_invoice_date")
   toInvoiceDate DateTime? @map("to_invoice_date")
   minimumInvoiceAmount Float? @map("minimum_invoice_amount")
@@ -15185,6 +15464,7 @@ model POSProfile {
   taxCategory String? @map("tax_category")
   taxCategoryRef TaxCategory? @relation(fields: [taxCategory], references: [id])
   printFormat String? @map("print_format")
+  receiptEmailTemplate String? @map("receipt_email_template")
   warehouse String
   warehouseRef Warehouse @relation(fields: [warehouse], references: [id])
   ignorePricingRule Boolean? @map("ignore_pricing_rule") @default(false)
@@ -15362,6 +15642,7 @@ model PeriodClosingVoucher {
   companyRef Company @relation(fields: [company], references: [id])
   closingAccountHead String @map("closing_account_head")
   closingAccountHeadRef Account @relation(fields: [closingAccountHead], references: [id])
+  stockValueDifference Float? @map("stock_value_difference")
   remarks String
   gleProcessingStatus PeriodClosingVoucherGleProcessingStatus? @map("gle_processing_status")
   errorMessage String? @map("error_message")
@@ -15413,6 +15694,8 @@ model PaymentEntryDeduction {
   amount Float
   description String?
   isExchangeGainLoss Boolean? @map("is_exchange_gain_loss") @default(false)
+  dunning String?
+  dunningRef Dunning? @relation(fields: [dunning], references: [id])
   owner String?
   creation DateTime?
   modified DateTime?
@@ -15436,8 +15719,6 @@ model TaxRule {
   customerRef Customer? @relation(fields: [customer], references: [id])
   supplier String?
   supplierRef Supplier? @relation(fields: [supplier], references: [id])
-  item String?
-  itemRef Item? @relation(fields: [item], references: [id])
   billingCity String? @map("billing_city")
   billingCounty String? @map("billing_county")
   billingState String? @map("billing_state")
@@ -15449,8 +15730,6 @@ model TaxRule {
   customerGroupRef CustomerGroup? @relation(fields: [customerGroup], references: [id])
   supplierGroup String? @map("supplier_group")
   supplierGroupRef SupplierGroup? @relation(fields: [supplierGroup], references: [id])
-  itemGroup String? @map("item_group")
-  itemGroupRef ItemGroup? @relation(fields: [itemGroup], references: [id])
   shippingCity String? @map("shipping_city")
   shippingCounty String? @map("shipping_county")
   shippingState String? @map("shipping_state")
@@ -15471,8 +15750,8 @@ model TaxRule {
 
 model RepostPaymentLedgerItems {
   id String @id @map("name")
-  voucherType String? @map("voucher_type")
-  voucherNo String? @map("voucher_no")
+  voucherType String @map("voucher_type")
+  voucherNo String @map("voucher_no")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -15722,6 +16001,8 @@ model SalesInvoiceItem {
   pageBreak Boolean? @map("page_break") @default(false)
   financeBook String? @map("finance_book")
   financeBookRef FinanceBook? @relation(fields: [financeBook], references: [id])
+  assetGrossValue Float? @map("asset_gross_value")
+  assetValueAfterDepreciation Float? @map("asset_value_after_depreciation")
   project String?
   projectRef Project? @relation(fields: [project], references: [id])
   salesInvoiceItem String? @map("sales_invoice_item")
@@ -15738,6 +16019,7 @@ model SalesInvoiceItem {
   serialAndBatchBundleRef SerialAndBatchBundle? @relation(fields: [serialAndBatchBundle], references: [id])
   useSerialBatchFields Boolean? @map("use_serial_batch_fields") @default(false)
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   companyTotalStock Float? @map("company_total_stock")
   posInvoiceItem String? @map("pos_invoice_item")
   posInvoice String? @map("pos_invoice")
@@ -16230,7 +16512,7 @@ model Dunning {
   postingDate DateTime @map("posting_date") @default(now())
   dunningType String? @map("dunning_type")
   dunningTypeRef DunningType? @relation(fields: [dunningType], references: [id])
-  dunningFee Float? @map("dunning_fee") @default(0)
+  dunningFee Float? @map("dunning_fee")
   language String?
   letterHead String? @map("letter_head")
   amendedFrom String? @map("amended_from")
@@ -16248,6 +16530,8 @@ model Dunning {
   customerRef Customer @relation(fields: [customer], references: [id])
   grandTotal Float? @map("grand_total") @default(0)
   status DunningStatus?
+  supersededBy String? @map("superseded_by")
+  supersededByRef Dunning? @relation(fields: [supersededBy], references: [id])
   incomeAccount String? @map("income_account")
   incomeAccountRef Account? @relation(fields: [incomeAccount], references: [id])
   totalInterest Float? @map("total_interest") @default(0)
@@ -16317,6 +16601,7 @@ model LedgerMerge {
   rootType LedgerMergeRootType @map("root_type")
   accountName String @map("account_name")
   isGroup Boolean? @map("is_group") @default(false)
+  accountType String? @map("account_type")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -16388,6 +16673,7 @@ model PaymentEntryReference {
   id String @id @map("name")
   referenceDoctype String @map("reference_doctype")
   referenceName String @map("reference_name")
+  postingDate DateTime? @map("posting_date")
   dueDate DateTime? @map("due_date")
   billNo String? @map("bill_no")
   totalAmount Float? @map("total_amount")
@@ -16408,6 +16694,7 @@ model PaymentEntryReference {
   reconcileEffectOn DateTime? @map("reconcile_effect_on")
   advanceVoucherType String? @map("advance_voucher_type")
   advanceVoucherNo String? @map("advance_voucher_no")
+  paymentTermDiscount Float? @map("payment_term_discount")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -16658,6 +16945,7 @@ model POSInvoiceItem {
   qualityInspectionRef QualityInspection? @relation(fields: [qualityInspection], references: [id])
   batchNo String? @map("batch_no")
   batchNoRef Batch? @relation(fields: [batchNo], references: [id])
+  incomingRate Float? @map("incoming_rate")
   allowZeroValuationRate Boolean? @map("allow_zero_valuation_rate") @default(false)
   serialNo String? @map("serial_no")
   itemTaxRate String? @map("item_tax_rate")
@@ -16682,6 +16970,7 @@ model POSInvoiceItem {
   serialAndBatchBundleRef SerialAndBatchBundle? @relation(fields: [serialAndBatchBundle], references: [id])
   useSerialBatchFields Boolean? @map("use_serial_batch_fields") @default(false)
   distributedDiscountAmount Float? @map("distributed_discount_amount")
+  mappedAdditionalDiscountAmount Float? @map("mapped_additional_discount_amount") @default(0)
   owner String?
   creation DateTime?
   modified DateTime?
@@ -16715,7 +17004,6 @@ model ActivityCost {
 
 model ProjectsSettings {
   id String @id @map("name")
-  ignoreWorkstationTimeOverlap Boolean? @map("ignore_workstation_time_overlap") @default(false)
   ignoreUserTimeOverlap Boolean? @map("ignore_user_time_overlap") @default(false)
   ignoreEmployeeTimeOverlap Boolean? @map("ignore_employee_time_overlap") @default(false)
   fetchTimesheetInSalesInvoice Boolean? @map("fetch_timesheet_in_sales_invoice") @default(false)
@@ -16776,7 +17064,7 @@ model Timesheet {
   baseTotalCostingAmount Float? @map("base_total_costing_amount")
   baseTotalBillableAmount Float? @map("base_total_billable_amount")
   baseTotalBilledAmount Float? @map("base_total_billed_amount")
-  exchangeRate Float? @map("exchange_rate") @default(1)
+  exchangeRate Float? @map("exchange_rate")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -16865,6 +17153,7 @@ model TaskDependsOn {
 
 model Project {
   id String @id @map("name")
+  overviewDashboard String? @map("overview_dashboard")
   projectName String @map("project_name") @unique
   status ProjectStatus?
   projectType String? @map("project_type")
@@ -16915,6 +17204,7 @@ model Project {
   message String?
   namingSeries String @map("naming_series")
   subject String?
+  costingDashboard String? @map("costing_dashboard")
   owner String?
   creation DateTime?
   modified DateTime?
@@ -17237,6 +17527,7 @@ model Opportunity {
   opportunityTypeRef OpportunityType? @relation(fields: [opportunityType], references: [id])
   status OpportunityStatus
   orderLostReason String? @map("order_lost_reason")
+  lostOn DateTime? @map("lost_on")
   expectedClosing DateTime? @map("expected_closing")
   currency String?
   opportunityAmount Float? @map("opportunity_amount")

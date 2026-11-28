@@ -1,10 +1,22 @@
 // lago — the data model of getlago/lago-api, expressed in .lite.
 //
-// Derived mechanically from db/structure.sql (AGPL-3.0) by
+// Derived mechanically from db/structure.sql (AGPL-3.0) at
+// 1894407d4722 (2026-11-26) by
 // `litestone import --from sql`. A CORPUS FIXTURE, not a design:
 // nothing here is a claim about how any of it should be modelled, and every
 // place the conversion made a choice the source did not is recorded in
-// gaps.json. 139 models. Regenerate with fetch.mjs.
+// gaps.json. 177 models. Regenerate with fetch.mjs.
+
+enum AgentClaimStatus {
+  issued
+  started
+  verified
+}
+
+enum AgentRegistrationStatus {
+  active
+  revoked
+}
 
 enum BillableMetricRoundingFunction {
   round
@@ -21,11 +33,107 @@ enum BillingObjectConnectionBehavior {
   skip
 }
 
+enum BillingOperationCancellationReason {
+  contract_termination
+  rate_change
+}
+
+enum BillingOperationReason {
+  contract_activation
+  periodic_continuation
+  contract_units_change
+  late_payment
+  rate_change
+  configuration_change
+  contract_termination
+}
+
+enum BillingSegmentStatus {
+  pending
+  processing
+  done
+  failed
+}
+
+enum CatalogWalletCreditAllocationTrigger {
+  billing_cycle
+  ongoing_balance
+}
+
+enum CatalogWalletSelectorFeeType {
+  fixed
+  metered
+}
+
+enum CatalogWalletSelectorType {
+  fee_type
+  product_category
+  product
+  product_filters
+}
+
+enum CatalogWalletTaxApplication {
+  tax_on_consumption
+  tax_on_purchase
+}
+
+enum CatalogWalletTransactionAllocationType {
+  billing_cycle
+  ongoing_balance
+}
+
+enum CatalogWalletTransactionDirection {
+  inbound
+  outbound
+}
+
+enum CatalogWalletTransactionReason {
+  top_up
+  credit_allocation
+  invoice_void
+  invoice_application
+  void
+}
+
+enum CatalogWalletTransactionStatus {
+  pending
+  settled
+  failed
+}
+
 enum ConnectionCategory {
   payment
   tax
   accounting
   crm
+}
+
+enum ContractBillingTime {
+  calendar
+  anniversary
+}
+
+enum ContractPaymentMethodType {
+  provider
+  manual
+}
+
+enum ContractRateCardBillingScope {
+  cycle
+  segment
+}
+
+enum ContractRateCardsTermsApplicationTiming {
+  current_billing_cycle
+  next_billing_cycle
+}
+
+enum ContractStatus {
+  draft
+  pending
+  active
+  terminated
+  canceled
 }
 
 enum CustomerAccountType {
@@ -36,27 +144,6 @@ enum CustomerAccountType {
 enum CustomerType {
   company
   individual
-}
-
-enum EnrichedStoreMigrationStatus {
-  pending
-  checking
-  processing
-  enabling
-  completed
-  failed
-}
-
-enum EnrichedStoreSubMigrationStatus {
-  pending
-  comparing
-  reprocessing
-  waiting_for_enrichment
-  deduplicating
-  dedup_paused
-  validating
-  completed
-  failed
 }
 
 enum EntitlementPrivilegeValueTypes {
@@ -89,6 +176,11 @@ enum InvoiceCustomSectionType {
   system_generated
 }
 
+enum InvoiceProgressiveBillingTrigger {
+  usage_threshold
+  wallet_expiration
+}
+
 enum InvoiceSettlementSettlementType {
   payment
   credit_note
@@ -118,6 +210,16 @@ enum OrderStatus {
   failed
 }
 
+enum OrganizationActivationStatus {
+  pending_payment_method
+  active
+}
+
+enum OrganizationEnvironment {
+  production
+  sandbox
+}
+
 enum PaymentMethodTypes {
   provider
   manual
@@ -133,15 +235,27 @@ enum PaymentPayablePaymentStatus {
 enum PaymentType {
   provider
   manual
+  x402
 }
 
-enum PlanPricingType {
-  legacy
-  product_catalog
+enum PendingSignupTokenStatus {
+  pending
+  consumed
+  replaced
+}
+
+enum PlanWalletCreditAllocationTrigger {
+  billing_cycle
+  ongoing_balance
+}
+
+enum PlanWalletTaxApplication {
+  tax_on_consumption
+  tax_on_purchase
 }
 
 enum ProductType {
-  usage
+  metered
   fixed
 }
 
@@ -254,6 +368,11 @@ enum TaxStatus {
   failed
 }
 
+enum UsageAttributionTypeRole {
+  hierarchical
+  flat
+}
+
 enum UsageMonitoringAlertDirection {
   increasing
   decreasing
@@ -271,10 +390,55 @@ enum UsageMonitoringAlertTypes {
   billable_metric_lifetime_usage_units
 }
 
+enum UsageMonitoringCatalogWalletAlertAlertType {
+  balance
+  ongoing_balance
+}
+
+enum UsageMonitoringContractAlertAlertType {
+  usage_amount
+  usage_units
+}
+
+enum UsageMonitoringPlanWalletAlertAlertType {
+  balance
+  ongoing_balance
+}
+
 enum UsageMonitoringTriggeredAlertKinds {
   triggered
   resolved
   seeded
+}
+
+enum UsageMonitoringTriggeredAlertResolutionReasons {
+  recovered
+  threshold_updated
+  threshold_removed
+}
+
+enum X402Asset {
+  usdc
+}
+
+enum X402Facilitator {
+  coinbase_cdp
+}
+
+enum X402SettlementKind {
+  credit_purchase
+  invoice_payment
+}
+
+enum X402SettlementSettledBy {
+  lago
+  merchant
+}
+
+enum X402SettlementStatus {
+  pending
+  settled
+  failed
 }
 
 model TemplatePublicEnrichedEvent {
@@ -316,7 +480,7 @@ model ActiveStorageBlob {
   contentType String? @map("content_type")
   metadata String?
   serviceName String @map("service_name")
-  byteSize Int @map("byte_size")
+  byteSize Int @map("byte_size") @big
   checksum String?
   createdAt DateTime @map("created_at")
 
@@ -339,7 +503,7 @@ model AddOn {
   name String
   code String
   description String?
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -348,6 +512,7 @@ model AddOn {
 
   @@index([deletedAt])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
 }
 
 model AddOnsTax {
@@ -382,7 +547,7 @@ model AdjustedFee {
   adjustedUnits Boolean @map("adjusted_units") @default(false)
   adjustedAmount Boolean @map("adjusted_amount") @default(false)
   units Float @default(0.0)
-  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  unitAmountCents Int @map("unit_amount_cents") @default(0) @big
   properties Json
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -403,6 +568,67 @@ model AdjustedFee {
   @@index([invoiceId])
   @@index([organizationId])
   @@index([subscriptionId])
+}
+
+model AgentClaim {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  registrationId String @map("registration_id")
+  registration AgentRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  status AgentClaimStatus @default(issued)
+  codeHash String @map("code_hash")
+  email String?
+  verificationCodeHash String? @map("verification_code_hash")
+  verificationExpiresAt DateTime? @map("verification_expires_at")
+  verifiedAt DateTime? @map("verified_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  emailHash String? @map("email_hash")
+
+  @@check("((status <> 'verified') OR (verifiedAt IS NOT NULL))")
+  @@unique([codeHash])
+  @@index([organizationId])
+  @@index([registrationId])
+}
+
+model AgentFreeCreditGrant {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  registrationId String @map("registration_id")
+  registration AgentRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  walletTransactionId String? @map("wallet_transaction_id")
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id])
+  emailHash String @map("email_hash")
+  amountCents Int @map("amount_cents") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([integrationId, emailHash])
+  @@index([organizationId])
+  @@index([registrationId])
+  @@index([walletTransactionId])
+}
+
+model AgentRegistration {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  integrationId String @map("integration_id")
+  integration Integration @relation(fields: [integrationId], references: [id])
+  keyId String @map("key_id")
+  publicKey String @map("public_key")
+  status AgentRegistrationStatus @default(active)
+  lastAuthenticatedAt DateTime? @map("last_authenticated_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([integrationId, keyId])
+  @@index([organizationId])
 }
 
 model AiConversation {
@@ -431,7 +657,10 @@ model ApiKey {
   lastUsedAt DateTime? @map("last_used_at")
   name String?
   permissions Json
+  membershipId String? @map("membership_id")
+  membership Membership? @relation(fields: [membershipId], references: [id])
 
+  @@index([membershipId])
   @@index([organizationId])
   @@unique([value])
 }
@@ -442,7 +671,7 @@ model AppliedAddOn {
   addOn AddOn @relation(fields: [addOnId], references: [id])
   customerId String @map("customer_id")
   customer Customer @relation(fields: [customerId], references: [id])
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -457,7 +686,7 @@ model AppliedCoupon {
   couponId String @map("coupon_id")
   customerId String @map("customer_id")
   status Int @default(0)
-  amountCents Int? @map("amount_cents")
+  amountCents Int? @map("amount_cents") @big
   amountCurrency String? @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -514,7 +743,7 @@ model AppliedUsageThreshold {
   usageThreshold UsageThreshold @relation(fields: [usageThresholdId], references: [id])
   invoiceId String @map("invoice_id")
   invoice Invoice @relation(fields: [invoiceId], references: [id])
-  lifetimeUsageAmountCents Int @map("lifetime_usage_amount_cents") @default(0)
+  lifetimeUsageAmountCents Int @map("lifetime_usage_amount_cents") @default(0) @big
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
   organizationId String @map("organization_id")
@@ -524,6 +753,22 @@ model AppliedUsageThreshold {
   @@index([invoiceId])
   @@index([organizationId])
   @@index([usageThresholdId])
+}
+
+model AppliedWalletExpiration {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  invoiceId String @map("invoice_id")
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+  walletId String @map("wallet_id")
+  wallet Wallet @relation(fields: [walletId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([invoiceId])
+  @@index([organizationId])
+  @@index([walletId])
 }
 
 model ArInternalMetadata {
@@ -545,7 +790,7 @@ model BillableMetricFilter {
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([billableMetricId], where: deletedAt == null)
+  @@index([billableMetricId])
   @@index([deletedAt])
   @@index([organizationId])
 }
@@ -570,9 +815,11 @@ model BillableMetric {
   roundingFunction BillableMetricRoundingFunction? @map("rounding_function")
   roundingPrecision Int? @map("rounding_precision")
 
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
   @@index([deletedAt])
   @@index([organizationId, code, expression])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
 }
 
 model BillingEntity {
@@ -589,11 +836,11 @@ model BillingEntity {
   defaultCurrency String @map("default_currency") @default("USD")
   documentLocale String @map("document_locale") @default("en")
   documentNumberPrefix String? @map("document_number_prefix")
-  documentNumbering EntityDocumentNumbering @map("document_numbering")
+  documentNumbering EntityDocumentNumbering @map("document_numbering") @default(per_customer)
   finalizeZeroAmountInvoice Boolean @map("finalize_zero_amount_invoice") @default(true)
   invoiceFooter String? @map("invoice_footer")
   invoiceGracePeriod Int @map("invoice_grace_period") @default(0)
-  netPaymentTerm Int @map("net_payment_term") @default(0)
+  netPaymentTerm Int? @map("net_payment_term") @default(0)
   email String?
   emailSettings String[] @map("email_settings")
   euTaxManagement Boolean? @map("eu_tax_management") @default(false)
@@ -611,12 +858,13 @@ model BillingEntity {
   appliedDunningCampaignId String? @map("applied_dunning_campaign_id")
   appliedDunningCampaign DunningCampaign? @relation(fields: [appliedDunningCampaignId], references: [id], onDelete: SetNull)
   einvoicing Boolean @default(false)
-  subscriptionInvoiceIssuingDateAnchor SubscriptionInvoiceIssuingDateAnchors @map("subscription_invoice_issuing_date_anchor")
-  subscriptionInvoiceIssuingDateAdjustment SubscriptionInvoiceIssuingDateAdjustments @map("subscription_invoice_issuing_date_adjustment")
+  subscriptionInvoiceIssuingDateAnchor SubscriptionInvoiceIssuingDateAnchors @map("subscription_invoice_issuing_date_anchor") @default(next_period_start)
+  subscriptionInvoiceIssuingDateAdjustment SubscriptionInvoiceIssuingDateAdjustments @map("subscription_invoice_issuing_date_adjustment") @default(align_with_finalization_date)
   phone String?
   paymentTerm Json? @map("payment_term")
 
   @@index([appliedDunningCampaignId])
+  @@unique([code, organizationId], where: deletedAt == null && archivedAt == null)
   @@index([organizationId])
 }
 
@@ -675,12 +923,111 @@ model BillingObjectConnection {
   @@index([organizationId])
 }
 
+model BillingOperationSegment {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  billingOperationId String @map("billing_operation_id")
+  billingOperation BillingOperation @relation(fields: [billingOperationId], references: [id])
+  rateCardRateId String @map("rate_card_rate_id")
+  rateCardRate RateCardRate @relation(fields: [rateCardRateId], references: [id])
+  rateOverrideId String? @map("rate_override_id")
+  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+  position Int
+  startedAt DateTime @map("started_at")
+  endedAt DateTime @map("ended_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  prorationRatio Float @map("proration_ratio")
+
+  @@check("(endedAt > startedAt)")
+  @@unique([billingOperationId, position])
+  @@index([organizationId])
+  @@index([rateCardRateId])
+  @@index([rateOverrideId])
+}
+
+model BillingOperation {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  contractRateCardId String @map("contract_rate_card_id")
+  contractRateCard ContractRateCard @relation(fields: [contractRateCardId], references: [id])
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  actionType String @map("action_type")
+  reason BillingOperationReason
+  billingAt DateTime @map("billing_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  cancellationReason BillingOperationCancellationReason? @map("cancellation_reason")
+  targetCycleStartedAt DateTime @map("target_cycle_started_at")
+  processedAt DateTime? @map("processed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  coverageStartedAt DateTime? @map("coverage_started_at")
+  coverageEndedAt DateTime? @map("coverage_ended_at")
+
+  @@index([contractRateCardId])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([contractRateCardId, billingAt], where: processedAt == null && cancelledAt == null)
+  @@index([organizationId, billingAt, id], where: processedAt == null && cancelledAt == null)
+  @@index([organizationId, customerId, billingAt, id], where: processedAt == null && cancelledAt == null)
+}
+
+model BillingSegment {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  contractRateCardId String @map("contract_rate_card_id")
+  contractRateCard ContractRateCard @relation(fields: [contractRateCardId], references: [id])
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  rateCardRateId String? @map("rate_card_rate_id")
+  rateCardRate RateCardRate? @relation(fields: [rateCardRateId], references: [id])
+  rateOverrideId String? @map("rate_override_id")
+  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+  pricingUnitId String? @map("pricing_unit_id")
+  pricingUnit PricingUnit? @relation(fields: [pricingUnitId], references: [id])
+  rateProperties Json @map("rate_properties")
+  currency String
+  billingAt DateTime @map("billing_at")
+  startedAt DateTime @map("started_at")
+  endedAt DateTime @map("ended_at")
+  cycleStartedAt DateTime @map("cycle_started_at")
+  prorationRatio Float @map("proration_ratio") @default(1.0)
+  status BillingSegmentStatus @default(pending)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(cycleStartedAt <= startedAt)")
+  @@check("(startedAt <= endedAt)")
+  @@check("((rateCardRateId IS NOT NULL) OR (rateOverrideId IS NOT NULL))")
+  @@index([contractId, billingAt, status])
+  @@index([contractRateCardId, cycleStartedAt])
+  @@unique([contractRateCardId, startedAt])
+  @@index([contractId])
+  @@index([contractRateCardId])
+  @@index([status, customerId])
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@index([rateOverrideId])
+}
+
 model CachedAggregation {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
   timestamp DateTime
   externalSubscriptionId String @map("external_subscription_id")
-  chargeId String @map("charge_id")
+  chargeId String? @map("charge_id")
   groupId String? @map("group_id")
   group Group? @relation(fields: [groupId], references: [id])
   currentAggregation Float? @map("current_aggregation")
@@ -693,10 +1040,197 @@ model CachedAggregation {
   currentAmount Float? @map("current_amount")
   eventTransactionId String? @map("event_transaction_id")
   presentationBreakdowns Json @map("presentation_breakdowns") @default("[]")
+  contractId String? @map("contract_id")
+  contract Contract? @relation(fields: [contractId], references: [id])
+  productId String? @map("product_id")
+  product Product? @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
 
+  @@check("((chargeId IS NOT NULL) OR ((contractId IS NOT NULL) AND (productId IS NOT NULL)))")
+  @@index([contractId, productId, productFilterId, timestamp], where: contractId != null)
   @@index([chargeId])
   @@index([organizationId, eventTransactionId])
   @@index([externalSubscriptionId])
+}
+
+model CatalogPlan {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  name String
+  code String
+  invoiceDisplayName String? @map("invoice_display_name")
+  description String?
+  currency String
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+}
+
+model CatalogWalletAppliedTax {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planWalletId String? @map("plan_wallet_id")
+  planWallet PlanWallet? @relation(fields: [planWalletId], references: [id])
+  catalogWalletId String? @map("catalog_wallet_id")
+  catalogWallet CatalogWallet? @relation(fields: [catalogWalletId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@arc([planWalletId, catalogWalletId])
+  @@index([organizationId])
+  @@index([taxId])
+}
+
+model CatalogWalletConsumption {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  outboundTransactionId String @map("outbound_transaction_id")
+  outboundTransaction CatalogWalletTransaction @relation(fields: [outboundTransactionId], references: [id])
+  inboundTransactionId String @map("inbound_transaction_id")
+  inboundTransaction CatalogWalletTransaction @relation(fields: [inboundTransactionId], references: [id])
+  feeId String? @map("fee_id")
+  fee Fee? @relation(fields: [feeId], references: [id])
+  creditAmountCents Int @map("credit_amount_cents") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(creditAmountCents > 0)")
+  @@index([feeId], where: feeId != null)
+  @@index([inboundTransactionId])
+  @@index([organizationId])
+}
+
+model CatalogWalletCreditAllocation {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  catalogWalletId String @map("catalog_wallet_id")
+  catalogWallet CatalogWallet @relation(fields: [catalogWalletId], references: [id])
+  productId String? @map("product_id")
+  product Product? @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  code String
+  trigger CatalogWalletCreditAllocationTrigger
+  billingCycles Int? @map("billing_cycles")
+  thresholdAmountCents Int? @map("threshold_amount_cents") @big
+  creditAmountCents Int @map("credit_amount_cents") @big
+  purchaseAmountCents Int? @map("purchase_amount_cents") @big
+  priority Int @default(50)
+  invoiceRequiresSuccessfulPayment Boolean? @map("invoice_requires_successful_payment")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(billingCycles >= 1)")
+  @@check("(creditAmountCents > 0)")
+  @@index([organizationId])
+  @@unique([catalogWalletId, code], where: deletedAt == null)
+}
+
+model CatalogWalletSelector {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planWalletId String? @map("plan_wallet_id")
+  planWallet PlanWallet? @relation(fields: [planWalletId], references: [id])
+  catalogWalletId String? @map("catalog_wallet_id")
+  catalogWallet CatalogWallet? @relation(fields: [catalogWalletId], references: [id])
+  productCategoryId String? @map("product_category_id")
+  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id])
+  productId String? @map("product_id")
+  product Product? @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  selectorType CatalogWalletSelectorType @map("selector_type")
+  feeType CatalogWalletSelectorFeeType? @map("fee_type")
+  withProductFilters Boolean @map("with_product_filters") @default(false)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@arc([planWalletId, catalogWalletId])
+  @@index([organizationId])
+}
+
+model CatalogWalletTransaction {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  catalogWalletId String @map("catalog_wallet_id")
+  catalogWallet CatalogWallet @relation(fields: [catalogWalletId], references: [id])
+  creditAllocationId String? @map("credit_allocation_id")
+  creditAllocation CatalogWalletCreditAllocation? @relation(fields: [creditAllocationId], references: [id])
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  direction CatalogWalletTransactionDirection
+  status CatalogWalletTransactionStatus
+  reason CatalogWalletTransactionReason
+  allocationType CatalogWalletTransactionAllocationType? @map("allocation_type")
+  priority Int @default(50)
+  purchaseAmountCents Int? @map("purchase_amount_cents") @big
+  creditAmountCents Int @map("credit_amount_cents") @big
+  remainingCreditAmountCents Int? @map("remaining_credit_amount_cents") @big
+  invoiceRequiresSuccessfulPayment Boolean? @map("invoice_requires_successful_payment")
+  sourceCycleStartedAt DateTime? @map("source_cycle_started_at")
+  idempotencyKey String? @map("idempotency_key")
+  requestDigest String? @map("request_digest")
+  settledAt DateTime? @map("settled_at")
+  failedAt DateTime? @map("failed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("CASE reason WHEN 'credit_allocation' THEN ((((creditAllocationId IS NULL) + (allocationType IS NULL)) = 0) AND ((allocationType = 'billing_cycle') = (sourceCycleStartedAt IS NOT NULL))) ELSE (((creditAllocationId IS NOT NULL) + (allocationType IS NOT NULL) + (sourceCycleStartedAt IS NOT NULL)) = 0) END")
+  @@check("((creditAmountCents > 0) AND (purchaseAmountCents >= 0))")
+  @@check("((status = 'failed') = (failedAt IS NOT NULL))")
+  @@check("(remainingCreditAmountCents >= 0)")
+  @@check("(remainingCreditAmountCents <= creditAmountCents)")
+  @@check("((status = 'settled') = (settledAt IS NOT NULL))")
+  @@index([catalogWalletId, createdAt, id])
+  @@index([creditAllocationId])
+  @@index([invoiceId])
+  @@index([organizationId])
+}
+
+model CatalogWallet {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  code String
+  name String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  currency String
+  taxApplication CatalogWalletTaxApplication @map("tax_application") @default(tax_on_consumption)
+  priority Int @default(50)
+  topUpMinAmountCents Int? @map("top_up_min_amount_cents") @big
+  topUpMaxAmountCents Int? @map("top_up_max_amount_cents") @big
+  balanceCents Int @map("balance_cents") @default(0) @big
+  ongoingBalanceCents Int @map("ongoing_balance_cents") @default(0) @big
+  lastOngoingBalanceSyncAt DateTime? @map("last_ongoing_balance_sync_at")
+  terminatedAt DateTime? @map("terminated_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(topUpMinAmountCents <= topUpMaxAmountCents)")
+  @@index([contractId, createdAt, id], where: deletedAt == null)
+  @@unique([contractId, code], where: deletedAt == null)
+  @@index([customerId])
+  @@index([organizationId])
 }
 
 model ChargeFilterValue {
@@ -712,7 +1246,7 @@ model ChargeFilterValue {
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
-  @@index([chargeFilterId], where: deletedAt == null)
+  @@index([chargeFilterId])
   @@index([billableMetricFilterId])
   @@index([deletedAt])
   @@index([organizationId])
@@ -731,7 +1265,7 @@ model ChargeFilter {
   organization Organization @relation(fields: [organizationId], references: [id])
   code String?
 
-  @@index([chargeId], where: deletedAt == null)
+  @@index([chargeId])
   @@index([deletedAt])
   @@index([organizationId])
 }
@@ -749,7 +1283,7 @@ model Charge {
   properties Json @default("\"{}\"")
   deletedAt DateTime? @map("deleted_at")
   payInAdvance Boolean @map("pay_in_advance") @default(false)
-  minAmountCents Int @map("min_amount_cents") @default(0)
+  minAmountCents Int @map("min_amount_cents") @default(0) @big
   invoiceable Boolean @default(true)
   prorated Boolean @default(false)
   invoiceDisplayName String? @map("invoice_display_name")
@@ -763,7 +1297,7 @@ model Charge {
 
   @@index([planId, billableMetricId, payInAdvance], where: deletedAt == null)
   @@index([acceptsTargetWallet], where: acceptsTargetWallet == true)
-  @@index([billableMetricId], where: deletedAt == null)
+  @@index([billableMetricId])
   @@index([deletedAt])
   @@index([organizationId])
   @@index([parentId])
@@ -793,7 +1327,7 @@ model Commitment {
   planId String @map("plan_id")
   plan Plan @relation(fields: [planId], references: [id])
   commitmentType Int @map("commitment_type")
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   invoiceDisplayName String? @map("invoice_display_name")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -822,6 +1356,135 @@ model CommitmentsTax {
   @@index([taxId])
 }
 
+model ContractRateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  billingAnchorDate DateTime @map("billing_anchor_date")
+  nextBillingAt DateTime? @map("next_billing_at")
+  effectiveDate DateTime @map("effective_date")
+  units Float?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  billingScope ContractRateCardBillingScope @map("billing_scope") @default(cycle)
+
+  @@index([contractId, createdAt, id], where: deletedAt == null)
+  @@unique([contractId, rateCardId], where: deletedAt == null)
+  @@index([contractId])
+  @@index([deletedAt])
+  @@unique([id, contractId])
+  @@index([nextBillingAt], where: deletedAt == null)
+  @@index([organizationId])
+  @@index([rateCardId])
+}
+
+model ContractRateCardsTerm {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractRateCardId String @map("contract_rate_card_id")
+  contractRateCard ContractRateCard @relation(fields: [contractRateCardId], references: [id])
+  units Float
+  effectiveDate DateTime @map("effective_date")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  applicationTiming ContractRateCardsTermsApplicationTiming @map("application_timing") @default(current_billing_cycle)
+
+  @@unique([contractRateCardId, effectiveDate])
+  @@index([organizationId])
+}
+
+model ContractRecurringAggregationSnapshot {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  productId String @map("product_id")
+  product Product @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  billableMetricId String @map("billable_metric_id")
+  billableMetric BillableMetric @relation(fields: [billableMetricId], references: [id])
+  groupedBy Json @map("grouped_by")
+  toDatetime DateTime @map("to_datetime")
+  watermark DateTime
+  units Float @default(0.0)
+  eventsCount Int @map("events_count") @default(0) @big
+  presentationBreakdowns Json @map("presentation_breakdowns") @default("[]")
+  pricedProductFilterIds String[] @map("priced_product_filter_ids")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([contractId, productId, productFilterId, toDatetime])
+  @@index([billableMetricId])
+  @@index([organizationId])
+  @@index([productFilterId])
+  @@index([productId])
+}
+
+model Contract {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  externalId String @map("external_id")
+  name String?
+  status ContractStatus @default(pending)
+  billingTime ContractBillingTime @map("billing_time") @default(calendar)
+  billingAnchorDate DateTime? @map("billing_anchor_date")
+  startedAt DateTime? @map("started_at")
+  endedAt DateTime? @map("ended_at")
+  terminatedAt DateTime? @map("terminated_at")
+  canceledAt DateTime? @map("canceled_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  catalogPlanId String? @map("catalog_plan_id")
+  catalogPlan CatalogPlan? @relation(fields: [catalogPlanId], references: [id])
+  billingEntityId String? @map("billing_entity_id")
+  billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
+  paymentMethodId String? @map("payment_method_id")
+  paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
+  purchaseOrderNumber String? @map("purchase_order_number")
+  consolidateInvoice Boolean @map("consolidate_invoice") @default(true)
+  paymentMethodType ContractPaymentMethodType @map("payment_method_type") @default(provider)
+  skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
+  code String?
+
+  @@index([organizationId, createdAt, id])
+  @@index([organizationId, status, createdAt, id])
+  @@index([billingEntityId])
+  @@index([catalogPlanId])
+  @@index([customerId])
+  @@index([organizationId])
+  @@index([organizationId, externalId])
+  @@unique([organizationId, externalId, code], nullsDistinct: true)
+  @@index([paymentMethodId])
+  @@index([startedAt])
+}
+
+model ContractsInvoiceCustomSection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  invoiceCustomSectionId String @map("invoice_custom_section_id")
+  invoiceCustomSection InvoiceCustomSection @relation(fields: [invoiceCustomSectionId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@index([invoiceCustomSectionId])
+  @@unique([contractId, invoiceCustomSectionId])
+}
+
 model CouponTarget {
   id String @id @default(uuid())
   couponId String @map("coupon_id")
@@ -835,8 +1498,12 @@ model CouponTarget {
   billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
+  catalogPlanId String? @map("catalog_plan_id")
+  catalogPlan CatalogPlan? @relation(fields: [catalogPlanId], references: [id])
 
+  @@check("(((planId IS NOT NULL) + (catalogPlanId IS NOT NULL)) <= 1)")
   @@index([billableMetricId])
+  @@index([catalogPlanId])
   @@index([couponId])
   @@index([deletedAt])
   @@index([organizationId])
@@ -850,7 +1517,7 @@ model Coupon {
   code String
   status Int @default(0)
   terminatedAt DateTime? @map("terminated_at")
-  amountCents Int? @map("amount_cents")
+  amountCents Int? @map("amount_cents") @big
   amountCurrency String? @map("amount_currency")
   expiration Int
   createdAt DateTime @map("created_at")
@@ -868,6 +1535,7 @@ model Coupon {
 
   @@index([deletedAt])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
 }
 
 model CreditNoteItem {
@@ -876,7 +1544,7 @@ model CreditNoteItem {
   creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
   feeId String? @map("fee_id")
   fee Fee? @relation(fields: [feeId], references: [id])
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -897,40 +1565,41 @@ model CreditNote {
   invoice Invoice @relation(fields: [invoiceId], references: [id])
   sequentialId Int @map("sequential_id")
   number String
-  creditAmountCents Int @map("credit_amount_cents") @default(0)
+  creditAmountCents Int @map("credit_amount_cents") @default(0) @big
   creditAmountCurrency String @map("credit_amount_currency")
   creditStatus Int? @map("credit_status")
-  balanceAmountCents Int @map("balance_amount_cents") @default(0)
+  balanceAmountCents Int @map("balance_amount_cents") @default(0) @big
   balanceAmountCurrency String @map("balance_amount_currency") @default("0")
   reason Int
   file String?
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
-  totalAmountCents Int @map("total_amount_cents") @default(0)
+  totalAmountCents Int @map("total_amount_cents") @default(0) @big
   totalAmountCurrency String @map("total_amount_currency")
-  refundAmountCents Int @map("refund_amount_cents") @default(0)
+  refundAmountCents Int @map("refund_amount_cents") @default(0) @big
   refundAmountCurrency String? @map("refund_amount_currency")
   refundStatus Int? @map("refund_status")
   voidedAt DateTime? @map("voided_at")
   description String?
-  taxesAmountCents Int @map("taxes_amount_cents") @default(0)
+  taxesAmountCents Int @map("taxes_amount_cents") @default(0) @big
   refundedAt DateTime? @map("refunded_at")
   issuingDate DateTime @map("issuing_date")
   status Int @default(1)
-  couponsAdjustmentAmountCents Int @map("coupons_adjustment_amount_cents") @default(0)
-  preciseCouponsAdjustmentAmountCents Int @map("precise_coupons_adjustment_amount_cents") @scale(5) @default(0.0)
-  preciseTaxesAmountCents Int @map("precise_taxes_amount_cents") @scale(5) @default(0.0)
+  couponsAdjustmentAmountCents Int @map("coupons_adjustment_amount_cents") @default(0) @big
+  preciseCouponsAdjustmentAmountCents Int @map("precise_coupons_adjustment_amount_cents") @scale(5) @default(0)
+  preciseTaxesAmountCents Int @map("precise_taxes_amount_cents") @scale(5) @default(0)
   taxesRate Float @map("taxes_rate") @default(0.0)
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
   xmlFile String? @map("xml_file")
-  offsetAmountCents Int @map("offset_amount_cents") @default(0)
+  offsetAmountCents Int @map("offset_amount_cents") @default(0) @big
   offsetAmountCurrency String? @map("offset_amount_currency")
 
   @@index([customerId])
   @@index([invoiceId])
   @@unique([invoiceId, sequentialId])
   @@index([organizationId])
+  @@index([organizationId, createdAt, id], where: status == true)
 }
 
 model CreditNotesTax {
@@ -943,16 +1612,16 @@ model CreditNotesTax {
   taxCode String @map("tax_code")
   taxName String @map("tax_name")
   taxRate Float @map("tax_rate") @default(0.0)
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
-  baseAmountCents Int @map("base_amount_cents") @default(0)
+  baseAmountCents Int @map("base_amount_cents") @default(0) @big
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
   @@index([creditNoteId])
-  @@unique([creditNoteId, taxCode])
+  @@unique([creditNoteId, taxCode, taxRate])
   @@index([organizationId])
   @@index([taxCode])
   @@index([taxId])
@@ -963,7 +1632,7 @@ model Credit {
   invoice Invoice? @relation(fields: [invoiceId], references: [id])
   appliedCouponId String? @map("applied_coupon_id")
   appliedCoupon AppliedCoupon? @relation(fields: [appliedCouponId], references: [id])
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -981,6 +1650,34 @@ model Credit {
   @@index([invoiceId])
   @@index([organizationId])
   @@index([progressiveBillingInvoiceId])
+}
+
+model CsAdminAuditLog {
+  id String @id @default(uuid())
+  actorUserId String @map("actor_user_id")
+  actorUser User @relation(fields: [actorUserId], references: [id])
+  actorEmail String @map("actor_email")
+  action Int
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  featureType Int @map("feature_type")
+  featureKey String @map("feature_key")
+  beforeValue Boolean? @map("before_value")
+  afterValue Boolean @map("after_value")
+  reason String
+  batchId String? @map("batch_id")
+  rollbackOfId String? @map("rollback_of_id")
+  rollbackOf CsAdminAuditLog? @relation(fields: [rollbackOfId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([actorUserId, createdAt])
+  @@index([batchId])
+  @@index([featureKey, createdAt])
+  @@index([organizationId, createdAt])
+  @@unique([rollbackOfId], where: rollbackOfId != null)
+  @@index([actorUserId])
+  @@index([organizationId])
 }
 
 model CustomerMetadata {
@@ -1023,7 +1720,7 @@ model Customer {
   vatRate Float? @map("vat_rate")
   paymentProvider String? @map("payment_provider")
   slug String?
-  sequentialId Int? @map("sequential_id")
+  sequentialId Int? @map("sequential_id") @big
   currency String?
   invoiceGracePeriod Int? @map("invoice_grace_period")
   timezone String?
@@ -1049,15 +1746,16 @@ model Customer {
   lastDunningCampaignAttempt Int @map("last_dunning_campaign_attempt") @default(0)
   lastDunningCampaignAttemptAt DateTime? @map("last_dunning_campaign_attempt_at")
   skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
-  accountType CustomerAccountType @map("account_type")
+  accountType CustomerAccountType @map("account_type") @default(customer)
   billingEntityId String @map("billing_entity_id")
   billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
-  paymentReceiptCounter Int @map("payment_receipt_counter") @default(0)
+  paymentReceiptCounter Int @map("payment_receipt_counter") @default(0) @big
   subscriptionInvoiceIssuingDateAnchor SubscriptionInvoiceIssuingDateAnchors? @map("subscription_invoice_issuing_date_anchor")
   subscriptionInvoiceIssuingDateAdjustment SubscriptionInvoiceIssuingDateAdjustments? @map("subscription_invoice_issuing_date_adjustment")
   awaitingWalletRefresh Boolean @map("awaiting_wallet_refresh") @default(false)
   dunningCurrencyAttempts Json @map("dunning_currency_attempts")
   paymentTerm Json? @map("payment_term")
+  x402AgentAddress String? @map("x402_agent_address")
 
   @@check("(invoiceGracePeriod >= 0)")
   @@check("(netPaymentTerm >= 0)")
@@ -1068,6 +1766,7 @@ model Customer {
   @@index([billingEntityId])
   @@index([deletedAt])
   @@index([organizationId, externalId])
+  @@unique([externalId, organizationId], where: deletedAt == null)
   @@index([organizationId], where: deletedAt == null)
   @@index([sequentialId])
 }
@@ -1115,9 +1814,9 @@ model DailyUsage {
   organization Organization @relation(fields: [organizationId], references: [id])
   customerId String @map("customer_id")
   customer Customer @relation(fields: [customerId], references: [id])
-  subscriptionId String @map("subscription_id")
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  externalSubscriptionId String @map("external_subscription_id")
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  externalSubscriptionId String? @map("external_subscription_id")
   fromDatetime DateTime @map("from_datetime")
   toDatetime DateTime @map("to_datetime")
   usage Json @default("\"{}\"")
@@ -1126,10 +1825,19 @@ model DailyUsage {
   refreshedAt DateTime @map("refreshed_at")
   usageDiff Json @map("usage_diff") @default("\"{}\"")
   usageDate DateTime? @map("usage_date")
+  contractId String? @map("contract_id")
+  contract Contract? @relation(fields: [contractId], references: [id])
+  contractRateCardId String? @map("contract_rate_card_id")
+  contractRateCard ContractRateCard? @relation(fields: [contractRateCardId], references: [id])
+  externalContractId String? @map("external_contract_id")
 
+  @@check("(((subscriptionId IS NOT NULL) AND (externalSubscriptionId IS NOT NULL) AND (contractId IS NULL) AND (contractRateCardId IS NULL) AND (externalContractId IS NULL)) OR ((subscriptionId IS NULL) AND (externalSubscriptionId IS NULL) AND (contractId IS NOT NULL) AND (contractRateCardId IS NOT NULL) AND (externalContractId IS NOT NULL)))")
   @@index([organizationId, externalSubscriptionId])
+  @@index([contractId, usageDate], where: contractId != null)
+  @@index([contractRateCardId, usageDate], where: contractId != null)
   @@index([customerId])
   @@index([organizationId])
+  @@index([organizationId, externalContractId], where: contractId != null)
   @@index([subscriptionId])
   @@index([subscriptionId, usageDate])
   @@index([usageDate])
@@ -1177,13 +1885,14 @@ model DunningCampaignThreshold {
   dunningCampaignId String @map("dunning_campaign_id")
   dunningCampaign DunningCampaign @relation(fields: [dunningCampaignId], references: [id])
   currency String
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
+  @@unique([dunningCampaignId, currency], where: deletedAt == null)
   @@index([deletedAt])
   @@index([dunningCampaignId])
   @@index([organizationId])
@@ -1206,6 +1915,8 @@ model DunningCampaign {
 
   @@index([deletedAt])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+  @@unique([organizationId], where: appliedToOrganization == true && deletedAt == null)
 }
 
 model EnrichedEvent {
@@ -1234,73 +1945,6 @@ model EnrichedEvent {
   @@index([organizationId, subscriptionId, chargeId, chargeFilterId, timestamp])
 }
 
-model EnrichedEventsDefault {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  eventId String @map("event_id")
-  transactionId String @map("transaction_id")
-  externalSubscriptionId String @map("external_subscription_id")
-  code String
-  timestamp DateTime
-  subscriptionId String @map("subscription_id")
-  planId String @map("plan_id")
-  chargeId String @map("charge_id")
-  chargeFilterId String? @map("charge_filter_id")
-  groupedBy Json @map("grouped_by")
-  value String?
-  decimalValue Float @map("decimal_value") @default(0.0)
-  enrichedAt DateTime @map("enriched_at")
-  operationType String? @map("operation_type")
-  preciseTotalAmountCents Float? @map("precise_total_amount_cents")
-  targetWalletCode String? @map("target_wallet_code")
-
-  @@index([eventId])
-  @@unique([organizationId, externalSubscriptionId, transactionId, timestamp, chargeId])
-  @@index([organizationId, externalSubscriptionId, code, timestamp])
-  @@index([organizationId, subscriptionId, chargeId, chargeFilterId, timestamp])
-}
-
-model EnrichedStoreMigration {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  status EnrichedStoreMigrationStatus
-  startedAt DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
-  errorMessage String? @map("error_message")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@unique([organizationId])
-}
-
-model EnrichedStoreSubscriptionMigration {
-  id String @id @default(uuid())
-  enrichedStoreMigrationId String @map("enriched_store_migration_id")
-  enrichedStoreMigration EnrichedStoreMigration @relation(fields: [enrichedStoreMigrationId], references: [id])
-  subscriptionId String @map("subscription_id")
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  status EnrichedStoreSubMigrationStatus
-  billableMetricCodes Json? @map("billable_metric_codes") @default("[]")
-  eventsReprocessedCount Int? @map("events_reprocessed_count") @default(0)
-  duplicatesRemovedCount Int? @map("duplicates_removed_count") @default(0)
-  dedupPendingQueries Json? @map("dedup_pending_queries") @default("[]")
-  comparisonResults Json? @map("comparison_results")
-  errorMessage String? @map("error_message")
-  startedAt DateTime? @map("started_at")
-  completedAt DateTime? @map("completed_at")
-  attempts Int? @default(0)
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@unique([enrichedStoreMigrationId, subscriptionId])
-  @@index([enrichedStoreMigrationId])
-  @@index([organizationId])
-  @@index([subscriptionId])
-}
-
 model EntitlementEntitlementValue {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
@@ -1316,6 +1960,7 @@ model EntitlementEntitlementValue {
 
   @@index([entitlementEntitlementId])
   @@index([entitlementPrivilegeId])
+  @@unique([entitlementPrivilegeId, entitlementEntitlementId], where: deletedAt == null)
   @@index([organizationId])
 }
 
@@ -1332,8 +1977,11 @@ model EntitlementEntitlement {
   updatedAt DateTime @map("updated_at")
   subscriptionId String? @map("subscription_id")
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  catalogPlanId String? @map("catalog_plan_id")
+  catalogPlan CatalogPlan? @relation(fields: [catalogPlanId], references: [id])
 
-  @@arc([planId, subscriptionId])
+  @@arc([planId, catalogPlanId, subscriptionId])
+  @@index([catalogPlanId])
   @@index([entitlementFeatureId])
   @@index([organizationId])
   @@index([planId])
@@ -1351,6 +1999,8 @@ model EntitlementFeature {
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
+  @@unique([code, organizationId], where: deletedAt == null)
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
   @@index([organizationId])
 }
 
@@ -1362,12 +2012,13 @@ model EntitlementPrivilege {
   entitlementFeature EntitlementFeature @relation(fields: [entitlementFeatureId], references: [id])
   code String
   name String?
-  valueType EntitlementPrivilegeValueTypes @map("value_type")
+  valueType EntitlementPrivilegeValueTypes @map("value_type") @default(string)
   config Json
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
+  @@unique([code, entitlementFeatureId], where: deletedAt == null)
   @@index([entitlementFeatureId])
   @@index([organizationId])
 }
@@ -1493,11 +2144,23 @@ model Organization {
   featureFlags String[] @map("feature_flags")
   maxWallets Int? @map("max_wallets")
   slug String
+  paginationMaxPageSize Int? @map("pagination_max_page_size")
+  documentUrlExpirationDays Int @map("document_url_expiration_days") @default(30)
+  customerPortalLockedFields String[] @map("customer_portal_locked_fields")
+  selfServe Boolean @map("self_serve") @default(false)
+  environment OrganizationEnvironment @default(production)
+  productionOrganizationId String? @map("production_organization_id")
+  productionOrganization Organization? @relation(fields: [productionOrganizationId], references: [id])
+  activationStatus OrganizationActivationStatus @map("activation_status") @default(active)
 
+  @@check("((activationStatus = 'active') OR (selfServe AND (environment = 'production')))")
+  @@check("(((environment = 'production') AND (productionOrganizationId IS NULL)) OR ((environment = 'sandbox') AND (productionOrganizationId IS NOT NULL)))")
   @@check("(invoiceGracePeriod >= 0)")
   @@check("(netPaymentTerm >= 0)")
+  @@check("((productionOrganizationId IS NULL) OR (productionOrganizationId <> id))")
   @@unique([apiKey])
   @@unique([hmacKey])
+  @@unique([productionOrganizationId])
   @@unique([slug])
 }
 
@@ -1518,6 +2181,7 @@ model PaymentProviderCustomer {
   code String?
   isDefault Boolean @map("is_default") @default(false)
 
+  @@unique([customerId, type], where: deletedAt == null)
   @@index([organizationId])
   @@index([paymentProviderId])
   @@index([providerCustomerId])
@@ -1531,9 +2195,9 @@ model Fee {
   charge Charge? @relation(fields: [chargeId], references: [id])
   subscriptionId String? @map("subscription_id")
   subscription Subscription? @relation(fields: [subscriptionId], references: [id])
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
-  taxesAmountCents Int @map("taxes_amount_cents")
+  taxesAmountCents Int @map("taxes_amount_cents") @big
   taxesRate Float @map("taxes_rate") @default(0.0)
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -1557,9 +2221,9 @@ model Fee {
   addOnId String? @map("add_on_id")
   addOn AddOn? @relation(fields: [addOnId], references: [id])
   description String?
-  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  unitAmountCents Int @map("unit_amount_cents") @default(0) @big
   payInAdvance Boolean @map("pay_in_advance") @default(false)
-  preciseCouponsAmountCents Int @map("precise_coupons_amount_cents") @scale(5) @default(0.0)
+  preciseCouponsAmountCents Int @map("precise_coupons_amount_cents") @scale(5) @default(0)
   totalAggregatedUnits Float? @map("total_aggregated_units")
   invoiceDisplayName String? @map("invoice_display_name")
   preciseUnitAmount Float @map("precise_unit_amount") @default(0.0)
@@ -1575,7 +2239,7 @@ model Fee {
   organization Organization @relation(fields: [organizationId], references: [id])
   billingEntityId String @map("billing_entity_id")
   billingEntity BillingEntity @relation(fields: [billingEntityId], references: [id])
-  preciseCreditNotesAmountCents Int @map("precise_credit_notes_amount_cents") @scale(5) @default(0.0)
+  preciseCreditNotesAmountCents Int @map("precise_credit_notes_amount_cents") @scale(5) @default(0)
   fixedChargeId String? @map("fixed_charge_id")
   fixedCharge FixedCharge? @relation(fields: [fixedChargeId], references: [id])
   duplicatedInAdvance Boolean? @map("duplicated_in_advance") @default(false)
@@ -1585,26 +2249,66 @@ model Fee {
   rateCardRate RateCardRate? @relation(fields: [rateCardRateId], references: [id])
   rateOverrideId String? @map("rate_override_id")
   rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  contractId String? @map("contract_id")
+  contract Contract? @relation(fields: [contractId], references: [id])
+  contractRateCardId String? @map("contract_rate_card_id")
+  contractRateCard ContractRateCard? @relation(fields: [contractRateCardId], references: [id])
+  preciseWalletCoverageBeforeTaxAmountCents Int @map("precise_wallet_coverage_before_tax_amount_cents") @scale(5) @default(0)
+  preciseWalletCoverageAfterTaxAmountCents Int @map("precise_wallet_coverage_after_tax_amount_cents") @scale(5) @default(0)
 
+  @@check("((contractId IS NULL) = (contractRateCardId IS NULL))")
+  @@index([organizationId, createdAt, id])
   @@index([addOnId])
   @@index([appliedAddOnId])
   @@index([billingEntityId])
   @@index([chargeFilterId])
   @@index([chargeId])
   @@index([chargeId, invoiceId], where: deletedAt == null)
+  @@index([contractId])
+  @@index([contractRateCardId])
   @@index([deletedAt])
   @@index([fixedChargeId])
   @@index([groupId])
   @@index([invoiceId])
   @@index([invoiceableType, invoiceableId])
   @@index([organizationId])
-  @@index([organizationId, createdAt, id], where: deletedAt == null)
   @@index([originalFeeId])
   @@index([payInAdvanceEventTransactionId], where: deletedAt == null)
+  @@index([productFilterId])
   @@index([rateCardRateId])
   @@index([rateOverrideId])
   @@index([subscriptionId])
   @@index([trueUpParentFeeId])
+}
+
+model FixedCharge {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+  addOnId String @map("add_on_id")
+  addOn AddOn @relation(fields: [addOnId], references: [id])
+  parentId String? @map("parent_id")
+  chargeModel FixedChargeChargeModel @map("charge_model") @default(standard)
+  properties Json
+  invoiceDisplayName String? @map("invoice_display_name")
+  payInAdvance Boolean @map("pay_in_advance") @default(false)
+  prorated Boolean @default(false)
+  units Float @default(0.0)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  code String
+
+  @@index([addOnId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([parentId])
+  @@index([planId])
+  @@unique([planId, code], where: deletedAt == null && parentId == null)
 }
 
 model Invoice {
@@ -1612,8 +2316,8 @@ model Invoice {
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
   issuingDate DateTime? @map("issuing_date")
-  taxesAmountCents Int @map("taxes_amount_cents") @default(0)
-  totalAmountCents Int @map("total_amount_cents") @default(0)
+  taxesAmountCents Int @map("taxes_amount_cents") @default(0) @big
+  totalAmountCents Int @map("total_amount_cents") @default(0) @big
   invoiceType Int @map("invoice_type") @default(0)
   paymentStatus Int @map("payment_status") @default(0)
   number String @default("")
@@ -1630,24 +2334,24 @@ model Invoice {
   organization Organization @relation(fields: [organizationId], references: [id])
   versionNumber Int @map("version_number") @default(4)
   currency String?
-  feesAmountCents Int @map("fees_amount_cents") @default(0)
-  couponsAmountCents Int @map("coupons_amount_cents") @default(0)
-  creditNotesAmountCents Int @map("credit_notes_amount_cents") @default(0)
-  prepaidCreditAmountCents Int @map("prepaid_credit_amount_cents") @default(0)
-  subTotalExcludingTaxesAmountCents Int @map("sub_total_excluding_taxes_amount_cents") @default(0)
-  subTotalIncludingTaxesAmountCents Int @map("sub_total_including_taxes_amount_cents") @default(0)
+  feesAmountCents Int @map("fees_amount_cents") @default(0) @big
+  couponsAmountCents Int @map("coupons_amount_cents") @default(0) @big
+  creditNotesAmountCents Int @map("credit_notes_amount_cents") @default(0) @big
+  prepaidCreditAmountCents Int @map("prepaid_credit_amount_cents") @default(0) @big
+  subTotalExcludingTaxesAmountCents Int @map("sub_total_excluding_taxes_amount_cents") @default(0) @big
+  subTotalIncludingTaxesAmountCents Int @map("sub_total_including_taxes_amount_cents") @default(0) @big
   paymentDueDate DateTime? @map("payment_due_date")
-  netPaymentTerm Int @map("net_payment_term") @default(0)
+  netPaymentTerm Int? @map("net_payment_term") @default(0)
   voidedAt DateTime? @map("voided_at")
   organizationSequentialId Int @map("organization_sequential_id") @default(0)
   readyToBeRefreshed Boolean @map("ready_to_be_refreshed") @default(false)
   paymentDisputeLostAt DateTime? @map("payment_dispute_lost_at")
   skipCharges Boolean @map("skip_charges") @default(false)
   paymentOverdue Boolean? @map("payment_overdue") @default(false)
-  negativeAmountCents Int @map("negative_amount_cents") @default(0)
-  progressiveBillingCreditAmountCents Int @map("progressive_billing_credit_amount_cents") @default(0)
+  negativeAmountCents Int @map("negative_amount_cents") @default(0) @big
+  progressiveBillingCreditAmountCents Int @map("progressive_billing_credit_amount_cents") @default(0) @big
   taxStatus TaxStatus? @map("tax_status")
-  totalPaidAmountCents Int @map("total_paid_amount_cents") @default(0)
+  totalPaidAmountCents Int @map("total_paid_amount_cents") @default(0) @big
   selfBilled Boolean @map("self_billed") @default(false)
   appliedGracePeriod Int? @map("applied_grace_period")
   billingEntityId String @map("billing_entity_id")
@@ -1657,8 +2361,8 @@ model Invoice {
   voidedInvoiceId String? @map("voided_invoice_id")
   xmlFile String? @map("xml_file")
   expectedFinalizationDate DateTime? @map("expected_finalization_date")
-  prepaidGrantedCreditAmountCents Int? @map("prepaid_granted_credit_amount_cents")
-  prepaidPurchasedCreditAmountCents Int? @map("prepaid_purchased_credit_amount_cents")
+  prepaidGrantedCreditAmountCents Int? @map("prepaid_granted_credit_amount_cents") @big
+  prepaidPurchasedCreditAmountCents Int? @map("prepaid_purchased_credit_amount_cents") @big
   paymentMethodId String? @map("payment_method_id")
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
   skipAutomaticPayment Boolean? @map("skip_automatic_payment")
@@ -1666,17 +2370,27 @@ model Invoice {
   paymentTerm Json? @map("payment_term")
   paymentTermSource String? @map("payment_term_source")
   searchTerms String? @map("search_terms")
+  x402PaymentToken String? @map("x402_payment_token")
+  x402ConnectionId String? @map("x402_connection_id")
+  x402Connection X402Connection? @relation(fields: [x402ConnectionId], references: [id])
+  progressiveBillingTrigger InvoiceProgressiveBillingTrigger? @map("progressive_billing_trigger")
+  prepaidCreditBeforeTaxAmountCents Int @map("prepaid_credit_before_tax_amount_cents") @default(0) @big
+  prepaidCreditAfterTaxAmountCents Int @map("prepaid_credit_after_tax_amount_cents") @default(0) @big
 
   @@check("(netPaymentTerm >= 0)")
   @@index([organizationId, status])
   @@index([organizationId, issuingDate, createdAt, id])
   @@unique([customerId, billingEntityId, sequentialId], nullsDistinct: true)
   @@index([number])
+  @@index([organizationId, createdAt])
   @@index([customerId, organizationId])
+  @@index([organizationId, invoiceType, issuingDate, createdAt, id])
   @@index([paymentDueDate])
   @@index([paymentMethodId])
   @@index([readyToBeRefreshed], where: readyToBeRefreshed == true)
   @@index([voidedInvoiceId])
+  @@index([x402ConnectionId], where: x402ConnectionId != null)
+  @@unique([x402PaymentToken], where: x402PaymentToken != null)
 }
 
 model Plan {
@@ -1689,7 +2403,7 @@ model Plan {
   code String
   interval Int?
   description String?
-  amountCents Int? @map("amount_cents")
+  amountCents Int? @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   trialPeriod Float? @map("trial_period")
   payInAdvance Boolean? @map("pay_in_advance") @default(false)
@@ -1700,14 +2414,99 @@ model Plan {
   pendingDeletion Boolean @map("pending_deletion") @default(false)
   invoiceDisplayName String? @map("invoice_display_name")
   billFixedChargesMonthly Boolean? @map("bill_fixed_charges_monthly") @default(false)
-  pricingType PlanPricingType @map("pricing_type")
 
-  @@check("((pricingType <> 'legacy') OR ((interval IS NOT NULL) AND (amountCents IS NOT NULL) AND (payInAdvance IS NOT NULL)))")
   @@index([billFixedChargesMonthly])
   @@index([createdAt])
   @@index([deletedAt])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null && parentId == null)
   @@index([parentId])
+}
+
+model Product {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productCategoryId String? @map("product_category_id")
+  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id])
+  billableMetricId String? @map("billable_metric_id")
+  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
+  addOnId String? @map("add_on_id")
+  addOn AddOn? @relation(fields: [addOnId], references: [id])
+  chargeId String? @map("charge_id")
+  charge Charge? @relation(fields: [chargeId], references: [id])
+  productType ProductType @map("product_type")
+  code String
+  name String
+  invoiceDisplayName String? @map("invoice_display_name")
+  description String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
+  @@index([addOnId])
+  @@index([billableMetricId])
+  @@index([chargeId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+  @@index([productCategoryId])
+}
+
+model RateCardRate {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  code String
+  effectiveFrom DateTime @map("effective_from")
+  rateModel RateCardRateModel @map("rate_model")
+  rateProperties Json @map("rate_properties")
+  minAmountCents Int @map("min_amount_cents") @default(0) @big
+  billingIntervalCount Int @map("billing_interval_count") @default(1)
+  billingIntervalUnit RateCardRateBillingIntervalUnit @map("billing_interval_unit")
+  appliedPricingUnitConversionRate Float? @map("applied_pricing_unit_conversion_rate")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(billingIntervalCount >= 1)")
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([rateCardId])
+  @@unique([rateCardId, code], where: deletedAt == null)
+  @@unique([rateCardId, effectiveFrom], where: deletedAt == null)
+}
+
+model RateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productId String @map("product_id")
+  product Product @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  code String
+  name String
+  description String?
+  currency String
+  billingTiming RateCardBillingTiming @map("billing_timing") @default(arrears)
+  proration Boolean @default(false)
+  displayOnInvoice Boolean @map("display_on_invoice") @default(true)
+  regroupPaidFees RateCardRegroupPaidFees? @map("regroup_paid_fees")
+  appliedPricingUnitCode String? @map("applied_pricing_unit_code")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+  @@index([productFilterId])
+  @@index([productId])
 }
 
 model Subscription {
@@ -1732,10 +2531,10 @@ model Subscription {
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
   onTerminationCreditNote SubscriptionOnTerminationCreditNote? @map("on_termination_credit_note")
-  onTerminationInvoice SubscriptionOnTerminationInvoice @map("on_termination_invoice")
+  onTerminationInvoice SubscriptionOnTerminationInvoice @map("on_termination_invoice") @default(generate)
   paymentMethodId String? @map("payment_method_id")
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  paymentMethodType PaymentMethodTypes @map("payment_method_type") @default(provider)
   skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
   progressiveBillingDisabled Boolean @map("progressive_billing_disabled") @default(false)
   lastReceivedEventOn DateTime? @map("last_received_event_on")
@@ -1749,6 +2548,7 @@ model Subscription {
   cancellationReason SubscriptionCancellationReasons? @map("cancellation_reason")
   purchaseOrderNumber String? @map("purchase_order_number")
   billingAnchorDate DateTime? @map("billing_anchor_date")
+  paymentTerm Json? @map("payment_term")
 
   @@index([planId, status])
   @@index([billingEntityId])
@@ -1776,7 +2576,7 @@ model FeesTax {
   taxCode String @map("tax_code")
   taxName String @map("tax_name")
   taxRate Float @map("tax_rate") @default(0.0)
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -1827,7 +2627,7 @@ model InvoiceSettlement {
   sourcePayment Payment? @relation(fields: [sourcePaymentId], references: [id])
   sourceCreditNoteId String? @map("source_credit_note_id")
   sourceCreditNote CreditNote? @relation(fields: [sourceCreditNoteId], references: [id])
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -1894,12 +2694,12 @@ model InvoicesTax {
   taxCode String @map("tax_code")
   taxName String @map("tax_name")
   taxRate Float @map("tax_rate") @default(0.0)
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
-  feesAmountCents Int @map("fees_amount_cents") @default(0)
-  taxableBaseAmountCents Int @map("taxable_base_amount_cents") @default(0)
+  feesAmountCents Int @map("fees_amount_cents") @default(0) @big
+  taxableBaseAmountCents Int @map("taxable_base_amount_cents") @default(0) @big
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
 
@@ -1929,7 +2729,7 @@ model PaymentRequest {
   id String @id @default(uuid())
   customerId String @map("customer_id")
   customer Customer @relation(fields: [customerId], references: [id])
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   email String?
   createdAt DateTime @map("created_at")
@@ -1942,6 +2742,7 @@ model PaymentRequest {
   dunningCampaignId String? @map("dunning_campaign_id")
   dunningCampaign DunningCampaign? @relation(fields: [dunningCampaignId], references: [id])
 
+  @@index([organizationId, createdAt, id])
   @@index([customerId])
   @@index([dunningCampaignId])
   @@index([organizationId])
@@ -1954,7 +2755,7 @@ model Payment {
   paymentProviderId String? @map("payment_provider_id")
   paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
   paymentProviderCustomerId String? @map("payment_provider_customer_id")
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   amountCurrency String @map("amount_currency")
   providerPaymentId String? @map("provider_payment_id")
   status String
@@ -1964,7 +2765,7 @@ model Payment {
   payableId String? @map("payable_id")
   providerPaymentData Json? @map("provider_payment_data")
   payablePaymentStatus PaymentPayablePaymentStatus? @map("payable_payment_status")
-  paymentType PaymentType @map("payment_type")
+  paymentType PaymentType @map("payment_type") @default(provider)
   reference String?
   providerPaymentMethodData Json @map("provider_payment_method_data")
   providerPaymentMethodId String? @map("provider_payment_method_id")
@@ -1987,21 +2788,193 @@ model Payment {
   @@index([paymentType])
 }
 
+model PlanRateCard {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  units Float?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  catalogPlanId String? @map("catalog_plan_id")
+  catalogPlan CatalogPlan? @relation(fields: [catalogPlanId], references: [id])
+
+  @@index([catalogPlanId, createdAt, id], where: deletedAt == null)
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([rateCardId])
+}
+
 model PlansTax {
   id String @id @default(uuid())
-  planId String @map("plan_id")
-  plan Plan @relation(fields: [planId], references: [id])
+  planId String? @map("plan_id")
+  plan Plan? @relation(fields: [planId], references: [id])
   taxId String @map("tax_id")
   tax Tax @relation(fields: [taxId], references: [id])
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
+  catalogPlanId String? @map("catalog_plan_id")
+  catalogPlan CatalogPlan? @relation(fields: [catalogPlanId], references: [id])
 
+  @@arc([planId, catalogPlanId])
+  @@unique([catalogPlanId, taxId], nullsDistinct: true)
   @@index([organizationId])
   @@index([planId])
-  @@unique([planId, taxId])
+  @@unique([planId, taxId], nullsDistinct: true)
   @@index([taxId])
+}
+
+model PricingUnit {
+  id String @id @default(uuid())
+  name String
+  code String
+  shortName String @map("short_name")
+  description String?
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([code, organizationId])
+  @@index([organizationId])
+}
+
+model ProductCategory {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String
+  name String
+  description String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+}
+
+model ProductFilterValue {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productFilterId String @map("product_filter_id")
+  productFilter ProductFilter @relation(fields: [productFilterId], references: [id])
+  billableMetricFilterId String @map("billable_metric_filter_id")
+  billableMetricFilter BillableMetricFilter @relation(fields: [billableMetricFilterId], references: [id])
+  value String?
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([billableMetricFilterId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productFilterId])
+}
+
+model ProductFilter {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  productId String @map("product_id")
+  product Product @relation(fields: [productId], references: [id])
+  name String
+  code String
+  description String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([productId, createdAt, id], where: deletedAt == null)
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([productId])
+  @@unique([productId, code], where: deletedAt == null)
+}
+
+model RateCardsTax {
+  id String @id @default(uuid())
+  rateCardId String @map("rate_card_id")
+  rateCard RateCard @relation(fields: [rateCardId], references: [id])
+  taxId String @map("tax_id")
+  tax Tax @relation(fields: [taxId], references: [id])
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@index([rateCardId])
+  @@unique([rateCardId, taxId])
+  @@index([taxId])
+}
+
+model RateOverride {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  rateModel RateCardRateModel @map("rate_model")
+  rateProperties Json @map("rate_properties")
+  minAmountCents Int @map("min_amount_cents") @default(0) @big
+  billingIntervalCount Int? @map("billing_interval_count")
+  billingIntervalUnit RateCardRateBillingIntervalUnit? @map("billing_interval_unit")
+  pricingUnitConversionRate Float? @map("pricing_unit_conversion_rate")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([deletedAt])
+  @@index([organizationId])
+}
+
+model RatePhase {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planRateCardId String? @map("plan_rate_card_id")
+  planRateCard PlanRateCard? @relation(fields: [planRateCardId], references: [id])
+  contractRateCardId String? @map("contract_rate_card_id")
+  contractRateCard ContractRateCard? @relation(fields: [contractRateCardId], references: [id])
+  code String
+  position Int
+  billingIntervalCycleCount Int? @map("billing_interval_cycle_count")
+  rateOverrideId String? @map("rate_override_id")
+  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+
+  @@check("((planRateCardId IS NULL) <> (contractRateCardId IS NULL))")
+  @@index([contractRateCardId])
+  @@index([deletedAt])
+  @@index([organizationId])
+  @@index([planRateCardId])
+  @@unique([rateOverrideId], where: rateOverrideId != null && deletedAt == null)
+}
+
+model RecordDeletion {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  recordTable String @map("record_table")
+  recordId String @map("record_id")
+  deletedAt DateTime @map("deleted_at") @default(now())
+  createdAt DateTime @map("created_at") @default(now())
+  updatedAt DateTime @map("updated_at") @default(now())
+
+  @@index([deletedAt])
+  @@index([organizationId, deletedAt])
+  @@index([updatedAt])
 }
 
 model Tax {
@@ -2018,6 +2991,8 @@ model Tax {
   autoGenerated Boolean @map("auto_generated") @default(false)
   deletedAt DateTime? @map("deleted_at")
 
+  @@unique([code, organizationId], where: deletedAt == null)
+  @@index([organizationId, createdAt, id], where: deletedAt == null)
   @@index([organizationId])
 }
 
@@ -2054,14 +3029,16 @@ model UsageMonitoringTriggeredAlert {
   updatedAt DateTime @map("updated_at")
   walletId String? @map("wallet_id")
   wallet Wallet? @relation(fields: [walletId], references: [id])
-  kind UsageMonitoringTriggeredAlertKinds
+  kind UsageMonitoringTriggeredAlertKinds @default(triggered)
   inAlarmThresholds Json? @map("in_alarm_thresholds")
   fullyResolved Boolean? @map("fully_resolved")
+  resolutionReason UsageMonitoringTriggeredAlertResolutionReasons? @map("resolution_reason")
 
   @@arc([subscriptionId, walletId])
   @@index([usageMonitoringAlertId])
   @@index([organizationId])
   @@index([subscriptionId])
+  @@index([triggeredAt])
   @@index([walletId])
 }
 
@@ -2070,7 +3047,7 @@ model UsageThreshold {
   planId String? @map("plan_id")
   plan Plan? @relation(fields: [planId], references: [id])
   thresholdDisplayName String? @map("threshold_display_name")
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   recurring Boolean @default(false)
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -2094,7 +3071,7 @@ model WalletTransactionConsumption {
   inboundWalletTransaction WalletTransaction @relation(fields: [inboundWalletTransactionId], references: [id])
   outboundWalletTransactionId String @map("outbound_wallet_transaction_id")
   outboundWalletTransaction WalletTransaction @relation(fields: [outboundWalletTransactionId], references: [id])
-  consumedAmountCents Int @map("consumed_amount_cents")
+  consumedAmountCents Int @map("consumed_amount_cents") @big
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
@@ -2110,8 +3087,8 @@ model WalletTransaction {
   wallet Wallet @relation(fields: [walletId], references: [id])
   transactionType Int @map("transaction_type")
   status Int
-  amount Int @scale(5) @default(0.0)
-  creditAmount Int @map("credit_amount") @scale(5) @default(0.0)
+  amount Int @scale(5) @default(0)
+  creditAmount Int @map("credit_amount") @scale(5) @default(0)
   settledAt DateTime? @map("settled_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -2131,14 +3108,15 @@ model WalletTransaction {
   name String?
   paymentMethodId String? @map("payment_method_id")
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  paymentMethodType PaymentMethodTypes @map("payment_method_type") @default(provider)
   skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
-  remainingAmountCents Int? @map("remaining_amount_cents")
+  remainingAmountCents Int? @map("remaining_amount_cents") @big
   voidedInvoiceId String? @map("voided_invoice_id")
   voidedInvoice Invoice? @relation(fields: [voidedInvoiceId], references: [id])
   billingEntityId String? @map("billing_entity_id")
   billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
   purchaseOrderNumber String? @map("purchase_order_number")
+  billableMetricAmounts Json? @map("billable_metric_amounts")
 
   @@check("((remainingAmountCents >= 0) OR (remainingAmountCents IS NULL))")
   @@index([billingEntityId])
@@ -2156,23 +3134,23 @@ model Wallet {
   customer Customer @relation(fields: [customerId], references: [id])
   status Int
   name String?
-  rateAmount Int @map("rate_amount") @scale(5) @default(0.0)
-  creditsBalance Int @map("credits_balance") @scale(5) @default(0.0)
-  consumedCredits Int @map("consumed_credits") @scale(5) @default(0.0)
+  rateAmount Int @map("rate_amount") @scale(5) @default(0)
+  creditsBalance Int @map("credits_balance") @scale(5) @default(0)
+  consumedCredits Int @map("consumed_credits") @scale(5) @default(0)
   expirationAt DateTime? @map("expiration_at")
   lastBalanceSyncAt DateTime? @map("last_balance_sync_at")
   lastConsumedCreditAt DateTime? @map("last_consumed_credit_at")
   terminatedAt DateTime? @map("terminated_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
-  balanceCents Int @map("balance_cents") @default(0)
+  balanceCents Int @map("balance_cents") @default(0) @big
   balanceCurrency String @map("balance_currency")
-  consumedAmountCents Int @map("consumed_amount_cents") @default(0)
+  consumedAmountCents Int @map("consumed_amount_cents") @default(0) @big
   consumedAmountCurrency String @map("consumed_amount_currency")
-  ongoingBalanceCents Int @map("ongoing_balance_cents") @default(0)
-  ongoingUsageBalanceCents Int @map("ongoing_usage_balance_cents") @default(0)
-  creditsOngoingBalance Int @map("credits_ongoing_balance") @scale(5) @default(0.0)
-  creditsOngoingUsageBalance Int @map("credits_ongoing_usage_balance") @scale(5) @default(0.0)
+  ongoingBalanceCents Int @map("ongoing_balance_cents") @default(0) @big
+  ongoingUsageBalanceCents Int @map("ongoing_usage_balance_cents") @default(0) @big
+  creditsOngoingBalance Int @map("credits_ongoing_balance") @scale(5) @default(0)
+  creditsOngoingUsageBalance Int @map("credits_ongoing_usage_balance") @scale(5) @default(0)
   depletedOngoingBalance Boolean @map("depleted_ongoing_balance") @default(false)
   invoiceRequiresSuccessfulPayment Boolean @map("invoice_requires_successful_payment") @default(false)
   lockVersion Int @map("lock_version") @default(0)
@@ -2182,17 +3160,21 @@ model Wallet {
   allowedFeeTypes String[] @map("allowed_fee_types")
   lastOngoingBalanceSyncAt DateTime? @map("last_ongoing_balance_sync_at")
   priority Int @default(50)
-  paidTopUpMinAmountCents Int? @map("paid_top_up_min_amount_cents")
-  paidTopUpMaxAmountCents Int? @map("paid_top_up_max_amount_cents")
+  paidTopUpMinAmountCents Int? @map("paid_top_up_min_amount_cents") @big
+  paidTopUpMaxAmountCents Int? @map("paid_top_up_max_amount_cents") @big
   paymentMethodId String? @map("payment_method_id")
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  paymentMethodType PaymentMethodTypes @map("payment_method_type") @default(provider)
   skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
   traceable Boolean @default(false)
   code String?
   billingEntityId String? @map("billing_entity_id")
   billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id])
   purchaseOrderNumber String? @map("purchase_order_number")
+  paymentTerm Json? @map("payment_term")
+  x402Enabled Boolean @map("x402_enabled") @default(false)
+  ongoingBillableMetricAmounts Json @map("ongoing_billable_metric_amounts")
+  invoiceUsageOnExpiration Boolean @map("invoice_usage_on_expiration") @default(false)
 
   @@index([billingEntityId])
   @@index([customerId])
@@ -2220,33 +3202,6 @@ model FixedChargeEvent {
   @@index([fixedChargeId])
   @@index([organizationId])
   @@index([subscriptionId])
-}
-
-model FixedCharge {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  planId String @map("plan_id")
-  plan Plan @relation(fields: [planId], references: [id])
-  addOnId String @map("add_on_id")
-  addOn AddOn @relation(fields: [addOnId], references: [id])
-  parentId String? @map("parent_id")
-  chargeModel FixedChargeChargeModel @map("charge_model")
-  properties Json
-  invoiceDisplayName String? @map("invoice_display_name")
-  payInAdvance Boolean @map("pay_in_advance") @default(false)
-  prorated Boolean @default(false)
-  units Float @default(0.0)
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-  code String
-
-  @@index([addOnId])
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([parentId])
-  @@index([planId])
 }
 
 model FixedChargesTax {
@@ -2322,7 +3277,7 @@ model InboundWebhook {
   source String
   eventType String @map("event_type")
   payload Json
-  status InboundWebhookStatus
+  status InboundWebhookStatus @default(pending)
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
   code String?
@@ -2350,6 +3305,7 @@ model IntegrationCollectionMapping {
   billingEntityId String? @map("billing_entity_id")
   billingEntity BillingEntity? @relation(fields: [billingEntityId], references: [id], onDelete: Cascade)
 
+  @@unique([mappingType, integrationId, organizationId], where: billingEntityId == null)
   @@index([billingEntityId])
   @@index([integrationId])
   @@index([organizationId])
@@ -2391,6 +3347,7 @@ model IntegrationMapping {
   @@index([integrationId])
   @@index([mappableType, mappableId])
   @@index([organizationId])
+  @@unique([mappableType, mappableId, integrationId, organizationId], where: billingEntityId == null)
 }
 
 model IntegrationResource {
@@ -2479,10 +3436,11 @@ model InvoiceCustomSection {
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
-  sectionType InvoiceCustomSectionType @map("section_type")
+  sectionType InvoiceCustomSectionType @map("section_type") @default(manual)
 
   @@index([organizationId, deletedAt])
   @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
   @@index([sectionType])
 }
 
@@ -2492,8 +3450,8 @@ model LifetimeUsage {
   organization Organization @relation(fields: [organizationId], references: [id])
   subscriptionId String @map("subscription_id")
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  currentUsageAmountCents Int @map("current_usage_amount_cents") @default(0)
-  invoicedUsageAmountCents Int @map("invoiced_usage_amount_cents") @default(0)
+  currentUsageAmountCents Int @map("current_usage_amount_cents") @default(0) @big
+  invoicedUsageAmountCents Int @map("invoiced_usage_amount_cents") @default(0) @big
   recalculateCurrentUsage Boolean @map("recalculate_current_usage") @default(false)
   recalculateInvoicedUsage Boolean @map("recalculate_invoiced_usage") @default(false)
   currentUsageAmountRefreshedAt DateTime? @map("current_usage_amount_refreshed_at")
@@ -2501,7 +3459,7 @@ model LifetimeUsage {
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
-  historicalUsageAmountCents Int @map("historical_usage_amount_cents") @default(0)
+  historicalUsageAmountCents Int @map("historical_usage_amount_cents") @default(0) @big
 
   @@index([organizationId])
   @@index([recalculateCurrentUsage], where: deletedAt == null && recalculateCurrentUsage == true)
@@ -2521,6 +3479,7 @@ model MembershipRole {
 
   @@index([membershipId, organizationId], where: deletedAt == null)
   @@index([roleId])
+  @@unique([membershipId, roleId], where: deletedAt == null)
 }
 
 model Membership {
@@ -2537,6 +3496,7 @@ model Membership {
   @@unique([id, organizationId])
   @@index([organizationId])
   @@index([userId])
+  @@unique([userId, organizationId], where: revokedAt == null)
 }
 
 model OrderForm {
@@ -2549,7 +3509,7 @@ model OrderForm {
   quoteVersion QuoteVersion @relation(fields: [quoteVersionId], references: [id])
   number String
   sequentialId Int @map("sequential_id")
-  status OrderFormStatus
+  status OrderFormStatus @default(generated)
   voidReason OrderFormVoidReason? @map("void_reason")
   expiresAt DateTime? @map("expires_at")
   signedAt DateTime? @map("signed_at")
@@ -2577,7 +3537,7 @@ model Order {
   orderForm OrderForm @relation(fields: [orderFormId], references: [id])
   number String
   sequentialId Int @map("sequential_id")
-  status OrderStatus
+  status OrderStatus @default(created)
   executionMode OrderExecutionMode? @map("execution_mode")
   executeAt DateTime? @map("execute_at")
   executedAt DateTime? @map("executed_at")
@@ -2620,6 +3580,7 @@ model PaymentIntent {
   providerSessionId String? @map("provider_session_id")
 
   @@index([invoiceId])
+  @@unique([invoiceId, status], where: status == 0)
   @@index([organizationId])
 }
 
@@ -2646,6 +3607,7 @@ model PaymentMethod {
   @@index([paymentProviderCustomerId])
   @@index([paymentProviderId])
   @@index([providerMethodType])
+  @@unique([customerId], where: isDefault == true && deletedAt == null)
 }
 
 model PaymentProvider {
@@ -2661,6 +3623,7 @@ model PaymentProvider {
   name String
   deletedAt DateTime? @map("deleted_at")
 
+  @@unique([code, organizationId], where: deletedAt == null)
   @@index([organizationId])
 }
 
@@ -2678,6 +3641,50 @@ model PaymentReceipt {
   @@index([billingEntityId])
   @@index([organizationId])
   @@unique([paymentId])
+}
+
+model PendingSignupToken {
+  id String @id @default(uuid())
+  pendingSignupId String @map("pending_signup_id")
+  pendingSignup PendingSignup @relation(fields: [pendingSignupId], references: [id], onDelete: Cascade)
+  tokenDigest String @map("token_digest")
+  status PendingSignupTokenStatus @default(pending)
+  expiresAt DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  failedPasswordAttempts Int @map("failed_password_attempts") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("((status <> 'consumed') OR (consumedAt IS NOT NULL))")
+  @@index([expiresAt])
+  @@index([pendingSignupId])
+  @@unique([tokenDigest])
+}
+
+model PendingSignup {
+  id String @id @default(uuid())
+  email String
+  normalizedEmail String @map("normalized_email")
+  mailboxKey String @map("mailbox_key")
+  passwordDigest String? @map("password_digest")
+  signupSecretDigest String @map("signup_secret_digest")
+  expiresAt DateTime @map("expires_at")
+  emailsSentAt Json @map("emails_sent_at")
+  closedAt DateTime? @map("closed_at")
+  verifiedAt DateTime? @map("verified_at")
+  userId String? @map("user_id")
+  user User? @relation(fields: [userId], references: [id])
+  signupSecretExchangedAt DateTime? @map("signup_secret_exchanged_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("((passwordDigest IS NOT NULL) OR (verifiedAt IS NOT NULL) OR (closedAt IS NOT NULL))")
+  @@index([createdAt])
+  @@index([mailboxKey, createdAt])
+  @@index([normalizedEmail])
+  @@index([expiresAt], where: verifiedAt == null && closedAt == null)
+  @@unique([signupSecretDigest])
+  @@index([userId])
 }
 
 model PendingViesCheck {
@@ -2701,23 +3708,56 @@ model PendingViesCheck {
   @@index([organizationId])
 }
 
-model PlanRateCard {
+model PlanWalletCreditAllocation {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
-  planId String @map("plan_id")
-  plan Plan @relation(fields: [planId], references: [id])
-  rateCardId String @map("rate_card_id")
-  rateCard RateCard @relation(fields: [rateCardId], references: [id])
-  units Float?
+  planWalletId String @map("plan_wallet_id")
+  planWallet PlanWallet @relation(fields: [planWalletId], references: [id])
+  productId String? @map("product_id")
+  product Product? @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  code String
+  trigger PlanWalletCreditAllocationTrigger
+  billingCycles Int? @map("billing_cycles")
+  thresholdAmountCents Int? @map("threshold_amount_cents") @big
+  creditAmountCents Int @map("credit_amount_cents") @big
+  purchaseAmountCents Int? @map("purchase_amount_cents") @big
+  priority Int @default(50)
+  invoiceRequiresSuccessfulPayment Boolean? @map("invoice_requires_successful_payment")
   deletedAt DateTime? @map("deleted_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
-  @@index([deletedAt])
+  @@check("(billingCycles >= 1)")
+  @@check("(creditAmountCents > 0)")
   @@index([organizationId])
-  @@index([planId])
-  @@index([rateCardId])
+  @@unique([planWalletId, code], where: deletedAt == null)
+}
+
+model PlanWallet {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  catalogPlanId String @map("catalog_plan_id")
+  catalogPlan CatalogPlan @relation(fields: [catalogPlanId], references: [id])
+  code String
+  name String?
+  invoiceDisplayName String? @map("invoice_display_name")
+  currency String
+  taxApplication PlanWalletTaxApplication @map("tax_application") @default(tax_on_consumption)
+  priority Int @default(50)
+  topUpMinAmountCents Int? @map("top_up_min_amount_cents") @big
+  topUpMaxAmountCents Int? @map("top_up_max_amount_cents") @big
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@check("(topUpMinAmountCents <= topUpMaxAmountCents)")
+  @@index([catalogPlanId, createdAt, id], where: deletedAt == null)
+  @@unique([catalogPlanId, code], where: deletedAt == null)
+  @@index([organizationId])
 }
 
 model PresentationBreakdown {
@@ -2744,9 +3784,9 @@ model PricingUnitUsage {
   pricingUnitId String @map("pricing_unit_id")
   pricingUnit PricingUnit @relation(fields: [pricingUnitId], references: [id])
   shortName String @map("short_name")
-  amountCents Int @map("amount_cents")
+  amountCents Int @map("amount_cents") @big
   preciseAmountCents Float @map("precise_amount_cents") @default(0.0)
-  unitAmountCents Int @map("unit_amount_cents") @default(0)
+  unitAmountCents Int @map("unit_amount_cents") @default(0) @big
   conversionRate Float @map("conversion_rate") @default(0.0)
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -2755,104 +3795,6 @@ model PricingUnitUsage {
   @@index([feeId])
   @@index([organizationId])
   @@index([pricingUnitId])
-}
-
-model PricingUnit {
-  id String @id @default(uuid())
-  name String
-  code String
-  shortName String @map("short_name")
-  description String?
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@unique([code, organizationId])
-  @@index([organizationId])
-}
-
-model ProductCategory {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  code String
-  name String
-  description String?
-  invoiceDisplayName String? @map("invoice_display_name")
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([deletedAt])
-  @@index([organizationId])
-}
-
-model ProductFilterValue {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  productFilterId String @map("product_filter_id")
-  productFilter ProductFilter @relation(fields: [productFilterId], references: [id])
-  billableMetricFilterId String @map("billable_metric_filter_id")
-  billableMetricFilter BillableMetricFilter @relation(fields: [billableMetricFilterId], references: [id])
-  value String?
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([billableMetricFilterId])
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([productFilterId])
-}
-
-model ProductFilter {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  productId String @map("product_id")
-  product Product @relation(fields: [productId], references: [id])
-  name String
-  code String
-  description String?
-  invoiceDisplayName String? @map("invoice_display_name")
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([productId])
-}
-
-model Product {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  productCategoryId String? @map("product_category_id")
-  productCategory ProductCategory? @relation(fields: [productCategoryId], references: [id])
-  billableMetricId String? @map("billable_metric_id")
-  billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
-  addOnId String? @map("add_on_id")
-  addOn AddOn? @relation(fields: [addOnId], references: [id])
-  chargeId String? @map("charge_id")
-  charge Charge? @relation(fields: [chargeId], references: [id])
-  productType ProductType @map("product_type")
-  code String
-  name String
-  invoiceDisplayName String? @map("invoice_display_name")
-  description String?
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([addOnId])
-  @@index([billableMetricId])
-  @@index([chargeId])
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([productCategoryId])
 }
 
 model QuantifiedEvent {
@@ -2905,7 +3847,7 @@ model QuoteVersion {
   quoteId String @map("quote_id")
   quote Quote @relation(fields: [quoteId], references: [id])
   sequentialId Int @map("sequential_id")
-  status QuoteStatus
+  status QuoteStatus @default(draft)
   approvedAt DateTime? @map("approved_at")
   voidedAt DateTime? @map("voided_at")
   voidReason QuoteVoidReason? @map("void_reason")
@@ -2949,99 +3891,32 @@ model Quote {
   @@unique([organizationId, sequentialId])
 }
 
-model RateCardRate {
+model RecurringAggregationSnapshot {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
   organization Organization @relation(fields: [organizationId], references: [id])
-  rateCardId String @map("rate_card_id")
-  rateCard RateCard @relation(fields: [rateCardId], references: [id])
-  code String
-  effectiveFrom DateTime @map("effective_from")
-  rateModel RateCardRateModel @map("rate_model")
-  rateProperties Json @map("rate_properties")
-  minAmountCents Int @map("min_amount_cents") @default(0)
-  billingIntervalCount Int @map("billing_interval_count") @default(1)
-  billingIntervalUnit RateCardRateBillingIntervalUnit @map("billing_interval_unit")
-  appliedPricingUnitConversionRate Float? @map("applied_pricing_unit_conversion_rate")
-  deletedAt DateTime? @map("deleted_at")
+  subscriptionId String @map("subscription_id")
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  chargeId String @map("charge_id")
+  charge Charge @relation(fields: [chargeId], references: [id])
+  chargeFilterId String? @map("charge_filter_id")
+  chargeFilter ChargeFilter? @relation(fields: [chargeFilterId], references: [id])
+  billableMetricId String @map("billable_metric_id")
+  billableMetric BillableMetric @relation(fields: [billableMetricId], references: [id])
+  groupedBy Json @map("grouped_by")
+  toDatetime DateTime @map("to_datetime")
+  watermark DateTime
+  units Float @default(0.0)
+  eventsCount Int @map("events_count") @default(0) @big
+  presentationBreakdowns Json @map("presentation_breakdowns") @default("[]")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
 
-  @@check("(billingIntervalCount >= 1)")
-  @@index([deletedAt])
+  @@index([subscriptionId, chargeId, chargeFilterId, toDatetime])
+  @@index([billableMetricId])
+  @@index([chargeFilterId])
+  @@index([chargeId])
   @@index([organizationId])
-  @@index([rateCardId])
-}
-
-model RateCard {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  productId String @map("product_id")
-  product Product @relation(fields: [productId], references: [id])
-  productFilterId String? @map("product_filter_id")
-  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
-  code String
-  name String
-  description String?
-  currency String
-  billingTiming RateCardBillingTiming @map("billing_timing")
-  proration Boolean @default(false)
-  displayOnInvoice Boolean @map("display_on_invoice") @default(true)
-  regroupPaidFees RateCardRegroupPaidFees @map("regroup_paid_fees")
-  appliedPricingUnitCode String? @map("applied_pricing_unit_code")
-  walletTargetable Boolean? @map("wallet_targetable")
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([productFilterId])
-  @@index([productId])
-}
-
-model RateOverride {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  rateModel RateCardRateModel @map("rate_model")
-  rateProperties Json @map("rate_properties")
-  minAmountCents Int @map("min_amount_cents") @default(0)
-  billingIntervalCount Int? @map("billing_interval_count")
-  billingIntervalUnit RateCardRateBillingIntervalUnit? @map("billing_interval_unit")
-  pricingUnitConversionRate Float? @map("pricing_unit_conversion_rate")
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@index([deletedAt])
-  @@index([organizationId])
-}
-
-model RatePhase {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  planRateCardId String? @map("plan_rate_card_id")
-  planRateCard PlanRateCard? @relation(fields: [planRateCardId], references: [id])
-  subscriptionRateCardId String? @map("subscription_rate_card_id")
-  subscriptionRateCard SubscriptionRateCard? @relation(fields: [subscriptionRateCardId], references: [id])
-  code String
-  position Int
-  billingIntervalCycleCount Int? @map("billing_interval_cycle_count")
-  rateOverrideId String? @map("rate_override_id")
-  rateOverride RateOverride? @relation(fields: [rateOverrideId], references: [id])
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-  name String?
-
-  @@check("((planRateCardId IS NULL) <> (subscriptionRateCardId IS NULL))")
-  @@index([deletedAt])
-  @@index([organizationId])
-  @@index([planRateCardId])
-  @@index([subscriptionRateCardId])
 }
 
 model RecurringTransactionRule {
@@ -3049,9 +3924,9 @@ model RecurringTransactionRule {
   walletId String @map("wallet_id")
   wallet Wallet @relation(fields: [walletId], references: [id])
   trigger Int @default(0)
-  paidCredits Int @map("paid_credits") @scale(5) @default(0.0)
-  grantedCredits Int @map("granted_credits") @scale(5) @default(0.0)
-  thresholdCredits Int? @map("threshold_credits") @scale(5) @default(0.0)
+  paidCredits Int @map("paid_credits") @scale(5) @default(0)
+  grantedCredits Int @map("granted_credits") @scale(5) @default(0)
+  thresholdCredits Int? @map("threshold_credits") @scale(5) @default(0)
   interval Int? @default(0)
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -3069,7 +3944,7 @@ model RecurringTransactionRule {
   transactionName String? @map("transaction_name")
   paymentMethodId String? @map("payment_method_id")
   paymentMethod PaymentMethod? @relation(fields: [paymentMethodId], references: [id])
-  paymentMethodType PaymentMethodTypes @map("payment_method_type")
+  paymentMethodType PaymentMethodTypes @map("payment_method_type") @default(provider)
   skipInvoiceCustomSections Boolean @map("skip_invoice_custom_sections") @default(false)
   grantsTargetTopUp Boolean? @map("grants_target_top_up")
   purchaseOrderNumber String? @map("purchase_order_number")
@@ -3108,7 +3983,7 @@ model Refund {
   paymentProvider PaymentProvider? @relation(fields: [paymentProviderId], references: [id])
   paymentProviderCustomerId String @map("payment_provider_customer_id")
   paymentProviderCustomer PaymentProviderCustomer @relation(fields: [paymentProviderCustomerId], references: [id])
-  amountCents Int @map("amount_cents") @default(0)
+  amountCents Int @map("amount_cents") @default(0) @big
   amountCurrency String @map("amount_currency")
   status String
   providerRefundId String @map("provider_refund_id")
@@ -3148,6 +4023,22 @@ model SchemaMigration {
   version String @id
 }
 
+model StreamingDestination {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  type String
+  eventTypes String[] @map("event_types")
+  active Boolean @default(false)
+  settings Json
+  secrets String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([eventTypes])
+  @@index([organizationId])
+}
+
 model SubscriptionActivationRule {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
@@ -3156,7 +4047,7 @@ model SubscriptionActivationRule {
   subscription Subscription @relation(fields: [subscriptionId], references: [id])
   type SubscriptionActivationRuleTypes
   timeoutHours Int @map("timeout_hours") @default(0)
-  status SubscriptionActivationRuleStatuses
+  status SubscriptionActivationRuleStatuses @default(inactive)
   expiresAt DateTime? @map("expires_at")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
@@ -3182,32 +4073,8 @@ model SubscriptionFixedChargeUnitsOverride {
   @@index([fixedChargeId])
   @@index([organizationId])
   @@index([subscriptionId])
+  @@unique([subscriptionId, fixedChargeId], where: deletedAt == null)
   @@index([deletedAt])
-}
-
-model SubscriptionRateCard {
-  id String @id @default(uuid())
-  organizationId String @map("organization_id")
-  organization Organization @relation(fields: [organizationId], references: [id])
-  subscriptionId String @map("subscription_id")
-  subscription Subscription @relation(fields: [subscriptionId], references: [id])
-  rateCardId String @map("rate_card_id")
-  rateCard RateCard @relation(fields: [rateCardId], references: [id])
-  billingAnchorDate DateTime @map("billing_anchor_date")
-  nextBillingAt DateTime @map("next_billing_at")
-  startedAt DateTime @map("started_at")
-  endedAt DateTime? @map("ended_at")
-  units Float?
-  deletedAt DateTime? @map("deleted_at")
-  createdAt DateTime @map("created_at")
-  updatedAt DateTime @map("updated_at")
-
-  @@check("((endedAt IS NULL) OR (startedAt <= endedAt))")
-  @@index([deletedAt])
-  @@index([nextBillingAt], where: deletedAt == null && endedAt == null)
-  @@index([organizationId])
-  @@index([rateCardId])
-  @@index([subscriptionId])
 }
 
 model SubscriptionsInvoiceCustomSection {
@@ -3227,6 +4094,50 @@ model SubscriptionsInvoiceCustomSection {
   @@unique([subscriptionId, invoiceCustomSectionId])
 }
 
+model UsageAttributionType {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  parentId String? @map("parent_id")
+  parent UsageAttributionType? @relation(fields: [parentId], references: [id])
+  code String
+  name String?
+  role UsageAttributionTypeRole
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  attributionKeys String[] @map("attribution_keys")
+  description String?
+
+  @@index([organizationId])
+  @@unique([organizationId, code], where: deletedAt == null)
+  @@index([parentId])
+}
+
+model UsageAttributionValue {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  usageAttributionTypeId String @map("usage_attribution_type_id")
+  usageAttributionType UsageAttributionType @relation(fields: [usageAttributionTypeId], references: [id])
+  customerId String @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [id])
+  parentId String? @map("parent_id")
+  parent UsageAttributionValue? @relation(fields: [parentId], references: [id])
+  value String
+  lastSeenAt DateTime? @map("last_seen_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([customerId])
+  @@index([customerId, lastSeenAt])
+  @@unique([customerId, usageAttributionTypeId, value])
+  @@index([organizationId])
+  @@index([parentId])
+  @@index([usageAttributionTypeId])
+}
+
 model UsageMonitoringAlert {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
@@ -3235,7 +4146,7 @@ model UsageMonitoringAlert {
   billableMetricId String? @map("billable_metric_id")
   billableMetric BillableMetric? @relation(fields: [billableMetricId], references: [id])
   alertType UsageMonitoringAlertTypes @map("alert_type")
-  previousValue Int @map("previous_value") @scale(5) @default(0.0)
+  previousValue Int @map("previous_value") @scale(5) @default(0)
   lastProcessedAt DateTime? @map("last_processed_at")
   name String?
   code String
@@ -3244,13 +4155,173 @@ model UsageMonitoringAlert {
   updatedAt DateTime @map("updated_at")
   walletId String? @map("wallet_id")
   wallet Wallet? @relation(fields: [walletId], references: [id])
-  direction UsageMonitoringAlertDirection
+  direction UsageMonitoringAlertDirection @default(increasing)
 
   @@arc([subscriptionExternalId, walletId])
   @@index([billableMetricId])
   @@index([organizationId])
   @@index([subscriptionExternalId])
   @@index([walletId])
+}
+
+model UsageMonitoringCatalogWalletAlertThreshold {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planWalletAlertId String? @map("plan_wallet_alert_id")
+  planWalletAlert UsageMonitoringPlanWalletAlert? @relation(fields: [planWalletAlertId], references: [id], onDelete: Cascade)
+  catalogWalletAlertId String? @map("catalog_wallet_alert_id")
+  catalogWalletAlert UsageMonitoringCatalogWalletAlert? @relation(fields: [catalogWalletAlertId], references: [id], onDelete: Cascade)
+  value Int @scale(5)
+  code String?
+  recurring Boolean @default(false)
+  notifyOn String[] @map("notify_on")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@arc([planWalletAlertId, catalogWalletAlertId])
+  @@index([catalogWalletAlertId], where: catalogWalletAlertId != null)
+  @@index([organizationId])
+  @@index([planWalletAlertId], where: planWalletAlertId != null)
+}
+
+model UsageMonitoringCatalogWalletAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  catalogWalletId String @map("catalog_wallet_id")
+  catalogWallet CatalogWallet @relation(fields: [catalogWalletId], references: [id])
+  alertType UsageMonitoringCatalogWalletAlertAlertType @map("alert_type")
+  code String
+  name String?
+  previousValue Int? @map("previous_value") @scale(5)
+  lastProcessedAt DateTime? @map("last_processed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([catalogWalletId, alertType])
+  @@unique([catalogWalletId, code])
+  @@index([organizationId])
+}
+
+model UsageMonitoringCatalogWalletTriggeredAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  catalogWalletAlertId String @map("catalog_wallet_alert_id")
+  catalogWalletId String @map("catalog_wallet_id")
+  catalogWallet CatalogWallet @relation(fields: [catalogWalletId], references: [id])
+  alertCode String @map("alert_code")
+  alertName String? @map("alert_name")
+  alertType UsageMonitoringCatalogWalletAlertAlertType @map("alert_type")
+  kind UsageMonitoringTriggeredAlertKinds @default(triggered)
+  resolutionReason UsageMonitoringTriggeredAlertResolutionReasons? @map("resolution_reason")
+  currentValue Int @map("current_value") @scale(5)
+  previousValue Int @map("previous_value") @scale(5)
+  crossedThresholds Json @map("crossed_thresholds")
+  inAlarmThresholds Json? @map("in_alarm_thresholds")
+  fullyResolved Boolean? @map("fully_resolved")
+  triggeredAt DateTime @map("triggered_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([catalogWalletAlertId])
+  @@index([organizationId])
+}
+
+model UsageMonitoringContractActivity {
+  id Int @id
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  enqueued Boolean @default(false)
+  insertedAt DateTime @map("inserted_at") @default(now())
+  enqueuedAt DateTime? @map("enqueued_at")
+
+  @@index([organizationId, enqueued])
+  @@unique([contractId])
+}
+
+model UsageMonitoringContractAlertThreshold {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractAlertId String @map("contract_alert_id")
+  contractAlert UsageMonitoringContractAlert @relation(fields: [contractAlertId], references: [id])
+  value Int @scale(5)
+  code String?
+  recurring Boolean @default(false)
+  notifyOn String[] @map("notify_on")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([contractAlertId])
+  @@index([organizationId])
+}
+
+model UsageMonitoringContractAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractExternalId String @map("contract_external_id")
+  productId String? @map("product_id")
+  product Product? @relation(fields: [productId], references: [id])
+  productFilterId String? @map("product_filter_id")
+  productFilter ProductFilter? @relation(fields: [productFilterId], references: [id])
+  alertType UsageMonitoringContractAlertAlertType @map("alert_type")
+  direction UsageMonitoringAlertDirection @default(increasing)
+  code String
+  name String?
+  previousValue Int @map("previous_value") @scale(5) @default(0)
+  previousWindows Json @map("previous_windows")
+  lastProcessedAt DateTime? @map("last_processed_at")
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  withProductFilters Boolean @map("with_product_filters") @default(false)
+
+  @@unique([organizationId, contractExternalId, code], where: deletedAt == null)
+}
+
+model UsageMonitoringContractTriggeredAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  contractAlertId String @map("contract_alert_id")
+  contractAlert UsageMonitoringContractAlert @relation(fields: [contractAlertId], references: [id])
+  contractId String @map("contract_id")
+  contract Contract @relation(fields: [contractId], references: [id])
+  kind UsageMonitoringTriggeredAlertKinds @default(triggered)
+  resolutionReason UsageMonitoringTriggeredAlertResolutionReasons? @map("resolution_reason")
+  currentValue Int @map("current_value") @scale(5)
+  previousValue Int @map("previous_value") @scale(5)
+  crossedThresholds Json @map("crossed_thresholds")
+  inAlarmThresholds Json? @map("in_alarm_thresholds")
+  fullyResolved Boolean? @map("fully_resolved")
+  triggeredAt DateTime @map("triggered_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([contractAlertId])
+  @@index([organizationId])
+}
+
+model UsageMonitoringPlanWalletAlert {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  planWalletId String @map("plan_wallet_id")
+  planWallet PlanWallet @relation(fields: [planWalletId], references: [id])
+  alertType UsageMonitoringPlanWalletAlertAlertType @map("alert_type")
+  code String
+  name String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@unique([planWalletId, alertType])
+  @@unique([planWalletId, code])
+  @@index([organizationId])
 }
 
 model UsageMonitoringSubscriptionActivity {
@@ -3290,6 +4361,10 @@ model User {
   passwordDigest String? @map("password_digest")
   createdAt DateTime @map("created_at")
   updatedAt DateTime @map("updated_at")
+  csAdmin Boolean @map("cs_admin") @default(false)
+  selfServeVerifiedAt DateTime? @map("self_serve_verified_at")
+
+  @@index([email])
 }
 
 model Version {
@@ -3356,6 +4431,20 @@ model WalletsInvoiceCustomSection {
   @@unique([walletId, invoiceCustomSectionId])
 }
 
+model WebhookEndpointSigningKey {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  webhookEndpointId String @map("webhook_endpoint_id")
+  webhookEndpoint WebhookEndpoint @relation(fields: [webhookEndpointId], references: [id], onDelete: Cascade)
+  secret String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([organizationId])
+  @@index([webhookEndpointId])
+}
+
 model WebhookEndpoint {
   id String @id @default(uuid())
   organizationId String @map("organization_id")
@@ -3398,4 +4487,88 @@ model Webhook {
   @@index([objectType, objectId, webhookType])
   @@index([organizationId])
   @@index([webhookEndpointId])
+}
+
+model X402Connection {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  code String
+  name String
+  facilitator X402Facilitator @default(coinbase_cdp)
+  secrets String
+  payoutAddresses Json @map("payout_addresses")
+  networks String[]
+  asset X402Asset @default(usdc)
+  autoCreateCustomers Boolean @map("auto_create_customers") @default(true)
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  allowedOrigins String[] @map("allowed_origins")
+
+  @@unique([organizationId, code], where: deletedAt == null)
+}
+
+model X402Settlement {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  x402ConnectionId String @map("x402_connection_id")
+  x402Connection X402Connection @relation(fields: [x402ConnectionId], references: [id])
+  customerId String? @map("customer_id")
+  customer Customer? @relation(fields: [customerId], references: [id])
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+  walletTransactionId String? @map("wallet_transaction_id")
+  walletTransaction WalletTransaction? @relation(fields: [walletTransactionId], references: [id])
+  paymentId String? @map("payment_id")
+  payment Payment? @relation(fields: [paymentId], references: [id])
+  invoiceId String? @map("invoice_id")
+  invoice Invoice? @relation(fields: [invoiceId], references: [id])
+  kind X402SettlementKind
+  status X402SettlementStatus @default(pending)
+  settledBy X402SettlementSettledBy @map("settled_by") @default(lago)
+  network String
+  asset String
+  payerAddress String @map("payer_address")
+  payeeAddress String @map("payee_address")
+  settledAmountAtomic Int @map("settled_amount_atomic") @scale(0)
+  settledAmountCents Int @map("settled_amount_cents") @big
+  transactionHash String? @map("transaction_hash")
+  reconcileAfter DateTime? @map("reconcile_after")
+  paymentDigest String @map("payment_digest")
+  purchaseSettings Json? @map("purchase_settings")
+  payload Json
+  errorReason String? @map("error_reason")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  requestKeyDigest String? @map("request_key_digest")
+
+  @@check("((kind <> 'credit_purchase') OR (purchaseSettings IS NOT NULL))")
+  @@check("((walletTransactionId IS NULL) OR (subscriptionId IS NOT NULL))")
+  @@check("((kind <> 'invoice_payment') OR (invoiceId IS NOT NULL))")
+  @@check("((kind <> 'invoice_payment') OR (requestKeyDigest IS NULL))")
+  @@check("((settledBy = 'lago') OR ((kind = 'credit_purchase') AND (status = 'settled')))")
+  @@check("((status <> 'pending') OR (reconcileAfter IS NOT NULL))")
+  @@check("((status <> 'settled') OR (transactionHash IS NOT NULL))")
+  @@index([customerId])
+  @@index([invoiceId])
+  @@index([organizationId])
+  @@unique([paymentId], where: paymentId != null)
+  @@index([reconcileAfter])
+  @@index([id])
+  @@index([x402ConnectionId])
+}
+
+model X402SignInNonce {
+  id String @id @default(uuid())
+  organizationId String @map("organization_id")
+  organization Organization @relation(fields: [organizationId], references: [id])
+  agentAddress String @map("agent_address")
+  nonce String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+
+  @@index([createdAt])
+  @@unique([organizationId, agentAddress, nonce])
 }

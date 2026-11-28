@@ -14,6 +14,8 @@ import { join } from 'node:path'
 
 import { createClient } from '../../litestone/src/index.js'
 import { createApp, channels } from '../index.ts'
+import { membershipClaim }  from '../src/core/litestone.ts'
+import { header }           from '../src/core/bearer.ts'
 
 async function bootWith(announce: string, withChannels = true): Promise<string[]> {
   const dir = mkdtempSync(join(tmpdir(), 'fjs-reach-'))
@@ -59,5 +61,53 @@ describe('the announce-reach report', () => {
 
   test('silent without channels — nothing is listening to be missed', async () => {
     expect(await bootWith('', false)).toHaveLength(0)
+  })
+})
+
+// FJS-4683. A broadcast carries no request, so a tenant claim read off a header
+// admits no socket, and an app whose channels() states no claims resolver had
+// every tenant-scoped frame refused with nothing logged.
+async function bootHeaderTenant(opts: Parameters<typeof channels>[1] = {}, from: 'header' | 'fn' = 'header'): Promise<string[]> {
+  const dir = mkdtempSync(join(tmpdir(), 'fjs-reach-'))
+  const db: any = await createClient({ schema: `
+    database main {
+      path "${join(dir, 'app.db')}"
+      announce crossProcess
+    }
+    model Note {
+      id   Int    @id @default(autoincrement())
+      body String
+      @@db(main)
+    }` })
+  const principal = membershipClaim({
+    tenantFrom: from === 'header' ? header('X-Shop-Id') : () => 'shop-1',
+    model:      'shopMember',
+    subject:    'userId',
+    tenant:     'shopId',
+  })
+  const app = createApp({ db, principal } as never)
+  app.configure(channels(undefined, opts))
+
+  const lines: string[] = []
+  const original = console.warn
+  console.warn = (...args: unknown[]) => { lines.push(args.join(' ')) }
+  try { await app._startForTest() } finally { console.warn = original }
+  return lines.filter(l => l.includes('channels({ claims })'))
+}
+
+describe('the header-tenant report', () => {
+
+  test('a header-read tenant claim and no claims resolver say so at boot, naming the header and the fix', async () => {
+    const lines = await bootHeaderTenant()
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('X-Shop-Id')
+  })
+
+  test('silent once channels() states a claims resolver', async () => {
+    expect(await bootHeaderTenant({ claims: () => null })).toHaveLength(0)
+  })
+
+  test('silent when the tenant is not read from a header', async () => {
+    expect(await bootHeaderTenant({}, 'fn')).toHaveLength(0)
   })
 })

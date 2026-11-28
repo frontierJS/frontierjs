@@ -1,0 +1,1993 @@
+// chatwoot — the data model of chatwoot/chatwoot, expressed in .lite.
+//
+// Derived mechanically from db/schema.rb (MIT (outside enterprise/)) at
+// acaca48fad85 (2026-11-26) by
+// `litestone import --from rails`. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 112 models. Regenerate with fetch.mjs.
+
+model AccessToken {
+  id Int @id @default(autoincrement())
+  ownerType String? @map("owner_type")
+  ownerId Int? @map("owner_id") @big
+  token String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([ownerType, ownerId])
+  @@unique([token])
+}
+
+model AccountSamlSetting {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  ssoUrl String? @map("sso_url")
+  certificate String?
+  spEntityId String? @map("sp_entity_id")
+  idpEntityId String? @map("idp_entity_id")
+  roleMappings Json? @map("role_mappings")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  metadataUrl String? @map("metadata_url")
+  metadataRefreshedAt DateTime? @map("metadata_refreshed_at")
+  @@index([accountId])
+}
+
+model AccountUser {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  userId Int? @map("user_id")
+  role Int? @default(0)
+  inviterId Int? @map("inviter_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  activeAt DateTime? @map("active_at")
+  availability Int @default(0)
+  autoOffline Boolean @map("auto_offline") @default(true)
+  customRoleId Int? @map("custom_role_id")
+  agentCapacityPolicyId Int? @map("agent_capacity_policy_id") @big
+  acceptsConversations Boolean @map("accepts_conversations") @default(true)
+  acceptsCalls Boolean @map("accepts_calls") @default(true)
+  @@unique([accountId, userId], nullsDistinct: true)
+  @@index([accountId])
+  @@index([agentCapacityPolicyId])
+  @@index([customRoleId])
+  @@index([userId])
+}
+
+model Account {
+  id Int @id @default(autoincrement())
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  locale Int? @default(0)
+  domain String?
+  supportEmail String? @map("support_email")
+  featureFlags Int @map("feature_flags") @default(0) @big
+  autoResolveDuration Int? @map("auto_resolve_duration")
+  limits Json?
+  customAttributes Json? @map("custom_attributes")
+  status Int? @default(0)
+  internalAttributes Json @map("internal_attributes")
+  settings Json?
+  featureFlagsExt1 Int @map("feature_flags_ext_1") @default(0) @big
+  @@index([status])
+}
+
+model ActionMailboxInboundEmail {
+  id Int @id @default(autoincrement())
+  status Int @default(0)
+  messageId String @map("message_id")
+  messageChecksum String @map("message_checksum")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([messageId, messageChecksum])
+}
+
+model ActiveStorageAttachment {
+  id Int @id @default(autoincrement())
+  name String
+  recordType String @map("record_type")
+  recordId Int @map("record_id") @big
+  blobId Int @map("blob_id")
+  blob ActiveStorageBlob @relation(fields: [blobId], references: [id])
+  createdAt DateTime @map("created_at")
+  @@index([blobId])
+  @@unique([recordType, recordId, name, blobId])
+}
+
+model ActiveStorageBlob {
+  id Int @id @default(autoincrement())
+  key String
+  filename String
+  contentType String? @map("content_type")
+  metadata String?
+  byteSize Int @map("byte_size") @big
+  checksum String?
+  createdAt DateTime @map("created_at")
+  serviceName String @map("service_name")
+  @@unique([key])
+}
+
+model ActiveStorageVariantRecord {
+  id Int @id @default(autoincrement())
+  blobId Int @map("blob_id")
+  blob ActiveStorageBlob @relation(fields: [blobId], references: [id])
+  variationDigest String @map("variation_digest")
+  @@unique([blobId, variationDigest])
+}
+
+model AgentBotInbox {
+  id Int @id @default(autoincrement())
+  inboxId Int? @map("inbox_id")
+  agentBotId Int? @map("agent_bot_id")
+  status Int? @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  accountId Int? @map("account_id")
+}
+
+model AgentBot {
+  id Int @id @default(autoincrement())
+  name String?
+  description String?
+  outgoingUrl String? @map("outgoing_url")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  accountId Int? @map("account_id")
+  botType Int? @map("bot_type") @default(0)
+  botConfig Json? @map("bot_config")
+  secret String?
+  @@index([accountId])
+}
+
+model AgentCapacityPolicy {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  name String
+  description String?
+  exclusionRules Json @map("exclusion_rules")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model AgentSession {
+  id Int @id @default(autoincrement())
+  sessionType Int @map("session_type")
+  subjectType String @map("subject_type")
+  subjectId Int @map("subject_id") @big
+  resultType String? @map("result_type")
+  resultId Int? @map("result_id") @big
+  accountId Int @map("account_id")
+  assistantId Int @map("assistant_id") @big
+  userId Int? @map("user_id")
+  llmModel String? @map("llm_model")
+  creditsConsumed Float? @map("credits_consumed")
+  faqIds Json? @map("faq_ids")
+  documentIds Json? @map("document_ids")
+  scenarioIds Json? @map("scenario_ids")
+  runContext Json? @map("run_context")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  citedDocumentIds Json @map("cited_document_ids")
+  usedFaqIds Json @map("used_faq_ids")
+  @@index([accountId, resultType, resultId])
+  @@index([accountId, sessionType, createdAt])
+  @@index([accountId, subjectType, subjectId])
+  @@index([accountId])
+  @@index([assistantId])
+  @@index([citedDocumentIds])
+  @@index([documentIds])
+  @@index([usedFaqIds])
+  @@index([userId])
+}
+
+model AppliedSla {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  slaPolicyId Int @map("sla_policy_id") @big
+  conversationId Int @map("conversation_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  slaStatus Int? @map("sla_status") @default(0)
+  completedAt DateTime? @map("completed_at")
+  @@unique([accountId, slaPolicyId, conversationId])
+  @@index([accountId])
+  @@index([conversationId])
+  @@index([slaPolicyId])
+}
+
+model ArticleEmbedding {
+  id Int @id @default(autoincrement())
+  articleId Int @map("article_id")
+  term String
+  embedding String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([embedding])
+}
+
+model Article {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  portalId Int @map("portal_id")
+  categoryId Int? @map("category_id")
+  folderId Int? @map("folder_id")
+  title String?
+  description String?
+  content String?
+  status Int?
+  views Int?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  authorId Int? @map("author_id") @big
+  associatedArticleId Int? @map("associated_article_id") @big
+  meta Json?
+  slug String
+  position Int?
+  locale String @default("en")
+  draftTitle String? @map("draft_title")
+  draftContent String? @map("draft_content")
+  @@index([accountId])
+  @@index([associatedArticleId])
+  @@index([authorId])
+  @@index([categoryId])
+  @@index([portalId])
+  @@unique([slug])
+  @@index([status])
+  @@index([views])
+}
+
+model AssignmentPolicy {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  name String
+  description String?
+  assignmentOrder Int @map("assignment_order") @default(0)
+  conversationPriority Int @map("conversation_priority") @default(0)
+  fairDistributionLimit Int @map("fair_distribution_limit") @default(100)
+  fairDistributionWindow Int @map("fair_distribution_window") @default(3600)
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  excludeOlderThanHours Int? @map("exclude_older_than_hours") @default(168)
+  @@unique([accountId, name])
+  @@index([accountId])
+  @@index([enabled])
+}
+
+model Attachment {
+  id Int @id @default(autoincrement())
+  fileType Int? @map("file_type") @default(0)
+  externalUrl String? @map("external_url")
+  coordinatesLat Float? @map("coordinates_lat") @default(0.0)
+  coordinatesLong Float? @map("coordinates_long") @default(0.0)
+  messageId Int @map("message_id")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  fallbackTitle String? @map("fallback_title")
+  extension String?
+  meta Json?
+  @@index([accountId])
+  @@index([messageId])
+}
+
+model Audit {
+  id Int @id @default(autoincrement())
+  auditableId Int? @map("auditable_id") @big
+  auditableType String? @map("auditable_type")
+  associatedId Int? @map("associated_id") @big
+  associatedType String? @map("associated_type")
+  userId Int? @map("user_id")
+  userType String? @map("user_type")
+  username String?
+  action String?
+  auditedChanges Json? @map("audited_changes")
+  version Int? @default(0)
+  comment String?
+  remoteAddress String? @map("remote_address")
+  requestUuid String? @map("request_uuid")
+  createdAt DateTime? @map("created_at")
+  city String?
+  country String?
+  countryCode String? @map("country_code")
+  @@index([associatedType, associatedId, createdAt])
+  @@index([associatedType, associatedId])
+  @@index([auditableType, auditableId, version])
+  @@index([createdAt])
+  @@index([requestUuid])
+  @@index([userId, userType])
+}
+
+model AutomationRulePendingExecution {
+  id Int @id @default(autoincrement())
+  automationRuleId Int @map("automation_rule_id")
+  conversationId Int @map("conversation_id")
+  accountId Int @map("account_id")
+  messageId Int? @map("message_id")
+  dueAt DateTime @map("due_at")
+  episodeKey String @map("episode_key")
+  status Int @default(0)
+  skipReason String? @map("skip_reason")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([automationRuleId, conversationId, episodeKey])
+  @@index([automationRuleId])
+  @@index([conversationId])
+  @@index([status, dueAt])
+  @@index([status, updatedAt])
+}
+
+model AutomationRule {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  name String
+  description String?
+  eventName String @map("event_name")
+  conditions Json @default("{}")
+  actions Json @default("{}")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  active Boolean @default(true)
+  executionDelay Int? @map("execution_delay")
+  monitorId Int? @map("monitor_id") @big
+  monitorEventActivatedAt DateTime? @map("monitor_event_activated_at")
+  @@index([accountId])
+  @@index([monitorId])
+}
+
+model Call {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  inboxId Int @map("inbox_id") @big
+  conversationId Int @map("conversation_id")
+  contactId Int @map("contact_id")
+  messageId Int? @map("message_id")
+  acceptedByAgentId Int? @map("accepted_by_agent_id") @big
+  providerCallId String @map("provider_call_id")
+  provider Int @default(0)
+  direction Int
+  status String @default("ringing")
+  startedAt DateTime? @map("started_at")
+  durationSeconds Int? @map("duration_seconds")
+  endReason String? @map("end_reason")
+  meta Json?
+  transcript String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  ringState Json @map("ring_state")
+  @@index([accountId, contactId])
+  @@index([accountId, conversationId])
+  @@index([accountId, createdAt])
+  @@index([messageId])
+  @@index([provider, createdAt])
+  @@unique([provider, providerCallId])
+}
+
+model CampaignRecipient {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  campaignId Int @map("campaign_id")
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId Int @map("contact_id")
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  inboxId Int @map("inbox_id")
+  inbox Inbox @relation(fields: [inboxId], references: [id], onDelete: Cascade)
+  sourceId String? @map("source_id")
+  status Int @default(0)
+  errorCode String? @map("error_code")
+  errorTitle String? @map("error_title")
+  errorMessage String? @map("error_message")
+  messageContent String? @map("message_content")
+  sentAt DateTime? @map("sent_at")
+  deliveredAt DateTime? @map("delivered_at")
+  readAt DateTime? @map("read_at")
+  failedAt DateTime? @map("failed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  contactInboxId Int? @map("contact_inbox_id") @big
+  sendAttemptedAt DateTime? @map("send_attempted_at")
+  @@index([accountId, campaignId])
+  @@index([accountId])
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([contactInboxId])
+  @@index([inboxId])
+  @@unique([sourceId], where: sourceId != null)
+}
+
+model Campaign {
+  id Int @id @default(autoincrement())
+  displayId Int @map("display_id")
+  title String
+  description String?
+  message String
+  senderId Int? @map("sender_id")
+  enabled Boolean? @default(true)
+  accountId Int @map("account_id")
+  inboxId Int @map("inbox_id") @big
+  triggerRules Json? @map("trigger_rules")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  campaignType Int @map("campaign_type") @default(0)
+  campaignStatus Int @map("campaign_status") @default(0)
+  audience Json?
+  scheduledAt DateTime? @map("scheduled_at")
+  triggerOnlyDuringBusinessHours Boolean? @map("trigger_only_during_business_hours") @default(false)
+  templateParams Json? @map("template_params")
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  whatsappCursor Int? @map("whatsapp_cursor") @big
+  @@index([accountId])
+  @@index([campaignStatus])
+  @@index([campaignType])
+  @@index([inboxId])
+  @@index([scheduledAt])
+}
+
+model CannedResponse {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  shortCode String? @map("short_code")
+  content String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model CaptainAssistantResponse {
+  id Int @id @default(autoincrement())
+  question String
+  answer String
+  embedding String?
+  assistantId Int @map("assistant_id") @big
+  documentableId Int? @map("documentable_id") @big
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  status Int @default(1)
+  documentableType String? @map("documentable_type")
+  edited Boolean @default(false)
+  @@index([accountId])
+  @@index([assistantId])
+  @@index([documentableId, documentableType])
+  @@index([status])
+}
+
+model CaptainAssistant {
+  id Int @id @default(autoincrement())
+  name String
+  accountId Int @map("account_id")
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  config Json
+  responseGuidelines Json? @map("response_guidelines")
+  guardrails Json?
+  @@index([accountId])
+}
+
+model CaptainCustomTool {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  slug String
+  title String
+  description String?
+  httpMethod String @map("http_method") @default("GET")
+  endpointUrl String @map("endpoint_url")
+  requestTemplate String? @map("request_template")
+  responseTemplate String? @map("response_template")
+  authType String? @map("auth_type") @default("none")
+  authConfig Json? @map("auth_config")
+  paramSchema Json? @map("param_schema")
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  assistantId Int? @map("assistant_id") @big
+  headers Json
+  sourceMetadata Json? @map("source_metadata")
+  settings Json
+  @@index([accountId])
+  @@unique([assistantId, slug], nullsDistinct: true)
+}
+
+model CaptainDocument {
+  id Int @id @default(autoincrement())
+  name String?
+  externalLink String @map("external_link")
+  content String?
+  assistantId Int @map("assistant_id") @big
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  status Int @default(0)
+  metadata Json?
+  syncStatus Int? @map("sync_status")
+  lastSyncedAt DateTime? @map("last_synced_at")
+  lastSyncAttemptedAt DateTime? @map("last_sync_attempted_at")
+  @@index([accountId, assistantId, syncStatus, lastSyncedAt])
+  @@index([accountId, syncStatus])
+  @@index([accountId])
+  @@index([assistantId])
+  @@index([status])
+}
+
+model CaptainFaqObservation {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  conversationId Int @map("conversation_id")
+  faqSuggestionId Int? @map("faq_suggestion_id") @big
+  generatedQuestion String @map("generated_question")
+  generatedAnswer String @map("generated_answer")
+  language String @default("en")
+  status Int @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([conversationId])
+  @@index([faqSuggestionId])
+}
+
+model CaptainFaqSuggestion {
+  id Int @id @default(autoincrement())
+  question String
+  answer String
+  embedding String?
+  assistantId Int @map("assistant_id") @big
+  accountId Int @map("account_id")
+  language String @default("en")
+  sourceCount Int @map("source_count") @default(0)
+  status Int @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([accountId, assistantId, status, language])
+  @@index([assistantId])
+  @@index([embedding])
+}
+
+model CaptainInbox {
+  id Int @id @default(autoincrement())
+  captainAssistantId Int @map("captain_assistant_id")
+  inboxId Int @map("inbox_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([captainAssistantId, inboxId])
+  @@index([captainAssistantId])
+  @@index([inboxId])
+}
+
+model CaptainMcpServer {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  assistantId Int @map("assistant_id") @big
+  url String
+  name String
+  authType String @map("auth_type") @default("none")
+  authHeader String? @map("auth_header")
+  authConfig Json? @map("auth_config")
+  oauthCredentials Json? @map("oauth_credentials")
+  status String @default("active")
+  lastError String? @map("last_error")
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([assistantId, url])
+}
+
+model CaptainMcpTool {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  mcpServerId Int @map("mcp_server_id") @big
+  name String
+  captainName String @map("captain_name")
+  approvedDefinition Json @map("approved_definition")
+  approvedDigest String @map("approved_digest")
+  paramSources Json @map("param_sources")
+  settings Json
+  enabled Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  reviewState String @map("review_state") @default("current")
+  @@index([accountId])
+  @@unique([captainName])
+  @@unique([mcpServerId, name])
+}
+
+model CaptainMessageReport {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  conversationId Int @map("conversation_id")
+  messageId Int @map("message_id")
+  userId Int @map("user_id")
+  reportReason String @map("report_reason")
+  description String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([userId])
+}
+
+model CaptainScenario {
+  id Int @id @default(autoincrement())
+  title String?
+  description String?
+  instruction String?
+  tools Json?
+  enabled Boolean @default(true)
+  assistantId Int @map("assistant_id") @big
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([assistantId, enabled])
+  @@index([assistantId])
+  @@index([enabled])
+}
+
+model Category {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  portalId Int @map("portal_id")
+  name String?
+  description String?
+  position Int?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  locale String? @default("en")
+  slug String
+  parentCategoryId Int? @map("parent_category_id") @big
+  associatedCategoryId Int? @map("associated_category_id") @big
+  icon String? @default("")
+  iconColor String? @map("icon_color") @default("")
+  @@index([associatedCategoryId])
+  @@index([locale, accountId])
+  @@index([locale])
+  @@index([parentCategoryId])
+  @@unique([slug, locale, portalId], nullsDistinct: true)
+}
+
+model ChannelApi {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  webhookUrl String? @map("webhook_url")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  identifier String?
+  hmacToken String? @map("hmac_token")
+  hmacMandatory Boolean? @map("hmac_mandatory") @default(false)
+  additionalAttributes Json? @map("additional_attributes")
+  secret String?
+  @@unique([hmacToken])
+  @@unique([identifier])
+}
+
+model ChannelEmail {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  email String
+  forwardToEmail String @map("forward_to_email")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  imapEnabled Boolean? @map("imap_enabled") @default(false)
+  imapAddress String? @map("imap_address") @default("")
+  imapPort Int? @map("imap_port") @default(0)
+  imapLogin String? @map("imap_login") @default("")
+  imapPassword String? @map("imap_password") @default("")
+  imapEnableSsl Boolean? @map("imap_enable_ssl") @default(true)
+  smtpEnabled Boolean? @map("smtp_enabled") @default(false)
+  smtpAddress String? @map("smtp_address") @default("")
+  smtpPort Int? @map("smtp_port") @default(0)
+  smtpLogin String? @map("smtp_login") @default("")
+  smtpPassword String? @map("smtp_password") @default("")
+  smtpDomain String? @map("smtp_domain") @default("")
+  smtpEnableStarttlsAuto Boolean? @map("smtp_enable_starttls_auto") @default(true)
+  smtpAuthentication String? @map("smtp_authentication") @default("login")
+  smtpOpensslVerifyMode String? @map("smtp_openssl_verify_mode") @default("none")
+  smtpEnableSslTls Boolean? @map("smtp_enable_ssl_tls") @default(false)
+  providerConfig Json? @map("provider_config")
+  provider String?
+  imapAuthentication String? @map("imap_authentication") @default("plain")
+  verifiedForSending Boolean @map("verified_for_sending") @default(false)
+  @@unique([email])
+  @@unique([forwardToEmail])
+}
+
+model ChannelFacebookPage {
+  id Int @id @default(autoincrement())
+  pageId String @map("page_id")
+  userAccessToken String @map("user_access_token")
+  pageAccessToken String @map("page_access_token")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  instagramId String? @map("instagram_id")
+  providerName String? @map("provider_name")
+  @@unique([pageId, accountId])
+  @@index([pageId])
+}
+
+model ChannelInstagram {
+  id Int @id @default(autoincrement())
+  accessToken String @map("access_token")
+  expiresAt DateTime? @map("expires_at")
+  accountId Int @map("account_id")
+  instagramId String @map("instagram_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  providerName String? @map("provider_name")
+  authType String @map("auth_type") @default("instagram_login")
+  configurationId String? @map("configuration_id")
+  @@unique([instagramId])
+}
+
+model ChannelLine {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  lineChannelId String @map("line_channel_id")
+  lineChannelSecret String @map("line_channel_secret")
+  lineChannelToken String @map("line_channel_token")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([lineChannelId])
+}
+
+model ChannelSm {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  phoneNumber String @map("phone_number")
+  provider String? @default("default")
+  providerConfig Json? @map("provider_config")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  secret String?
+  callbackAuthEnforced Boolean @map("callback_auth_enforced") @default(true)
+  @@unique([phoneNumber])
+}
+
+model ChannelTelegram {
+  id Int @id @default(autoincrement())
+  botName String? @map("bot_name")
+  accountId Int @map("account_id")
+  botToken String @map("bot_token")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([botToken])
+}
+
+model ChannelTiktok {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  businessId String @map("business_id")
+  accessToken String @map("access_token")
+  expiresAt DateTime @map("expires_at")
+  refreshToken String @map("refresh_token")
+  refreshTokenExpiresAt DateTime @map("refresh_token_expires_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  providerName String? @map("provider_name")
+  @@unique([businessId])
+}
+
+model ChannelTwilioSm {
+  id Int @id @default(autoincrement())
+  phoneNumber String? @map("phone_number")
+  authToken String @map("auth_token")
+  accountSid String @map("account_sid")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  medium Int? @default(0)
+  messagingServiceSid String? @map("messaging_service_sid")
+  apiKeySid String? @map("api_key_sid")
+  contentTemplates Json? @map("content_templates")
+  contentTemplatesLastUpdated DateTime? @map("content_templates_last_updated")
+  voiceEnabled Boolean @map("voice_enabled") @default(false)
+  twimlAppSid String? @map("twiml_app_sid")
+  apiKeySecret String? @map("api_key_secret")
+  providerConfig Json? @map("provider_config")
+  @@unique([accountSid, phoneNumber], nullsDistinct: true)
+  @@unique([messagingServiceSid])
+  @@unique([phoneNumber])
+}
+
+model ChannelTwitterProfile {
+  id Int @id @default(autoincrement())
+  profileId String @map("profile_id")
+  twitterAccessToken String @map("twitter_access_token")
+  twitterAccessTokenSecret String @map("twitter_access_token_secret")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  tweetsEnabled Boolean? @map("tweets_enabled") @default(true)
+  @@unique([accountId, profileId])
+}
+
+model ChannelWebWidget {
+  id Int @id @default(autoincrement())
+  websiteUrl String? @map("website_url")
+  accountId Int? @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  websiteToken String? @map("website_token")
+  widgetColor String? @map("widget_color") @default("#1f93ff")
+  welcomeTitle String? @map("welcome_title")
+  welcomeTagline String? @map("welcome_tagline")
+  featureFlags Int @map("feature_flags") @default(7)
+  replyTime Int? @map("reply_time") @default(0)
+  hmacToken String? @map("hmac_token")
+  preChatFormEnabled Boolean? @map("pre_chat_form_enabled") @default(false)
+  preChatFormOptions Json? @map("pre_chat_form_options")
+  hmacMandatory Boolean? @map("hmac_mandatory") @default(false)
+  continuityViaEmail Boolean @map("continuity_via_email") @default(true)
+  allowedDomains String? @map("allowed_domains") @default("")
+  @@unique([hmacToken])
+  @@unique([websiteToken])
+}
+
+model ChannelWhatsapp {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  businessManagementToken String? @map("business_management_token")
+  phoneNumber String @map("phone_number")
+  provider String? @default("default")
+  providerConfig Json? @map("provider_config")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  messageTemplates Json? @map("message_templates")
+  messageTemplatesLastUpdated DateTime? @map("message_templates_last_updated")
+  phoneNumberHealth Json @map("phone_number_health")
+  phoneNumberHealthCheckedAt DateTime? @map("phone_number_health_checked_at")
+  phoneNumberHealthError String? @map("phone_number_health_error")
+  @@index([phoneNumberHealthCheckedAt])
+  @@unique([phoneNumber])
+}
+
+model Company {
+  id Int @id @default(autoincrement())
+  name String
+  domain String?
+  description String?
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  contactsCount Int? @map("contacts_count")
+  additionalAttributes Json? @map("additional_attributes")
+  customAttributes Json? @map("custom_attributes")
+  lastActivityAt DateTime? @map("last_activity_at")
+  @@index([accountId])
+  @@index([name, accountId])
+}
+
+model ContactInbox {
+  id Int @id @default(autoincrement())
+  contactId Int? @map("contact_id")
+  inboxId Int? @map("inbox_id") @big
+  sourceId String @map("source_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  hmacVerified Boolean? @map("hmac_verified") @default(false)
+  pubsubToken String? @map("pubsub_token")
+  @@index([contactId])
+  @@index([contactId, inboxId])
+  @@unique([inboxId, sourceId], nullsDistinct: true)
+  @@index([inboxId])
+  @@unique([pubsubToken])
+  @@index([sourceId])
+}
+
+model Contact {
+  id Int @id @default(autoincrement())
+  name String? @default("")
+  email String?
+  phoneNumber String? @map("phone_number")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  additionalAttributes Json? @map("additional_attributes")
+  identifier String?
+  customAttributes Json? @map("custom_attributes")
+  lastActivityAt DateTime? @map("last_activity_at")
+  contactType Int? @map("contact_type") @default(0)
+  middleName String? @map("middle_name") @default("")
+  lastName String? @map("last_name") @default("")
+  location String? @default("")
+  countryCode String? @map("country_code") @default("")
+  blocked Boolean @default(false)
+  companyId Int? @map("company_id") @big
+  @@index([accountId, contactType])
+  @@index([accountId, email, phoneNumber, identifier])
+  @@index([accountId, lastActivityAt])
+  @@index([accountId])
+  @@index([blocked])
+  @@index([companyId])
+  @@unique([email, accountId], nullsDistinct: true)
+  @@unique([identifier, accountId], nullsDistinct: true)
+  @@index([name, email, phoneNumber, identifier])
+  @@index([phoneNumber, accountId])
+}
+
+model ConversationMonitorAutomationDelivery {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  monitorId Int @map("monitor_id") @big
+  automationRuleId Int @map("automation_rule_id")
+  conversationId Int @map("conversation_id")
+  status String @default("pending")
+  skipReason String? @map("skip_reason")
+  claimedAt DateTime? @map("claimed_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([automationRuleId, monitorId, conversationId])
+  @@index([automationRuleId])
+  @@index([conversationId])
+  @@index([monitorId])
+  @@index([status, updatedAt])
+}
+
+model ConversationMonitorDailyUsage {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  usageDate DateTime @map("usage_date")
+  callsCount Int @map("calls_count") @default(0)
+  limitReachedAt DateTime? @map("limit_reached_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, usageDate])
+  @@check("callsCount >= 0")
+}
+
+model ConversationMonitorEvaluation {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  monitorId Int @map("monitor_id")
+  monitor ConversationMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  conversationId Int @map("conversation_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  status String @default("pending")
+  inputRevision Int @map("input_revision") @default(0) @big
+  generation Int @default(0) @big
+  requestedVersion Int? @map("requested_version") @big
+  score Float?
+  model String?
+  errorCode String? @map("error_code")
+  matchedAt DateTime? @map("matched_at")
+  evaluatedAt DateTime? @map("evaluated_at")
+  firstMatchedAt DateTime? @map("first_matched_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([conversationId])
+  @@unique([monitorId, conversationId])
+  @@index([monitorId, status, conversationId])
+  @@index([monitorId])
+}
+
+model ConversationMonitorScan {
+  id Int @id @default(autoincrement())
+  monitorId Int @map("monitor_id")
+  monitor ConversationMonitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  kind String
+  collectionVersion Int @map("collection_version") @big
+  startedAt DateTime @map("started_at")
+  endedAt DateTime @map("ended_at")
+  cursor Int @default(0) @big
+  enumeratedAt DateTime? @map("enumerated_at")
+  cancelledAt DateTime? @map("cancelled_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([monitorId, collectionVersion, kind])
+}
+
+model ConversationMonitorWorkItem {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  conversationId Int @map("conversation_id")
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  revision Int @default(0) @big
+  processedRevision Int @map("processed_revision") @default(0) @big
+  fullHistoryRevision Int @map("full_history_revision") @default(0) @big
+  generation Int @default(0) @big
+  dueAt DateTime? @map("due_at")
+  leaseToken String? @map("lease_token")
+  leaseExpiresAt DateTime? @map("lease_expires_at")
+  attempts Int @default(0)
+  errorCode String? @map("error_code")
+  requestedAt DateTime? @map("requested_at")
+  activityAt DateTime? @map("activity_at")
+  liveActivityRevision Int @map("live_activity_revision") @default(0) @big
+  liveActivityAt DateTime? @map("live_activity_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([conversationId])
+  @@index([dueAt], where: dueAt != null)
+}
+
+model ConversationMonitor {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userId Int? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name String
+  condition String
+  model String
+  threshold Float
+  historySince DateTime @map("history_since")
+  pausedAt DateTime? @map("paused_at")
+  resumedAt DateTime? @map("resumed_at")
+  deletedAt DateTime? @map("deleted_at")
+  dataRevision Int @map("data_revision") @default(0) @big
+  collectionVersion Int @map("collection_version") @default(0) @big
+  recheckRequestedAt DateTime? @map("recheck_requested_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  icon String @default("chat-3-line")
+  iconColor String @map("icon_color") @default("#3B82F6")
+  slackChannelId String? @map("slack_channel_id")
+  @@index([accountId])
+  @@index([userId])
+}
+
+model ConversationOutcome {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  assistantId Int @map("assistant_id") @big
+  conversationId Int @map("conversation_id")
+  inboxId Int @map("inbox_id") @big
+  firstCaptainReplyAt DateTime? @map("first_captain_reply_at")
+  lastCaptainReplyAt DateTime? @map("last_captain_reply_at")
+  captainReplyCount Int @map("captain_reply_count") @default(0)
+  firstHumanReplyAt DateTime? @map("first_human_reply_at")
+  handoffAt DateTime? @map("handoff_at")
+  handoffReasonCategory String? @map("handoff_reason_category")
+  resolvedAt DateTime? @map("resolved_at")
+  csatRating Int? @map("csat_rating")
+  csatReceivedAt DateTime? @map("csat_received_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  episodeTrigger String @map("episode_trigger") @default("initial")
+  startedAt DateTime @map("started_at")
+  endedAt DateTime? @map("ended_at")
+  @@index([accountId, assistantId, handoffAt])
+  @@index([accountId, assistantId, resolvedAt])
+  @@index([accountId, assistantId, startedAt])
+  @@unique([accountId, conversationId, startedAt])
+  @@unique([accountId, conversationId], where: endedAt == null)
+  @@index([accountId])
+  @@index([assistantId])
+  @@index([conversationId])
+  @@index([inboxId])
+}
+
+model ConversationParticipant {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  userId Int @map("user_id")
+  conversationId Int @map("conversation_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([conversationId])
+  @@unique([userId, conversationId])
+  @@index([userId])
+}
+
+model Conversation {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  inboxId Int @map("inbox_id")
+  status Int @default(0)
+  assigneeId Int? @map("assignee_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  contactId Int? @map("contact_id")
+  displayId Int @map("display_id")
+  contactLastSeenAt DateTime? @map("contact_last_seen_at")
+  agentLastSeenAt DateTime? @map("agent_last_seen_at")
+  additionalAttributes Json? @map("additional_attributes")
+  contactInboxId Int? @map("contact_inbox_id") @big
+  uuid String
+  identifier String?
+  lastActivityAt DateTime @map("last_activity_at")
+  teamId Int? @map("team_id")
+  campaignId Int? @map("campaign_id")
+  snoozedUntil DateTime? @map("snoozed_until")
+  customAttributes Json? @map("custom_attributes")
+  assigneeLastSeenAt DateTime? @map("assignee_last_seen_at")
+  firstReplyCreatedAt DateTime? @map("first_reply_created_at")
+  priority Int?
+  slaPolicyId Int? @map("sla_policy_id") @big
+  waitingSince DateTime? @map("waiting_since")
+  cachedLabelList String? @map("cached_label_list")
+  assigneeAgentBotId Int? @map("assignee_agent_bot_id") @big
+  aiAssigneeType String? @map("ai_assignee_type")
+  statusChangedAt DateTime? @map("status_changed_at")
+  lastMessageAt DateTime? @map("last_message_at")
+  @@unique([accountId, displayId])
+  @@index([accountId])
+  @@index([accountId, inboxId, status, assigneeId])
+  @@index([accountId, lastMessageAt, displayId])
+  @@index([accountId, status, createdAt])
+  @@index([assigneeId, accountId])
+  @@index([campaignId])
+  @@index([contactId])
+  @@index([contactInboxId])
+  @@index([createdAt])
+  @@index([firstReplyCreatedAt])
+  @@index([identifier, accountId])
+  @@index([inboxId])
+  @@index([priority])
+  @@index([slaPolicyId], where: slaPolicyId != null)
+  @@index([status, accountId])
+  @@index([status, priority])
+  @@index([teamId])
+  @@unique([uuid])
+  @@index([waitingSince])
+}
+
+model CopilotActionItem {
+  id Int @id @default(autoincrement())
+  copilotRunId Int @map("copilot_run_id")
+  recordId Int @map("record_id") @big
+  status String
+  error String?
+  attempts Int @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([copilotRunId, recordId])
+}
+
+model CopilotMessage {
+  id Int @id @default(autoincrement())
+  copilotThreadId Int @map("copilot_thread_id")
+  accountId Int @map("account_id")
+  message Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  messageType Int? @map("message_type") @default(0)
+  @@index([accountId])
+  @@index([copilotThreadId])
+}
+
+model CopilotReviewFinding {
+  id Int @id @default(autoincrement())
+  copilotRunId Int @map("copilot_run_id")
+  conversationId Int @map("conversation_id")
+  status String
+  matched Boolean @default(false)
+  category String?
+  reason String?
+  screeningScore Float? @map("screening_score")
+  evidenceMessageIds Json @map("evidence_message_ids")
+  reviewedMessageIds Json @map("reviewed_message_ids")
+  historyTruncated Boolean @map("history_truncated") @default(false)
+  attempts Int @default(0)
+  error String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([copilotRunId, conversationId])
+}
+
+model CopilotRun {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  userId Int @map("user_id")
+  copilotThreadId Int @map("copilot_thread_id")
+  copilotMessageId Int? @map("copilot_message_id")
+  copilotToolCallId Int? @map("copilot_tool_call_id")
+  sourceRunId Int? @map("source_run_id") @big
+  type String
+  status String @default("queued")
+  context Json
+  transcript Json
+  totalCostUsd Float @map("total_cost_usd") @default("0.0")
+  costComplete Boolean @map("cost_complete") @default(true)
+  leaseUntil DateTime? @map("lease_until")
+  leaseToken String? @map("lease_token")
+  attempts Int @default(0)
+  error String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([copilotMessageId])
+  @@index([copilotThreadId])
+  @@unique([copilotToolCallId])
+  @@index([sourceRunId])
+  @@index([status])
+  @@index([userId])
+}
+
+model CopilotThread {
+  id Int @id @default(autoincrement())
+  title String
+  userId Int @map("user_id")
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  assistantId Int? @map("assistant_id")
+  @@index([accountId])
+  @@index([assistantId])
+  @@index([userId])
+}
+
+model CopilotToolCall {
+  id Int @id @default(autoincrement())
+  copilotRunId Int @map("copilot_run_id")
+  callId String @map("call_id")
+  name String
+  status String @default("queued")
+  arguments Json
+  result Json?
+  attempts Int @default(0)
+  error String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([copilotRunId, callId])
+  @@index([status])
+}
+
+model CsatSurveyResponse {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  conversationId Int @map("conversation_id")
+  messageId Int @map("message_id")
+  rating Int
+  feedbackMessage String? @map("feedback_message")
+  contactId Int @map("contact_id")
+  assignedAgentId Int? @map("assigned_agent_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  csatReviewNotes String? @map("csat_review_notes")
+  reviewNotesUpdatedAt DateTime? @map("review_notes_updated_at")
+  reviewNotesUpdatedById Int? @map("review_notes_updated_by_id") @big
+  @@index([accountId])
+  @@index([assignedAgentId])
+  @@index([contactId])
+  @@index([conversationId])
+  @@unique([messageId])
+  @@index([reviewNotesUpdatedById])
+}
+
+model CustomAttributeDefinition {
+  id Int @id @default(autoincrement())
+  attributeDisplayName String? @map("attribute_display_name")
+  attributeKey String? @map("attribute_key")
+  attributeDisplayType Int? @map("attribute_display_type") @default(0)
+  defaultValue Int? @map("default_value")
+  attributeModel Int? @map("attribute_model") @default(0)
+  accountId Int? @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  attributeDescription String? @map("attribute_description")
+  attributeValues Json? @map("attribute_values")
+  regexPattern String? @map("regex_pattern")
+  regexCue String? @map("regex_cue")
+  @@index([accountId])
+  @@unique([attributeKey, attributeModel, accountId], nullsDistinct: true)
+}
+
+model CustomFilter {
+  id Int @id @default(autoincrement())
+  name String
+  filterType Int @map("filter_type") @default(0)
+  query Json @default("{}")
+  accountId Int @map("account_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([userId])
+}
+
+model CustomRole {
+  id Int @id @default(autoincrement())
+  name String?
+  description String?
+  accountId Int @map("account_id")
+  permissions String[]?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model DashboardApp {
+  id Int @id @default(autoincrement())
+  title String
+  content Json?
+  accountId Int @map("account_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([userId])
+}
+
+model DataExport {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id])
+  initiatedById Int? @map("initiated_by_id")
+  initiatedBy User? @relation(fields: [initiatedById], references: [id], onDelete: SetNull)
+  name String
+  dataType String @map("data_type") @default("contacts")
+  status Int @default(0)
+  exportOptions Json @map("export_options")
+  activeRunId String? @map("active_run_id")
+  processedRecords Int @map("processed_records") @default(0)
+  totalRecords Int? @map("total_records")
+  errorMessage String? @map("error_message")
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  notificationSentAt DateTime? @map("notification_sent_at")
+  artifactsExpiredAt DateTime? @map("artifacts_expired_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([completedAt], where: artifactsExpiredAt == null)
+  @@index([initiatedById])
+}
+
+model DataImportError {
+  id Int @id @default(autoincrement())
+  dataImportId Int @map("data_import_id")
+  dataImportItemId Int? @map("data_import_item_id")
+  sourceObjectType String? @map("source_object_type")
+  sourceObjectId String? @map("source_object_id")
+  errorCode String @map("error_code")
+  message String?
+  details Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([dataImportId])
+  @@index([dataImportItemId])
+  @@index([sourceObjectType, sourceObjectId])
+}
+
+model DataImportItem {
+  id Int @id @default(autoincrement())
+  dataImportId Int @map("data_import_id")
+  sourceProvider String @map("source_provider")
+  sourceObjectType String @map("source_object_type")
+  sourceObjectId String @map("source_object_id")
+  status Int @default(0)
+  chatwootRecordType String? @map("chatwoot_record_type")
+  chatwootRecordId Int? @map("chatwoot_record_id") @big
+  attemptCount Int @map("attempt_count") @default(0)
+  lastErrorCode String? @map("last_error_code")
+  lastErrorMessage String? @map("last_error_message")
+  metadata Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([dataImportId], where: status == false)
+  @@index([chatwootRecordType, chatwootRecordId])
+  @@unique([dataImportId, sourceObjectType, sourceObjectId])
+  @@index([sourceProvider, sourceObjectType, sourceObjectId])
+}
+
+model DataImportMapping {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  dataImportId Int @map("data_import_id")
+  sourceProvider String @map("source_provider")
+  sourceObjectType String @map("source_object_type")
+  sourceObjectId String @map("source_object_id")
+  chatwootRecordType String @map("chatwoot_record_type")
+  chatwootRecordId Int @map("chatwoot_record_id") @big
+  metadata Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, sourceProvider, sourceObjectType, sourceObjectId])
+  @@index([chatwootRecordType, chatwootRecordId])
+  @@index([dataImportId])
+}
+
+model DataImport {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  dataType String @map("data_type")
+  status Int @default(0)
+  processingErrors String? @map("processing_errors")
+  totalRecords Int? @map("total_records")
+  processedRecords Int? @map("processed_records")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  name String?
+  sourceType String? @map("source_type")
+  sourceProvider String? @map("source_provider")
+  importTypes Json @map("import_types")
+  initiatedById Int? @map("initiated_by_id")
+  accessToken String? @map("access_token")
+  sourceMetadata Json @map("source_metadata")
+  stats Json
+  cursor Json
+  startedAt DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  abandonedAt DateTime? @map("abandoned_at")
+  lastErrorAt DateTime? @map("last_error_at")
+  @@index([accountId])
+  @@index([initiatedById])
+  @@index([sourceProvider])
+}
+
+model EmailTemplate {
+  id Int @id @default(autoincrement())
+  name String
+  body String
+  accountId Int? @map("account_id")
+  templateType Int? @map("template_type") @default(1)
+  locale Int @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  inboxId Int? @map("inbox_id")
+  @@index([inboxId])
+}
+
+model Folder {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  categoryId Int @map("category_id")
+  name String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model InboxAssignmentPolicy {
+  id Int @id @default(autoincrement())
+  inboxId Int @map("inbox_id") @big
+  assignmentPolicyId Int @map("assignment_policy_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([assignmentPolicyId])
+  @@unique([inboxId])
+}
+
+model InboxCapacityLimit {
+  id Int @id @default(autoincrement())
+  agentCapacityPolicyId Int @map("agent_capacity_policy_id") @big
+  inboxId Int @map("inbox_id") @big
+  conversationLimit Int @map("conversation_limit")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([agentCapacityPolicyId, inboxId])
+  @@index([agentCapacityPolicyId])
+  @@index([inboxId])
+}
+
+model InboxMember {
+  id Int @id @default(autoincrement())
+  userId Int @map("user_id")
+  inboxId Int @map("inbox_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([inboxId, userId])
+  @@index([inboxId])
+}
+
+model Inbox {
+  id Int @id @default(autoincrement())
+  channelId Int @map("channel_id")
+  accountId Int @map("account_id")
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  channelType String? @map("channel_type")
+  enableAutoAssignment Boolean? @map("enable_auto_assignment") @default(true)
+  greetingEnabled Boolean? @map("greeting_enabled") @default(false)
+  greetingMessage String? @map("greeting_message")
+  emailAddress String? @map("email_address")
+  workingHoursEnabled Boolean? @map("working_hours_enabled") @default(false)
+  outOfOfficeMessage String? @map("out_of_office_message")
+  timezone String? @default("UTC")
+  enableEmailCollect Boolean? @map("enable_email_collect") @default(true)
+  csatSurveyEnabled Boolean? @map("csat_survey_enabled") @default(false)
+  allowMessagesAfterResolved Boolean? @map("allow_messages_after_resolved") @default(true)
+  autoAssignmentConfig Json? @map("auto_assignment_config")
+  lockToSingleConversation Boolean @map("lock_to_single_conversation") @default(false)
+  portalId Int? @map("portal_id")
+  portal Portal? @relation(fields: [portalId], references: [id])
+  senderNameType Int @map("sender_name_type") @default(0)
+  businessName String? @map("business_name")
+  csatConfig Json @map("csat_config")
+  @@index([accountId])
+  @@index([channelId, channelType])
+  @@index([portalId])
+}
+
+model InstallationConfig {
+  id Int @id @default(autoincrement())
+  name String
+  serializedValue Json @map("serialized_value")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  locked Boolean @default(true)
+  @@unique([name, createdAt])
+  @@unique([name])
+}
+
+model IntegrationsHook {
+  id Int @id @default(autoincrement())
+  status Int? @default(1)
+  inboxId Int? @map("inbox_id")
+  accountId Int? @map("account_id")
+  appId String? @map("app_id")
+  hookType Int? @map("hook_type") @default(0)
+  referenceId String? @map("reference_id")
+  accessToken String? @map("access_token")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  settings Json?
+}
+
+model Label {
+  id Int @id @default(autoincrement())
+  title String?
+  description String?
+  color String @default("#1f93ff")
+  showOnSidebar Boolean? @map("show_on_sidebar")
+  accountId Int? @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@unique([title, accountId], nullsDistinct: true)
+}
+
+model Leaf {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  userId Int @map("user_id")
+  startDate DateTime @map("start_date")
+  endDate DateTime @map("end_date")
+  leaveType Int @map("leave_type") @default(0)
+  status Int @default(0)
+  reason String?
+  approvedById Int? @map("approved_by_id") @big
+  approvedAt DateTime? @map("approved_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId, status])
+  @@index([accountId])
+  @@index([approvedById])
+  @@index([userId])
+}
+
+model Macro {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  name String
+  visibility Int? @default(0)
+  createdById Int? @map("created_by_id") @big
+  updatedById Int? @map("updated_by_id") @big
+  actions Json
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+}
+
+model Mention {
+  id Int @id @default(autoincrement())
+  userId Int @map("user_id")
+  conversationId Int @map("conversation_id")
+  accountId Int @map("account_id")
+  mentionedAt DateTime @map("mentioned_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([conversationId])
+  @@unique([userId, conversationId])
+  @@index([userId])
+}
+
+model Message {
+  id Int @id @default(autoincrement())
+  content String?
+  accountId Int @map("account_id")
+  inboxId Int @map("inbox_id")
+  conversationId Int @map("conversation_id")
+  messageType Int @map("message_type")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  private Boolean @default(false)
+  status Int? @default(0)
+  sourceId String? @map("source_id")
+  contentType Int @map("content_type") @default(0)
+  contentAttributes Json? @map("content_attributes")
+  senderType String? @map("sender_type")
+  senderId Int? @map("sender_id") @big
+  externalSourceIds Json? @map("external_source_ids")
+  additionalAttributes Json? @map("additional_attributes")
+  processedMessageContent String? @map("processed_message_content")
+  sentiment Json?
+  @@index([accountId, contentType, createdAt])
+  @@index([accountId, createdAt, messageType])
+  @@index([accountId, inboxId])
+  @@index([accountId])
+  @@index([content])
+  @@index([conversationId, accountId, createdAt])
+  @@index([conversationId, accountId, messageType, createdAt])
+  @@index([conversationId])
+  @@index([createdAt])
+  @@index([inboxId])
+  @@index([senderType, senderId, createdAt])
+  @@index([senderType, senderId])
+  @@index([sourceId])
+}
+
+model Note {
+  id Int @id @default(autoincrement())
+  content String
+  accountId Int @map("account_id")
+  contactId Int @map("contact_id")
+  userId Int? @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([contactId])
+  @@index([userId])
+}
+
+model NotificationSetting {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  userId Int? @map("user_id")
+  emailFlags Int @map("email_flags") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  pushFlags Int @map("push_flags") @default(0)
+  @@unique([accountId, userId], nullsDistinct: true)
+}
+
+model NotificationSubscription {
+  id Int @id @default(autoincrement())
+  userId Int @map("user_id")
+  subscriptionType Int @map("subscription_type")
+  subscriptionAttributes Json @map("subscription_attributes")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  identifier String?
+  @@unique([identifier])
+  @@index([userId])
+}
+
+model Notification {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  userId Int @map("user_id")
+  notificationType Int @map("notification_type")
+  primaryActorType String @map("primary_actor_type")
+  primaryActorId Int @map("primary_actor_id") @big
+  secondaryActorType String? @map("secondary_actor_type")
+  secondaryActorId Int? @map("secondary_actor_id") @big
+  readAt DateTime? @map("read_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  snoozedUntil DateTime? @map("snoozed_until")
+  lastActivityAt DateTime? @map("last_activity_at")
+  meta Json?
+  @@index([accountId])
+  @@index([lastActivityAt])
+  @@index([primaryActorType, primaryActorId])
+  @@index([secondaryActorType, secondaryActorId])
+  @@index([userId, accountId, snoozedUntil, readAt])
+  @@index([userId])
+}
+
+model PlatformAppPermissible {
+  id Int @id @default(autoincrement())
+  platformAppId Int @map("platform_app_id")
+  permissibleType String @map("permissible_type")
+  permissibleId Int @map("permissible_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([permissibleType, permissibleId])
+  @@unique([platformAppId, permissibleId, permissibleType])
+  @@index([platformAppId])
+}
+
+model PlatformApp {
+  id Int @id @default(autoincrement())
+  name String
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+}
+
+model PlatformBanner {
+  id Int @id @default(autoincrement())
+  bannerMessage String @map("banner_message")
+  bannerType Int @map("banner_type") @default(0)
+  active Boolean @default(true)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  title String?
+  videoUrl String? @map("video_url")
+}
+
+model Portal {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  name String
+  slug String
+  customDomain String? @map("custom_domain")
+  color String?
+  homepageLink String? @map("homepage_link")
+  pageTitle String? @map("page_title")
+  headerText String? @map("header_text")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  config Json?
+  archived Boolean? @default(false)
+  channelWebWidgetId Int? @map("channel_web_widget_id")
+  sslSettings Json @map("ssl_settings")
+  @@index([channelWebWidgetId])
+  @@unique([customDomain])
+  @@unique([slug])
+}
+
+model PortalsMember {
+  id String @id @default(cuid())
+  portalId Int @map("portal_id")
+  userId Int @map("user_id")
+  @@unique([portalId, userId])
+  @@index([portalId])
+  @@index([userId])
+}
+
+model RelatedCategory {
+  id Int @id @default(autoincrement())
+  categoryId Int? @map("category_id") @big
+  relatedCategoryId Int? @map("related_category_id") @big
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([categoryId, relatedCategoryId], nullsDistinct: true)
+  @@unique([relatedCategoryId, categoryId], nullsDistinct: true)
+}
+
+model ReportingEvent {
+  id Int @id @default(autoincrement())
+  name String?
+  value Float?
+  accountId Int? @map("account_id")
+  inboxId Int? @map("inbox_id")
+  userId Int? @map("user_id")
+  conversationId Int? @map("conversation_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  valueInBusinessHours Float? @map("value_in_business_hours")
+  eventStartTime DateTime? @map("event_start_time")
+  eventEndTime DateTime? @map("event_end_time")
+  @@index([accountId, createdAt])
+  @@index([accountId, name, createdAt])
+  @@index([accountId, name, inboxId, createdAt])
+  @@index([accountId])
+  @@index([conversationId])
+  @@index([createdAt])
+  @@index([inboxId])
+  @@index([name])
+  @@index([userId])
+}
+
+model ReportingEventsRollup {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  date DateTime
+  dimensionType String @map("dimension_type")
+  dimensionId Int @map("dimension_id") @big
+  metric String
+  count Int @default(0) @big
+  sumValue Float @map("sum_value") @default(0.0)
+  sumValueBusinessHours Float @map("sum_value_business_hours") @default(0.0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId, date, dimensionType, dimensionId, metric])
+  @@index([accountId, dimensionType, date])
+  @@index([accountId, metric, date])
+}
+
+model ShopifyCustomApp {
+  id Int @id @default(autoincrement())
+  accountId Int @map("account_id")
+  account Account @relation(fields: [accountId], references: [id])
+  shopDomain String @map("shop_domain")
+  clientId String @map("client_id")
+  clientSecret String @map("client_secret")
+  installUrl String @map("install_url")
+  enabled Boolean @default(true)
+  installationGeneration Int @map("installation_generation") @default(0)
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([accountId])
+  @@unique([clientId])
+  @@unique([shopDomain])
+}
+
+model SlaEvent {
+  id Int @id @default(autoincrement())
+  appliedSlaId Int @map("applied_sla_id")
+  conversationId Int @map("conversation_id")
+  accountId Int @map("account_id")
+  slaPolicyId Int @map("sla_policy_id") @big
+  inboxId Int @map("inbox_id") @big
+  eventType Int? @map("event_type")
+  meta Json?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@index([accountId])
+  @@index([appliedSlaId])
+  @@index([conversationId])
+  @@index([inboxId])
+  @@index([slaPolicyId])
+}
+
+model SlaPolicy {
+  id Int @id @default(autoincrement())
+  name String
+  firstResponseTimeThreshold Float? @map("first_response_time_threshold")
+  nextResponseTimeThreshold Float? @map("next_response_time_threshold")
+  onlyDuringBusinessHours Boolean? @map("only_during_business_hours") @default(false)
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  description String?
+  resolutionTimeThreshold Float? @map("resolution_time_threshold")
+  @@index([accountId])
+}
+
+model Tagging {
+  id Int @id @default(autoincrement())
+  tagId Int? @map("tag_id")
+  taggableType String? @map("taggable_type")
+  taggableId Int? @map("taggable_id")
+  taggerType String? @map("tagger_type")
+  taggerId Int? @map("tagger_id")
+  context String?
+  createdAt DateTime? @map("created_at")
+  @@index([context])
+  @@unique([tagId, taggableId, taggableType, context, taggerId, taggerType], nullsDistinct: true)
+  @@index([tagId])
+  @@index([taggableId, taggableType, context])
+  @@index([taggableId, taggableType, taggerId, context])
+  @@index([taggableId])
+  @@index([taggableType])
+  @@index([taggerId, taggerType])
+  @@index([taggerId])
+}
+
+model Tag {
+  id Int @id @default(autoincrement())
+  name String?
+  taggingsCount Int? @map("taggings_count") @default(0)
+  @@unique([name])
+}
+
+model TeamMember {
+  id Int @id @default(autoincrement())
+  teamId Int @map("team_id")
+  userId Int @map("user_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([teamId, userId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+model Team {
+  id Int @id @default(autoincrement())
+  name String
+  description String?
+  allowAutoAssign Boolean? @map("allow_auto_assign") @default(true)
+  accountId Int @map("account_id")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  icon String? @default("")
+  iconColor String? @map("icon_color") @default("")
+  @@index([accountId])
+  @@unique([name, accountId])
+}
+
+model UserSession {
+  id Int @id @default(autoincrement())
+  userId Int @map("user_id")
+  user User @relation(fields: [userId], references: [id])
+  clientId String @map("client_id")
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+  browserName String? @map("browser_name")
+  browserVersion String? @map("browser_version")
+  deviceName String? @map("device_name")
+  platformName String? @map("platform_name")
+  platformVersion String? @map("platform_version")
+  city String?
+  country String?
+  countryCode String? @map("country_code")
+  lastActivityAt DateTime? @map("last_activity_at")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  @@unique([userId, clientId])
+  @@index([userId])
+}
+
+model User {
+  id Int @id @default(autoincrement())
+  provider String @default("email")
+  uid String @default("")
+  encryptedPassword String @map("encrypted_password") @default("")
+  resetPasswordToken String? @map("reset_password_token")
+  resetPasswordSentAt DateTime? @map("reset_password_sent_at")
+  rememberCreatedAt DateTime? @map("remember_created_at")
+  signInCount Int @map("sign_in_count") @default(0)
+  currentSignInAt DateTime? @map("current_sign_in_at")
+  lastSignInAt DateTime? @map("last_sign_in_at")
+  currentSignInIp String? @map("current_sign_in_ip")
+  lastSignInIp String? @map("last_sign_in_ip")
+  confirmationToken String? @map("confirmation_token")
+  confirmedAt DateTime? @map("confirmed_at")
+  confirmationSentAt DateTime? @map("confirmation_sent_at")
+  unconfirmedEmail String? @map("unconfirmed_email")
+  name String
+  displayName String? @map("display_name")
+  email String?
+  tokens Json?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  pubsubToken String? @map("pubsub_token")
+  availability Int? @default(0)
+  uiSettings Json? @map("ui_settings")
+  customAttributes Json? @map("custom_attributes")
+  type String?
+  messageSignature String? @map("message_signature")
+  otpSecret String? @map("otp_secret")
+  consumedTimestep Int? @map("consumed_timestep")
+  otpRequiredForLogin Boolean? @map("otp_required_for_login") @default(false)
+  otpBackupCodes String? @map("otp_backup_codes")
+  deviceTrustVersion Int @map("device_trust_version") @default(0)
+  @@index([email])
+  @@index([otpRequiredForLogin])
+  @@unique([otpSecret])
+  @@unique([pubsubToken])
+  @@unique([resetPasswordToken])
+  @@unique([uid, provider])
+}
+
+model Webhook {
+  id Int @id @default(autoincrement())
+  accountId Int? @map("account_id")
+  inboxId Int? @map("inbox_id")
+  url String?
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  webhookType Int? @map("webhook_type") @default(0)
+  subscriptions Json?
+  name String?
+  secret String?
+  @@unique([accountId, url], nullsDistinct: true)
+}
+
+model WorkingHour {
+  id Int @id @default(autoincrement())
+  inboxId Int? @map("inbox_id") @big
+  accountId Int? @map("account_id")
+  dayOfWeek Int @map("day_of_week")
+  closedAllDay Boolean? @map("closed_all_day") @default(false)
+  openHour Int? @map("open_hour")
+  openMinutes Int? @map("open_minutes")
+  closeHour Int? @map("close_hour")
+  closeMinutes Int? @map("close_minutes")
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  openAllDay Boolean? @map("open_all_day") @default(false)
+  @@index([accountId])
+  @@index([inboxId])
+}

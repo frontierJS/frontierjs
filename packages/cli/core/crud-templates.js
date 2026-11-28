@@ -556,16 +556,23 @@ ${kids.markup}{#if record}
        This row is not the default one (Save + Cancel), so it is passed as an
        \`actions\` snippet, which <Form> takes over its own slot. Delete carries
        its own \`loading\`; submit does not need one, because a type="submit"
-       button inside <Form> reads the form's in-flight state from context. -->
+       button inside <Form> reads the form's in-flight state from context.
+
+       Each button asks offers() first: a service whose methods: leaves out
+       patch or remove answers 405 to it, so the button is not drawn. -->
   <${o.form} bind:record class="card">
     {#snippet actions()}
-      <Button type="submit">${o.submitLabel}</Button>
-      <ConfirmationPopover title={'Delete ' + (nameOf(record) ?? id) + '?'}
-                           confirmLabel="${o.deleteLabel}" onconfirm={remove}>
-        {#snippet trigger()}
-          <Button tone="danger" treatment="outlined" loading={deleting}>${o.deleteLabel}</Button>
-        {/snippet}
-      </ConfirmationPopover>
+      {#if ${o.res}.offers('patch')}
+        <Button type="submit">${o.submitLabel}</Button>
+      {/if}
+      {#if ${o.res}.offers('remove')}
+        <ConfirmationPopover title={'Delete ' + (nameOf(record) ?? id) + '?'}
+                             confirmLabel="${o.deleteLabel}" onconfirm={remove}>
+          {#snippet trigger()}
+            <Button tone="danger" treatment="outlined" loading={deleting}>${o.deleteLabel}</Button>
+          {/snippet}
+        </ConfirmationPopover>
+      {/if}
     {/snippet}
   </${o.form}>
 {:else if !row.loaded}

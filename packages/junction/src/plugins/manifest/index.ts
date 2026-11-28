@@ -17,7 +17,7 @@
 
 import type { App, DevService, Plugin } from '../../core/app.ts'
 import { isDevelopmentEnv } from '../../core/errors.ts'
-import { isMethodAllowed } from '../../core/service.ts'
+import { offeredMethods } from '../../core/service.ts'
 import { buildRoutes, serializeHookMap } from '../../core/app-model.ts'
 import type { RouteManifest, HookManifest } from '../../core/app-model.ts'
 
@@ -171,10 +171,7 @@ function buildServices(app: App): ServiceManifest[] {
   // it omitted `update`.
   return app.services.values().map(svc => {
     const d = svc.describe()
-    // Policy-filtered: advertising a verb the service answers 405 to is worse
-    // than not advertising it, because a generated client would call it. The
-    // client reaches it over HTTP or the socket, never in-process.
-    const methods = d.methods.filter(m => isMethodAllowed(svc, m, 'http') || isMethodAllowed(svc, m, 'websocket'))
+    const methods = offeredMethods(svc)
     return {
       name:       d.name,
       model:      d.model,

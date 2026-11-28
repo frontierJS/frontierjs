@@ -1,0 +1,209 @@
+// pagila — the data model of devrimgunduz/pagila, expressed in .lite.
+//
+// Derived mechanically from pagila-schema.sql (PostgreSQL) at
+// 85bf46a56929 (2026-08-01) by
+// `litestone import --from sql`. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 16 models. Regenerate with fetch.mjs.
+
+enum MpaaRating {
+  G
+  PG
+  PG_13
+  R
+  NC_17
+}
+
+model Customer {
+  customerId Int @map("customer_id") @id @default(autoincrement())
+  storeId Int @map("store_id")
+  store Store @relation(fields: [storeId], references: [storeId])
+  firstName String @map("first_name")
+  lastName String @map("last_name")
+  email String?
+  addressId Int @map("address_id")
+  address Address @relation(fields: [addressId], references: [addressId])
+  activebool Boolean @default(true)
+  createDate DateTime @map("create_date")
+  lastUpdate DateTime? @map("last_update") @default(now())
+  active Int?
+  uuid String
+
+  @@index([addressId])
+  @@index([storeId])
+  @@index([lastName])
+  @@unique([uuid])
+}
+
+model Actor {
+  actorId Int @map("actor_id") @id @default(autoincrement())
+  firstName String @map("first_name")
+  lastName String @map("last_name")
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@index([lastName])
+}
+
+model Category {
+  categoryId Int @map("category_id") @id @default(autoincrement())
+  name String
+  lastUpdate DateTime @map("last_update") @default(now())
+}
+
+model Film {
+  filmId Int @map("film_id") @id @default(autoincrement())
+  title String
+  description String?
+  releaseYear Int? @map("release_year")
+  languageId Int @map("language_id")
+  language Language @relation(fields: [languageId], references: [languageId])
+  originalLanguageId Int? @map("original_language_id")
+  originalLanguage Language? @relation(fields: [originalLanguageId], references: [languageId])
+  rentalDuration Int @map("rental_duration") @default(3)
+  rentalRate Int @map("rental_rate") @scale(2) @default(499)
+  length Int?
+  replacementCost Int @map("replacement_cost") @scale(2) @default(1999)
+  rating MpaaRating? @default(G)
+  lastUpdate DateTime @map("last_update") @default(now())
+  specialFeatures String[]? @map("special_features")
+  fulltext String
+  lengthHours Int? @map("length_hours") @scale(2)
+
+  @@index([fulltext])
+  @@index([languageId])
+  @@index([originalLanguageId])
+  @@index([title])
+}
+
+model FilmActor {
+  actorId Int @map("actor_id")
+  actor Actor @relation(fields: [actorId], references: [actorId])
+  filmId Int @map("film_id")
+  film Film @relation(fields: [filmId], references: [filmId])
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@id([actorId, filmId])
+  @@index([filmId])
+}
+
+model FilmCategory {
+  filmId Int @map("film_id")
+  film Film @relation(fields: [filmId], references: [filmId])
+  categoryId Int @map("category_id")
+  category Category @relation(fields: [categoryId], references: [categoryId])
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@id([filmId, categoryId])
+}
+
+model FilmEmbedding {
+  filmId Int @map("film_id") @id
+  film Film @relation(fields: [filmId], references: [filmId], onDelete: Cascade)
+  embedding String
+  lastUpdate DateTime @map("last_update") @default(now())
+}
+
+model Address {
+  addressId Int @map("address_id") @id @default(autoincrement())
+  address String
+  address2 String?
+  district String
+  cityId Int @map("city_id")
+  city City @relation(fields: [cityId], references: [cityId])
+  postalCode String? @map("postal_code")
+  phone String
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@index([cityId])
+}
+
+model City {
+  cityId Int @map("city_id") @id @default(autoincrement())
+  city String
+  countryId Int @map("country_id")
+  country Country @relation(fields: [countryId], references: [countryId])
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@index([countryId])
+}
+
+model Country {
+  countryId Int @map("country_id") @id @default(autoincrement())
+  country String
+  lastUpdate DateTime @map("last_update") @default(now())
+}
+
+model Inventory {
+  inventoryId Int @map("inventory_id") @id @default(autoincrement())
+  filmId Int @map("film_id")
+  film Film @relation(fields: [filmId], references: [filmId])
+  storeId Int @map("store_id")
+  store Store @relation(fields: [storeId], references: [storeId])
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@index([storeId, filmId])
+}
+
+model Language {
+  languageId Int @map("language_id") @id @default(autoincrement())
+  name String
+  lastUpdate DateTime @map("last_update") @default(now())
+}
+
+model Payment {
+  id String @id @default(cuid())
+  paymentId Int @map("payment_id") @default(autoincrement())
+  customerId Int @map("customer_id")
+  staffId Int @map("staff_id")
+  rentalId Int @map("rental_id")
+  amount Int @scale(2)
+  paymentDate DateTime @map("payment_date")
+  uuid String
+
+  @@unique([uuid, paymentDate])
+}
+
+model Rental {
+  rentalId Int @map("rental_id") @id @default(autoincrement())
+  rentalDate DateTime @map("rental_date")
+  inventoryId Int @map("inventory_id")
+  inventory Inventory @relation(fields: [inventoryId], references: [inventoryId])
+  customerId Int @map("customer_id")
+  customer Customer @relation(fields: [customerId], references: [customerId])
+  returnDate DateTime? @map("return_date")
+  staffId Int @map("staff_id")
+  staff Staff @relation(fields: [staffId], references: [staffId])
+  lastUpdate DateTime @map("last_update") @default(now())
+  uuid String
+
+  @@index([inventoryId])
+  @@unique([rentalDate, inventoryId, customerId])
+  @@unique([uuid])
+}
+
+model Staff {
+  staffId Int @map("staff_id") @id @default(autoincrement())
+  firstName String @map("first_name")
+  lastName String @map("last_name")
+  addressId Int @map("address_id")
+  address Address @relation(fields: [addressId], references: [addressId])
+  email String?
+  storeId Int @map("store_id")
+  store Store @relation(fields: [storeId], references: [storeId])
+  active Boolean @default(true)
+  username String
+  password String?
+  lastUpdate DateTime @map("last_update") @default(now())
+  picture Bytes?
+}
+
+model Store {
+  storeId Int @map("store_id") @id @default(autoincrement())
+  managerStaffId Int @map("manager_staff_id")
+  addressId Int @map("address_id")
+  address Address @relation(fields: [addressId], references: [addressId])
+  lastUpdate DateTime @map("last_update") @default(now())
+
+  @@unique([managerStaffId])
+}

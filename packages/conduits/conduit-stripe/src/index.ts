@@ -90,6 +90,15 @@ function onAccount(account: string | undefined): { headers?: Record<string, stri
   return { headers: { 'Stripe-Account': account } }
 }
 
+// The id is a path segment: a stored provider reference is caller data and must not walk to another resource.
+function assertIntentId(id: string): void {
+  if (typeof id !== 'string' || !/^pi_[A-Za-z0-9_]+$/.test(id))
+    throw new TypeError(`stripe: a payment intent id is pi_…, got ${JSON.stringify(id)}`)
+}
+
+/** Stripe's `capture_method`. `manual` authorizes the card and holds the amount until a capture or a cancel. */
+export type CaptureMethod = 'automatic' | 'manual'
+
 function assertMinor(n: number | undefined, what: string): void {
   if (n !== undefined && !Number.isInteger(n))
     throw new TypeError(`stripe: ${what} must be an integer in minor units, got ${n}. A major-unit amount here charges a hundredth of what was meant.`)
@@ -103,6 +112,11 @@ function assertMinor(n: number | undefined, what: string): void {
  * `replayable: true` and no key, on purpose: minting an intent moves no money,
  * and after a decline the next attempt must be a NEW intent rather than the
  * refused one handed back under the same key.
+ *
+ * `captureMethod: 'manual'` makes it a card authorization (a deposit): once
+ * confirmed it sits in `requires_capture` holding the amount, and
+ * `capturePaymentIntent` takes some or all of it or `cancelPaymentIntent`
+ * releases it. Stripe releases an online card's hold itself after 7 days.
  */
 export async function createPaymentIntent(send: Send, req: {
   amountMinor: number
@@ -110,6 +124,7 @@ export async function createPaymentIntent(send: Send, req: {
   reference:   string
   /** A connected account id: the intent is a DIRECT charge on it, sent as `Stripe-Account`. */
   account?:    string
+  captureMethod?: CaptureMethod
   key?:        string
 }): Promise<{ intent?: PaymentIntent; error?: StripeFailure }> {
   assertMinor(req.amountMinor, 'amountMinor')
@@ -119,6 +134,7 @@ export async function createPaymentIntent(send: Send, req: {
     currency: req.currency.toLowerCase(),
     automatic_payment_methods: { enabled: true },
     metadata: { order_reference: req.reference },
+    ...(req.captureMethod ? { capture_method: req.captureMethod } : {}),
   }
   refusePlatformFee('createPaymentIntent', body)
   const result = await send<PaymentIntent>({
@@ -143,9 +159,7 @@ export async function retrievePaymentIntent(send: Send, req: {
   id:       string
   account?: string
 }): Promise<{ intent?: PaymentIntent; error?: StripeFailure }> {
-  // The id is a path segment: a stored provider reference is caller data and must not walk to another resource.
-  if (typeof req.id !== 'string' || !/^pi_[A-Za-z0-9_]+$/.test(req.id))
-    throw new TypeError(`stripe: a payment intent id is pi_…, got ${JSON.stringify(req.id)}`)
+  assertIntentId(req.id)
   const result = await send<PaymentIntent>({ method: 'GET', path: `/v1/payment_intents/${req.id}`, ...onAccount(req.account) })
   if (result.error) return { error: translate(result.error) }
   return { intent: result.data }
@@ -177,6 +191,66 @@ export async function createRefund(send: Send, req: {
   })
   if (result.error) return { error: translate(result.error) }
   return { refund: result.data }
+}
+
+/**
+ * Capture an authorized intent (`requires_capture`), in whole or in part.
+ * `amountMinor` absent takes everything authorized; less captures that much
+ * and Stripe releases the rest, and there is no second capture for it. More
+ * than was authorized, or an intent already captured or cancelled, answers
+ * `refused`. Money moves, so the key is REQUIRED, as a refund's is: a replay
+ * after a lost response must hand back the first capture, not a refusal that
+ * reads like a failure.
+ */
+export async function capturePaymentIntent(send: Send, req: {
+  id:           string
+  amountMinor?: number
+  /** The connected account the authorization was made on; a direct charge is captured there or not found. */
+  account?:     string
+  key:          string
+}): Promise<{ intent?: PaymentIntent; error?: StripeFailure }> {
+  assertIntentId(req.id)
+  assertMinor(req.amountMinor, 'amountMinor')
+  if (!req.key) throw new TypeError('stripe: a capture needs an idempotency key')
+  // Stripe's capture takes `application_fee_amount` and `transfer_data`: the platform's cut can be added here too.
+  refusePlatformFee('capturePaymentIntent', req)
+  const body = req.amountMinor === undefined ? {} : { amount_to_capture: req.amountMinor }
+  refusePlatformFee('capturePaymentIntent', body)
+  const result = await send<PaymentIntent>({
+    method: 'POST',
+    path:   `/v1/payment_intents/${req.id}/capture`,
+    body,
+    ...onAccount(req.account),
+    idempotency_key: req.key,
+  })
+  if (result.error) return { error: translate(result.error) }
+  return { intent: result.data }
+}
+
+/**
+ * Cancel an intent; on an authorization this releases the hold. A cancelled
+ * intent cannot be captured or authorized again, so the key is REQUIRED: a
+ * replay after a lost response must hand back the first cancel, where an
+ * unkeyed second try answers `refused` because the intent is already cancelled.
+ */
+export async function cancelPaymentIntent(send: Send, req: {
+  id:       string
+  /** The connected account the intent was made on. */
+  account?: string
+  key:      string
+}): Promise<{ intent?: PaymentIntent; error?: StripeFailure }> {
+  assertIntentId(req.id)
+  if (!req.key) throw new TypeError('stripe: cancelling a payment intent needs an idempotency key')
+  refusePlatformFee('cancelPaymentIntent', req)
+  const result = await send<PaymentIntent>({
+    method: 'POST',
+    path:   `/v1/payment_intents/${req.id}/cancel`,
+    body:   {},
+    ...onAccount(req.account),
+    idempotency_key: req.key,
+  })
+  if (result.error) return { error: translate(result.error) }
+  return { intent: result.data }
 }
 
 /**
@@ -301,6 +375,11 @@ export interface CheckoutLineItem {
  * offered (`['card', 'us_bank_account']`); absent, Stripe offers what the
  * account has turned on. `metadata` is copied onto the PaymentIntent as well,
  * so `payment_intent.succeeded` and a later refund carry it.
+ * `captureMethod: 'manual'` makes the session's intent a card authorization
+ * (`payment_intent_data[capture_method]`): `checkout.session.completed` names
+ * the intent in `payment_intent`, which then sits in `requires_capture` for
+ * `capturePaymentIntent` or `cancelPaymentIntent`. Stripe holds cards and
+ * not bank debits, so a held session that offers `us_bank_account` is refused.
  * Unkeyed and replayable: a session moves no money until somebody pays it.
  */
 export async function createCheckoutSession(send: Send, req: {
@@ -315,6 +394,7 @@ export async function createCheckoutSession(send: Send, req: {
   paymentMethodTypes?: string[]
   /** When the hosted page stops taking payment. Stripe allows 30 minutes to 24 hours from now, and 24 hours when unset. */
   expiresAt?:          Date
+  captureMethod?:      CaptureMethod
   key?:                string
 }): Promise<{ session?: StripeCheckoutSession; error?: StripeFailure }> {
   if (!req.lineItems?.length) throw new TypeError('stripe: a checkout session needs at least one line item')
@@ -326,6 +406,10 @@ export async function createCheckoutSession(send: Send, req: {
   if (life !== null && !(life >= 30 * 60_000 && life <= 24 * 3_600_000))
     throw new TypeError('stripe: a checkout session expires between 30 minutes and 24 hours from now')
   const currency = req.currency.toLowerCase()
+  const intentData = {
+    ...(req.metadata      ? { metadata: req.metadata } : {}),
+    ...(req.captureMethod ? { capture_method: req.captureMethod } : {}),
+  }
   const body = {
     mode:        'payment',
     line_items:  req.lineItems.map(li => ({ price_data: { currency, unit_amount: li.amountMinor, product_data: { name: li.name } }, quantity: li.quantity ?? 1 })),
@@ -335,7 +419,8 @@ export async function createCheckoutSession(send: Send, req: {
     ...(req.customerEmail      ? { customer_email: req.customerEmail } : {}),
     ...(req.paymentMethodTypes ? { payment_method_types: req.paymentMethodTypes } : {}),
     ...(req.expiresAt          ? { expires_at: Math.floor(req.expiresAt.getTime() / 1000) } : {}),
-    ...(req.metadata           ? { metadata: req.metadata, payment_intent_data: { metadata: req.metadata } } : {}),
+    ...(req.metadata           ? { metadata: req.metadata } : {}),
+    ...(Object.keys(intentData).length ? { payment_intent_data: intentData } : {}),
   }
   refusePlatformFee('createCheckoutSession', body, (body as { payment_intent_data?: object }).payment_intent_data)
   const result = await send<StripeCheckoutSession>({

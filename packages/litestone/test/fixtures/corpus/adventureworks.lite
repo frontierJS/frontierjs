@@ -1,0 +1,911 @@
+// adventureworks — the data model of lorint/AdventureWorks-for-Postgres, expressed in .lite.
+//
+// Derived mechanically from install.sql (MIT) at
+// 9e9d2a7faa7c (2026-06-29) by
+// `litestone import --from sql`. A CORPUS FIXTURE, not a design:
+// nothing here is a claim about how any of it should be modelled, and every
+// place the conversion made a choice the source did not is recorded in
+// gaps.json. 68 models. Regenerate with fetch.mjs.
+
+model BusinessEntity {
+  businessEntityID Int @map("BusinessEntityID") @id
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Person {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity BusinessEntity @relation(fields: [businessEntityID], references: [businessEntityID])
+  personType String @map("PersonType")
+  nameStyle Boolean @map("NameStyle") @default(false)
+  title String? @map("Title")
+  firstName String @map("FirstName")
+  middleName String? @map("MiddleName")
+  lastName String @map("LastName")
+  suffix String? @map("Suffix")
+  emailPromotion Int @map("EmailPromotion") @default(0)
+  additionalContactInfo String? @map("AdditionalContactInfo")
+  demographics String? @map("Demographics")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("emailPromotion BETWEEN 0 AND 2")
+  @@check("personType IS NULL OR UPPER(personType) IN ('SC', 'VC', 'IN', 'EM', 'SP', 'GC')")
+}
+
+model StateProvince {
+  stateProvinceID Int @map("StateProvinceID") @id
+  stateProvinceCode String @map("StateProvinceCode")
+  countryRegionCode String @map("CountryRegionCode")
+  countryRegion CountryRegion @relation(fields: [countryRegionCode], references: [countryRegionCode])
+  isOnlyStateProvinceFlag Boolean @map("IsOnlyStateProvinceFlag") @default(true)
+  name String @map("Name")
+  territoryID Int @map("TerritoryID")
+  territory SalesTerritory @relation(fields: [territoryID], references: [territoryID])
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Address {
+  addressID Int @map("AddressID") @id
+  addressLine1 String @map("AddressLine1")
+  addressLine2 String? @map("AddressLine2")
+  city String @map("City")
+  stateProvinceID Int @map("StateProvinceID")
+  stateProvince StateProvince @relation(fields: [stateProvinceID], references: [stateProvinceID])
+  postalCode String @map("PostalCode")
+  spatialLocation Bytes? @map("SpatialLocation")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model AddressType {
+  addressTypeID Int @map("AddressTypeID") @id
+  name String @map("Name")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model BusinessEntityAddress {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity BusinessEntity @relation(fields: [businessEntityID], references: [businessEntityID])
+  addressID Int @map("AddressID")
+  address Address @relation(fields: [addressID], references: [addressID])
+  addressTypeID Int @map("AddressTypeID")
+  addressType AddressType @relation(fields: [addressTypeID], references: [addressTypeID])
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, addressID, addressTypeID])
+}
+
+model ContactType {
+  contactTypeID Int @map("ContactTypeID") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model BusinessEntityContact {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity BusinessEntity @relation(fields: [businessEntityID], references: [businessEntityID])
+  personID Int @map("PersonID")
+  person Person @relation(fields: [personID], references: [businessEntityID])
+  contactTypeID Int @map("ContactTypeID")
+  contactType ContactType @relation(fields: [contactTypeID], references: [contactTypeID])
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, personID, contactTypeID])
+}
+
+model EmailAddress {
+  id String @id @default(cuid())
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Person @relation(fields: [businessEntityID], references: [businessEntityID])
+  emailAddressID Int? @map("EmailAddressID")
+  emailAddress String? @map("EmailAddress")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@unique([businessEntityID, emailAddressID], nullsDistinct: true)
+}
+
+model Password {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity Person @relation(fields: [businessEntityID], references: [businessEntityID])
+  passwordHash String @map("PasswordHash")
+  passwordSalt String @map("PasswordSalt")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model PhoneNumberType {
+  phoneNumberTypeID Int @map("PhoneNumberTypeID") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model PersonPhone {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Person @relation(fields: [businessEntityID], references: [businessEntityID])
+  phoneNumber String @map("PhoneNumber")
+  phoneNumberTypeID Int @map("PhoneNumberTypeID")
+  phoneNumberType PhoneNumberType @relation(fields: [phoneNumberTypeID], references: [phoneNumberTypeID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, phoneNumber, phoneNumberTypeID])
+}
+
+model CountryRegion {
+  countryRegionCode String @map("CountryRegionCode") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Department {
+  departmentID Int @map("DepartmentID") @id
+  name String @map("Name")
+  groupName String @map("GroupName")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Employee {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity Person @relation(fields: [businessEntityID], references: [businessEntityID])
+  nationalIDNumber String @map("NationalIDNumber")
+  loginID String @map("LoginID")
+  jobTitle String @map("JobTitle")
+  birthDate DateTime @map("BirthDate")
+  maritalStatus String @map("MaritalStatus")
+  gender String @map("Gender")
+  hireDate DateTime @map("HireDate")
+  salariedFlag Boolean @map("SalariedFlag") @default(true)
+  vacationHours Int @map("VacationHours") @default(0)
+  sickLeaveHours Int @map("SickLeaveHours") @default(0)
+  currentFlag Boolean @map("CurrentFlag") @default(true)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+  organizationnode String? @default("/")
+
+  @@check("UPPER(maritalStatus) IN ('M', 'S')")
+  @@check("UPPER(gender) IN ('M', 'F')")
+  @@check("vacationHours BETWEEN -40 AND 240")
+  @@check("sickLeaveHours BETWEEN 0 AND 120")
+}
+
+model EmployeeDepartmentHistory {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Employee @relation(fields: [businessEntityID], references: [businessEntityID])
+  departmentID Int @map("DepartmentID")
+  department Department @relation(fields: [departmentID], references: [departmentID])
+  shiftID Int @map("ShiftID")
+  shift Shift @relation(fields: [shiftID], references: [shiftID])
+  startDate DateTime @map("StartDate")
+  endDate DateTime? @map("EndDate")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, startDate, departmentID, shiftID])
+  @@check("(endDate >= startDate) OR (endDate IS NULL)")
+}
+
+model EmployeePayHistory {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Employee @relation(fields: [businessEntityID], references: [businessEntityID])
+  rateChangeDate DateTime @map("RateChangeDate")
+  rate Float @map("Rate")
+  payFrequency Int @map("PayFrequency")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, rateChangeDate])
+  @@check("payFrequency IN (1, 2)")
+  @@check("rate BETWEEN 6.50 AND 200.00")
+}
+
+model JobCandidate {
+  jobCandidateID Int @map("JobCandidateID") @id
+  businessEntityID Int? @map("BusinessEntityID")
+  businessEntity Employee? @relation(fields: [businessEntityID], references: [businessEntityID])
+  resume String? @map("Resume")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Shift {
+  shiftID Int @map("ShiftID") @id
+  name String @map("Name")
+  startTime DateTime @map("StartTime")
+  endTime DateTime @map("EndTime")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model BillOfMaterial {
+  billOfMaterialsID Int @map("BillOfMaterialsID") @id
+  productAssemblyID Int? @map("ProductAssemblyID")
+  productAssembly Product? @relation(fields: [productAssemblyID], references: [productID])
+  componentID Int @map("ComponentID")
+  component Product @relation(fields: [componentID], references: [productID])
+  startDate DateTime @map("StartDate") @default(now())
+  endDate DateTime? @map("EndDate")
+  unitMeasureCode String @map("UnitMeasureCode")
+  unitMeasure UnitMeasure @relation(fields: [unitMeasureCode], references: [unitMeasureCode])
+  bomLevel Int @map("BOMLevel")
+  perAssemblyQty Int @map("PerAssemblyQty") @scale(2) @default(100)
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("(endDate > startDate) OR (endDate IS NULL)")
+  @@check("productAssemblyID <> componentID")
+  @@check("((productAssemblyID IS NULL) AND (bomLevel = 0) AND (perAssemblyQty = 1.00)) OR ((productAssemblyID IS NOT NULL) AND (bomLevel >= 1))")
+  @@check("perAssemblyQty >= 1.00")
+}
+
+model Culture {
+  cultureID String @map("CultureID") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Document {
+  title String @map("Title")
+  owner Int @map("Owner")
+  employee Employee @relation(fields: [owner], references: [businessEntityID])
+  folderFlag Boolean @map("FolderFlag") @default(false)
+  fileName String @map("FileName")
+  fileExtension String? @map("FileExtension")
+  revision String @map("Revision")
+  changeNumber Int @map("ChangeNumber") @default(0)
+  status Int @map("Status")
+  documentSummary String? @map("DocumentSummary")
+  document Bytes? @map("Document")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+  documentNode String @map("DocumentNode") @id @default("/")
+
+  @@check("status BETWEEN 1 AND 3")
+  @@unique([rowguid])
+}
+
+model ProductCategory {
+  productCategoryID Int @map("ProductCategoryID") @id
+  name String @map("Name")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model ProductSubcategory {
+  productSubcategoryID Int @map("ProductSubcategoryID") @id
+  productCategoryID Int @map("ProductCategoryID")
+  productCategory ProductCategory @relation(fields: [productCategoryID], references: [productCategoryID])
+  name String @map("Name")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model ProductModel {
+  productModelID Int @map("ProductModelID") @id
+  name String @map("Name")
+  catalogDescription String? @map("CatalogDescription")
+  instructions String? @map("Instructions")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Product {
+  productID Int @map("ProductID") @id
+  name String @map("Name")
+  productNumber String @map("ProductNumber")
+  makeFlag Boolean @map("MakeFlag") @default(true)
+  finishedGoodsFlag Boolean @map("FinishedGoodsFlag") @default(true)
+  color String? @map("Color")
+  safetyStockLevel Int @map("SafetyStockLevel")
+  reorderPoint Int @map("ReorderPoint")
+  standardCost Float @map("StandardCost")
+  listPrice Float @map("ListPrice")
+  size String? @map("Size")
+  sizeUnitMeasureCode String? @map("SizeUnitMeasureCode")
+  unitMeasure UnitMeasure? @relation(fields: [sizeUnitMeasureCode], references: [unitMeasureCode])
+  weightUnitMeasureCode String? @map("WeightUnitMeasureCode")
+  unitMeasureRef UnitMeasure? @relation(fields: [weightUnitMeasureCode], references: [unitMeasureCode])
+  weight Int? @map("Weight") @scale(2)
+  daysToManufacture Int @map("DaysToManufacture")
+  productLine String? @map("ProductLine")
+  class String? @map("Class")
+  style String? @map("Style")
+  productSubcategoryID Int? @map("ProductSubcategoryID")
+  productSubcategory ProductSubcategory? @relation(fields: [productSubcategoryID], references: [productSubcategoryID])
+  productModelID Int? @map("ProductModelID")
+  productModel ProductModel? @relation(fields: [productModelID], references: [productModelID])
+  sellStartDate DateTime @map("SellStartDate")
+  sellEndDate DateTime? @map("SellEndDate")
+  discontinuedDate DateTime? @map("DiscontinuedDate")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("safetyStockLevel > 0")
+  @@check("reorderPoint > 0")
+  @@check("standardCost >= 0.00")
+  @@check("listPrice >= 0.00")
+  @@check("weight > 0.00")
+  @@check("daysToManufacture >= 0")
+  @@check("UPPER(productLine) IN ('S', 'T', 'M', 'R') OR productLine IS NULL")
+  @@check("UPPER(class) IN ('L', 'M', 'H') OR class IS NULL")
+  @@check("UPPER(style) IN ('W', 'M', 'U') OR style IS NULL")
+  @@check("(sellEndDate >= sellStartDate) OR (sellEndDate IS NULL)")
+}
+
+model ProductCostHistory {
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  startDate DateTime @map("StartDate")
+  endDate DateTime? @map("EndDate")
+  standardCost Float @map("StandardCost")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productID, startDate])
+  @@check("(endDate >= startDate) OR (endDate IS NULL)")
+  @@check("standardCost >= 0.00")
+}
+
+model ProductDescription {
+  productDescriptionID Int @map("ProductDescriptionID") @id
+  description String @map("Description")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model ProductDocument {
+  id String @id @default(cuid())
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+  documentNode String? @map("DocumentNode") @default("/")
+  document Document? @relation(fields: [documentNode], references: [documentNode])
+
+  @@unique([productID, documentNode], nullsDistinct: true)
+}
+
+model Location {
+  locationID Int @map("LocationID") @id
+  name String @map("Name")
+  costRate Float @map("CostRate") @default(0.00)
+  availability Int @map("Availability") @scale(2) @default(0)
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("costRate >= 0.00")
+  @@check("availability >= 0.00")
+}
+
+model ProductInventory {
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  locationID Int @map("LocationID")
+  location Location @relation(fields: [locationID], references: [locationID])
+  shelf String @map("Shelf")
+  bin Int @map("Bin")
+  quantity Int @map("Quantity") @default(0)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productID, locationID])
+  @@check("bin BETWEEN 0 AND 100")
+}
+
+model ProductListPriceHistory {
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  startDate DateTime @map("StartDate")
+  endDate DateTime? @map("EndDate")
+  listPrice Float @map("ListPrice")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productID, startDate])
+  @@check("(endDate >= startDate) OR (endDate IS NULL)")
+  @@check("listPrice > 0.00")
+}
+
+model Illustration {
+  illustrationID Int @map("IllustrationID") @id
+  diagram String? @map("Diagram")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model ProductModelIllustration {
+  productModelID Int @map("ProductModelID")
+  productModel ProductModel @relation(fields: [productModelID], references: [productModelID])
+  illustrationID Int @map("IllustrationID")
+  illustration Illustration @relation(fields: [illustrationID], references: [illustrationID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productModelID, illustrationID])
+}
+
+model ProductModelProductDescriptionCulture {
+  productModelID Int @map("ProductModelID")
+  productModel ProductModel @relation(fields: [productModelID], references: [productModelID])
+  productDescriptionID Int @map("ProductDescriptionID")
+  productDescription ProductDescription @relation(fields: [productDescriptionID], references: [productDescriptionID])
+  cultureID String @map("CultureID")
+  culture Culture @relation(fields: [cultureID], references: [cultureID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productModelID, productDescriptionID, cultureID])
+}
+
+model ProductPhoto {
+  productPhotoID Int @map("ProductPhotoID") @id
+  thumbNailPhoto Bytes? @map("ThumbNailPhoto")
+  thumbnailPhotoFileName String? @map("ThumbnailPhotoFileName")
+  largePhoto Bytes? @map("LargePhoto")
+  largePhotoFileName String? @map("LargePhotoFileName")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model ProductProductPhoto {
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  productPhotoID Int @map("ProductPhotoID")
+  productPhoto ProductPhoto @relation(fields: [productPhotoID], references: [productPhotoID])
+  primary Boolean @default(false)
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productID, productPhotoID])
+}
+
+model ProductReview {
+  productReviewID Int @map("ProductReviewID") @id
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  reviewerName String @map("ReviewerName")
+  reviewDate DateTime @map("ReviewDate") @default(now())
+  emailAddress String @map("EmailAddress")
+  rating Int @map("Rating")
+  comments String? @map("Comments")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("rating BETWEEN 1 AND 5")
+}
+
+model ScrapReason {
+  scrapReasonID Int @map("ScrapReasonID") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model TransactionHistory {
+  transactionID Int @map("TransactionID") @id
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  referenceOrderID Int @map("ReferenceOrderID")
+  referenceOrderLineID Int @map("ReferenceOrderLineID") @default(0)
+  transactionDate DateTime @map("TransactionDate") @default(now())
+  transactionType String @map("TransactionType")
+  quantity Int @map("Quantity")
+  actualCost Float @map("ActualCost")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("UPPER(transactionType) IN ('W', 'S', 'P')")
+}
+
+model TransactionHistoryArchive {
+  transactionID Int @map("TransactionID") @id
+  productID Int @map("ProductID")
+  referenceOrderID Int @map("ReferenceOrderID")
+  referenceOrderLineID Int @map("ReferenceOrderLineID") @default(0)
+  transactionDate DateTime @map("TransactionDate") @default(now())
+  transactionType String @map("TransactionType")
+  quantity Int @map("Quantity")
+  actualCost Float @map("ActualCost")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("UPPER(transactionType) IN ('W', 'S', 'P')")
+}
+
+model UnitMeasure {
+  unitMeasureCode String @map("UnitMeasureCode") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model WorkOrder {
+  workOrderID Int @map("WorkOrderID") @id
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  orderQty Int @map("OrderQty")
+  scrappedQty Int @map("ScrappedQty")
+  startDate DateTime @map("StartDate")
+  endDate DateTime? @map("EndDate")
+  dueDate DateTime @map("DueDate")
+  scrapReasonID Int? @map("ScrapReasonID")
+  scrapReason ScrapReason? @relation(fields: [scrapReasonID], references: [scrapReasonID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("orderQty > 0")
+  @@check("scrappedQty >= 0")
+  @@check("(endDate >= startDate) OR (endDate IS NULL)")
+}
+
+model WorkOrderRouting {
+  workOrderID Int @map("WorkOrderID")
+  workOrder WorkOrder @relation(fields: [workOrderID], references: [workOrderID])
+  productID Int @map("ProductID")
+  operationSequence Int @map("OperationSequence")
+  locationID Int @map("LocationID")
+  location Location @relation(fields: [locationID], references: [locationID])
+  scheduledStartDate DateTime @map("ScheduledStartDate")
+  scheduledEndDate DateTime @map("ScheduledEndDate")
+  actualStartDate DateTime? @map("ActualStartDate")
+  actualEndDate DateTime? @map("ActualEndDate")
+  actualResourceHrs Int? @map("ActualResourceHrs") @scale(4)
+  plannedCost Float @map("PlannedCost")
+  actualCost Float? @map("ActualCost")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([workOrderID, productID, operationSequence])
+  @@check("scheduledEndDate >= scheduledStartDate")
+  @@check("(actualEndDate >= actualStartDate) OR (actualEndDate IS NULL) OR (actualStartDate IS NULL)")
+  @@check("actualResourceHrs >= 0.0000")
+  @@check("plannedCost > 0.00")
+  @@check("actualCost > 0.00")
+}
+
+model ProductVendor {
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Vendor @relation(fields: [businessEntityID], references: [businessEntityID])
+  averageLeadTime Int @map("AverageLeadTime")
+  standardPrice Float @map("StandardPrice")
+  lastReceiptCost Float? @map("LastReceiptCost")
+  lastReceiptDate DateTime? @map("LastReceiptDate")
+  minOrderQty Int @map("MinOrderQty")
+  maxOrderQty Int @map("MaxOrderQty")
+  onOrderQty Int? @map("OnOrderQty")
+  unitMeasureCode String @map("UnitMeasureCode")
+  unitMeasure UnitMeasure @relation(fields: [unitMeasureCode], references: [unitMeasureCode])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([productID, businessEntityID])
+  @@check("averageLeadTime >= 1")
+  @@check("standardPrice > 0.00")
+  @@check("lastReceiptCost > 0.00")
+  @@check("minOrderQty >= 1")
+  @@check("maxOrderQty >= 1")
+  @@check("onOrderQty >= 0")
+}
+
+model PurchaseOrderDetail {
+  purchaseOrderID Int @map("PurchaseOrderID")
+  purchaseOrder PurchaseOrderHeader @relation(fields: [purchaseOrderID], references: [purchaseOrderID])
+  purchaseOrderDetailID Int @map("PurchaseOrderDetailID")
+  dueDate DateTime @map("DueDate")
+  orderQty Int @map("OrderQty")
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  unitPrice Float @map("UnitPrice")
+  receivedQty Int @map("ReceivedQty") @scale(2)
+  rejectedQty Int @map("RejectedQty") @scale(2)
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([purchaseOrderID, purchaseOrderDetailID])
+  @@check("orderQty > 0")
+  @@check("unitPrice >= 0.00")
+  @@check("receivedQty >= 0.00")
+  @@check("rejectedQty >= 0.00")
+}
+
+model PurchaseOrderHeader {
+  purchaseOrderID Int @map("PurchaseOrderID") @id
+  revisionNumber Int @map("RevisionNumber") @default(0)
+  status Int @map("Status") @default(1)
+  employeeID Int @map("EmployeeID")
+  employee Employee @relation(fields: [employeeID], references: [businessEntityID])
+  vendorID Int @map("VendorID")
+  vendor Vendor @relation(fields: [vendorID], references: [businessEntityID])
+  shipMethodID Int @map("ShipMethodID")
+  shipMethod ShipMethod @relation(fields: [shipMethodID], references: [shipMethodID])
+  orderDate DateTime @map("OrderDate") @default(now())
+  shipDate DateTime? @map("ShipDate")
+  subTotal Float @map("SubTotal") @default(0.00)
+  taxAmt Float @map("TaxAmt") @default(0.00)
+  freight Float @map("Freight") @default(0.00)
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("status BETWEEN 1 AND 4")
+  @@check("(shipDate >= orderDate) OR (shipDate IS NULL)")
+  @@check("subTotal >= 0.00")
+  @@check("taxAmt >= 0.00")
+  @@check("freight >= 0.00")
+}
+
+model ShipMethod {
+  shipMethodID Int @map("ShipMethodID") @id
+  name String @map("Name")
+  shipBase Float @map("ShipBase") @default(0.00)
+  shipRate Float @map("ShipRate") @default(0.00)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("shipBase > 0.00")
+  @@check("shipRate > 0.00")
+}
+
+model Vendor {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity BusinessEntity @relation(fields: [businessEntityID], references: [businessEntityID])
+  accountNumber String @map("AccountNumber")
+  name String @map("Name")
+  creditRating Int @map("CreditRating")
+  preferredVendorStatus Boolean @map("PreferredVendorStatus") @default(true)
+  activeFlag Boolean @map("ActiveFlag") @default(true)
+  purchasingWebServiceURL String? @map("PurchasingWebServiceURL")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("creditRating BETWEEN 1 AND 5")
+}
+
+model CountryRegionCurrency {
+  countryRegionCode String @map("CountryRegionCode")
+  countryRegion CountryRegion @relation(fields: [countryRegionCode], references: [countryRegionCode])
+  currencyCode String @map("CurrencyCode")
+  currency Currency @relation(fields: [currencyCode], references: [currencyCode])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([countryRegionCode, currencyCode])
+}
+
+model CreditCard {
+  creditCardID Int @map("CreditCardID") @id
+  cardType String @map("CardType")
+  cardNumber String @map("CardNumber")
+  expMonth Int @map("ExpMonth")
+  expYear Int @map("ExpYear")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Currency {
+  currencyCode String @map("CurrencyCode") @id
+  name String @map("Name")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model CurrencyRate {
+  currencyRateID Int @map("CurrencyRateID") @id
+  currencyRateDate DateTime @map("CurrencyRateDate")
+  fromCurrencyCode String @map("FromCurrencyCode")
+  currency Currency @relation(fields: [fromCurrencyCode], references: [currencyCode])
+  toCurrencyCode String @map("ToCurrencyCode")
+  currencyRef Currency @relation(fields: [toCurrencyCode], references: [currencyCode])
+  averageRate Float @map("AverageRate")
+  endOfDayRate Float @map("EndOfDayRate")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model Customer {
+  customerID Int @map("CustomerID") @id
+  personID Int? @map("PersonID")
+  person Person? @relation(fields: [personID], references: [businessEntityID])
+  storeID Int? @map("StoreID")
+  store Store? @relation(fields: [storeID], references: [businessEntityID])
+  territoryID Int? @map("TerritoryID")
+  territory SalesTerritory? @relation(fields: [territoryID], references: [territoryID])
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model PersonCreditCard {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity Person @relation(fields: [businessEntityID], references: [businessEntityID])
+  creditCardID Int @map("CreditCardID")
+  creditCard CreditCard @relation(fields: [creditCardID], references: [creditCardID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, creditCardID])
+}
+
+model SalesOrderDetail {
+  salesOrderID Int @map("SalesOrderID")
+  salesOrder SalesOrderHeader @relation(fields: [salesOrderID], references: [salesOrderID], onDelete: Cascade)
+  salesOrderDetailID Int @map("SalesOrderDetailID")
+  carrierTrackingNumber String? @map("CarrierTrackingNumber")
+  orderQty Int @map("OrderQty")
+  productID Int @map("ProductID")
+  specialOfferID Int @map("SpecialOfferID")
+  unitPrice Float @map("UnitPrice")
+  unitPriceDiscount Float @map("UnitPriceDiscount") @default(0.0)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([salesOrderID, salesOrderDetailID])
+  @@check("orderQty > 0")
+  @@check("unitPrice >= 0.00")
+  @@check("unitPriceDiscount >= 0.00")
+}
+
+model SalesOrderHeader {
+  salesOrderID Int @map("SalesOrderID") @id
+  revisionNumber Int @map("RevisionNumber") @default(0)
+  orderDate DateTime @map("OrderDate") @default(now())
+  dueDate DateTime @map("DueDate")
+  shipDate DateTime? @map("ShipDate")
+  status Int @map("Status") @default(1)
+  onlineOrderFlag Boolean @map("OnlineOrderFlag") @default(true)
+  purchaseOrderNumber String? @map("PurchaseOrderNumber")
+  accountNumber String? @map("AccountNumber")
+  customerID Int @map("CustomerID")
+  customer Customer @relation(fields: [customerID], references: [customerID])
+  salesPersonID Int? @map("SalesPersonID")
+  salesPerson SalesPerson? @relation(fields: [salesPersonID], references: [businessEntityID])
+  territoryID Int? @map("TerritoryID")
+  territory SalesTerritory? @relation(fields: [territoryID], references: [territoryID])
+  billToAddressID Int @map("BillToAddressID")
+  billToAddress Address @relation(fields: [billToAddressID], references: [addressID])
+  shipToAddressID Int @map("ShipToAddressID")
+  shipToAddress Address @relation(fields: [shipToAddressID], references: [addressID])
+  shipMethodID Int @map("ShipMethodID")
+  shipMethod ShipMethod @relation(fields: [shipMethodID], references: [shipMethodID])
+  creditCardID Int? @map("CreditCardID")
+  creditCard CreditCard? @relation(fields: [creditCardID], references: [creditCardID])
+  creditCardApprovalCode String? @map("CreditCardApprovalCode")
+  currencyRateID Int? @map("CurrencyRateID")
+  currencyRate CurrencyRate? @relation(fields: [currencyRateID], references: [currencyRateID])
+  subTotal Float @map("SubTotal") @default(0.00)
+  taxAmt Float @map("TaxAmt") @default(0.00)
+  freight Float @map("Freight") @default(0.00)
+  totalDue Float? @map("TotalDue")
+  comment String? @map("Comment")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("status BETWEEN 0 AND 8")
+  @@check("dueDate >= orderDate")
+  @@check("(shipDate >= orderDate) OR (shipDate IS NULL)")
+  @@check("subTotal >= 0.00")
+  @@check("taxAmt >= 0.00")
+  @@check("freight >= 0.00")
+}
+
+model SalesOrderHeaderSalesReason {
+  salesOrderID Int @map("SalesOrderID")
+  salesOrder SalesOrderHeader @relation(fields: [salesOrderID], references: [salesOrderID], onDelete: Cascade)
+  salesReasonID Int @map("SalesReasonID")
+  salesReason SalesReason @relation(fields: [salesReasonID], references: [salesReasonID])
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([salesOrderID, salesReasonID])
+}
+
+model SalesPerson {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity Employee @relation(fields: [businessEntityID], references: [businessEntityID])
+  territoryID Int? @map("TerritoryID")
+  territory SalesTerritory? @relation(fields: [territoryID], references: [territoryID])
+  salesQuota Float? @map("SalesQuota")
+  bonus Float @map("Bonus") @default(0.00)
+  commissionPct Float @map("CommissionPct") @default(0.00)
+  salesYTD Float @map("SalesYTD") @default(0.00)
+  salesLastYear Float @map("SalesLastYear") @default(0.00)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("salesQuota > 0.00")
+  @@check("bonus >= 0.00")
+  @@check("commissionPct >= 0.00")
+  @@check("salesYTD >= 0.00")
+  @@check("salesLastYear >= 0.00")
+}
+
+model SalesPersonQuotaHistory {
+  id String @id @default(cuid())
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity SalesPerson @relation(fields: [businessEntityID], references: [businessEntityID])
+  quotaDate DateTime @map("QuotaDate")
+  salesQuota Float @map("SalesQuota")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("salesQuota > 0.00")
+}
+
+model SalesReason {
+  salesReasonID Int @map("SalesReasonID") @id
+  name String @map("Name")
+  reasonType String @map("ReasonType")
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}
+
+model SalesTaxRate {
+  salesTaxRateID Int @map("SalesTaxRateID") @id
+  stateProvinceID Int @map("StateProvinceID")
+  stateProvince StateProvince @relation(fields: [stateProvinceID], references: [stateProvinceID])
+  taxType Int @map("TaxType")
+  taxRate Float @map("TaxRate") @default(0.00)
+  name String @map("Name")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("taxType BETWEEN 1 AND 3")
+}
+
+model SalesTerritory {
+  territoryID Int @map("TerritoryID") @id
+  name String @map("Name")
+  countryRegionCode String @map("CountryRegionCode")
+  countryRegion CountryRegion @relation(fields: [countryRegionCode], references: [countryRegionCode])
+  group String
+  salesYTD Float @map("SalesYTD") @default(0.00)
+  salesLastYear Float @map("SalesLastYear") @default(0.00)
+  costYTD Float @map("CostYTD") @default(0.00)
+  costLastYear Float @map("CostLastYear") @default(0.00)
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("salesYTD >= 0.00")
+  @@check("salesLastYear >= 0.00")
+  @@check("costYTD >= 0.00")
+  @@check("costLastYear >= 0.00")
+}
+
+model SalesTerritoryHistory {
+  businessEntityID Int @map("BusinessEntityID")
+  businessEntity SalesPerson @relation(fields: [businessEntityID], references: [businessEntityID])
+  territoryID Int @map("TerritoryID")
+  territory SalesTerritory @relation(fields: [territoryID], references: [territoryID])
+  startDate DateTime @map("StartDate")
+  endDate DateTime? @map("EndDate")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([businessEntityID, startDate, territoryID])
+  @@check("(endDate >= startDate) OR (endDate IS NULL)")
+}
+
+model ShoppingCartItem {
+  shoppingCartItemID Int @map("ShoppingCartItemID") @id
+  shoppingCartID String @map("ShoppingCartID")
+  quantity Int @map("Quantity") @default(1)
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  dateCreated DateTime @map("DateCreated") @default(now())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("quantity >= 1")
+}
+
+model SpecialOffer {
+  specialOfferID Int @map("SpecialOfferID") @id
+  description String @map("Description")
+  discountPct Float @map("DiscountPct") @default(0.00)
+  type String @map("Type")
+  category String @map("Category")
+  startDate DateTime @map("StartDate")
+  endDate DateTime @map("EndDate")
+  minQty Int @map("MinQty") @default(0)
+  maxQty Int? @map("MaxQty")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@check("endDate >= startDate")
+  @@check("discountPct >= 0.00")
+  @@check("minQty >= 0")
+  @@check("maxQty >= 0")
+}
+
+model SpecialOfferProduct {
+  specialOfferID Int @map("SpecialOfferID")
+  specialOffer SpecialOffer @relation(fields: [specialOfferID], references: [specialOfferID])
+  productID Int @map("ProductID")
+  product Product @relation(fields: [productID], references: [productID])
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+
+  @@id([specialOfferID, productID])
+}
+
+model Store {
+  businessEntityID Int @map("BusinessEntityID") @id
+  businessEntity BusinessEntity @relation(fields: [businessEntityID], references: [businessEntityID])
+  name String @map("Name")
+  salesPersonID Int? @map("SalesPersonID")
+  salesPerson SalesPerson? @relation(fields: [salesPersonID], references: [businessEntityID])
+  demographics String? @map("Demographics")
+  rowguid String @default(uuid())
+  modifiedDate DateTime @map("ModifiedDate") @default(now())
+}

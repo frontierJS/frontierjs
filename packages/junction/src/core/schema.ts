@@ -377,6 +377,11 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
   // Type coercion
   let v = coerce(value, def.type)
 
+  // Declared transforms come before every check below, whatever the type: an
+  // `@email @trim` column is typed 'email', and checking the raw value refuses
+  // the padded address its own transform would have cleaned (FJS-4680).
+  if (def.transforms && typeof v === 'string') v = transform(def.transforms, v) as string
+
   switch (def.type) {
 
     case 'string': {
@@ -384,7 +389,6 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
         errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a string`) })
         break
       }
-      if (def.transforms) v = transform(def.transforms, v) as string
       if (def.trim)      v = (v as string).trim()
       if (def.lowercase) v = (v as string).toLowerCase()
       if (def.uppercase) v = (v as string).toUpperCase()

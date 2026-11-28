@@ -7,7 +7,7 @@
 
 import { currentEngine } from './engine.js'
 import { validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, mkdirSync, rmSync, AsyncLocalStorage, processId, defaultFileStorage } from '#host'
+import { resolve, join, dirname, rmSync, AsyncLocalStorage, processId, defaultFileStorage } from '#host'
 import { resolveAnchor } from './db-path.js'
 import { readOnlyCopy, copyOptions } from './read-only-copy.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField, pointColumns, 
@@ -37,11 +37,9 @@ import {
   buildPolicyFilter, checkPostUpdatePolicy, policyVerdict, 
   compileFieldPredicate, delegationProblems, buildClaimSet, checkFieldPolicies,
   authClaimsUsed, compileMoveGuard } from './policy.js'
-import {
-  encryptField, decryptField, encryptDeterministic, normalizeKey,makeKeyring, } from './encryption.js'
-import { backupSqliteTo, readBackupStamp, clearBackupStamp } from './backup.js'
+import { normalizeKey, makeKeyring } from './encryption.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
-import { runSqliteRetention, compactJsonl, RETENTION_BATCH } from './retention.js'
+import { RETENTION_BATCH } from './retention.js'
 import { foldSpec, foldMoveClause, foldedDay } from './fold.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {TransitionConflictError, VersionRequiredError,
@@ -75,6 +73,10 @@ import { loadComputedFields, normalizeComputed, applyComputed } from './computed
 import { makeTxManager, makeReadRouter } from './transaction.js'
 import { makeLockPrimitive } from './locks.js'
 import { makeIntrospection } from './introspect.js'
+import { makeRotateKey } from './rotate-key.js'
+import { makeBackupMethods } from './backup-methods.js'
+import { makeRetentionMethods } from './retention-methods.js'
+import { makeScopes } from './scopes.js'
 import { makeWriteData, writeKeySets } from './write-data.js'
 import { makeWhereRewrite } from './where-rewrite.js'
 import { makeStateGuards, NOT_VISIBLE } from './state-guards.js'
@@ -6120,102 +6122,6 @@ export async function createClient({
   // Scans schema for @trail/@@trail attributes — used by makeTable to fire entries.
   const logMap = buildLogMap(schema)
 
-  // ── Retention ──────────────────────────────────────────────────────────────
-  // One pass at startup, for each database declaring a policy. **Startup is not
-  // a schedule**: a process that stays up never prunes again, which for a
-  // long-lived server is every day after the first. `$retain()` below is the
-  // same pass on demand, and scheduling it is the app's — the clock belongs to
-  // the queue (`FJS-D36`) and this package cannot import it (`FJS-521`).
-  const _retentionModels = (dbName) => schema.models.filter(m => {
-    const dbAttr = m.attributes.find(a => a.kind === 'db')
-    return (dbAttr?.name ?? 'main') === dbName
-  })
-
-  // A swept row is a deleted row, and the plugins hear it the way they hear an
-  // ORM delete: FileStorage releases the objects a File column held, which a
-  // raw DELETE leaves in the store for ever (FJS-1921).
-  // Rows are read only for a model whose deletes something hears — a plugin
-  // that answers onAfterDelete, or a cascade child with a listener of its own.
-  let _retentionStopped = false
-  let _retentionDrain   = null
-  const _retentionHears = model => pluginRunner.hearsDeletes || !!sharedCtx.cascadeSinkFor(model)?.cascadeHeard()
-  async function _retentionRemoved(model, rows, doomed) {
-    if (pluginRunner.hearsDeletes) await pluginRunner.afterDelete(model, rows, ctx)
-    await sharedCtx.cascadeSinkFor(model)?.cascadeRemoved(doomed)
-  }
-
-  async function _runRetention({ jsonl = true, batches = Infinity } = {}) {
-    const swept = []
-    for (const [dbName, conn] of Object.entries(dbRegistry)) {
-      // A model's own @@retention sweeps in a database that declares no window.
-      const owned = _retentionModels(dbName).some(m => m.attributes.some(a => a.kind === 'retention'))
-      if (!conn.retention && !conn.maxSize && !owned) continue
-
-      if (conn.driver === 'sqlite' && (conn.retention || owned) && conn.rawWriteDb) {
-        const opts = {
-          pluralize: pluralizeTableNames, now, batches,
-          hears:       _retentionHears,
-          onRemoved:   _retentionRemoved,
-          doomedUnder: (model, rows) => sharedCtx.cascadeSinkFor(model)?.doomedUnder(rows),
-          stopped:     () => _retentionStopped,
-        }
-        for (const r of await runSqliteRetention(conn.rawWriteDb, _retentionModels(dbName), conn.retention, opts))
-          swept.push({ database: dbName, driver: 'sqlite', ...r })
-        continue
-      }
-
-      // The jsonl half compacts inside `makeJsonlTable`, so the boot pass skips
-      // it rather than doing it twice; a later `$retain()` has to do it here,
-      // because nothing reopens those tables.
-      if (jsonl && (conn.driver === 'jsonl' || conn.driver === 'trail')) {
-        for (const model of _retentionModels(dbName)) {
-          const filePath = jsonlFilePath(conn.absPath, model.name)
-          try {
-            const res = compactJsonl(filePath, model, conn.retention, conn.maxSize, now)
-            if (res)
-              swept.push({ database: dbName, driver: conn.driver, model: model.name, table: filePath, removed: res.removed ?? 0 })
-          } catch (err) {
-            // Reported, not swallowed. A compaction that throws every pass looks
-            // exactly like one that had nothing to do (`FJS-521`).
-            console.warn(`[litestone] retention: could not compact "${filePath}" — ${err?.message ?? err}`)
-            swept.push({ database: dbName, driver: conn.driver, model: model.name, table: filePath, removed: 0, error: String(err?.message ?? err) })
-          }
-        }
-      }
-    }
-    return swept
-  }
-
-  // ── $retain ────────────────────────────────────────────────────────────────
-  //
-  // The startup pass, on demand — and the reason it exists is that startup is
-  // not a schedule. A process that stays up prunes once, on the day it booted,
-  // which for a long-lived server means a declared `retention 90d` stops being
-  // true the day after the deploy (`FJS-521`).
-  //
-  // Scheduling it is the APP's, and that is a consequence of two rulings rather
-  // than a gap: unattended recurring work belongs to the queue (`FJS-D36`), and
-  // this package may not import it (Invariant 1). One line in a `*.job.ts`:
-  //
-  //     export default defineJob({
-  //       cron: '0 4 * * *',
-  //       handler: () => db.asSystem().$retain(),
-  //     })
-  //
-  // `asSystem()` for raw SQL's reason (`FJS-D52`): it deletes rows through no
-  // gate, no row policy and no `@@softDelete`, so the bypass is said at the call
-  // site rather than assumed. Resolves to one row per table it touched, once
-  // the plugins have released what the swept rows held.
-  async function $retain() {
-    // Stamped so *is the sweep running at all* is answerable. A retention job
-    // that stopped firing removes nothing and reports nothing, which is the
-    // same silence `FJS-327` and `FJS-328` were about one realm over.
-    if (_retentionDrain) await _retentionDrain
-    const out = await _runRetention()
-    ctx._logStats.lastRetainAt = new Date().toISOString()
-    return out
-  }
-
   const once = (key, deps, build) => derivedOnce(schema, key, deps, build)
   const _claimsKey = Array.isArray(claims) ? claims.join('\0') : null
   const jsonMap       = once('buildJsonMap', [], () => buildJsonMap(schema))
@@ -7342,6 +7248,13 @@ export async function createClient({
   // Expose tables on ctx so makeTable can do recursive nested writes
   ctx.tables = tables
 
+  // One pass at startup, for each database declaring a policy. **Startup is not
+  // a schedule**: a process that stays up never prunes again, which for a
+  // long-lived server is every day after the first. `$retain()` is the same
+  // pass on demand, and scheduling it is the app's (`FJS-D36`, `FJS-521`).
+  const { _runRetention, $retain, stop: stopRetention, setDrain: setRetentionDrain } =
+    makeRetentionMethods(ctx, { schema, dbRegistry, pluralizeTableNames, now, pluginRunner, sharedCtx })
+
   // The boot pass waits for the plugins, since a swept row's files are theirs,
   // and for the tables: the cascade sinks it reads children through are theirs.
   // It takes one batch a table and drains a backlog after the client resolves,
@@ -7357,363 +7270,12 @@ export async function createClient({
   _retentionFlavor.tables = makeLazyTables(_retentionFlavor)
   const _booted = await _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false, batches: 1 }))
   if (_booted.some(r => r.removed >= RETENTION_BATCH))
-    _retentionDrain = _flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false }))
+    setRetentionDrain(_flavor.run(_retentionFlavor, () => _runRetention({ jsonl: false }))
       .catch(err => console.warn(`[litestone] retention: the sweep after startup stopped — ${err?.message ?? err}`))
-      .finally(() => { _retentionDrain = null })
+      .finally(() => setRetentionDrain(null)))
 
-  // ── Scopes ─────────────────────────────────────────────────────────────────
-  // Reusable named query fragments registered by the app at createClient time.
-  // See docs/querying.md → Scopes for the full design.
-  //
-  // scopeRegistry: { ModelName: { scopeName: scopeDef, ... } }
-  //
-  // A scopeDef is one of:
-  //   - { where, orderBy?, limit?, ... }            — static args (object literal)
-  //   - { where: (ctx) => ({ ... }), ... }          — dynamic where, evaluated per-call
-  //
-  // Parameterized scopes are NOT supported — write a function that returns a
-  // where clause and pass it as a caller override instead. See spec for rationale.
-  //
-  // Internal shape after validation: scopesByAccessor[accessor][scopeName] = scopeDef
-  const scopesByAccessor = {}
-
-  // Methods that scopes are not allowed to shadow. Computed from a real table
-  // accessor at runtime so this list updates automatically when methods are added.
-  // We pick any non-view table to introspect — views have a reduced surface.
-  // Read only when a scope is registered: `Object.values(tables)` builds every
-  // table, which a tenant reopen pays on each of its schema's models.
-  const reservedMethodNames = Object.keys(scopeRegistry).length === 0 ? new Set() : (() => {
-    let sample
-    for (const name of _tableAccessorNames) {
-      const t = tables[name]
-      if (t && typeof t.findMany === 'function' && typeof t.create === 'function') { sample = t; break }
-    }
-    if (!sample) return new Set(['findMany','findFirst','findUnique','count','create','update','remove','delete','aggregate','groupBy','query'])
-    return new Set(Object.keys(sample).filter(k => typeof sample[k] === 'function'))
-  })()
-
-  for (const [modelName, scopeMap] of Object.entries(scopeRegistry)) {
-    const model = modelIndex[modelName]
-    if (!model) {
-      throw new Error(`scopes: unknown model "${modelName}". Schema models: ${Object.keys(modelIndex).join(', ')}`)
-    }
-    const accessor = modelToAccessor(modelName)
-    if (!tables[accessor]) {
-      throw new Error(`scopes: model "${modelName}" has no table accessor (driver may not support scopes)`)
-    }
-
-    // Relation field names on this model — scope names that match a relation
-    // are confusing because users might expect `db.user.posts()` to mean a query.
-    const relationFieldNames = new Set(
-      model.fields
-        .filter(f => f.type?.kind === 'relation')
-        .map(f => f.name)
-    )
-
-    const validatedScopes = {}
-    for (const [scopeName, rawScope] of Object.entries(scopeMap ?? {})) {
-      // Name guards
-      if (scopeName.startsWith('_') || scopeName.startsWith('$')) {
-        throw new Error(`scopes: "${modelName}.${scopeName}" — scope names cannot start with "_" or "$" (reserved for internals)`)
-      }
-      if (reservedMethodNames.has(scopeName)) {
-        throw new Error(`scopes: "${modelName}.${scopeName}" conflicts with a built-in table method. Pick another name.`)
-      }
-      if (relationFieldNames.has(scopeName)) {
-        throw new Error(`scopes: "${modelName}.${scopeName}" conflicts with the relation field of the same name. Pick another name.`)
-      }
-
-      // Shape guard. We accept anything object-shaped — runtime mistakes (typos
-      // in keys) surface naturally when the scope is used. We do NOT accept
-      // a top-level function: that would have meant a parameterized scope, which
-      // is intentionally not supported in v1 (see spec).
-      if (rawScope == null || typeof rawScope !== 'object' || Array.isArray(rawScope)) {
-        throw new Error(`scopes: "${modelName}.${scopeName}" must be an object like { where, orderBy?, limit?, ... }. Got ${Array.isArray(rawScope) ? 'an array' : typeof rawScope}.`)
-      }
-
-      validatedScopes[scopeName] = rawScope
-    }
-
-    scopesByAccessor[accessor] = validatedScopes
-  }
-
-  // ── mergeScopeArgs ─────────────────────────────────────────────────────────
-  // Combines a stack of resolved scope args with a caller's args object.
-  // Rules:
-  //   - where: AND of all non-null where clauses (scope where's, then caller's)
-  //   - other keys (orderBy, limit, offset, include, select, distinct,
-  //     withDeleted, onlyDeleted, etc.): last writer wins, with caller as final
-  //
-  // resolvedScopeArgs: array of {where?, orderBy?, ...} in left-to-right order.
-  // callerArgs: the user's own args object passed to the terminal method, or null.
-  function mergeScopeArgs(resolvedScopeArgs, callerArgs) {
-    const out = {}
-    const wheres = []
-
-    const apply = (a) => {
-      if (!a) return
-      for (const [k, v] of Object.entries(a)) {
-        if (k === 'where') {
-          if (v != null) wheres.push(v)
-        } else if (k === 'data') {
-          // `data` is a write-only default (see scopeDataDefault) — never a read arg
-        } else {
-          out[k] = v   // last write wins
-        }
-      }
-    }
-
-    for (const sa of resolvedScopeArgs) apply(sa)
-    apply(callerArgs)
-
-    if (wheres.length === 1) out.where = wheres[0]
-    else if (wheres.length > 1) out.where = { AND: wheres }
-    return out
-  }
-
-  // ── resolveScopeStack ─────────────────────────────────────────────────────
-  // Evaluates a stack of scope definitions against a ctx, materializing
-  // dynamic `where` functions. Returns array of resolved arg objects.
-  function resolveScopeStack(scopeStack, evalCtx) {
-    return scopeStack.map(scopeDef => {
-      const out = {}
-      for (const [k, v] of Object.entries(scopeDef)) {
-        if (k === 'where' && typeof v === 'function') {
-          out.where = v(evalCtx)
-        } else {
-          out[k] = v
-        }
-      }
-      return out
-    })
-  }
-
-  // ── scope write helpers ────────────────────────────────────────────────────
-  // Create-time data default for a scope stack: an explicit `data` object on the
-  // scope, or — for a flat-equality where like { type: 'lead' } — the equalities
-  // themselves. Operators, AND/OR/NOT, and nested/complex wheres contribute
-  // nothing. An explicit `data` (even `{}`) on a scope suppresses inference for it,
-  // so you can filter without stamping.
-  function scopeDataDefault(resolvedScopeArgs) {
-    const data = {}
-    for (const sa of resolvedScopeArgs) {
-      if ('data' in sa) {
-        if (sa.data && typeof sa.data === 'object' && !Array.isArray(sa.data)) Object.assign(data, sa.data)
-        continue
-      }
-      const w = sa.where
-      if (w && typeof w === 'object' && !Array.isArray(w)) {
-        for (const [k, v] of Object.entries(w)) {
-          if (v === null || typeof v === 'object') continue
-          if (k === 'AND' || k === 'OR' || k === 'NOT') continue
-          data[k] = v
-        }
-      }
-    }
-    return data
-  }
-
-  function scopeWhereClause(resolvedScopeArgs) {
-    const wheres = resolvedScopeArgs.map(sa => sa.where).filter(w => w != null)
-    if (!wheres.length) return null
-    return wheres.length === 1 ? wheres[0] : { AND: wheres }
-  }
-
-  const andWhere = (a, b) => (!a ? b : !b ? a : { AND: [a, b] })
-
-  // ── buildScopedAccessor ───────────────────────────────────────────────────
-  // Given a real table accessor and a stack of scope defs, build a callable
-  // function-with-properties:
-  //
-  //   - Calling it (`accessor()`) → findMany under the scope stack
-  //   - accessor.findMany / .findFirst / .count / .aggregate / .groupBy / etc.
-  //     all work and merge scope args before forwarding
-  //   - accessor.<scopeName> → another scoped accessor (chaining)
-  //
-  // Methods that don't take a where-shaped first arg (search, optimizeFts) are
-  // exposed as-is when no scope stack would change behavior, otherwise throw.
-  //
-  // tableAccessor: the real table object from `tables[accessor]`
-  // scopeStack:    array of scope defs accumulated so far (left-to-right)
-  // scopeMap:      { scopeName: scopeDef } — for further chaining
-  // ctxResolver:   () => ctx — gives current ctx for dynamic where (so auth
-  //                changes per $setAuth call don't get baked in at build time)
-  function buildScopedAccessor(tableAccessor, scopeStack, scopeMap, ctxResolver) {
-    // Methods that take a standard {where, orderBy, ...} arg and benefit from
-    // scope merging. Listed explicitly so we know to forward through merge.
-    const SCOPED_READ_METHODS = ['findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow', 'count', 'aggregate', 'groupBy', 'findManyCursor', 'query']
-
-    // Build the merged-args function for a single method
-    const wrapMethod = (methodName) => {
-      const fn = tableAccessor[methodName]
-      if (typeof fn !== 'function') return undefined
-      return (callerArgs = {}) => {
-        const evalCtx = ctxResolver()
-        const resolved = resolveScopeStack(scopeStack, evalCtx)
-        const merged   = mergeScopeArgs(resolved, callerArgs)
-        return fn.call(tableAccessor, merged)
-      }
-    }
-
-    // Default-call → findMany under the scope. Function form so users can use
-    // `db.customer.active()` directly without remembering the method name.
-    const callable = (callerArgs = {}) => wrapMethod('findMany')(callerArgs)
-
-    // Attach all standard read methods.
-    for (const m of SCOPED_READ_METHODS) {
-      const wrapped = wrapMethod(m)
-      if (wrapped) callable[m] = wrapped
-    }
-
-    // search() takes a query string + opts, not {where, ...}. We allow it but
-    // post-AND the scope where via opts.where, which is the natural composition.
-    if (typeof tableAccessor.search === 'function') {
-      callable.search = (queryStr, opts = {}) => {
-        const evalCtx  = ctxResolver()
-        const resolved = resolveScopeStack(scopeStack, evalCtx)
-        const merged   = mergeScopeArgs(resolved, opts)
-        return tableAccessor.search(queryStr, merged)
-      }
-    }
-
-    // ── Writes under a scope ──────────────────────────────────────────────────
-    // create/createMany stamp the scope's data default (caller data wins);
-    // update/delete/etc. AND-merge the scope where so a write can only touch rows
-    // inside the subset (you can't update a client through db.contact.leads).
-    const SCOPED_CREATE_METHODS = ['create', 'createMany']
-    const SCOPED_WHERE_METHODS  = ['update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany', 'restore']
-
-    const stampData = (methodName, callerArgs, dataDefault) => {
-      if (!dataDefault || !Object.keys(dataDefault).length) return callerArgs
-      const a = { ...callerArgs }
-      if (methodName === 'createMany') a.data = (a.data ?? []).map(r => ({ ...dataDefault, ...r }))
-      else                            a.data = { ...dataDefault, ...(a.data ?? {}) }
-      return a
-    }
-
-    for (const m of SCOPED_CREATE_METHODS) {
-      if (typeof tableAccessor[m] !== 'function') continue
-      callable[m] = (callerArgs = {}) => {
-        const resolved = resolveScopeStack(scopeStack, ctxResolver())
-        return tableAccessor[m](stampData(m, callerArgs, scopeDataDefault(resolved)))
-      }
-    }
-
-    for (const m of SCOPED_WHERE_METHODS) {
-      if (typeof tableAccessor[m] !== 'function') continue
-      callable[m] = (callerArgs = {}) => {
-        const resolved = resolveScopeStack(scopeStack, ctxResolver())
-        return tableAccessor[m]({ ...callerArgs, where: andWhere(scopeWhereClause(resolved), callerArgs?.where) })
-      }
-    }
-
-    // upsert / upsertMany: stamp the create default (the conflict-target where is
-    // left untouched — merging the scope filter into it would break conflict detection).
-    if (typeof tableAccessor.upsert === 'function') {
-      callable.upsert = (callerArgs = {}) => {
-        const resolved = resolveScopeStack(scopeStack, ctxResolver())
-        const dd = scopeDataDefault(resolved)
-        return tableAccessor.upsert(Object.keys(dd).length ? { ...callerArgs, create: { ...dd, ...(callerArgs.create ?? {}) } } : callerArgs)
-      }
-    }
-    if (typeof tableAccessor.upsertMany === 'function') {
-      callable.upsertMany = (callerArgs = {}) => {
-        const resolved = resolveScopeStack(scopeStack, ctxResolver())
-        const dd = scopeDataDefault(resolved)
-        return tableAccessor.upsertMany(Object.keys(dd).length ? { ...callerArgs, data: (callerArgs.data ?? []).map(r => ({ ...dd, ...r })) } : callerArgs)
-      }
-    }
-
-    // Attach scope-name properties for chaining. Each one returns a NEW scoped
-    // accessor with the scope appended to the stack. We define these lazily as
-    // getters so the closure captures `name` correctly.
-    for (const [name, def] of Object.entries(scopeMap ?? {})) {
-      Object.defineProperty(callable, name, {
-        enumerable: true,
-        get() {
-          return buildScopedAccessor(tableAccessor, [...scopeStack, def], scopeMap, ctxResolver)
-        },
-      })
-    }
-
-    return callable
-  }
-
-  // ── installScopes ─────────────────────────────────────────────────────────
-  // Wraps a tables object so that each model accessor exposes its scopes as
-  // properties. The original table (with all methods) remains directly callable
-  // — scopes are added on top.
-  //
-  // For chaining, each scope returns a buildScopedAccessor (a function-with-
-  // properties) that itself exposes all the model's scope names as further
-  // chaining points.
-  //
-  // ctxResolver lets each scope resolution see the current ctx — important
-  // for auth-scoped clients where ctx.auth changes per $setAuth() call.
-  // Wrap one table accessor: same methods, plus scope properties as getters.
-  // Uses a Proxy so we don't modify the original tableAccessor (which might
-  // be referenced elsewhere — by ctx.tables, by the unscoped client, etc.)
-  function wrapTableWithScopes(tableAccessor, scopeMap, ctxResolver) {
-    return new Proxy(tableAccessor, {
-      get(target, prop) {
-        if (typeof prop === 'string' && scopeMap[prop]) {
-          return buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver)
-        }
-        return Reflect.get(target, prop)
-      },
-      has(target, prop) {
-        return Reflect.has(target, prop) || (typeof prop === 'string' && prop in scopeMap)
-      },
-      ownKeys(target) {
-        return dedupeKeys(Reflect.ownKeys(target), Object.keys(scopeMap))
-      },
-      getOwnPropertyDescriptor(target, prop) {
-        if (typeof prop === 'string' && scopeMap[prop]) {
-          return { configurable: true, enumerable: true, get: () => buildScopedAccessor(target, [scopeMap[prop]], scopeMap, ctxResolver) }
-        }
-        return Reflect.getOwnPropertyDescriptor(target, prop)
-      },
-    })
-  }
-
-  function installScopes(tablesObj, ctxResolver) {
-    if (!Object.keys(scopesByAccessor).length) return tablesObj
-
-    const out = { ...tablesObj }
-    for (const [accessor, scopeMap] of Object.entries(scopesByAccessor)) {
-      const tableAccessor = out[accessor]
-      if (!tableAccessor) continue
-      out[accessor] = wrapTableWithScopes(tableAccessor, scopeMap, ctxResolver)
-    }
-    return out
-  }
-
-  // Lazy variant of installScopes for the per-auth table proxies — wraps each
-  // accessor with its scopes on first access instead of spreading (and thereby
-  // materializing) the whole tables object up front.
-  function installScopesLazy(tablesProxy, ctxResolver) {
-    if (!Object.keys(scopesByAccessor).length) return tablesProxy
-    const cache = Object.create(null)
-    const get = (prop) => {
-      if (cache[prop] !== undefined) return cache[prop]
-      const t = tablesProxy[prop]
-      if (t === undefined) return undefined
-      const scopeMap = scopesByAccessor[prop]
-      const wrapped = scopeMap ? wrapTableWithScopes(t, scopeMap, ctxResolver) : t
-      cache[prop] = wrapped
-      return wrapped
-    }
-    return new Proxy({}, {
-      get(_, prop) { return typeof prop === 'string' ? get(prop) : undefined },
-      has(_, prop) { return typeof prop === 'string' && prop in tablesProxy },
-      ownKeys() { return Reflect.ownKeys(tablesProxy) },
-      getOwnPropertyDescriptor(_, prop) {
-        if (typeof prop === 'string' && prop in tablesProxy)
-          return { configurable: true, enumerable: true, get: () => get(prop) }
-        return undefined
-      },
-    })
-  }
+  const { installScopes, installScopesLazy } =
+    makeScopes({ scopeRegistry, tables, tableAccessorNames: _tableAccessorNames, modelIndex, dedupeKeys })
 
   // Apply scopes to the main tables. Auth/system proxies install their own
   // scope wrappers below using their own ctxResolver.
@@ -8002,192 +7564,7 @@ export async function createClient({
   }
   _withRead(sql, 'db.sql')
 
-
-  // ── $rotateKey ─────────────────────────────────────────────────────────────
-  // Re-encrypts every key-reversible column using the current key → newKey and
-  // then swaps the client's key. One write transaction per affected database.
-  //
-  // Usage:
-  //   const stats = await db.asSystem().$rotateKey(process.env.NEW_ENCRYPTION_KEY)
-  //   // → { users: { rows: 42, fields: 1 }, payments: { rows: 7, fields: 2 } }
-  //
-  // ── What it carries, and what it refuses to leave behind ───────────────────
-  //
-  // The key swap at the end is GLOBAL — one client holds one key — so a column
-  // this does not rewrite is not "left on the old key", it is UNREADABLE. That
-  // was the shape of FJS-253: rotation visited `@secret(rotate: true)` only, and
-  // a plain `@encrypted` column beside it read `null` afterwards with nothing
-  // thrown at any layer. Every key-reversible column is rotated now.
-  //
-  // Two kinds cannot be carried, and rotation REFUSES while either is present
-  // rather than destroying it:
-  //
-  //   @hashed                 one-way. There is no plaintext anywhere to re-key,
-  //                           so every match silently becomes 0 and no later fix
-  //                           can undo it.
-  //   @secret(rotate: false)  excluded from re-encryption by declaration.
-  //
-  // `{ orphan: ['Model.field'] }` is the deliberate opt-in. It is a list of names
-  // rather than a boolean so that acknowledging one column cannot silently
-  // acknowledge a second one added later.
-
-  // The one answer to "can a key rotation carry this column?", asked by the
-  // refusal and by the rotation loop so the two cannot disagree about which
-  // columns exist. Every encrypted column is in `fieldPolicyMap` — `@secret`
-  // expands to `@encrypted` at parse time — and `secretMap` only says which of
-  // them opted out.
-  function classifyForRotation() {
-    const carry    = {}
-    const orphaned = []
-
-    for (const [modelName, fields] of Object.entries(fieldPolicyMap)) {
-      for (const [fieldName, policy] of Object.entries(fields)) {
-        const key = `${modelName}.${fieldName}`
-
-        if (policy.hashed) {
-          orphaned.push({ key, reason: '@hashed — one-way, there is no plaintext to re-key, so every match becomes 0 permanently' })
-          continue
-        }
-        if (!policy.encrypted) continue
-
-        if (secretMap[modelName]?.[fieldName]?.rotate === false) {
-          orphaned.push({ key, reason: '@secret(rotate: false) — declared excluded from re-encryption' })
-          continue
-        }
-
-        ;(carry[modelName] ??= []).push(fieldName)
-      }
-    }
-
-    return { carry, orphaned }
-  }
-
-  async function $rotateKey(rawNewKey, { orphan = [] } = {}) {
-    const { carry, orphaned } = classifyForRotation()
-
-    // Nothing encrypted anywhere — no rotation, and no key required to say so.
-    if (!Object.keys(carry).length && !orphaned.length) return {}
-
-    // Refuse BEFORE the first write. A rotation that has already rewritten half
-    // the database and then complains is a database in two keys with nothing
-    // recording which rows are in which.
-    const acknowledged = new Set(orphan)
-    const unacked      = orphaned.filter(o => !acknowledged.has(o.key))
-    if (unacked.length) {
-      throw Object.assign(new Error(
-        `$rotateKey would leave ${unacked.length} column(s) unreadable and has rotated nothing:\n` +
-        unacked.map(o => `  ${o.key} — ${o.reason}`).join('\n') +
-        `\nThe key swap is global, so a column this cannot re-encrypt is not carried forward.\n` +
-        `This client keeps reading it — the old key stays on its ring — but the next process to\n` +
-        `start does not, unless it is given previousEncryptionKeys: ['<the old key>'].\n` +
-        `Pass { orphan: [${unacked.map(o => `'${o.key}'`).join(', ')}] } to accept that deliberately.`
-      ), { orphaned: unacked.map(o => o.key) })
-    }
-
-    if (!ctx.enc.key)
-      throw new Error('$rotateKey requires an encryption key on this client — pass { encryptionKey: process.env.ENCRYPTION_KEY } to createClient()')
-
-    const newKey = normalizeKey(rawNewKey)
-    if (!newKey || newKey.length !== 32)
-      throw new Error('New encryption key must be 32 bytes (64 hex chars)')
-
-    const results = {}
-
-    // Group rotatable fields by their target database so each DB gets one transaction
-    const byDb = {}
-    for (const [modelName, rotatableFields] of Object.entries(carry)) {
-      if (!rotatableFields.length) continue
-
-      const modelDef = schema.models.find(m => m.name === modelName)
-      const dbName   = modelDef?.attributes.find(a => a.kind === 'db')?.name ?? 'main'
-      if (!byDb[dbName]) byDb[dbName] = []
-      byDb[dbName].push({ modelName, modelDef, rotatableFields })
-    }
-
-    const ROTATE_BATCH = 1000
-
-    for (const [dbName, models] of Object.entries(byDb)) {
-      const conn = dbRegistry[dbName]
-      const rawDb = conn?.rawWriteDb
-      if (!rawDb) continue   // jsonl or disabled — skip
-
-      // One write transaction per database — per-row auto-commit is ~1000x
-      // slower (one WAL commit per UPDATE). BEGIN IMMEDIATE takes the write
-      // lock up front so we don't upgrade mid-rotation.
-      rawDb.run('BEGIN IMMEDIATE')
-      try {
-        for (const { modelName, modelDef, rotatableFields } of models) {
-          const tableName = modelToTableName(modelDef, pluralizeTableNames)
-          const cols      = rotatableFields.map(f => `"${f}"`).join(', ')
-          // Alias rowid explicitly — when a table has INTEGER PRIMARY KEY, rowid
-          // is an alias for that column and SQLite's driver collapses the duplicate,
-          // dropping the `rowid` key from the returned row object.
-          // Page by rowid instead of loading the whole table into memory.
-          const pageStmt = rawDb.query(
-            `SELECT rowid AS __litestone_rowid, ${cols} FROM "${tableName}" WHERE rowid > ? ORDER BY rowid LIMIT ${ROTATE_BATCH}`
-          )
-          let updated   = 0
-          let lastRowid = -9007199254740991   // below any real rowid
-
-          while (true) {
-            const rows = pageStmt.all(lastRowid)
-            if (!rows.length) break
-            for (const row of rows) {
-              lastRowid = row.__litestone_rowid
-              const sets = []
-              const vals = []
-              for (const fieldName of rotatableFields) {
-                if (row[fieldName] == null) continue
-                const plain = decryptField(row[fieldName], ctx.enc.ring ?? ctx.enc.key)
-                sets.push(`"${fieldName}" = ?`)
-                // Re-encrypt in the mode the field was DECLARED with, not the mode
-                // rotation happens to use. Rewriting a deterministic column with a
-                // random IV would leave every value readable and every equality
-                // filter over it answering nothing, silently, until someone searched.
-                const mode = fieldPolicyMap?.[modelName]?.[fieldName]
-                vals.push(mode?.encrypted?.deterministic
-                  ? encryptDeterministic(plain, newKey)
-                  : encryptField(plain, newKey))
-              }
-              if (!sets.length) continue
-              // rawDb.query() caches the prepared statement per distinct SQL shape
-              rawDb.query(`UPDATE "${tableName}" SET ${sets.join(', ')} WHERE rowid = ?`).run(...vals, row.__litestone_rowid)
-              updated++
-            }
-            if (rows.length < ROTATE_BATCH) break
-          }
-
-          results[modelName] = { rows: updated, fields: rotatableFields.length }
-        }
-        rawDb.run('COMMIT')
-      } catch (err) {
-        try { rawDb.run('ROLLBACK') } catch {}
-        throw err
-      }
-    }
-
-    // One assignment reaches every client derived from this one, including the
-    // memoized asSystem() proxy built before the rotation. That is the whole
-    // reason the key lives in a cell.
-    //
-    // The OLD key stays on the ring, and that is what makes a partial rotation
-    // survivable rather than a loss (`FJS-714`). The loop above is one
-    // transaction per DATABASE, so a crash between two commits leaves database
-    // A on the new key and B on the old — which used to be undetectable and
-    // unreadable, with a single global key setting and no way to say which
-    // value was under which. Now every value names its key, both keys are held,
-    // and running the rotation again finishes it: a row already on the new kid
-    // decrypts, re-encrypts to the same kid, and costs a write rather than a
-    // wrong answer.
-    if (Object.keys(results).length > 0) {
-      const previous = ctx.enc.ring?.all ?? (ctx.enc.key ? [ctx.enc.key] : [])
-      ctx.enc.key  = newKey
-      ctx.enc.ring = makeKeyring(newKey, previous.filter(k => !k.equals(newKey)))
-    }
-
-    return results
-  }
-
+  const { $rotateKey } = makeRotateKey(ctx, { schema, fieldPolicyMap, secretMap, dbRegistry, pluralizeTableNames })
 
   // ── $backup ────────────────────────────────────────────────────────────────
   // Hot backup — copies the live database to a file while it's running.
@@ -8218,90 +7595,7 @@ export async function createClient({
     return schemaGaps({ schema }, dbRegistry, { pluralize: pluralizeTableNames })
   }
 
-  function $walStatus() {
-    // PRAGMA wal_checkpoint=NOOP (SQLite 3.51.0+) reports WAL frame counts
-    // without triggering a checkpoint. Safe to call at any time, even under load.
-    // Returns: { busy, frames, checkpointed }
-    //   busy:         true if a checkpoint is blocked by active readers
-    //   frames:       total WAL frames since last full checkpoint
-    //   checkpointed: frames already checkpointed
-    // For multi-DB schemas returns { dbName: { busy, frames, checkpointed }, ... }
-    const result = {}
-    for (const [name, conn] of Object.entries(dbRegistry)) {
-      if (!conn.rawWriteDb) continue
-      try {
-        const row = conn.rawWriteDb.query('PRAGMA wal_checkpoint(NOOP)').get()
-        result[name] = row
-          ? { busy: row.busy === 1, frames: row.log, checkpointed: row.checkpointed }
-          : null
-      } catch { result[name] = null }
-    }
-    const keys = Object.keys(result)
-    return keys.length === 1 ? result[keys[0]] : result
-  }
-
-  // `{ takenAt }` when a database this client opened came out of a backup
-  // (`FJS-D665`), otherwise null. A restore rewinds every row written after
-  // `takenAt`, so a row older than it that records an unfinished handoff to
-  // the outside world may already have been handed off. The latest stamp
-  // across the client's databases answers, since a restore puts back the set.
-  function $backupStamp() {
-    let latest = null
-    for (const conn of Object.values(dbRegistry)) {
-      if (conn.driver !== 'sqlite' || !conn.rawWriteDb) continue
-      const stamp = readBackupStamp(conn.rawWriteDb)
-      if (stamp && (!latest || stamp.takenAt > latest.takenAt)) latest = stamp
-    }
-    return latest
-  }
-
-  // The operator has settled what the stamp was holding: the database is
-  // nobody's backup any more, and a row older than the stamp is ordinary.
-  function $clearBackupStamp() {
-    for (const conn of Object.values(dbRegistry)) {
-      if (conn.driver === 'sqlite' && conn.rawWriteDb) clearBackupStamp(conn.rawWriteDb)
-    }
-  }
-
-  // `only` narrows to named databases. Without it a caller wanting ONE database
-  // out of several had to open a client per database — and `createClient({ db })`
-  // names MAIN, so each of those clients backed up main under a different
-  // database's name. Asking here is the only way to ask truthfully.
-  async function $backup(destPath, { vacuum = false, only = null } = {}) {
-    const abs   = resolve(destPath)
-    const names = only == null ? null : (Array.isArray(only) ? only : [only])
-
-    // SQLite-only — backs up all open SQLite connections.
-    // For a full backup including JSONL/trail databases, use: litestone backup
-    const sqliteDbs = Object.entries(dbRegistry)
-      .filter(([name, conn]) => conn.driver === 'sqlite' && conn.rawWriteDb && (!names || names.includes(name)))
-
-    if (!sqliteDbs.length) {
-      const declared = Object.entries(dbRegistry).filter(([, c]) => c.driver === 'sqlite').map(([n]) => n)
-      throw new Error(
-        names
-          ? `$backup: no SQLite database named ${names.join(', ')}. Declared: ${declared.join(', ') || 'none'}`
-          : `$backup: this client has no SQLite database to back up`
-      )
-    }
-
-    const backupOne = (db, dest) => backupSqliteTo(db, dest, { vacuum })
-
-    if (sqliteDbs.length > 1) {
-      mkdirSync(abs, { recursive: true })
-      const results = {}
-      for (const [name, conn] of sqliteDbs) {
-        const dest = resolve(abs, `${name}.db`)
-        results[name] = { driver: 'sqlite', path: dest, size: await backupOne(conn.rawWriteDb, dest), vacuumed: vacuum }
-      }
-      return results
-    }
-
-    // sqliteDbs[0], not the closure's rawWriteDb — with `only` they differ, and
-    // the closure's is always main.
-    const size = await backupOne(sqliteDbs[0][1].rawWriteDb, abs)
-    return { path: abs, size, vacuumed: vacuum }
-  }
+  const { $walStatus, $backupStamp, $clearBackupStamp, $backup } = makeBackupMethods({ dbRegistry })
 
   // ── $attach ────────────────────────────────────────────────────────────────
   // Attach another SQLite database file under an alias.
@@ -8913,7 +8207,7 @@ export async function createClient({
   // closing first would arm the closed-client throw under it (`FJS-2914`). Then
   // it returns a promise a caller may await.
   function _closeAll() {
-    _retentionStopped = true
+    stopRetention()
     const draining = drainPendingLogs()   // a queued audit line lands before its table closes
     return draining ? draining.then(_teardown) : _teardown()
   }

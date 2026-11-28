@@ -11,7 +11,9 @@
 
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED }   from './wide-int.js'
-import { modelName }        from '@frontierjs/toolbelt/inflect'
+import { toMinorUnits, scaleOf } from './scale.js'
+import { carriesArray, ARRAY_ELEMENT_EMITTED } from './array.js'
+import { modelName }       from '@frontierjs/toolbelt/inflect'
 
 const SCALARS = {
   String: 'String', Int: 'Int', Float: 'Float', Boolean: 'Boolean',
@@ -170,6 +172,12 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap, wide) {
     type = ptype  // an enum or a relation target — resolved by the parser, not here
   }
 
+  if (isList && SCALARS[ptype] && !carriesArray(type, false, extra)) {
+    gap('array-element-type', model, fname, `${ptype}[]`, ARRAY_ELEMENT_EMITTED)
+    type = 'Json'; isList = false
+    extra.splice(0, extra.length, ...extra.filter(a => !a.startsWith('@scale')))
+  }
+
   if (/@ignore\b/.test(rest)) { gap('ignored-field', model, fname, '@ignore', 'field dropped'); return null }
 
   for (const native of rest.match(/@db\.[A-Za-z]+(\([^)]*\))?/g) || []) {
@@ -219,7 +227,10 @@ function emitField(model, fname, ptype, isList, isOpt, rest, gap, wide) {
       if (ptype === 'String' && !isList && /^"(\{\}|\[\])"$/.test(d))
         gap('json-in-string-candidate', model, fname, `String @default(${d})`,
             'emitted as an ordinary String — CANDIDATE for Json, which stores the same text but is read and validated as JSON; confirm the column only ever holds JSON')
-      extra.push(`@default(${d})`)
+      const places = scaleOf(extra)
+      const minor  = places === null ? d : toMinorUnits(d.replace(/^"(-?\d+(?:\.\d+)?)"$/, '$1'), places)
+      if (minor === null) gap('default-over-scale', model, fname, `@default(${d})`, `dropped — more places than @scale(${places}) holds`)
+      else extra.push(`@default(${minor})`)
     }
   }
 

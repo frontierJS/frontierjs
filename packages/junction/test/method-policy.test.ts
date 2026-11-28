@@ -286,5 +286,47 @@ describe('methods: what the app advertises matches what it answers', () => {
     for (const verb of ['find', 'create', 'approve'])
       expect(tickets.methods).toContain(verb)
   })
+
+  // The list a browser reads in production (`FJS-4666`). Asked over the wire,
+  // because a list that agrees with /manifest and not with the router is the
+  // drift this exists to stop: every advertised verb answers something other
+  // than 405, and every verb it leaves out answers 405.
+  it('GET /_services: an advertised method never answers 405, an omitted one always does', async () => {
+    const offers = await (await fetch(`http://localhost:${PORT}/_services`)).json()
+    expect(offers.map((o: any) => o.name).sort()).toEqual(['audit', 'ledger', 'open', 'tickets', 'trail'])
+    const call = (svc: string, verb: string) => {
+      const json = { 'content-type': 'application/json' }
+      switch (verb) {
+        case 'find':   return fetch(`http://localhost:${PORT}/${svc}`)
+        case 'get':    return fetch(`http://localhost:${PORT}/${svc}/x`)
+        case 'create': return post(`/${svc}`, {})
+        case 'update': return fetch(`http://localhost:${PORT}/${svc}/x`, { method: 'PUT', headers: json, body: '{}' })
+        case 'patch':  return fetch(`http://localhost:${PORT}/${svc}/x`, { method: 'PATCH', headers: json, body: '{}' })
+        case 'remove': return fetch(`http://localhost:${PORT}/${svc}/x`, { method: 'DELETE' })
+        default:       return post(`/${svc}/x`, {}, { 'x-service-method': verb })
+      }
+    }
+    // A custom name the definition never wrote is a 404 (no such method), not a
+    // refusal, so each service is asked the CRUD set plus its own customs.
+    const customs: Record<string, string[]> = { tickets: ['approve', 'escalate'], open: ['ping'] }
+    for (const { name, methods } of offers) {
+      for (const verb of ['find', 'get', 'create', 'update', 'patch', 'remove', ...(customs[name] ?? [])]) {
+        const status = (await call(name, verb)).status
+        expect({ name, verb, refused: status === 405 }).toEqual({ name, verb, refused: !methods.includes(verb) })
+      }
+    }
+  })
+
+  it('GET /_services answers with the manifest off, and names only name and methods', async () => {
+    const bare = createApp({ config: { port: 0, http: { ...defaultConfig.http, drainTimeout: 200 } } })
+    bare.services.register(buildService({ name: 'audit', methods: ['find'], async find() { return [] } }))
+    await bare.start()
+    try {
+      const res = await fetch(`http://localhost:${bare.http.port}/_services`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual([{ name: 'audit', methods: ['find'] }])
+      expect((await fetch(`http://localhost:${bare.http.port}/manifest`)).status).toBe(404)
+    } finally { await bare.stop() }
+  })
 })
 

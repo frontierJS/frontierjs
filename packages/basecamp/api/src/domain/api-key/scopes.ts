@@ -180,24 +180,28 @@ export function apiKeyUsage(): Hook {
     const id = $.locals.apiKeyId as string | undefined
     if (!id) return
 
-    const today = new Date().toISOString().slice(0, 10)
+    const now   = new Date().toISOString()
+    const today = now.slice(0, 10)
 
+    // The counts are added inside the UPDATE, never read and written back: two
+    // requests on one key both read the same count and both wrote count + 1,
+    // losing one (FJS-4669). The counter carries the day it counts, so the
+    // rollover is a WHERE on that day rather than a scheduled job — and two
+    // requests racing across midnight cannot both reset it, because only one
+    // of them still matches the old day.
     try {
-      const sys = sysOf($.app)
-      const key = await sys.apiKey.findUnique({ where: { id } })
-      if (!key) return
-
-      await sys.apiKey.update({
-        where: { id },
-        data: {
-          lastUsedAt: new Date().toISOString(),
-          totalUses:  (key.totalUses ?? 0) + 1,
-          usageDate:  today,
-          // The counter carries the day it counts, so the rollover is a
-          // comparison rather than a scheduled job that has to run.
-          usesOnDate: key.usageDate === today ? (key.usesOnDate ?? 0) + 1 : 1,
-        },
+      const keys = sysOf($.app).apiKey
+      const sameDay = () => keys.updateMany({
+        where: { id, usageDate: today },
+        data:  { lastUsedAt: now, totalUses: { increment: 1 }, usesOnDate: { increment: 1 } },
       })
+
+      if ((await sameDay()).count) return
+      const rolled = await keys.updateMany({
+        where: { id, OR: [{ usageDate: null }, { usageDate: { not: today } }] },
+        data:  { lastUsedAt: now, totalUses: { increment: 1 }, usageDate: today, usesOnDate: 1 },
+      })
+      if (!rolled.count) await sameDay()
     } catch {
       // Swallowed for the same reason the audit hook swallows: a usage counter
       // must never be the thing that fails somebody's deploy.

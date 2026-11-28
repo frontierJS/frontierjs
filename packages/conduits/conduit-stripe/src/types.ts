@@ -5,9 +5,18 @@ export interface PaymentIntent {
   object:         'payment_intent'
   amount:         number          // minor units
   currency:       string
-  status:         string          // requires_payment_method | succeeded | …
+  status:         string          // requires_payment_method | requires_capture | succeeded | canceled | …
   client_secret?: string
   metadata?:      Record<string, string>
+  /** `manual` is a card authorization: it sits in `requires_capture` until captured or cancelled. */
+  capture_method?:     'automatic' | 'automatic_async' | 'manual'
+  /** What a capture may still take; 0 once captured, cancelled or expired. */
+  amount_capturable?:  number
+  /** What was captured: less than `amount` after a partial capture, whose remainder is released. */
+  amount_received?:    number
+  latest_charge?:      string | null
+  canceled_at?:        number | null
+  cancellation_reason?: string | null
 }
 
 export interface StripeRefund {
@@ -76,6 +85,12 @@ export interface StripeCharge {
   currency:        string
   payment_intent:  string | null
   refunded:        boolean         // true once the whole amount is back
+  /** False while a manual-capture charge is only authorized; `charge.succeeded` is sent then, `charge.captured` at capture. */
+  captured?:       boolean
+  /** After a partial capture the released remainder counts in `amount_refunded` as well. */
+  amount_captured?: number
+  /** True once a dispute is opened on the charge, whatever its outcome. */
+  disputed?:       boolean
   /**
    * An id unless the request expanded it; null until Stripe attaches it, which
    * is often after `charge.succeeded`, announced by `charge.updated`.
@@ -103,6 +118,28 @@ export interface StripeBalanceTransaction {
   available_on:  number            // unix seconds
   created:       number
   fee_details:   { amount: number; currency: string; type: string; description: string | null }[]
+}
+
+/**
+ * A chargeback. On a direct charge it lives on the connected account and its
+ * events reach the Connect endpoint with `account`. `charge.dispute.closed`
+ * carries `won`, `lost` or `warning_closed`.
+ */
+export interface StripeDispute {
+  id:             string
+  object:         'dispute'
+  amount:         number          // minor units; can differ from the charge's
+  currency:       string
+  charge:         string
+  payment_intent: string | null
+  reason:         string          // fraudulent | product_not_received | general | …
+  status:         'warning_needs_response' | 'warning_under_review' | 'warning_closed' | 'needs_response' | 'under_review'
+                | 'appeal_needs_response' | 'appeal_under_review' | 'won' | 'lost' | 'prevented'
+  created:        number
+  is_charge_refundable: boolean
+  evidence_details?: { due_by: number | null; has_evidence: boolean; past_due: boolean; submission_count: number }
+  balance_transactions?: StripeBalanceTransaction[]
+  metadata?:      Record<string, string>
 }
 
 /** A v1 connected account, as far as onboarding needs it. */
@@ -163,6 +200,14 @@ export interface StripeEventObjects {
   'charge.succeeded':           StripeCharge
   'charge.updated':             StripeCharge
   'charge.refunded':            StripeCharge
+  'payment_intent.amount_capturable_updated': PaymentIntent
+  'payment_intent.canceled':    PaymentIntent
+  'charge.captured':            StripeCharge
+  'charge.dispute.created':     StripeDispute
+  'charge.dispute.updated':     StripeDispute
+  'charge.dispute.closed':      StripeDispute
+  'charge.dispute.funds_withdrawn':  StripeDispute
+  'charge.dispute.funds_reinstated': StripeDispute
 }
 
 /** Stripe's error body. `type` is the category, `code` the machine-readable reason. */

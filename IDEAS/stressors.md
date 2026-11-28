@@ -80,6 +80,8 @@ than started.
 | 48 | **Swatchbook** — a design spec-sheet builder for web designers: brand-feel axes in (playful ↔ serious, accessible ↔ luxury, airy ↔ dense), a reasoned spec of type, spacing, rhythm, restraint and color out (color seeded from the brand's own colors when it has them), previewed on real content and handed to a site builder | a theme as a ROW, compiled at slider rate onto one subtree, against a package whose themes are files; every spec line no token can carry — *a theme ships no selector* asked from outside the package; a derivation whose every output line cites the rule rows that produced it, from sources that disagree; a font catalog no tenant owns, loaded live under CSP; one record rendered as an `@frontierjs/css` theme and three portable formats, and read back in | `@frontierjs/css` (themes, `--density`, `--measure`) · `stored-templates.md` · `conflict-as-data.md` · `bearer-access.md` · #16 · #28 · #45 |
 | 49 | **Anvil** (codename, provisional) — a self-hosted git forge after Forgejo: repositories over smart HTTP, a code browser, issues, pull requests with review, and Actions; the forge Basecamp deploys from | a push as a write the database never made, announced once; a gate enforced at a raw route a git client speaks, past the service pipeline; a multi-GB pack streamed through a request body; a review comment anchored to a line a force-push moved; a merge allowed only when a check, an approval and its approver say so; an API shape `tea` and Basecamp's `IGit` already fixed | `packages/basecamp/docs/providers.md` § `git` · `git-deploy.md` · [`FJS-D884`](../DECISIONS.md#fjs-d884) · `inbound-email.md` · `app-peering.md` · `markdown-kit.md` · #8 · #19 · #32 · #37 |
 | 50 | **Mechanic generator** (codename gameplay) — prompts for inventing board games: a balanced draw of mechanics by the role each plays (a small core plus structural fills), a theme tied to one mechanic and a hard constraint, with lock and reroll, written up by a model, and a playtest log that grades the draw | a reference catalog no tenant owns, read by every user; weighted tags and a tension table on a many-to-many, queried at slider rate; a model call whose structured result is refused when one of four named parts is missing (the second app on FJS-4171); per-seat playtest rows aggregated into seat win rate and pair outcomes, shown beside the draw and never fed back into it (2.3 = A; FJS-4413, 4430, 4431 fixed); third-party data terms (BGG's no-AI clause) kept out of the seed by a test | `mechanic-generator.md` · #45 · #46 |
+| 51 | **Courier** (codename, provisional) — an email client: IMAP accounts synced into Litestone, threaded conversations, full-text search, a reader that renders hostile HTML safely, and compose and send through the account's own submission server | a message with no stable key, addressed by `(folder, UIDVALIDITY, UID)` and moved by the server under the client (the first mail to test `FJS-D2071`'s mirror keyed on the row's own `id`); a poller and a held connection in a plugin's `work()` that must survive a restart and a `UIDVALIDITY` change; write-back queued and replayed against message identity, never a stale UID; threads joined and merged by Message-ID rather than by a subject; sender-controlled HTML shown with no script, no network and no second pass over the sanitizer's output; attachments past a 256 KB request body; a JMAP door the gates read, so the run is graded black-box | `mail-client.md` · `packages/junction/src/mail/smtp.ts` · `conduit-gmail` · `conduit-microsoft` · `HtmlFrame.mesa` · `inbound-email.md` · `client-mailroom.md` · #23 · #40 · #43 |
+| 52 | **Keepfall** (codename, provisional) — a daily tower defense the public internet plays: one field and one list of waves a day, the same for everyone, played alone with no account until the keep falls, then a percentile among the day's players and a line to paste | one pure rules module the browser plays and the server re-runs to grade, in two JavaScript engines that must agree bit for bit; a score that is a write the server takes on nobody's word, whose validity costs CPU to decide; a principal with no account allowed one official write a day, declared on the model; a read allowed only to a reader who has written, or once the day is past; a prerendered `site/` island that still plays with its own `api/` stopped; a canvas in Mesa redrawn by a loop a headless drive gets no frames from | `crowd-tower-defense.md` · `bearer-access.md` · `example/api/src/domain/shop/cart-grant.ts` · #38 · #46 · #28 |
 
 **#29–#40 are Phase 2** — a gap scan, none started, in § Phase 2 below the
 entries.
@@ -1822,6 +1824,91 @@ the runner and its cancel empties the process tree. Last, Basecamp's
 `ForgejoGit`, pointed at Anvil, lists its repositories in `/git-activity/`, and
 a push to Anvil releases a Basecamp app through the Receiver's Forgejo HMAC.
 
+### 51. Courier — a message the server may move, and a body the sender wrote
+
+*Added 2026-11-27 at the owner's request: an email client, to see what the
+stack does with mail it does not control, and the second long-horizon run
+after #44: one agent, from an empty scaffold to a running prototype. The
+research is `mail-client.md`; its plan is `fjs-prototypes/courier/PLAN.md`.
+The codename is provisional.*
+
+**The product.** A person adds an account, and Courier syncs its folders over
+IMAP into the database, threads the messages, searches them, renders a message
+safely and sends from the account's own submission server. It speaks a subset
+of JMAP, which is the door the gates read. Gmail and Microsoft need XOAUTH2,
+so they wait until after the run.
+
+**Why it is not #23 or #40.** Quo sat beside the carrier and Newsletter sent to
+a list. Here the stack is the receiving half, and the other party is a server
+that renumbers, moves and expunges under the client and a sender who writes the
+HTML. What breaks first, each one sourced in `mail-client.md`:
+
+- **A key that does not last.** A placement is `(folder, UIDVALIDITY, UID)`
+  and a message is an OBJECTID, `X-GM-MSGID` or a header hash. `FJS-D2071`
+  ruled a mirror may key on the row's own `id`; this is its first hard caller.
+- **A connection with a lifecycle.** IDLE re-issued inside 29 minutes, one
+  connection per watched folder, a reconnect `imapflow` does not do for itself,
+  all in a plugin's `work()`.
+- **Write-back that names a message.** A queued flag or move replayed after the
+  UIDs changed (K-9 #823) is the bug the plan has to make unwritable.
+- **A thread that merges.** A message naming two threads joins them in one
+  transaction; the systems surveyed disagree on every other case.
+- **A frame that is the whole defense.** `HtmlFrame.mesa` grants no token and
+  cannot report its height; no sanitizer or image proxy exists in any package.
+
+**Ideas taken from the others**: the run shape is #44's — Phase 0 built by a
+session that is not the one measured, one black-box gate per phase frozen at
+the tag `run-start`, one session per phase, a fresh-context verifier at each
+phase end, the framework tree read-only with every gap filed as a row.
+
+**Gradable**: Dovecot in Docker syncs a folder, survives a `UIDVALIDITY` change
+and answers the QRESYNC and the plain-UID path; GreenMail answers only the
+second. A queued move still lands after the server renumbered. MimeKit's
+compliance corpus parses with nothing thrown. A hostile corpus built from the
+Email Privacy Tester's list, opened in Chromium and Firefox, reaches no canary.
+A sent message is graded at a Mailpit sink, on its raw bytes.
+
+### 52. Keepfall — a score the server takes on nobody's word
+
+*Added 2026-11-27 at the owner's request: a tower defense the public internet
+can join, meant to be fun and to be talked about. The research is
+`crowd-tower-defense.md`; its plan is `fjs-prototypes/keepfall/PLAN.md`. The
+owner ruled the daily solo form first, with the live forms kept for expansion.
+The codename is provisional.*
+
+**The product.** Each day has one field and one list of waves, the same for
+everyone. A visitor taps once, with no account, and places pieces between
+waves; the pieces are walls and towers both, so the maze is the defense. The
+run ends when the keep falls. The page then shows how long they held, their
+percentile among the day's players and a line to paste.
+
+**Why it is not #38 or #46.** The quiz is three hundred sockets and one clock,
+and Five to Nine has no server at all. Here the rules run twice, in the
+visitor's browser and again on the server, and the server's answer is the only
+one stored. What breaks first, each one sourced in `crowd-tower-defense.md`:
+
+- **Two engines that must agree.** The browser is V8 or SpiderMonkey and Bun
+  is JavaScriptCore. One project measured 1.5% of runs ending differently
+  until every inexact `Math` call was gone.
+- **A write that costs CPU to accept.** `runs.finish` re-runs the whole input
+  list, so the verifier is a door a stranger can lean on.
+- **One official run a day for a principal with no account**, declared on the
+  model and not in a hook (Invariant 6). The quiz's Q2 is the same principal.
+- **A read that depends on a write.** Today's crowd is shown to a player who
+  has a run today, and to anyone once the day is past.
+- **A site that outlives its API.** The day is derived in `shared/`, so the
+  prerendered page plays with the API stopped and only the crowd goes missing.
+
+**Ideas taken from the others**: #46's engine as a pure module with a solver
+beside it, here four bots that tune the game before a pixel is drawn; #38's
+bot clients as the drive.
+
+**Gradable**: 100 seeded runs hash the same in Bun, Chromium and Firefox. The
+bots' median holds come out in order of skill over 30 days. 300 bot visitors
+finish inside ten seconds and the histogram equals the one computed offline. A
+forged score, an oversized input list, a second official run and a day not yet
+open are each refused by name.
+
 ## Phase 2 — the gap scan
 
 *Added 2026-10-09. Twelve products whose first break has no mention in Phase 1,
@@ -2035,6 +2122,33 @@ removed, the app boots and every surface still lists.
 - **Ride-hail dispatch.** Split money is #11, a burst broadcast #38, a device
   principal #39, and an offer that expires is #30's hold.
 - **An online store.** #11, #30 and #34 between them.
+- **Video conferencing.** The half that questions this framework is built:
+  KOS meetings (`~/code/KOBAMI/kos`, `web/src/lib/rtc.js`,
+  `api/src/services/signals.service.ts`, `db/schema.lite` § 14) relay WebRTC
+  signaling as `Signal` rows broadcast per recipient, with a poll fallback, and
+  admit link holders without an account through a `meetingId` claim. The other
+  half is a media server (an SFU for rooms past about six, recording,
+  transcription), which is a runtime this framework does not claim.
+
+## Gaps with no stressor yet
+
+*Added 2026-11-27, from asking which of the hardest product shapes nothing above
+covers. A read, not a run. The first three are candidates; the fourth is the
+exclusion above, kept here so the four are read together.*
+
+- **Concurrent text merge (CRDT or OT).** #4 Notion leaves the text merge out on
+  purpose and Figma is excluded, so nothing has two people editing one value
+  at once. Likely first break: a write that is an operation on a value rather
+  than the value, against patch semantics that replace a field (Invariant 9).
+- **A formula engine.** The Airtable exclusion covers a tenant's schema, not a
+  cell computed from other cells and recomputed in dependency order on every
+  write. #20 Dragonfly is the nearest grid. Likely first break: a column whose
+  value is derived from other rows, with cycles refused.
+- **Payroll and tax.** #7, #11 and #32 cover the money; nothing covers rules
+  that change by jurisdiction and effective date. Likely first break: rerunning
+  a past period under the rule in force then, not the rule in force now.
+- **Video conferencing.** See above: the signaling half is KOS; the media half is
+  out of scope.
 
 ---
 

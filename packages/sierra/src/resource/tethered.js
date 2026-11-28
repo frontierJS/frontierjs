@@ -234,7 +234,10 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
     try {
       const query = requested()
       if (composed) {
-        const directives = extent == null ? currentDirectives() : { ...currentDirectives(), limit: extent }
+        // A window past the page is asked a page at a time: junction refuses a
+        // `$limit` above its paginate.max with a 400 rather than clamping it.
+        const page = (want) => (pageSize == null ? want : Math.min(want, pageSize))
+        const directives = extent == null ? currentDirectives() : { ...currentDirectives(), limit: page(extent) }
         // Silence falls to `load()`, the one owner of the device and the list
         // cache: `composed` is a word about the response envelope, and without
         // this it also opted the screen out of offline (FJS-1281). Offline the
@@ -254,13 +257,14 @@ export function createTethered(resource, tetheredQuery, opts = {}) {
         if (stamp !== issued) return
         let data = res?.data ?? []
         if (extent == null && typeof res?.limit === 'number') pageSize = res.limit
-        // The server clamps a limit to its page cap, so a window past it comes
-        // back one page long; the rest is walked by cursor. Rows are set once,
-        // at the end, so a screen never reads the first page of a window it is
-        // re-asking.
+        // Rows are set once, at the end, so a screen never reads the first page
+        // of a window it is re-asking.
         const first = res
-        while (extent != null && data.length < extent && res?.hasMore === true && typeof res.endCursor === 'string') {
-          res = await resource.find(query, { ...directives, limit: extent - data.length, after: res.endCursor })
+        // Junction offers a cursor only on an ordered list; one that is not
+        // ordered is walked by offset.
+        while (extent != null && data.length < extent && res?.hasMore === true) {
+          const next = typeof res.endCursor === 'string' ? { after: res.endCursor } : { offset: data.length }
+          res = await resource.find(query, { ...directives, limit: page(extent - data.length), ...next })
           if (stamp !== issued) return
           if (!res?.data?.length) break
           data = [...data, ...res.data]

@@ -167,6 +167,19 @@ describe('a broadcast is graded per recipient', () => {
       expect(owner.sent()).toEqual([...onlyKey, ...onlyKey])
     })
 
+    test('a row past its @@expires window still has its removal sent (FJS-4679)', async () => {
+      // A suppressed removal strands the row in every store already holding it.
+      const manager = createChannelManager()
+      const owner   = subscriber(manager, 'orders', { id: 'u-owner' })
+      const { db }  = boundary((p, row) => (p?.id === row.userId ? row : null))
+      const closed  = { ...db, $inWindow: () => false }
+
+      await manager.announce('orders removed', ERASED, ctxFor(closed), () => manager.channel('orders'))
+      await manager.announce('orders patched', ERASED, ctxFor(closed), () => manager.channel('orders'))
+
+      expect(owner.sent()).toEqual(onlyKey)
+    })
+
     test('a composite key goes whole, from $primaryKey', async () => {
       const manager = createChannelManager()
       const owner   = subscriber(manager, 'orders', { id: 'u-owner' })
@@ -523,5 +536,57 @@ describe('the cohort key is the principal value, not the object', () => {
     expect(reached).not.toContain('anon')
     // One verdict, one encoding, three sockets.
     expect(graded?.length).toBe(1)
+  })
+})
+
+// `FJS-4670`. A marketplace's order is `@@tenant(none)` and read by its buyer on
+// `auth().id` and its seller on `auth().shopId`, the tenancy claim — which the
+// app's `membershipClaim` resolves off a header per REQUEST. A broadcast has no
+// request, so on the fixed `orders` channel the buyer was sent the row and the
+// seller of the shop it was placed in was sent nothing. Per FJS-749 the socket
+// does not state its tenant: the connection is joined to a channel naming the
+// shop, and `channels({ claims })` verifies the membership for that channel.
+describe('a seller is told of an order on their own shop (FJS-4670)', () => {
+  const ORDER  = { id: 'ord-1', shopId: 'shop-01', buyerId: 'buyer-usd', total: 4194 }
+  const MEMBER: Record<string, string[]> = { 'seller-01': ['shop-01'], 'seller-02': ['shop-02'] }
+  const decide = (p: any, row: any) =>
+    p && (row.buyerId === p.id || (p.shopId != null && row.shopId === p.shopId)) ? row : null
+  const shopClaim = (name: string, conn: any) => {
+    const shopId = name.startsWith('shop:') ? name.slice('shop:'.length) : null
+    return shopId && MEMBER[conn.user?.id]?.includes(shopId) ? { shopId } : null
+  }
+  const created = (s: ReturnType<typeof subscriber>) =>
+    s.frames.map(f => JSON.parse(f)).filter((f: any) => f.event === 'orders created')
+
+  test('with no channel claims, the buyer is sent the order and its seller is not', async () => {
+    const manager = createChannelManager()
+    const buyer   = subscriber(manager, 'orders', { id: 'buyer-usd' })
+    const seller  = subscriber(manager, 'orders', { id: 'seller-01' })
+    const { db }  = boundary(decide)
+
+    await manager.announce('orders created', ORDER, ctxFor(db), () => manager.channel('orders'))
+
+    expect(created(buyer).length).toBe(1)
+    expect(created(seller).length).toBe(0)
+  })
+
+  test('a connection joined to its shop channel is graded under that shop on the fixed one', async () => {
+    const manager  = createChannelManager(undefined, shopClaim as never)
+    const buyer    = subscriber(manager, 'orders', { id: 'buyer-usd' })
+    const seller   = subscriber(manager, 'orders', { id: 'seller-01' })
+    manager.channel('shop:shop-01').join(seller.conn as never)
+    const stranger = subscriber(manager, 'orders', { id: 'seller-02' })
+    manager.channel('shop:shop-02').join(stranger.conn as never)
+    // A socket that joined a shop it is no member of is refused the claim.
+    const intruder = subscriber(manager, 'orders', { id: 'seller-02' }, 'intruder')
+    manager.channel('shop:shop-01').join(intruder.conn as never)
+    const { db }   = boundary(decide)
+
+    await manager.announce('orders created', ORDER, ctxFor(db), () => manager.channel('orders'))
+
+    expect(created(buyer).length).toBe(1)
+    expect(created(seller).map((f: any) => f.data.id)).toEqual(['ord-1'])
+    expect(created(stranger).length).toBe(0)
+    expect(created(intruder).length).toBe(0)
   })
 })

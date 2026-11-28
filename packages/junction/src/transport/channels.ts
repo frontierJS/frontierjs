@@ -34,9 +34,9 @@
 
 import { DEV_ENV }            from '@frontierjs/toolbelt/devline'
 import { createPresenceTracker } from './presence.ts'
-import { AUTO_EVENT_MAP, REMOVAL_EVENTS, isRemovalEvent, markAnnounceHook } from '../core/events.ts'
+import { AUTO_EVENT_MAP, isRemovalEvent, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
-import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders, resolverClaimsFor, PRINCIPAL_RESOLVER, type PrincipalSetting } from '../core/litestone.ts'
+import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders, describedOf, resolverClaimsFor, PRINCIPAL_RESOLVER, type PrincipalSetting } from '../core/litestone.ts'
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb, callSlots } from '../core/context.ts'
 import { serviceAccessor, channelsOf, isStreamMethod } from '../core/service.ts'
 import { columnsUnmoved }       from '../core/write-narrowing.ts'
@@ -647,7 +647,7 @@ export async function gradeRecipients(
   // that already holds it, with nothing that could ever correct it — worse than
   // never having graded. `gate` mode names no row, so there is nothing to ask.
   const removalsOnly = mode === 'row' && !!src.removalsOnly
-  if (mode === 'row' && !removalsOnly && !REMOVAL_EVENTS.has(event) && '$inWindow' in db &&
+  if (mode === 'row' && !removalsOnly && !isRemovalEvent(event) && '$inWindow' in db &&
       typeof db.$inWindow === 'function' && !db.$inWindow(accessor, payload)) return []
 
   if (mode === 'row' && db.$readGrading(accessor) === 'open') return removalsOnly ? [] : null
@@ -2248,6 +2248,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
     // test-mounted app also runs (`ready-hooks` is needsHost).
     boot(app: App): void {
       reportAnnounceReach(app)
+      reportHeaderTenant(app, opts.claims)
 
       // The root client's tap hears every write once its transaction commits,
       // whichever flavor made it.
@@ -2314,6 +2315,26 @@ function reportAnnounceReach(app: App): void {
     `[Junction] channels: ${inProcess.join(', ')} announce inProcess, so another process's writes ` +
     `reach no socket here — a replica or worker needs \`announce crossProcess\`, ` +
     `and one process meant states \`announce inProcess\``
+  )
+}
+
+// ─── A tenant named by a header ───────────────────────────────────────────
+
+/**
+ * A broadcast is graded with no request behind it, so a claim read off
+ * `header(...)` answers nothing for any recipient, and a frame whose rule needs
+ * it is refused with nothing logged (`FJS-4683`). What a socket holds in a channel
+ * is `channels({ claims })`'s to state; an app that states it is not reported.
+ */
+function reportHeaderTenant(app: App, claims: ChannelClaimsFn | undefined): void {
+  if (claims) return
+  const principal = (app as unknown as Record<symbol, PrincipalSetting | undefined>)[PRINCIPAL_RESOLVER]
+  const headers = describedOf(principal).flatMap(r => r.described.flatMap(d => d.headers ?? []))
+  if (headers.length === 0) return
+  console.warn(
+    `[Junction] channels: a claim is read from the ${headers.join(', ')} header, which no broadcast ` +
+    `carries, so every socket is graded without it and a frame whose rule needs it is refused. ` +
+    `State what a socket holds in each channel with channels({ claims }).`
   )
 }
 

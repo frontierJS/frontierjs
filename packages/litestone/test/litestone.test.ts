@@ -5232,6 +5232,22 @@ describe('upsertMany', () => {
     db.$close()
   })
 
+  test('a declared transform runs before the format it sits beside (FJS-4680)', async () => {
+    const db = await makeDb(`
+      model Contact {
+        id    Int @id
+        email String @email @trim @lower
+        site  String @url @trim
+      }
+    `, 'transform-before-format')
+    await db.contact.create({ data: { id: 1, email: ' PROBE-B@Example.test ', site: '  https://example.test/a  ' } })
+    const c = await db.contact.findUnique({ where: { id: 1 } })
+    expect(c.email).toBe('probe-b@example.test')
+    expect(c.site).toBe('https://example.test/a')
+    await expect(db.contact.create({ data: { id: 2, email: ' nope ', site: 'https://example.test' } })).rejects.toThrow()
+    db.$close()
+  })
+
   test('validation fires on every row — throws on invalid', async () => {
     const db = await makeDb(schema, 'upsertmany-validation')
     await expect(

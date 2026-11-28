@@ -305,6 +305,30 @@ describe('the moves a row may make', () => {
     }
   })
 
+  // The page cannot read api/src/services, so it drew Save and Delete on a
+  // service that offered neither, and both answered 405 on click (`FJS-4666`).
+  // Each button sits under the resource's own offers(op); asked of a service
+  // whose `methods:` is find, get, create, neither condition holds.
+  test('a detail page draws Save and Delete only where the service offers patch and remove', () => {
+    const declared = ['find', 'get', 'create']
+    const orders = { offers: (op) => declared.includes(op) }
+    for (const [what, source] of pages.filter(([w]) => /edit|detail/.test(w))) {
+      const actions = source.match(/\{#snippet actions\(\)\}([\s\S]*?)\{\/snippet\}\s*<\/Order>/)?.[1] ?? ''
+      const guard = (button) => {
+        const at = actions.indexOf(button)
+        const open = [...actions.slice(0, at).matchAll(/\{#if ([^}]+)\}/g)].at(-1)
+        const closed = open && actions.slice(open.index, at).includes('{/if}')
+        return open && !closed ? open[1] : null
+      }
+      const save = guard('<Button type="submit">')
+      const del  = guard('<ConfirmationPopover')
+      expect(save, `${what} draws Save unguarded`).toBe("orders.offers('patch')")
+      expect(del,  `${what} draws Delete unguarded`).toBe("orders.offers('remove')")
+      for (const cond of [save, del])
+        expect(new Function('orders', `return ${cond}`)(orders), `${what}: ${cond}`).toBe(false)
+    }
+  })
+
   test('a detail page with no moves draws no empty cluster', () => {
     for (const [what, source] of pages.filter(([w]) => /edit|detail/.test(w))) {
       expect(source, what).toContain('{#if record && movesOf(record).length}')

@@ -158,14 +158,18 @@ The plan's budget of **eight models** is measured against that 38, not invented.
 
 ## The whole corpus
 
-1,537 models across eight applications and four front-ends, 2,929 recorded
-constructs. Every one parses, builds and re-boots with zero drift.
+3,053 models across eighteen sources and five front-ends, 6,996 recorded
+constructs, every target re-read from upstream on 2026-11-27. Every one parses,
+types, builds and re-boots with zero drift. Each header names the upstream
+commit it was read at, so a diff says whether the importer moved or the source
+did.
 
 The per-class table below is from the seven-application run of 2026-08-29 and
 does not yet include `hrms`, whose classes are broken out in its own section
-above. `bun test/fixtures/corpus/fetch.mjs` with no argument rewrites `gaps.json`
-over every target — **naming one target rewrites the file as if the others did
-not exist**, which is worth knowing before reading a total off it.
+above, nor the 2026-11-27 additions, which have their own section below. The
+counts inside the dated sections are as of their date.
+`fetch.mjs` naming one target replaces that target's rows in `gaps.json` and
+keeps the rest.
 
 | Class | Count | Where |
 | --- | --- | --- |
@@ -195,6 +199,60 @@ did not report it at all. Keys and key references are exempt or the report is
 unreadable: discourse holds 458 bigint columns and 124 are reported; lago holds
 67 and 64 are, because lago declares its keys as `uuid` and its VALUES as
 bigint — 61 of them `*_amount_cents`, which is money.
+
+## The textbook samples, and three more applications, 2026-11-27
+
+Ten sources added at once, chosen to be the first thing an adopter points
+`litestone import` at: the sample databases every ORM tutorial is written
+against, and three permissive applications. 1,395 models; every one parses,
+types, builds and re-boots with zero drift.
+
+| Target | Reader | Models | What it brought |
+| --- | --- | --- | --- |
+| `chinook` | introspect | 11 | the only source that is a SQLite database — `fetch.mjs` runs the script and reads it through the adoption door |
+| `sakila` | sql (MySQL) | 16 | the committed MySQL source — backticks, inline `KEY`, `ENGINE=`, a `FULLTEXT` key |
+| `pagila` | sql | 16 | `CREATE DOMAIN`, a cast enum default, `payment` split into 55 partitions |
+| `employees` | sql (MySQL) | 6 | uppercase types, composite keys over dates — fetched, CC BY-SA |
+| `northwind` | sql | 14 | nothing — zero recorded constructs, the only such source |
+| `adventureworks` | sql | 68 | five `CREATE SCHEMA` bodies, CamelCase identifiers, psql `\copy` lines |
+| `gitlab` | sql | 1,100 | three times Discourse: 560 partial indexes, 106 partitioned tables, 90 arcs |
+| `chatwoot` | rails | 112 | `t.check_constraint` |
+| `umami` | prisma | 29 | decimal defaults under `@scale`, 224 `@db.` native types |
+| `hoppscotch` | prisma | 23 | — |
+
+What failed before the readers were fixed, each now graded in `src/import/tiers.js`:
+
+| | |
+| --- | --- |
+| **a decimal default under `@scale`** | `@scale(2)` stores hundredths, so `DEFAULT 4.99` is `@default(499)`. All three readers that emit `@scale` wrote `4.99`, which the parser refuses — `src/import/scale.js` says it once. A default with more places than the scale keeps is `default-over-scale`, dropped rather than rounded |
+| **AdventureWorks read 0 models** | tables written inside `CREATE SCHEMA x CREATE TABLE …`, `name(` with no space, and psql meta-commands each hid the rest of the statement |
+| **MySQL detection** | Employees writes no backticks and no `ENGINE`, and uppercase `INT`/`VARCHAR` were unknown types; inline keys were read only once a dump was called MySQL |
+| **a relation named for its own column** | `emp_no` → `empNo` for the column and `empNo` again for the relation. The relation takes the target's name instead, `field-name-collision` |
+| **checks SQLite cannot build** | GitLab's `char_length` and `num_nonnulls` are restated (`length`, a sum of `IS NOT NULL`); a regex match, `@>` or `ILIKE` is `check-postgres-operator` and dropped. Rails' `t.check_constraint` had been read as a column |
+| **an index differing only in direction or predicate** | the name is derived from the columns (`docs/schema.md` § indexes), so GitLab's pairs collided; the plain one is kept, `index-collapsed` |
+| **partitions** | Pagila's 55 `payment_p…` tables read as 55 models; a partition is storage, folded into its parent as `partition-folded` |
+| **`[x]`-quoted index columns** | `src/core/migrate.js` read Chinook's `[ArtistId]` as an expression, so introspect then drift. A core defect, found only because one source arrived as a database |
+
+WideWorldImporters is T-SQL only and needs a reader nobody has written. Spider
+and BIRD were not tried: their schemas are many small databases, CC BY-SA.
+
+## The August six, re-read, 2026-11-27
+
+Re-reading each August source at its August commit with today's readers
+differed from the committed fixture in every one. The fixtures had stopped
+describing what `litestone import` emits: `@big` on supplied bigints
+(`FJS-643`), partial unique indexes now carried, enum and decimal defaults
+written bare, Lago's default partition folded, and `LlmQuotas` singularized.
+
+Moving to upstream head, the six grew from 1,386 to 1,500 models: Lago 139 → 177,
+Discourse 356 → 407, Trigger.dev 81 → 95, Mastodon 116 → 123, ERPNext 534 → 537,
+HRMS 160 → 161. The new upstream found one defect, and probing it found two more:
+
+| | |
+| --- | --- |
+| **an array `.lite` cannot type** | Trigger.dev's `DateTime[]` and Lago's `timestamp[]` were emitted as written and the parser refused the schema. Now `Json`, the same JSON text, graded `lost` as `array-element-type` (`src/import/array.js`) |
+| **a last statement with no newline** | the SQL reader split on `;` plus newline, so a script's final table, or a one-line file, read as nothing |
+| **a column-level `PRIMARY KEY` or `REFERENCES`** | dropped with nothing recorded. A surrogate `id` was invented and the relation lost. A dump keys every table in a later `ALTER TABLE`, which is why no fixture found it. Gitlab gained one `onDelete: Cascade` from it |
 
 ## ERPNext — and a declared answer to the `@@arc` question, 2026-08-29
 
@@ -279,8 +337,18 @@ An absent fixture is **skipped by name**, never silently not run.
 | `lago` | AGPL-3.0 | **yes** |
 | `erpnext` | GPL-3.0 | **yes** |
 | `hrms` | GPL-3.0 | **yes** — same upstream org and licence as `erpnext` |
+| `chinook` | MIT | **yes** |
+| `sakila` | BSD-2-Clause (jOOQ's packaging) | **yes** |
+| `pagila` | PostgreSQL | **yes** |
+| `northwind` | Ms-PL | **yes** |
+| `adventureworks` | MIT (the Postgres port) | **yes** |
+| `gitlab` | MIT outside `ee/` — `structure.sql` is outside it | no — fetched for **size**, not licence: 1,100 models, near 900 KB |
+| `chatwoot` | MIT outside `enterprise/` — `schema.rb` is outside it | **yes** |
+| `umami` | MIT | **yes** |
+| `hoppscotch` | MIT | **yes** |
 | `calcom` | AGPL-3.0, with a commercial `/ee` | no — fetched |
 | `documenso` | AGPL-3.0 | no — fetched |
+| `employees` | CC BY-SA 3.0 — share-alike | no — fetched |
 | `maidtech` | private — a legacy FJS app of this repository's own | no — **local only, and not in the tree either**: set `FRONTIER_CORPUS_LOCAL` to the directory holding it. `fetch.mjs` has no entry and nobody else can regenerate it |
 
 **A LOCAL fixture is read from `$FRONTIER_CORPUS_LOCAL` and must not sit in the
@@ -307,7 +375,11 @@ files. Nothing about the test changes either way — an absent fixture is skippe
 by name and `fetch.mjs` regenerates it.
 
 Adding a target is an entry in `fetch.mjs`'s `TARGETS` and a name in
-`corpus.test.ts`. Check the licence first.
+`tiers.js`, and a fetched one a line in `.gitignore` and its reason in
+`scripts/ci-allowances.json` § `generatedIgnored`, or the hygiene phase fails.
+Check the licence first, and fetch rather than commit anything near a megabyte.
+`erpnext`, at 622 KB, stays committed: `test/schema-layers.test.ts` anchors the
+complexity score on it, and a fetched anchor would skip in CI.
 
 See `IDEAS/proving-grounds.md` § The corpus for the argument. The product form of
 the converter is no longer hypothetical: `litestone import <path> --from

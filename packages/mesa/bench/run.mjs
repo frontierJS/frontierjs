@@ -96,6 +96,7 @@ const OPS = [
   ['create10k',     [],       '#runlots'],
   ['append1k',      ['#run'], '#add'],
   ['clear',         ['#run'], '#clear',           4],
+  ['clear10k',      ['#runlots'], '#clear',       4],
   ['reverse',       ['#run'], '#reverse'],
   ['shuffle',       ['#run'], '#shuffle'],
   ['rotate',        ['#run'], '#rotate',          4],

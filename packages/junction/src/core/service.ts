@@ -2312,6 +2312,32 @@ export function isMethodAllowed(svc: object, method: string, transport?: Transpo
   return !allowed || allowed.has(method) || (method === DECLARED_FIELDS && allowed.has('find'))
 }
 
+/**
+ * The methods a caller can reach on the wire -- HTTP or the socket -- in the
+ * order `describe()` lists them. What `/manifest` and `GET /_services`
+ * advertise; a verb this omits answers 405. A generated client calls whatever
+ * it is told exists, so advertising a refused verb is worse than silence.
+ */
+export function offeredMethods(svc: Service): string[] {
+  return svc.describe().methods.filter(m => isMethodAllowed(svc, m, 'http') || isMethodAllowed(svc, m, 'websocket'))
+}
+
+/** One row of `GET /_services`: which services exist and what each offers. */
+export interface ServiceOffer {
+  name:    string
+  methods: string[]
+}
+
+/**
+ * Every service and the methods it offers, for a caller that cannot read the
+ * services directory -- a browser deciding whether to draw Save, or a picker
+ * deciding whether to ask (`FJS-4666`, `FJS-4667`). Not filtered by caller:
+ * whether THIS caller may make the call is the gate's answer, not this one's.
+ */
+export function serviceOffers(services: { values(): Service[] }): ServiceOffer[] {
+  return services.values().map(svc => ({ name: svc.describe().name, methods: offeredMethods(svc) }))
+}
+
 /** The callable method names, policy applied. Ordered as CRUD then custom. */
 export function allowedMethodNames(svc: object, transport?: Transport): string[] {
   return serviceMethodNames(svc).filter(m => isMethodAllowed(svc, m, transport))

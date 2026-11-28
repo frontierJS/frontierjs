@@ -36,6 +36,25 @@
 // `async_payment_succeeded` or `async_payment_failed` with the intent's
 // `succeeded` or `payment_failed`, as the bank answers days later at Stripe.
 //
+// Authorization: an intent or session made with `capture_method=manual`
+// confirms or completes into `requires_capture` with an uncaptured charge
+// (`charge.succeeded` and `payment_intent.amount_capturable_updated`; the
+// session is `paid` and names its intent). `POST …/capture` takes all or
+// `amount_to_capture` of it and releases the rest (`charge.captured`, then
+// `payment_intent.succeeded`); `POST …/cancel` releases it
+// (`payment_intent.canceled`). Capturing more than is capturable is
+// `amount_too_large`; capturing or cancelling an intent in the wrong status
+// is `payment_intent_unexpected_state`. A held session offering
+// `us_bank_account` is refused at creation, as a bank debit cannot be held.
+//
+// Disputes: `/_sink/charge/<pi>/dispute` opens one on a captured charge
+// (`charge.dispute.created`, then `charge.dispute.funds_withdrawn`);
+// `/_sink/dispute/<du>/respond` submits evidence (`charge.dispute.updated`,
+// `under_review`); `/_sink/dispute/<du>/won` or `/lost` closes it
+// (`charge.dispute.closed`, and `funds_reinstated` after a win). `?reason=`
+// and `?amount=` shape the opening; the defaults are `fraudulent` and the
+// captured amount.
+//
 // A succeeding intent makes one charge, sends `charge.succeeded` naming its
 // balance transaction by id, and `GET /v1/balance_transactions/<txn>` reads it
 // on the account the charge was made on. The fees are the sink's: a card 2.9%
@@ -67,7 +86,11 @@ interface Intent {
   id: string; object: 'payment_intent'; amount: number; currency: string
   status: string; client_secret: string; metadata: Record<string, string>; refunded: number
   account: string | null; latest_charge?: string | null
+  capture_method: 'automatic' | 'manual'; amount_capturable: number; amount_received: number
+  canceled_at?: number | null; cancellation_reason?: string | null
 }
+
+const CANCELABLE = ['requires_payment_method', 'requires_capture', 'requires_confirmation', 'requires_action', 'processing']
 
 const DUE = ['business_profile.mcc', 'business_profile.url', 'business_type', 'external_account', 'representative.first_name', 'tos_acceptance.date']
 
@@ -108,6 +131,7 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
   const accounts = new Map<string, Record<string, any>>()
   const sessions = new Map<string, Record<string, any>>()
   const charges  = new Map<string, Record<string, any>>()   // by payment intent
+  const disputes = new Map<string, Record<string, any>>()
   const balances = new Map<string, { account: string | null; body: Record<string, unknown> }>()
   const calcs   = new Map<string, { madeAt: number; body: Record<string, unknown> }>()
   const txns    = new Map<string, Record<string, unknown>>()
@@ -135,16 +159,63 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
     }
   }
 
+  // An authorized charge has no balance transaction yet: money enters the balance at capture, and only what was captured.
   function charge(intent: Intent, method: string) {
-    intent.status = 'succeeded'
-    const fee = method === 'us_bank_account' ? Math.min(500, Math.round(intent.amount * 0.008)) : Math.round(intent.amount * 0.029) + 30
-    const now = Math.floor(Date.now() / 1000), txn = id('txn')
-    const ch = { id: id('ch'), object: 'charge', amount: intent.amount, amount_refunded: 0, currency: intent.currency, payment_intent: intent.id, refunded: false, balance_transaction: txn, metadata: intent.metadata }
-    balances.set(txn, { account: intent.account, body: { id: txn, object: 'balance_transaction', amount: intent.amount, fee, net: intent.amount - fee, currency: intent.currency, status: 'pending', type: 'charge',
-      source: ch.id, available_on: now + 2 * 86_400, created: now, fee_details: [{ amount: fee, currency: intent.currency, type: 'stripe_fee', description: 'Stripe processing fees' }] } })
+    const held = intent.capture_method === 'manual'
+    const ch: Record<string, any> = { id: id('ch'), object: 'charge', amount: intent.amount, amount_refunded: 0, currency: intent.currency, payment_intent: intent.id, refunded: false,
+      captured: !held, amount_captured: held ? 0 : intent.amount, disputed: false, balance_transaction: null, metadata: intent.metadata, _method: method }
     charges.set(intent.id, ch)
     intent.latest_charge = ch.id
-    return ch
+    if (held) Object.assign(intent, { status: 'requires_capture', amount_capturable: intent.amount })
+    else settle(intent, ch, intent.amount)
+    return shownCharge(ch)
+  }
+
+  function settle(intent: Intent, ch: Record<string, any>, amount: number) {
+    const method = ch._method
+    const fee = method === 'us_bank_account' ? Math.min(500, Math.round(amount * 0.008)) : Math.round(amount * 0.029) + 30
+    const now = Math.floor(Date.now() / 1000), txn = id('txn')
+    balances.set(txn, { account: intent.account, body: { id: txn, object: 'balance_transaction', amount, fee, net: amount - fee, currency: intent.currency, status: 'pending', type: 'charge',
+      source: ch.id, available_on: now + 2 * 86_400, created: now, fee_details: [{ amount: fee, currency: intent.currency, type: 'stripe_fee', description: 'Stripe processing fees' }] } })
+    Object.assign(ch, { captured: true, amount_captured: amount, amount_refunded: intent.amount - amount, balance_transaction: txn })
+    Object.assign(intent, { status: 'succeeded', amount_capturable: 0, amount_received: amount })
+  }
+
+  const shownCharge = (ch: Record<string, any>) => { const { _method, ...shown } = ch; return shown }
+  const newIntent = (fields: Pick<Intent, 'amount' | 'currency' | 'status' | 'metadata' | 'account'> & { capture_method?: 'automatic' | 'manual' }): Intent =>
+    ({ id: id('pi'), object: 'payment_intent', client_secret: id('pi') + '_secret', refunded: 0, capture_method: 'automatic', amount_capturable: 0, amount_received: 0, ...fields })
+
+  // A paid charge's dispute: Stripe withdraws the disputed amount the moment it opens, and returns it only on a win.
+  async function disputeStep(path: string, url: URL): Promise<Response | null> {
+    const open = path.match(/^\/_sink\/charge\/([^/]+)\/dispute$/)
+    if (open) {
+      const intent = intents.get(open[1]), ch = charges.get(open[1])
+      if (!intent || !ch || !ch.captured) return json({ error: 'only a captured charge can be disputed' }, 409)
+      if (ch.disputed) return json({ error: 'the charge is already disputed' }, 409)
+      const now = Math.floor(Date.now() / 1000), amount = Number(url.searchParams.get('amount') ?? ch.amount_captured)
+      const du = { id: id('du'), object: 'dispute', amount, currency: ch.currency, charge: ch.id, payment_intent: intent.id, reason: url.searchParams.get('reason') ?? 'fraudulent',
+        status: 'needs_response', created: now, is_charge_refundable: false, evidence_details: { due_by: now + 7 * 86_400, has_evidence: false, past_due: false, submission_count: 0 },
+        balance_transactions: [{ id: id('txn'), object: 'balance_transaction', amount: -amount, fee: 1500, net: -amount - 1500, currency: ch.currency, status: 'available', type: 'adjustment', source: null, available_on: now, created: now, fee_details: [{ amount: 1500, currency: ch.currency, type: 'stripe_fee', description: 'Dispute fee' }] }],
+        metadata: {}, _account: intent.account }
+      ch.disputed = true
+      disputes.set(du.id, du)
+      const { _account, ...shown } = du
+      await deliver('charge.dispute.created', shown, _account)
+      await deliver('charge.dispute.funds_withdrawn', shown, _account)
+      return json(shown)
+    }
+    const step = path.match(/^\/_sink\/dispute\/([^/]+)\/(respond|won|lost)$/)
+    if (!step) return null
+    const du = disputes.get(step[1])
+    if (!du) return json({ error: 'no such dispute' }, 404)
+    if (['won', 'lost', 'warning_closed'].includes(du.status)) return json({ error: `the dispute is already ${du.status}` }, 409)
+    if (step[2] === 'respond') Object.assign(du, { status: 'under_review', evidence_details: { ...du.evidence_details, has_evidence: true, submission_count: du.evidence_details.submission_count + 1 } })
+    else du.status = step[2]
+    if (step[2] === 'won') { const now = Math.floor(Date.now() / 1000); du.balance_transactions.push({ id: id('txn'), object: 'balance_transaction', amount: du.amount, fee: 0, net: du.amount, currency: du.currency, status: 'available', type: 'adjustment', source: null, available_on: now, created: now, fee_details: [] }) }
+    const { _account, ...shown } = du
+    await deliver(step[2] === 'respond' ? 'charge.dispute.updated' : 'charge.dispute.closed', shown, _account)
+    if (step[2] === 'won') await deliver('charge.dispute.funds_reinstated', shown, _account)
+    return json(shown)
   }
 
   const server = Bun.serve({
@@ -164,6 +235,8 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         await deliver('account.updated', a, a.id)
         return json(a)
       }
+      const disputed = await disputeStep(path, url)
+      if (disputed) return disputed
       const paying = path.match(/^\/_sink\/checkout\/([^/]+)\/(complete|settle|fail)$/)
       if (paying) {
         const cs = sessions.get(paying[1])
@@ -175,7 +248,7 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           if (!cs.payment_method_types.includes(method)) return json({ error: `the session does not offer ${method}` }, 400)
           if (cs.status === 'complete') return json({ error: 'the session is already complete' }, 409)
           const ach = method === 'us_bank_account'
-          const intent: Intent = { id: id('pi'), object: 'payment_intent', amount: cs.amount_total, currency: String(cs.currency ?? 'usd'), status: ach ? 'processing' : 'succeeded', client_secret: id('pi') + '_secret', metadata: cs._piMetadata, refunded: 0, account: cs._account }
+          const intent = newIntent({ amount: cs.amount_total, currency: String(cs.currency ?? 'usd'), status: ach ? 'processing' : 'succeeded', metadata: cs._piMetadata, account: cs._account, capture_method: cs._captureMethod })
           intents.set(intent.id, intent)
           if (!ach) paidBy = charge(intent, method)
           Object.assign(cs, { status: 'complete', payment_status: ach ? 'unpaid' : 'paid', url: null, payment_intent: intent.id, _method: method })
@@ -185,9 +258,10 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
           if (step === 'settle') { cs.payment_status = 'paid'; paidBy = charge(intent, 'us_bank_account') }
           else { cs._method = null; intent.status = 'requires_payment_method' }
         }
-        const { _account, _method, _piMetadata, ...shown } = cs
+        const { _account, _method, _piMetadata, _captureMethod, ...shown } = cs
         const sessionIntent = intents.get(cs.payment_intent)!
-        if (paidBy) await deliver('payment_intent.succeeded', sessionIntent, _account)
+        const held = sessionIntent.status === 'requires_capture'
+        if (paidBy) await deliver(held ? 'payment_intent.amount_capturable_updated' : 'payment_intent.succeeded', sessionIntent, _account)
         if (step === 'fail') await deliver('payment_intent.payment_failed', sessionIntent, _account)
         if (paidBy) await deliver('charge.succeeded', paidBy, _account)
         await deliver(step === 'complete' ? 'checkout.session.completed' : `checkout.session.async_payment_${step === 'settle' ? 'succeeded' : 'failed'}`, shown, _account)
@@ -230,7 +304,7 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         if (!Number.isInteger(amount) || amount <= 0) answer = stripeError('invalid_request_error', 'Invalid integer: amount', 400, { code: 'parameter_invalid_integer' })
         else if (amount === 4242) answer = stripeError('card_error', 'Your card was declined.', 402, { code: 'card_declined', decline_code: 'generic_decline' })
         else {
-          const intent: Intent = { id: id('pi'), object: 'payment_intent', amount, currency: String(form.currency ?? 'usd'), status: 'requires_payment_method', client_secret: id('pi') + '_secret', metadata: (form.metadata ?? {}) as Record<string, string>, refunded: 0, account: acting }
+          const intent = newIntent({ amount, currency: String(form.currency ?? 'usd'), status: 'requires_payment_method', metadata: (form.metadata ?? {}) as Record<string, string>, account: acting, capture_method: form.capture_method === 'manual' ? 'manual' : 'automatic' })
           intents.set(intent.id, intent)
           answer = remember(200, intent)
         }
@@ -242,9 +316,42 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', 'No such payment_intent', 404)
         else {
           const ch = charge(intent, 'card')
-          await deliver('payment_intent.succeeded', intent, intent.account)
+          await deliver(intent.status === 'requires_capture' ? 'payment_intent.amount_capturable_updated' : 'payment_intent.succeeded', intent, intent.account)
           await deliver('charge.succeeded', ch, intent.account)
           answer = json(intent)
+        }
+      }
+
+      const capture = path.match(/^\/v1\/payment_intents\/([^/]+)\/capture$/)
+      if (capture && req.method === 'POST') {
+        const intent = intents.get(capture[1])
+        const asked = form.amount_to_capture === undefined ? intent?.amount_capturable ?? 0 : Number(form.amount_to_capture)
+        if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', `No such payment_intent: '${capture[1]}'`, 404, { code: 'resource_missing' })
+        else if (intent.status !== 'requires_capture')
+          answer = stripeError('invalid_request_error', `This PaymentIntent could not be captured because it has a status of ${intent.status}. Only a PaymentIntent with one of the following statuses may be captured: requires_capture.`, 400, { code: 'payment_intent_unexpected_state' })
+        else if (!Number.isInteger(asked) || asked <= 0 || asked > intent.amount_capturable)
+          answer = stripeError('invalid_request_error', `The amount to capture (${asked}) is greater than the amount capturable (${intent.amount_capturable})`, 400, { code: 'amount_too_large' })
+        else {
+          const ch = charges.get(intent.id)!
+          settle(intent, ch, asked)
+          await deliver('charge.captured', shownCharge(ch), intent.account)
+          await deliver('payment_intent.succeeded', intent, intent.account)
+          answer = remember(200, intent)
+        }
+      }
+
+      const cancel = path.match(/^\/v1\/payment_intents\/([^/]+)\/cancel$/)
+      if (cancel && req.method === 'POST') {
+        const intent = intents.get(cancel[1])
+        if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', `No such payment_intent: '${cancel[1]}'`, 404, { code: 'resource_missing' })
+        else if (!CANCELABLE.includes(intent.status))
+          answer = stripeError('invalid_request_error', `You cannot cancel this PaymentIntent because it has a status of ${intent.status}. Only a PaymentIntent with one of the following statuses may be canceled: ${CANCELABLE.join(', ')}.`, 400, { code: 'payment_intent_unexpected_state' })
+        else {
+          const ch = charges.get(intent.id)
+          if (ch && !ch.captured) Object.assign(ch, { amount_refunded: ch.amount, refunded: true })
+          Object.assign(intent, { status: 'canceled', amount_capturable: 0, canceled_at: Math.floor(Date.now() / 1000), cancellation_reason: form.cancellation_reason ?? null })
+          await deliver('payment_intent.canceled', intent, intent.account)
+          answer = remember(200, intent)
         }
       }
 
@@ -260,7 +367,9 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
         const intent = intents.get(String(form.payment_intent ?? ''))
         if (!intent || intent.account !== acting) answer = stripeError('invalid_request_error', `No such payment_intent: '${form.payment_intent}'`, 404, { code: 'resource_missing' })
         else {
-          const left  = intent.amount - intent.refunded
+          // A partial capture released the rest; only what was captured can come back.
+          const received = intent.capture_method === 'manual' ? intent.amount_received : intent.amount
+          const left  = received - intent.refunded
           const asked = form.amount === undefined ? left : Number(form.amount)
           if (!Number.isInteger(asked) || asked <= 0 || asked > left)
             answer = stripeError('invalid_request_error', `Refund amount (${asked}) is greater than unrefunded amount (${left})`, 400, { code: 'amount_too_large' })
@@ -269,8 +378,8 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
             const refund = { id: id('re'), object: 'refund', amount: asked, currency: intent.currency, payment_intent: intent.id, status: 'succeeded' }
             // The charge the intent succeeded with, so an app keying on the charge id finds it again.
             const ch = Object.assign(charges.get(intent.id) ?? { id: id('ch'), object: 'charge', amount: intent.amount, currency: intent.currency, payment_intent: intent.id, balance_transaction: null, metadata: intent.metadata },
-              { amount_refunded: intent.refunded, refunded: intent.refunded === intent.amount })
-            await deliver('charge.refunded', ch, intent.account)
+              { amount_refunded: intent.amount - received + intent.refunded, refunded: intent.refunded === received })
+            await deliver('charge.refunded', shownCharge(ch), intent.account)
             answer = remember(200, refund)
           }
         }
@@ -311,16 +420,20 @@ export function startStripeSink(opts: StripeSinkOptions = {}) {
       if (path === '/v1/checkout/sessions' && req.method === 'POST') {
         const f = form as Record<string, any>
         const items = Object.values(f.line_items ?? {}) as Record<string, any>[]
+        const held = f.payment_intent_data?.capture_method === 'manual'
+        const methods = Object.values(f.payment_method_types ?? { 0: 'card' }) as string[]
         if (f.mode !== 'payment') answer = stripeError('invalid_request_error', 'The sink speaks mode=payment only', 400)
+        else if (held && methods.includes('us_bank_account')) answer = stripeError('invalid_request_error', 'The payment method `us_bank_account` does not support manual capture', 400)
         else if (!items.length || !f.success_url) answer = stripeError('invalid_request_error', 'Missing required param: line_items or success_url', 400, { code: 'parameter_missing' })
         else {
           const total = items.reduce((t, li) => t + Number(li.price_data?.unit_amount) * Number(li.quantity ?? 1), 0)
           const cs = { id: id('cs_test'), object: 'checkout.session', mode: 'payment', status: 'open', payment_status: 'unpaid', amount_total: total, currency: items[0].price_data?.currency ?? null,
             customer: null, customer_email: f.customer_email ?? null, client_reference_id: f.client_reference_id ?? null, payment_intent: null,
-            payment_method_types: Object.values(f.payment_method_types ?? { 0: 'card' }), metadata: f.metadata ?? {}, expires_at: Number(f.expires_at ?? Math.floor(Date.now() / 1000) + 86_400), url: '', _account: acting, _piMetadata: f.payment_intent_data?.metadata ?? {} }
+            payment_method_types: methods, metadata: f.metadata ?? {}, expires_at: Number(f.expires_at ?? Math.floor(Date.now() / 1000) + 86_400), url: '', _account: acting, _piMetadata: f.payment_intent_data?.metadata ?? {},
+            _captureMethod: held ? 'manual' as const : 'automatic' as const }
           cs.url = `https://checkout.stripe.com/c/pay/${cs.id}`
           sessions.set(cs.id, cs)
-          const { _account: _a, _piMetadata: _m, ...shown } = cs
+          const { _account: _a, _piMetadata: _m, _captureMethod: _c, ...shown } = cs
           answer = remember(200, shown)
         }
       }

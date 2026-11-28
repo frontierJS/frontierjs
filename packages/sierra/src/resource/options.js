@@ -80,7 +80,7 @@ function optionsOrder(order, shown) {
  *   the through-filters and related-resource lookups, and the three caches
  *   (`_options`, `_labelWarned`, `_headWarned`) the resource also resets.
  */
-export function makeOptions({ serviceName, app, fields, throughFilters, relatedResource, _options, _labelWarned, _headWarned }) {
+export function makeOptions({ serviceName, app, fields, throughFilters, relatedResource, _options, _labelWarned, _headWarned, offered = async () => true }) {
   /**
    * What a field's picker offers, and whether that is all of it.
    *
@@ -437,72 +437,82 @@ export function makeOptions({ serviceName, app, fields, throughFilters, relatedR
     if (key && !reload && _options.has(key)) return _options.get(key)
 
     const relatedService = serviceNameFor(ref.model) ?? ref.model
-    const related        = relatedResource(relatedService, ref.model)
-    const shown          = labelField ?? related.labelField
-    const alt            = labelField ? [] : (related.labelAlt ?? [])
-    const parts          = labelField ? null : (related.labelParts ?? null)
 
-    // A guessed display column is the failure this cannot fix and can stop
-    // hiding: *Ada, Ada, Ada* down a list of people, or `1, 2, 3`, both of
-    // which look like a working picker. Only the two guessing tiers are said —
-    // `name` and `title` are right often enough that warning about them would
-    // teach everyone to skip the message. Once per field, not per call.
-    if (!labelField && !_labelWarned.has(fieldName) && WEAK_LABEL.has(related.labelSource)) {
-      _labelWarned.add(fieldName)
-      console.warn(
-        `[${serviceName}] options('${fieldName}') — ${related.labelSource === 'fallback'
-          ? `${ref.model} has no readable string column, so every option is labeled with its id`
-          : `showing ${ref.model}.${shown}, the first plain string column, which is a guess`}. ` +
-        `Declare it: @@label(<column>) on model ${ref.model}.`,
-      )
-    }
-
-    // `search` narrows on the column a person is reading — anything else would
-    // match against one string and show another. It is not the ordering
-    // question: a relation has no set to declare an order, so this list is the
-    // display column ascending.
-    const filter = {
-      ...pickFilter(rule, app ? app.user : session.user),
-      ...(query ?? {}),
-      ...(search ? searchOver(parts, shown, String(search)) : {}),
-    }
-
-    const pending = related.service
-      .getOptions(filter, directives ?? { limit, orderBy: optionsOrder(null, shown), ...populateFor(parts) })
-      .then(res => {
-        const rows = Array.isArray(res) ? res : (res?.data ?? [])
-        const opts = rows.map(row => ({
-          value: row?.[ref.field],
-          // The id is the honest last resort: a blank option is unpickable and
-          // a guessed label is worse than a number.
-          label: labelOf(row, shown, alt, parts) ?? String(row?.[ref.field]),
-        }))
-
-        // An array answer carries no envelope, so there is no total to read —
-        // reported as null rather than as the row count, which would claim the
-        // list is complete every time it is capped.
-        const total = typeof res?.total === 'number' ? res.total : null
-
-        return withUnavailable(
-          { options: opts, total, truncated: total == null ? null : total > opts.length },
-          { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt, labelParts: parts,
-            within: query ?? null },
-        )
-      })
-      .catch(err => {
-        // A picker whose rows fail to load must not take the form down with it.
-        // The field still renders, empty, and the failure is said out loud.
-        console.warn(`[${serviceName}] options('${fieldName}') failed — ${err?.message ?? err}`)
-        if (key) _options.delete(key)
-        // `error` is what separates *there are none* from *I could not ask*.
-        // Both used to answer an empty list, and a person reads an empty picker
-        // as the first one — which is how a service nobody could reach looked
-        // like a shop with no variants in it (`FJS-570`).
-        return { options: [], total: null, truncated: null, error: String(err?.message ?? err) }
-      })
-
+    // A relation whose model no service lists -- seeded rows, or a drop box a
+    // stranger writes and nobody picks from -- has no picker to fill, so it is
+    // not asked and not warned about (`FJS-4667`). `error` stays for a list
+    // that could not be read.
+    const pending = offered(relatedService, 'find').then(ok => ok
+      ? ask(relatedService)
+      : { options: [], total: 0, truncated: false })
     if (key) _options.set(key, pending)
     return pending
+
+    function ask(relatedService) {
+      const related        = relatedResource(relatedService, ref.model)
+      const shown          = labelField ?? related.labelField
+      const alt            = labelField ? [] : (related.labelAlt ?? [])
+      const parts          = labelField ? null : (related.labelParts ?? null)
+
+      // A guessed display column is the failure this cannot fix and can stop
+      // hiding: *Ada, Ada, Ada* down a list of people, or `1, 2, 3`, both of
+      // which look like a working picker. Only the two guessing tiers are said —
+      // `name` and `title` are right often enough that warning about them would
+      // teach everyone to skip the message. Once per field, not per call.
+      if (!labelField && !_labelWarned.has(fieldName) && WEAK_LABEL.has(related.labelSource)) {
+        _labelWarned.add(fieldName)
+        console.warn(
+          `[${serviceName}] options('${fieldName}') — ${related.labelSource === 'fallback'
+            ? `${ref.model} has no readable string column, so every option is labeled with its id`
+            : `showing ${ref.model}.${shown}, the first plain string column, which is a guess`}. ` +
+          `Declare it: @@label(<column>) on model ${ref.model}.`,
+        )
+      }
+
+      // `search` narrows on the column a person is reading — anything else would
+      // match against one string and show another. It is not the ordering
+      // question: a relation has no set to declare an order, so this list is the
+      // display column ascending.
+      const filter = {
+        ...pickFilter(rule, app ? app.user : session.user),
+        ...(query ?? {}),
+        ...(search ? searchOver(parts, shown, String(search)) : {}),
+      }
+
+      return related.service
+        .getOptions(filter, directives ?? { limit, orderBy: optionsOrder(null, shown), ...populateFor(parts) })
+        .then(res => {
+          const rows = Array.isArray(res) ? res : (res?.data ?? [])
+          const opts = rows.map(row => ({
+            value: row?.[ref.field],
+            // The id is the honest last resort: a blank option is unpickable and
+            // a guessed label is worse than a number.
+            label: labelOf(row, shown, alt, parts) ?? String(row?.[ref.field]),
+          }))
+
+          // An array answer carries no envelope, so there is no total to read —
+          // reported as null rather than as the row count, which would claim the
+          // list is complete every time it is capped.
+          const total = typeof res?.total === 'number' ? res.total : null
+
+          return withUnavailable(
+            { options: opts, total, truncated: total == null ? null : total > opts.length },
+            { fieldName, record, service: related.service, valueField: ref.field, labelField: shown, labelAlt: alt, labelParts: parts,
+              within: query ?? null },
+          )
+        })
+        .catch(err => {
+          // A picker whose rows fail to load must not take the form down with it.
+          // The field still renders, empty, and the failure is said out loud.
+          console.warn(`[${serviceName}] options('${fieldName}') failed — ${err?.message ?? err}`)
+          if (key) _options.delete(key)
+          // `error` is what separates *there are none* from *I could not ask*.
+          // Both used to answer an empty list, and a person reads an empty picker
+          // as the first one — which is how a service nobody could reach looked
+          // like a shop with no variants in it (`FJS-570`).
+          return { options: [], total: null, truncated: null, error: String(err?.message ?? err) }
+        })
+    }
   }
 
   return { options }

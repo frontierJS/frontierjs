@@ -24,6 +24,8 @@ import { singularize, pascal, camel, modelName } from '@frontierjs/toolbelt/infl
 import { mapIdentifiers } from '../core/ddl.js'
 import { detectPolymorphic } from './polymorphic.js'
 import { BIGINT_EMITTED, namesATable } from './wide-int.js'
+import { toMinorUnits, scaleOf } from './scale.js'
+import { carriesArray, ARRAY_ELEMENT_EMITTED } from './array.js'
 import { predicateToLite } from '../core/migrate.js'
 
 // A dump qualifies every name with its schema. Stripping only `public.` let
@@ -38,10 +40,11 @@ export function convert(src, label = 'schema') {
 
   const mysql = isMysql(src)
   const statements = split(src, mysql)
-  const enums  = new Map()
-  const tables = new Map()
+  const enums   = new Map()
+  const tables  = new Map()
+  const domains = new Map()
 
-  for (const st of statements) readStatement(st, enums, tables, gap, mysql)
+  for (const st of statements) readStatement(st, enums, tables, gap, mysql, domains)
 
   const out = []
   for (const [name, values] of enums) out.push(`enum ${pascal(name)} {`, ...values.map(v => '  ' + enumValue(v)), '}', '')
@@ -62,13 +65,34 @@ function split(src, mysql) {
   if (mysql) src = src.replace(/`/g, '').replace(/^\/\*.*\*\/;?[ \t]*$/gm, '')
   return src
     .replace(/\$\$[\s\S]*?\$\$/g, "'<body>'")
-    .split(/;\s*\n/)
-    .map(s => s.replace(/^\s*--.*$/gm, '').replace(/\s+/g, ' ').trim())
+    // A psql meta-command (`\copy`, `\pset`) ends at its line and has no
+    // semicolon, so left in it glues itself to the statement after it.
+    .replace(/^[ \t]*\\.*$/gm, '')
+    .split(/;\s*(?:\n|$)/)
+    // A hand-written script also comments after a column. A trailing one
+    // followed by a quote is left: it may sit inside a string literal.
+    .map(s => s.replace(/^\s*--.*$/gm, '').replace(/--[^'\n]*$/gm, '').replace(/\s+/g, ' ').trim())
+    .flatMap(schemaElements)
     .map(s => mysql ? s.replace(TABLE_OPTIONS, '$1') : s)
     .filter(Boolean)
 }
 
-const isMysql = (src) => /CREATE TABLE (?:IF NOT EXISTS )?`|\)\s*ENGINE\s*=/i.test(src)
+// `CREATE SCHEMA person CREATE TABLE a(...) CREATE TABLE b(...)` is ONE
+// statement holding several, and read whole it matched nothing: every table of
+// a hand-written Postgres install script declared that way was silently absent.
+// Each element is qualified with the schema it was declared in.
+function schemaElements(st) {
+  const m = st.match(/^CREATE SCHEMA (?:IF NOT EXISTS )?([\w"]+) (CREATE .*)$/i)
+  if (!m) return [st]
+  return m[2].split(/ (?=CREATE (?:TABLE|VIEW|INDEX|SEQUENCE)\b)/i)
+    .map(e => e.replace(/^(CREATE (?:TABLE|VIEW|SEQUENCE) (?:IF NOT EXISTS )?)([\w"]+)/i, `$1${m[1]}.$2`))
+}
+
+// A mysqldump says it with backticks or ENGINE=; a hand-written MySQL script
+// often has neither and is still told by its `/*!50503 … */` version comments,
+// a `USE db;` line or an AUTO_INCREMENT column.
+const isMysql = (src) =>
+  /CREATE TABLE (?:IF NOT EXISTS )?`|\)\s*ENGINE\s*=|^\/\*!\d{5}|^USE \w+;|\bAUTO_INCREMENT\b/im.test(src)
 
 // What follows a CREATE TABLE's closing paren. Anchored on the `=` because a
 // column's own `COLLATE x` / `AUTO_INCREMENT` also follows a paren (`varchar(191)
@@ -84,7 +108,7 @@ function enumValue(v) {
 
 // ─── statements ──────────────────────────────────────────────────────────────
 
-function readStatement(st, enums, tables, gap, mysql) {
+function readStatement(st, enums, tables, gap, mysql, domains) {
   let m
 
   if ((m = st.match(/^CREATE TYPE ([\w."]+) AS ENUM \((.*)\)$/i))) {
@@ -92,10 +116,17 @@ function readStatement(st, enums, tables, gap, mysql) {
     return
   }
 
-  if ((m = st.match(/^CREATE TABLE (?:IF NOT EXISTS )?([\w."]+) \((.*)\)(?: PARTITION BY .*)?$/i))) {
+  // A domain is a named type over a base one. Read as its base, since a column
+  // typed `"Name"` is otherwise an unknown type and lands as a guessed String.
+  if ((m = st.match(/^CREATE DOMAIN ([\w."]+) (?:AS )?(.+?)(?: (?:NOT NULL|NULL|DEFAULT|CHECK|CONSTRAINT)\b.*)?$/i))) {
+    domains.set(bare(m[1]), m[2].trim())
+    return
+  }
+
+  if ((m = st.match(/^CREATE TABLE (?:IF NOT EXISTS )?([\w."]+) ?\((.*)\)(?: PARTITION BY .*)?$/i))) {
     const table = bare(m[1])
     const schema = m[1].replace(/"/g, '').match(/^([a-z_]\w*)\./i)?.[1]
-    const t = { table, model: modelName(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [], mysql }
+    const t = { table, model: modelName(table), cols: [], checks: [], pk: [], fks: [], indexes: [], arcs: [], mysql, domains }
     if (tables.has(table)) {
       gap('table-name-collision', t.model, null, `${m[1]} collides with an earlier ${table}`,
           'skipped — .lite has no schema qualifier, so two schemas cannot both contribute this name')
@@ -109,7 +140,10 @@ function readStatement(st, enums, tables, gap, mysql) {
     for (const part of splitTop(m[2])) {
       const chk = part.match(/^CONSTRAINT ([\w"]+) CHECK \((.*)\)$/i)
       if (chk) { t.checks.push({ name: bare(chk[1]), expr: chk[2].trim() }); continue }
-      if (mysql && readInlineKey(part, t)) continue
+      // pg_dump writes every key as a later ALTER TABLE, but a hand-written
+      // script of either dialect writes them here, and skipping them cost
+      // every table of the MySQL employees sample its primary key.
+      if (readInlineKey(part, t, gap)) continue
       if (/^(CONSTRAINT|PRIMARY KEY|UNIQUE|FOREIGN KEY|EXCLUDE)\b/i.test(part)) {
         gap('inline-constraint', t.model, null, part.slice(0, 70), 'skipped — read from the ALTER TABLE form where there is one')
         continue
@@ -121,6 +155,18 @@ function readStatement(st, enums, tables, gap, mysql) {
 
   if ((m = st.match(/^ALTER TABLE (?:ONLY )?([\w."]+) (.*)$/i))) {
     const t = tables.get(bare(m[1])); if (!t) return
+    // A partition is where the parent's rows are stored, not a model of its
+    // own; read as one, pagila's payment became 55 models of the same shape.
+    const part = m[2].match(/^ATTACH PARTITION ([\w."]+)/i)
+    if (part) {
+      const child = tables.get(bare(part[1]))
+      if (child) {
+        tables.delete(child.table)
+        gap('partition-folded', child.model, null, `PARTITION OF ${t.table}`,
+            `folded into ${t.model} — SQLite has no declarative partitioning, so one table holds every partition's rows`)
+      }
+      return
+    }
     for (const clause of splitTop(m[2])) readAlter(clause, t, enums, gap)
     return
   }
@@ -147,9 +193,17 @@ function readStatement(st, enums, tables, gap, mysql) {
 function readAlter(clause, t, enums, gap) {
   let m
   if ((m = clause.match(/^ADD CONSTRAINT ([\w"]+) (.*)$/i))) { readKey(m[2], bare(m[1]), t); return }
+  // A dump never writes these; an install script that reshapes a table after
+  // creating it does, and the column it adds or drops is part of the schema.
+  if ((m = clause.match(/^DROP COLUMN (?:IF EXISTS )?([\w"]+)/i))) {
+    t.cols = t.cols.filter(c => bare(c.split(' ')[0]) !== bare(m[1])); return
+  }
+  if ((m = clause.match(/^ADD (?:COLUMN )?(?!CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|KEY|INDEX|FULLTEXT|SPATIAL)([\w"]+ .*)$/i))) {
+    t.cols.push(t.mysql ? inlineEnum(m[1], t, enums) : m[1]); return
+  }
   if (!t.mysql) return
   if (/^AUTO_INCREMENT\s*=/i.test(clause)) return
-  if ((m = clause.match(/^ADD (.*)$/i)) && readInlineKey(m[1], t)) return
+  if ((m = clause.match(/^ADD (.*)$/i)) && readInlineKey(m[1], t, gap)) return
   if ((m = clause.match(/^MODIFY (?:COLUMN )?([\w"]+) (.*?)(?: (?:FIRST|AFTER [\w"]+))?$/i))) {
     const at = t.cols.findIndex(c => bare(c.split(' ')[0]) === bare(m[1]))
     if (at >= 0) { t.cols[at] = inlineEnum(`${m[1]} ${m[2]}`, t, enums); return }
@@ -180,10 +234,15 @@ function readKey(body, name, t) {
 // detail and not a different column.
 const keyCols = (s) => splitTop(s).map(c => bare(c.trim().replace(/\(\d+\)/, '')))
 
-// Returns true when the part was a key of one of the shapes MySQL writes inline.
-function readInlineKey(part, t) {
+// Returns true when the part was a key of one of the shapes written inline.
+function readInlineKey(part, t, gap) {
   const k = part.replace(/^CONSTRAINT [\w"]+ (?=PRIMARY|UNIQUE|FOREIGN)/i, '')
   if (/^(PRIMARY KEY|UNIQUE|FOREIGN KEY)\b/i.test(k)) { readKey(k, null, t); return true }
+  if (/^(FULLTEXT|SPATIAL) (KEY|INDEX)\b/i.test(k)) {
+    gap('fulltext-index', t.model, null, k.slice(0, 70),
+        'dropped — the .lite answer is @@fts on the model, which is SQLite FTS5 and not an index')
+    return true
+  }
   const ix = k.match(/^(?:KEY|INDEX) (?:[\w"]+ )?\((.*)\)(?: USING \w+)?$/i)
   if (!ix) return false
   t.indexes.push({ unique: false, cols: keyCols(ix[1]), where: null, raw: ix[1] })
@@ -219,25 +278,26 @@ function splitTop(s) {
 
 // MySQL's spellings sit beside Postgres's: no word means two things. `tinyint(1)`
 // is first because it is MySQL's own BOOLEAN, where any other `tinyint` is a
-// number.
+// number. Case-blind: a dump writes `integer` and a hand-written script `INT`,
+// and the upper-case spelling read as an unknown type and became a String.
 const TYPES = [
-  [/^uuid$/,                                   'String'],
-  [/^(character varying|varchar|text|tinytext|mediumtext|longtext|citext|character|char|inet|cidr|macaddr|xml|name)\b/, 'String'],
-  [/^(tinyint\(1\)|bit\(1\))/i,               'Boolean'],
-  [/^(smallint|integer|int|int2|int4|int8|bigint|serial|bigserial|smallserial|oid|tinyint|mediumint|year)\b/, 'Int'],
-  [/^(double precision|double|real|float\d*|money)\b/, 'Float'],
-  [/^bool(ean)?$/,                             'Boolean'],
-  [/^(timestamp|timestamptz|datetime|date|time)\b/, 'DateTime'],
-  [/^(jsonb|json)$/,                           'Json'],
-  [/^(bytea|tinyblob|blob|mediumblob|longblob|binary|varbinary)\b/, 'Bytes'],
-  [/^interval\b/,                              'String'],
+  [/^uuid$/i,                                   'String'],
+  [/^(character varying|varchar|nvarchar|text|tinytext|mediumtext|longtext|citext|character|nchar|char|inet|cidr|macaddr|xml|name)\b/i, 'String'],
+  [/^(tinyint\(1\)|bit\(1\))/i,                'Boolean'],
+  [/^(smallint|integer|int|int2|int4|int8|bigint|serial|bigserial|smallserial|oid|tinyint|mediumint|year)\b/i, 'Int'],
+  [/^(double precision|double|real|float\d*|money)\b/i, 'Float'],
+  [/^bool(ean)?$/i,                             'Boolean'],
+  [/^(timestamp|timestamptz|datetime|date|time)\b/i, 'DateTime'],
+  [/^(jsonb|json)$/i,                           'Json'],
+  [/^(bytea|tinyblob|blob|mediumblob|longblob|binary|varbinary)\b/i, 'Bytes'],
+  [/^interval\b/i,                              'String'],
 ]
 
 function emitTable(t, tables, enums, gap) {
   const out = [`model ${t.model} {`]
   const cols = new Map()
-  const fkByCol = new Map()
-  for (const fk of t.fks) if (fk.cols.length === 1) fkByCol.set(fk.cols[0], fk)
+  const colNames = new Set(t.cols.map(c => camel(bare(c.split(' ')[0]))))
+  const relNames = new Set()
 
   for (const raw of t.cols) {
     const col = readColumn(raw, t, enums, gap)
@@ -246,14 +306,19 @@ function emitTable(t, tables, enums, gap) {
 
     if (t.pk.length === 1 && t.pk[0] === col.name) { col.extra.unshift('@id'); col.optional = false }
 
-    const fk = fkByCol.get(col.name)
+    // Looked up here rather than indexed up front: reading the column can add
+    // the key it declares inline.
+    const fk = t.fks.find(f => f.cols.length === 1 && f.cols[0] === col.name)
 
     // A 64-bit value the application SUPPLIES. A generated key and a foreign key
     // are exempt — see wide-int.js for why that is the line. A single-column
     // primary key counts as generated: a dump attaches its sequence in a later
     // ALTER, so the column itself carries no default to read. A supplied
     // snowflake primary key is therefore missed, and is the known cost.
-    if (/^(bigint|int8|bigserial|serial8)\b/i.test(col.srcType) && !fk &&
+    if (/^(bigint|int8)\b/i.test(col.srcType) && col.isArray)
+      gap('bigint-array', t.model, col.name, `${col.srcType}[]`,
+          'Int[] — an array is stored as JSON, whose number is a double, so a value past 2^53 reads back changed and @big cannot follow it there')
+    else if (/^(bigint|int8|bigserial|serial8)\b/i.test(col.srcType) && !fk &&
         !col.extra.includes('@id') && !col.extra.includes('@default(autoincrement())') &&
         !namesATable(col.name, (n) => tables.has(n), singularize)) {
       // Before `render(col)`, or the attribute is reported and not emitted.
@@ -264,8 +329,20 @@ function emitTable(t, tables, enums, gap) {
     out.push(render(col))
     if (target) {
       const action = fk.onDelete ? `, onDelete: ${fk.onDelete}` : ''
-      out.push(`  ${camel(col.name.replace(/_id$/, ''))} ${target.model}${col.optional ? '?' : ''} ` +
-               `@relation(fields: [${camel(col.name)}], references: [${camel(fk.ref[0])}]${action})`)
+      // Named for the column less its key suffix — `author_id` is `author`. A
+      // key with no such suffix (`emp_no`, `ArtistId` is fine, `ArtistNo` is
+      // not) yields the column's own name, so the relation takes its target's.
+      let rel = camel(col.name.replace(/(_id|(?<=[a-z])I[dD])$/, ''))
+      if (colNames.has(rel) || relNames.has(rel)) {
+        let alt = camel(target.model)
+        while (colNames.has(alt) || relNames.has(alt)) alt += 'Ref'
+        gap('field-name-collision', t.model, col.name, `the relation on ${col.name} could not take the name ${rel}`,
+            `named ${alt} — a relation field has no column, so it yields to every column and to the relations before it`)
+        rel = alt
+      }
+      relNames.add(rel)
+      out.push(`  ${rel} ${target.model}${col.optional ? '?' : ''} ` +
+               `@relation(fields: [${camel(col.name)}], references: [${camel(fk.ref[0] ?? target.pk[0] ?? 'id')}]${action})`)
       if (fk.notValid)
         gap('unvalidated-foreign-key', t.model, col.name, 'NOT VALID',
             'emitted as an ordinary relation — existing rows may already violate it')
@@ -304,8 +381,10 @@ function emitTable(t, tables, enums, gap) {
   const attrs = []
   // First, so the key reads at the top of the model's own attribute block.
   if (compositePk) attrs.push(`@@id([${compositePk.map(camel).join(', ')}])`)
+  let arced = false
   for (const c of t.checks) {
-    const a = emitCheck(c, t, cols, gap)
+    const a = emitCheck(c, t, cols, gap, arced)
+    if (a?.startsWith('@@arc')) arced = true
     if (a) attrs.push(a)
   }
 
@@ -314,13 +393,23 @@ function emitTable(t, tables, enums, gap) {
   // differ by — and once a predicate is emitted, two such indexes no longer
   // produce the same string to collapse on. A real database has them, precisely
   // because a partial index is what makes a second one useful.
-  const seen = new Set()
+  //
+  // The key is the list as EMITTED — direction stripped — or `(a, b)` and
+  // `(a, b DESC)` were two keys and one index name. Where a plain index and a
+  // partial one share a list the plain one is kept: it answers every query
+  // the partial does.
+  const seen = new Map()
   for (const idx of t.indexes) {
     const a = emitIndex(idx, t, cols, gap)
     if (!a) continue
-    const key = `${idx.unique ? 'u:' : ''}${idx.cols.join(',')}`
-    if (seen.has(key)) { gap('index-collapsed', t.model, null, a, 'dropped — an earlier index already claims this column list, and an index is named for its columns'); continue }
-    seen.add(key); attrs.push(a)
+    const key = `${idx.unique ? 'u:' : ''}${idx.cols.map(c => c.replace(/\s+(ASC|DESC)$/i, '').trim()).join(',')}`
+    const at = seen.get(key)
+    if (at === undefined) { seen.set(key, attrs.length); attrs.push(a); continue }
+    const replaces = !/, where: /.test(a) && /, where: /.test(attrs[at])
+    const dropped  = replaces ? attrs[at] : a
+    if (replaces) attrs[at] = a
+    gap('index-collapsed', t.model, null, dropped,
+        'dropped — another index claims this column list, and an index is named for its columns')
   }
 
   if (attrs.length) out.push('', ...attrs.map(a => '  ' + a))
@@ -355,17 +444,36 @@ function readColumn(raw, t, enums, gap) {
     if (chk) { rest = rest.slice(0, chk.index); gap('inline-constraint', t.model, name, chk[0].trim().slice(0, 70), 'skipped — a column CHECK is not read') }
     rest = rest.replace(/\s+/g, ' ').trim()
   }
+  // A name on a column's own DEFAULT or CHECK says nothing .lite keeps, and
+  // left in it was read as part of the type.
+  rest = rest.replace(/\s*\bCONSTRAINT [\w"]+(?= )/gi, '').trim()
 
-  const notNull = /\bNOT NULL\b/i.test(rest)
+  // A hand-written column keys itself; a dump never does, so the corpus did not
+  // find it. Read as table-level keys, or the key and the relation are dropped
+  // with nothing recorded and a surrogate id invented. Taken before DEFAULT,
+  // whose value would otherwise run on to the end of the line.
+  const ref = rest.match(/\s+REFERENCES ([\w."]+)(?:\s*\(([^)]*)\))?((?:\s+(?:ON (?:DELETE|UPDATE) (?:CASCADE|SET NULL|SET DEFAULT|RESTRICT|NO ACTION)|MATCH \w+|NOT DEFERRABLE|DEFERRABLE|INITIALLY \w+))*)/i)
+  if (ref) {
+    rest = rest.replace(ref[0], '').trim()
+    readKey(`FOREIGN KEY (${name}) REFERENCES ${ref[1]} (${ref[2] ?? ''})${ref[3]}`, null, t)
+  }
+  const inlinePk = /\s+PRIMARY KEY\b/i.test(rest)
+  if (inlinePk) { rest = rest.replace(/\s+PRIMARY KEY\b/i, '').trim(); t.pk = [name] }
+
+  const notNull = inlinePk || /\bNOT NULL\b/i.test(rest)
   rest = rest.replace(/\bNOT NULL\b/i, '').trim()
 
   let def = null
-  const d = rest.match(/\bDEFAULT (.+?)(?:\s+(?:NOT NULL|CHECK|REFERENCES)\b|$)/i)
+  const d = rest.match(/\bDEFAULT (.+?)(?:\s+(?:NOT NULL|CHECK|REFERENCES|UNIQUE|NULL)\b|$)/i)
   if (d) { def = d[1].trim(); rest = rest.replace(d[0], '').trim() }
-  if (t.mysql) rest = rest.replace(/\s+NULL$/i, '')
+  // A hand-written column says UNIQUE where a dump writes a constraint, and an
+  // explicit NULL where a dump says nothing; left in, both were read as type.
+  if (/\s+UNIQUE\b/i.test(rest)) { rest = rest.replace(/\s+UNIQUE\b/i, '').trim(); t.indexes.push({ unique: true, cols: [name], where: null }) }
+  rest = rest.replace(/\s+NULL$/i, '')
 
-  const isArray = /\[\]$/.test(rest)
-  const typeText = rest.replace(/\[\]$/, '').trim()
+  let isArray = /\[\]$/.test(rest)
+  const declared = rest.replace(/\[\]$/, '').trim()
+  const typeText = t.domains?.get(bare(declared)) ?? declared
 
   let type = null
   const enumName = bare(typeText)
@@ -395,13 +503,25 @@ function readColumn(raw, t, enums, gap) {
       gap('unknown-column-type', t.model, name, typeText.slice(0, 40), 'String — no .lite equivalent')
   }
 
+  if (isArray && !carriesArray(type, enums.has(enumName), extra)) {
+    gap('array-element-type', t.model, name, `${typeText}[]`, ARRAY_ELEMENT_EMITTED)
+    type = 'Json'; isArray = false
+    extra.splice(0, extra.length, ...extra.filter(a => !a.startsWith('@scale')))
+  }
+
   if (def !== null) {
-    const v = pgDefault(def, type, isArray)
+    const v = pgDefault(def, type, isArray, enums.has(enumName))
     if (v === NO_DEFAULT) { /* MySQL's DEFAULT NULL says only that the column is nullable */ }
     else if (v === null) gap('dbgenerated-default', t.model, name, def.slice(0, 50), 'dropped — no .lite spelling')
     else if (v === '__ARRAY__') gap('array-default', t.model, name, `default ${def}`,
       'dropped — .lite refuses every array default, the empty one included (FJS-564)')
-    else extra.push(`@default(${v})`)
+    else {
+      const places = scaleOf(extra)
+      const minor  = places === null ? v : toMinorUnits(v, places)
+      if (minor === null) gap('default-over-scale', t.model, name, `default ${def}`,
+        `dropped — more places than @scale(${places}) holds`)
+      else extra.push(`@default(${minor})`)
+    }
   }
 
   // The source spelling travels: whether a `bigint` is worth reporting depends
@@ -411,9 +531,12 @@ function readColumn(raw, t, enums, gap) {
 
 const NO_DEFAULT = Symbol('no default')
 
-function pgDefault(def, type, isArray) {
-  const d = def.replace(/::[\w "\[\]]+$/, '').trim()          // drop the cast
+function pgDefault(def, type, isArray, isEnum = false) {
+  // `DEFAULT (NOW())` — a hand-written script parenthesizes what a dump does
+  // not. The cast may name a schema-qualified enum: `'G'::public.mpaa_rating`.
+  const d = def.replace(/^\((.*)\)$/, '$1').replace(/::[\w ."\[\]]+$/, '').trim()
   if (/^NULL$/i.test(d)) return NO_DEFAULT
+  if (isEnum && /^'.*'$/.test(d)) return enumValue(d)
   // MySQL writes every default as a string, numbers and booleans included
   // (`DEFAULT '0'`), and a bit as `b'0'`.
   const lit = d.match(/^b?'(-?\d+(?:\.\d+)?)'$/i)?.[1]
@@ -456,48 +579,66 @@ function asArc(expr, cols) {
   return null
 }
 
-function emitCheck(check, t, cols, gap) {
+// A model takes one @@arc, and a table can carry two independent arcs — the
+// second is emitted as the CHECK it was written as, which enforces the same rows.
+function emitCheck(check, t, cols, gap, arced = false) {
   const arcCols = asArc(check.expr, cols)
   if (arcCols && arcCols.every(c => cols.has(c))) {
     const optional = arcCols.every(c => cols.get(c).optional)
-    if (optional) {
+    if (optional && !arced) {
       gap('check-is-an-arc', t.model, arcCols.join(', '), check.expr.slice(0, 70),
           `@@arc([${arcCols.map(camel).join(', ')}]) — an exclusive arc written as SQL; @@arc keeps a real foreign key on every member`)
       return `@@arc([${arcCols.map(camel).join(', ')}])`
     }
-    gap('arc-member-required', t.model, arcCols.join(', '), check.expr.slice(0, 70),
-        'emitted as an ordinary @@check — @@arc needs every member optional, and one of these is NOT NULL')
+    if (optional)
+      gap('second-arc', t.model, arcCols.join(', '), check.expr.slice(0, 70),
+          'emitted as an ordinary @@check — a model takes one @@arc, and this table has two')
+    else
+      gap('arc-member-required', t.model, arcCols.join(', '), check.expr.slice(0, 70),
+          'emitted as an ordinary @@check — @@arc needs every member optional, and one of these is NOT NULL')
   }
 
+  const expr = translateCheck(check.expr, (id) => cols.has(id), gap, t.model)
+  return expr === null ? null : `@@check(${JSON.stringify(expr)})`
+}
+
+// A CHECK written in a server's SQL, restated over .lite field names — or null,
+// with the reason recorded. Shared with rails.js, whose schema.rb carries the
+// same SQL in a `t.check_constraint` string.
+export function translateCheck(/** @type {string} */ src, /** @type {(id: string) => boolean} */ isColumn,
+                               /** @type {any} */ gap, /** @type {string} */ model) {
   // A dump casts every enum literal — `'approved'::public.quote_status` — and a
   // cast on a STRING LITERAL carries no meaning SQLite needs, since an enum
-  // column is TEXT there. Dropping those first recovers the checks that are
-  // ordinary comparisons wearing Postgres punctuation; a cast on anything else
-  // still stops the conversion below.
-  let expr = check.expr.replace(/('(?:[^']|'')*')::[\w."]+/g, '$1')
+  // column is TEXT there. A cast on anything else still stops the conversion.
+  // `char_length` and `num_nonnulls` are Postgres's and SQLite has neither, so
+  // the build failed on `no such function`; `length` counts characters in TEXT,
+  // and the sum of IS NOT NULL tests is what @@arc compiles to.
+  let expr = src.replace(/('(?:[^']|'')*')::[\w."]+/g, '$1').replace(/\bchar_length\(/gi, 'length(')
+    .replace(/\bnum_(non)?nulls\(([^()]*)\)/gi, (_, non, args) =>
+      `(${args.split(',').map((/** @type {string} */ a) => `(${a.trim()} IS ${non ? 'NOT ' : ''}NULL)`).join(' + ')})`)
+  /** @type {string | null} */
   let unknown = null
   // A word inside a string literal is a VALUE, not a column — rewriting there
   // turned `'legacy'` into an unresolved identifier called legacy.
-  expr = mapIdentifiers(expr, (id) => {
-    if (cols.has(id)) return camel(id)
+  expr = mapIdentifiers(expr, (/** @type {string} */ id) => {
+    if (isColumn(id)) return camel(id)
     if (KEYWORDS.test(id)) return null
     unknown = id
     return null
   })
 
-  if (unknown) {
-    gap('check-unresolved-identifier', t.model, null, `${check.expr.slice(0, 60)} — '${unknown}'`,
-        'DROPPED — the expression names something that is not a column of this table (a function, a cast, another table)')
-    return null
-  }
-  if (/::/.test(expr)) {
-    gap('check-postgres-cast', t.model, null, check.expr.slice(0, 60), 'DROPPED — a :: cast is not SQLite')
-    return null
-  }
-  return `@@check(${JSON.stringify(expr)})`
+  const shown = src.slice(0, 60)
+  if (unknown) return gap('check-unresolved-identifier', model, null, `${shown} — '${unknown}'`,
+    'DROPPED — the expression names something that is not a column of this table (a function, a cast, another table)'), null
+  if (/::/.test(expr)) return gap('check-postgres-cast', model, null, shown, 'DROPPED — a :: cast is not SQLite'), null
+  // Tested outside string literals: a `~` inside a pattern is a character.
+  if (/!?~\*?|@>|<@|\bI?LIKE ANY\b|\bILIKE\b|\bSIMILAR TO\b/i.test(expr.replace(/'(?:[^']|'')*'/g, "''")))
+    return gap('check-postgres-operator', model, null, shown,
+      'DROPPED — a regex match, containment or ILIKE is Postgres, and SQLite fails to build the table'), null
+  return expr
 }
 
-const KEYWORDS = /^(is|not|null|and|or|in|between|like|true|false|any|all|exists|case|when|then|else|end|char_length|length|abs|coalesce|nullif|num_nonnulls|distinct|from)$/i
+const KEYWORDS = /^(is|not|null|and|or|in|between|like|true|false|any|all|exists|case|when|then|else|end|length|upper|lower|trim|abs|coalesce|nullif|num_nonnulls|distinct|from)$/i
 
 // Walk the expression, rewriting bare identifiers and leaving every quoted
 // literal exactly as it is. `replace` cannot do this: a regex has no way to know

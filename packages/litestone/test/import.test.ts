@@ -415,7 +415,7 @@ INSERT INTO \`companies\` VALUES (1,'A;\\n',1,0,'retail',NULL,NULL,NULL,'2022-01
     const { lite } = read()
     expect(lite).toMatch(/id Int @id @default\(autoincrement\(\)\)/)
     expect(lite).toMatch(/enum CompaniesKind \{\s+retail\s+wholesale\s+\}/)
-    expect(lite).toMatch(/kind CompaniesKind @default\("retail"\)/)
+    expect(lite).toMatch(/kind CompaniesKind @default\(retail\)/)
     expect(lite).toMatch(/companyId Int @map\("company_id"\)/)
     expect(lite).toMatch(/@relation\(fields: \[companyId\], references: \[id\], onDelete: Cascade\)/)
     expect(lite).toMatch(/@@unique\(\[name\]\)/)
@@ -478,9 +478,17 @@ COMMIT;
   })
 
   test('a clause the reader cannot place is named, not dropped silently', () => {
-    const src = DUMP + 'ALTER TABLE `companies`\n  ADD FULLTEXT KEY `ft` (`name`);\n'
+    const src = DUMP + 'ALTER TABLE `companies`\n  RENAME COLUMN `name` TO `label`;\n'
     const { gaps } = convert({ source: src, format: 'sql', label: 'phpmyadmin' })
     expect(gaps.some(g => g.kind === 'unparsed-line' && g.model === 'Company')).toBe(true)
+  })
+
+  // A FULLTEXT index has no CREATE INDEX equivalent; the .lite answer is @@fts,
+  // a different table, so it is named for what it is rather than as a line.
+  test('a FULLTEXT key added by ALTER is named as one', () => {
+    const src = DUMP + 'ALTER TABLE `companies`\n  ADD FULLTEXT KEY `ft` (`name`);\n'
+    const { gaps } = convert({ source: src, format: 'sql', label: 'phpmyadmin' })
+    expect(gaps.some(g => g.kind === 'fulltext-index' && g.model === 'Company')).toBe(true)
   })
 })
 
@@ -570,5 +578,91 @@ model Task {
 model Task {
   id Int @id
 }`)).toEqual([])
+  })
+})
+
+// `.lite` arrays hold String, Int, File or an enum. Trigger.dev's `DateTime[]`
+// and Lago's `timestamp[]` were emitted as written, and the parser refused the
+// whole schema.
+describe('an array of a type `.lite` cannot hold becomes Json', () => {
+  const read = (source: string, format: string) => {
+    const r = convert({ source, format, label: 'fx' })
+    expect(parse(r.lite).errors).toEqual([])
+    return { lite: r.lite, kinds: r.gaps.filter(g => g.kind === 'array-element-type').map(g => g.field) }
+  }
+
+  test('prisma — DateTime[] and Float[] become Json, String[] and an enum array are carried', () => {
+    const { lite, kinds } = read(`enum Role {
+  USER
+  ADMIN
+}
+model User {
+  id      Int        @id
+  seenAt  DateTime[]
+  scores  Float[]
+  tags    String[]
+  roles   Role[]
+}`, 'prisma')
+    expect(kinds).toEqual(['seenAt', 'scores'])
+    expect(lite).toMatch(/seenAt Json\b/)
+    expect(lite).toMatch(/tags String\[\]/)
+    expect(lite).toMatch(/roles Role\[\]/)
+    expect(tierOf('array-element-type')).toBe('lost')
+  })
+
+  test('sql — timestamp[] and boolean[] become Json, a default is still reported as an array default', () => {
+    const r = convert({ source: `CREATE TABLE public.pending_signups (
+    id integer NOT NULL,
+    emails_sent_at timestamp(6) without time zone[] DEFAULT '{}'::timestamp without time zone[] NOT NULL,
+    flags boolean[],
+    codes character varying[]
+);
+`, format: 'sql', label: 'fx' })
+    expect(parse(r.lite).errors).toEqual([])
+    expect(r.gaps.filter(g => g.kind === 'array-element-type').map(g => g.field)).toEqual(['emails_sent_at', 'flags'])
+    expect(r.gaps.some(g => g.kind === 'array-default' && g.field === 'emails_sent_at')).toBe(true)
+    expect(r.lite).toMatch(/codes String\[\]/)
+  })
+
+  test('rails — a datetime array becomes Json', () => {
+    const { kinds } = read(`ActiveRecord::Schema[7.1].define(version: 1) do
+  create_table "signups", force: :cascade do |t|
+    t.datetime "sent_at", array: true
+    t.string "codes", array: true
+  end
+end`, 'rails')
+    expect(kinds).toEqual(['sent_at'])
+  })
+})
+
+// A dump keys its tables in a later ALTER TABLE and ends every statement with a
+// newline, so the corpus never wrote either of these. A hand-written script
+// does both.
+describe('a hand-written SQL script', () => {
+  const read = (source: string) => {
+    const r = convert({ source, format: 'sql', label: 'fx' })
+    expect(parse(r.lite).errors).toEqual([])
+    return r
+  }
+
+  test('a last statement with no newline after it is read', () => {
+    expect(read('CREATE TABLE a (id integer PRIMARY KEY);\nCREATE TABLE b (id integer PRIMARY KEY);').models).toEqual(['A', 'B'])
+  })
+
+  test('a column-level PRIMARY KEY and REFERENCES are keys, not dropped', () => {
+    const r = read(`CREATE TABLE author (
+  author_no integer PRIMARY KEY,
+  name text NOT NULL
+);
+CREATE TABLE post (
+  id serial PRIMARY KEY,
+  author_id integer NOT NULL REFERENCES author ON DELETE CASCADE,
+  editor_id integer REFERENCES author(author_no)
+);
+`)
+    expect(r.gaps.filter(g => g.kind === 'no-primary-key')).toEqual([])
+    expect(r.lite).toMatch(/authorNo Int @map\("author_no"\) @id/)
+    expect(r.lite).toMatch(/author Author @relation\(fields: \[authorId\], references: \[authorNo\], onDelete: Cascade\)/)
+    expect(r.lite).toMatch(/editor Author\? @relation\(fields: \[editorId\], references: \[authorNo\]\)/)
   })
 })

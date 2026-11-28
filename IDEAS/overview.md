@@ -821,6 +821,7 @@ Live papers no row above ranks yet, listed by their own frontmatter status. A pa
 - `iii-borrowings.md` — Five things worth taking from iii
 - `pico-borrowings.md` — Six things worth taking from pico: ssh as the front door, dry run until `--write`, redirects as files, a public service's tables, runbooks, a tunnel
 - `bubbletea-borrowings.md` — Four things worth taking from bubbletea, read beside pico: a refusable quit, the tty handed to an editor, terminal state as view fields, international keyboards; six confirmations
+- `stacks-borrowings.md` — Three things worth taking from Stacks.js and its Craft shell: a permission-coverage check, device APIs with a web fallback, the native project as generated output; one question on mixing native and webview screens
 - `intent-recognizer-examples.md` — synthetic support requests for the intent recognizer
 - `kamal-parity.md` — Kamal parity: ring 0 is already Kamal's model, the three rings and the journal are not; `deploy:config` and a load-vs-registry measurement worth taking
 - `prompt-to-app.md` — Prompt-to-app: what the Base44 space is, and what it would take here

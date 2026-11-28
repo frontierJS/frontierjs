@@ -12,7 +12,7 @@ import { callSlots } from './context.ts'
 import { freezeUser, enterRequest, reenterAs, requestMeta, NEVER_ABORTED, currentCall, enterCall, callDb, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions, type Attester, type RequestMeta } from './context.ts'
 import { hookContext } from '@frontierjs/toolbelt/hooks'
 import { DEV_ENV, formatDevLine } from '@frontierjs/toolbelt/devline'
-import { ServiceRegistry, callService, isStreamMethod } from './service.ts'
+import { ServiceRegistry, callService, isStreamMethod, serviceOffers } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { declaredCallHeaders, checkPrincipalSetting, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, dataRealmFacts, announceDataWrites, installLogContext, installMadeAt,installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS, accessorIfModel, resolveRawCaller } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
@@ -2874,6 +2874,13 @@ export function registerServiceRoutes(app: App): void {
   // All dispatched via crudHandler — bridge reads the header and sets ctx.method.
 
   // ── Route registration ────────────────────────────────────────────
+
+  // Which services exist and what each offers, in production too: a browser
+  // cannot read api/src/services, so without this a scaffolded page draws Save
+  // on a service with no patch and a picker asks a service that is not there
+  // (`FJS-4666`, `FJS-4667`). A fixed path, so it is matched before
+  // `/{service}`; the underscore keeps it out of any camelCase service's name.
+  app.get('/_services', () => Response.json(serviceOffers(app.services)))
 
   // Collection — find, create, bulk patch/delete, upsert
   app.get(`/{service}`,        crudHandler)

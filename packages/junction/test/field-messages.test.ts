@@ -122,3 +122,34 @@ describe('a minimum length of one', () => {
     expect(result.errors[0]?.message).toBe('code must be at least 3 characters')
   })
 })
+
+describe('a declared transform runs before the format it sits beside', () => {
+  // FJS-4680 -- `@email @trim @lower` listed x-transforms beside format email,
+  // and the email branch checked the raw value, so a padded address was a 400.
+  const padded = (prop: Record<string, unknown>) =>
+    createSchema(jsonSchemaToJunctionSchema('T', { $defs: { T: { type: 'object', properties: { v: { type: 'string', ...prop } }, required: ['v'] } } } as never))
+
+  it('@email @trim @lower accepts a padded, capitalised address and stores it cleaned', () => {
+    const result = padded({ format: 'email', 'x-transforms': ['lower', 'trim'] }).validate({ v: ' PROBE-B@Example.test ' })
+    expect(result.errors).toEqual([])
+    expect(result.data.v).toBe('probe-b@example.test')
+  })
+
+  it('@url @trim accepts a padded URL', () => {
+    const result = padded({ format: 'uri', 'x-transforms': ['trim'] }).validate({ v: '  https://example.test/a  ' })
+    expect(result.errors).toEqual([])
+    expect(result.data.v).toBe('https://example.test/a')
+  })
+
+  it('@uuid @trim accepts a padded uuid', () => {
+    const id = '123e4567-e89b-12d3-a456-426614174000'
+    const result = padded({ format: 'uuid', 'x-transforms': ['trim'] }).validate({ v: ` ${id} ` })
+    expect(result.errors).toEqual([])
+    expect(result.data.v).toBe(id)
+  })
+
+  it('a padded address with no @trim is still refused', () => {
+    const result = padded({ format: 'email' }).validate({ v: ' a@b.co ' })
+    expect(result.errors.map(e => e.field)).toEqual(['v'])
+  })
+})

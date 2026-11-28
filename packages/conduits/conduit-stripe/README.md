@@ -11,15 +11,15 @@ signature. Extracted from `frontierjs/example/api/src/providers/stripe/`
 | Piece | Where |
 | --- | --- |
 | target builder | `stripeTarget({ ref?, address? })` — bearer, `encoding: 'form'`, `Stripe-Version` and `Idempotency-Key` on the target |
-| calls | `createPaymentIntent(send, …)` (replayable, unkeyed unless asked), `retrievePaymentIntent(send, { id, account? })` (read one back, for the `client_secret` an app never stores; `id` must be `pi_…`), `createRefund(send, …)` (key required), `createCheckoutSession(send, …)` (replayable, unkeyed unless asked), `retrieveBalanceTransaction(send, { id, account? })` (Stripe's fee on a charge: the `txn_…` its `balance_transaction` names) — each takes `account` for a direct charge |
+| calls | `createPaymentIntent(send, …)` (replayable, unkeyed unless asked; `captureMethod: 'manual'` holds the amount), `retrievePaymentIntent(send, { id, account? })` (read one back, for the `client_secret` an app never stores; `id` must be `pi_…`), `createRefund(send, …)` (key required), `createCheckoutSession(send, …)` (replayable, unkeyed unless asked; `captureMethod: 'manual'` holds it), `capturePaymentIntent(send, { id, amountMinor?, account?, key })` (key required), `cancelPaymentIntent(send, { id, account?, key })` (key required), `retrieveBalanceTransaction(send, { id, account? })` (Stripe's fee on a charge: the `txn_…` its `balance_transaction` names) — each takes `account` for a direct charge |
 | connect | `createConnectedAccount` (key required), `createAccountLink`, `retrieveAccountStatus`, `accountStatus(account)`, `STANDARD_LIKE_CONTROLLER`, `PLATFORM_FEE_KEYS` — below |
-| payload types | `PaymentIntent`, `StripeRefund`, `StripeCharge`, `StripeBalanceTransaction`, `StripeEvent`, `StripeCheckoutSession`, `StripeInvoice`, `StripeAccount`, `StripeAccountLink`, `StripeAccountStatus`, `StripeErrorBody` |
+| payload types | `PaymentIntent`, `StripeRefund`, `StripeCharge`, `StripeDispute`, `CaptureMethod`, `StripeBalanceTransaction`, `StripeEvent`, `StripeCheckoutSession`, `StripeInvoice`, `StripeAccount`, `StripeAccountLink`, `StripeAccountStatus`, `StripeErrorBody` |
 | error mapping | `translate(ConduitError) → StripeFailure` — the table below |
 | verifier | `verifyStripeSignature({ rawBody, header, secret, now })` — pure; `{ ok, event, account }` |
 | dialect | `stripeDialect` for `app.conduit.receive()`; `ev.account` names the connected account; `stripeObject(ev, 'invoice.paid')` narrows the event's object by type |
 | sink | `sink.ts`, `startStripeSink()` on `port: 0` |
 | tax | `tax` namespace (`src/tax.ts`) — Stripe Tax, below |
-| drive | `bun run drive` — 42 rows (20 stripe, 12 `connect.*`, 10 `tax.*`), sink only; no conforming Stripe exists |
+| drive | `bun run drive` — 48 rows (20 stripe, 12 `connect.*`, 5 `auth.*`, 1 `dispute.*`, 10 `tax.*`), sink only; no conforming Stripe exists |
 
 `send` is `bindSend(conduit)`: the connector never holds an app.
 
@@ -106,6 +106,61 @@ app.conduit.receive({
 })
 ```
 
+## Holding a card (a deposit)
+
+`captureMethod: 'manual'` authorizes the card and holds the amount on the
+connected account. Nothing is captured until a person presses capture; an
+online card's hold lasts 7 days, after which Stripe releases it itself.
+
+```ts fragment
+import { createCheckoutSession, capturePaymentIntent, cancelPaymentIntent, stripeObject } from '@frontierjs/conduit-stripe'
+
+const { session } = await createCheckoutSession(send, {
+  account: group.stripeAccount, currency: 'usd', lineItems: [{ name: 'Tent deposit', amountMinor: 8000 }],
+  successUrl, clientReferenceId: loan.id, captureMethod: 'manual',
+})                                                         // redirect the borrower to session.url
+// on checkout.session.completed: session.payment_intent is the hold, status requires_capture
+const s = stripeObject(ev, 'checkout.session.completed')!
+await capturePaymentIntent(send, { id: s.payment_intent!, amountMinor: 2500, account: ev.account!, key: `loan:${loan.id}:damage` })  // the rest is released
+await cancelPaymentIntent(send, { id: s.payment_intent!, account: ev.account!, key: `loan:${loan.id}:release` })                    // a good return: release it all
+```
+
+- **One capture per hold.** A partial capture releases the rest, and a second
+  capture answers `refused` with `payment_intent_unexpected_state`, as does
+  capturing a cancelled intent or cancelling a captured one. Capturing more
+  than is held is `amount_too_large`.
+- **Both keys are the caller's.** A replay after a lost response hands back
+  the first capture or cancel; an unkeyed one would read as a refusal.
+- **No platform fee on capture either.** Stripe's capture takes
+  `application_fee_amount` and `transfer_data`; both calls refuse every
+  `PLATFORM_FEE_KEYS` entry before sending.
+- **A held session offers cards.** Stripe cannot hold a bank debit, so a held
+  session that lists `us_bank_account` is refused.
+- **The events.** Authorizing sends `charge.succeeded` (with `captured: false`
+  and no balance transaction) and `payment_intent.amount_capturable_updated`;
+  a held session's `checkout.session.completed` is `paid` and names the
+  intent. Capture sends `charge.captured` then `payment_intent.succeeded`;
+  cancel sends `payment_intent.canceled`.
+
+## Disputes
+
+A chargeback on a direct charge is the connected account's, so its events
+reach the Connect Receiver with `ev.account`. `stripeObject` narrows each to a
+`StripeDispute` (`charge`, `payment_intent`, `amount`, `reason`, `status`):
+
+| event | when |
+| --- | --- |
+| `charge.dispute.created` | the cardholder disputes the charge; `status` is `needs_response` (or a `warning_*` inquiry) |
+| `charge.dispute.funds_withdrawn` | the disputed amount and fee leave the account |
+| `charge.dispute.updated` | evidence was submitted, usually; `under_review` |
+| `charge.dispute.closed` | `won`, `lost` or `warning_closed` |
+| `charge.dispute.funds_reinstated` | the money came back after a win |
+
+```ts fragment
+const du = stripeObject(ev, 'charge.dispute.created') ?? stripeObject(ev, 'charge.dispute.closed')
+if (du) { await markDisputed(ev.account, du.payment_intent, du.status); return 'applied' }
+```
+
 ## Errors
 
 | vendor | HTTP | conduit kind | `StripeFailure.kind` | retryable |
@@ -122,6 +177,18 @@ app.conduit.receive({
 `/_sink/arm` with `{ failNext }`, `{ lost }`, `{ rateLimit: { retryAfter } }`,
 `{ deliverTwice }`; amount `4242` is the decline; a wrong content-type is
 refused by name (the drive's negative control).
+
+| sink route | stands in for | sends |
+| --- | --- | --- |
+| `POST /_sink/onboard/<acct>` | the owner finishing hosted onboarding | `account.updated` |
+| `POST /_sink/checkout/<cs>/complete[?method=]` | the buyer paying a session | `payment_intent.succeeded` (`.amount_capturable_updated` when held), `charge.succeeded`, `checkout.session.completed` |
+| `POST /_sink/checkout/<cs>/settle` · `/fail` | the bank answering a debit | `checkout.session.async_payment_succeeded` · `_failed`, with the intent's event |
+| `POST /_sink/charge/<pi>/dispute[?reason=&amount=]` | the cardholder disputing a captured charge | `charge.dispute.created`, `charge.dispute.funds_withdrawn` |
+| `POST /_sink/dispute/<du>/respond` | evidence submitted | `charge.dispute.updated` (`under_review`) |
+| `POST /_sink/dispute/<du>/won` · `/lost` | the bank's ruling | `charge.dispute.closed`, and `charge.dispute.funds_reinstated` after a win |
+
+A second dispute on one charge, a dispute on an uncaptured charge, and a step
+on a closed dispute answer 409.
 
 ## Traps
 
