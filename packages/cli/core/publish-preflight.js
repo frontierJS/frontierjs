@@ -14,6 +14,8 @@
 // Pure: every input is passed in, so the whole set is testable without a
 // registry, a git tree or a network.
 
+import { posix } from 'path'
+
 // ─── version ranges ──────────────────────────────────────────────────────────
 
 /**
@@ -187,6 +189,60 @@ export function heldOutDependencies(planned = [], held = new Set()) {
 }
 
 /**
+ * Each released package that names a sibling by a range typed into its
+ * manifest rather than `workspace:` (`FJS-D766`). A typed floor stays where it
+ * was written while the sibling grows exports, so the published pair it admits
+ * fails at import: conduit-37signals asked for conduit `^0.1.0` and imported
+ * `errorBody`, which no published conduit held (`FJS-4675`). A typed range is
+ * also invisible to `movedDependencies`, which reads `workspace:` specs only.
+ *
+ * @param planned  [{ name, pkg }]
+ * @param names    every workspace member's package name, held-out ones too
+ */
+export function handTypedRanges(planned = [], names = new Set()) {
+  const out = []
+  for (const p of planned) {
+    const deps = { ...p.pkg?.optionalDependencies, ...p.pkg?.dependencies, ...p.pkg?.peerDependencies }
+    for (const [dep, spec] of Object.entries(deps)) {
+      if (names.has(dep) && !/^[a-z]+:/.test(String(spec).trim())) out.push({ by: p.name, dep, spec })
+    }
+  }
+  return out
+}
+
+/**
+ * Each file a shipped module reads by `new URL('./…', import.meta.url)` that
+ * the tarball leaves out. Run from the repository the file is there, so every
+ * test passes, and on an install it is ENOENT at the first request that needs
+ * it: the 37signals sink answered 500 for every fixture it serves (`FJS-4676`).
+ * A template literal is judged by the directory its fixed part names. A path
+ * outside the package is a different defect and is not reported here.
+ *
+ * @param planned  [{ name, pkg, sources: [{ path, text }] }]  `path` relative
+ *                 to the package, one entry per packed module
+ */
+export function unshippedReads(planned = []) {
+  const URL_READ = /new URL\(\s*(['"`])(\.{1,2}\/[^'"`]*)\1\s*,\s*import\.meta\.url/g
+  const out = []
+  for (const p of planned) {
+    const packed  = packedPaths(p.pkg).map(f => f.replace(/\/$/, ''))
+    const shipped = t => t === '.' || packed.some(f => f === '.' || t === f || t.startsWith(f + '/') || f.startsWith(t + '/'))
+    for (const { path, text } of p.sources ?? []) {
+      for (const m of String(text).matchAll(URL_READ)) {
+        const cut    = m[2].indexOf('${')
+        const fixed  = cut < 0 ? m[2] : m[2].slice(0, cut)
+        let   target = posix.normalize(posix.join(posix.dirname(path), fixed))
+        if (cut >= 0 && !fixed.endsWith('/')) target = posix.dirname(target)
+        target = target.replace(/\/$/, '')
+        if (target.startsWith('..') || shipped(target)) continue
+        out.push({ by: p.name, file: path, reads: target })
+      }
+    }
+  }
+  return out
+}
+
+/**
  * The exact sibling versions each tarball will pin, as `bun pm pack` writes
  * them from the commit it packs.
  *
@@ -302,8 +358,34 @@ export function publishOrder(planned = []) {
  * an operator should usually do, and the override is what is available when
  * they know better. Printing only the override teaches everyone to reach for it.
  */
-export function publishRefusals({ drift = [], moved = [], heldOut = [], unheld = [], cycles = [], heldBack = [], leftBehind = [], force = {} } = {}) {
+export function publishRefusals({ drift = [], moved = [], heldOut = [], handTyped = [], unshipped = [], unheld = [], cycles = [], heldBack = [], leftBehind = [], force = {} } = {}) {
   const out = []
+
+  if (handTyped.length) {
+    // No override: the fix is one edit per line, and the package it would
+    // ship admits a sibling it cannot import from.
+    out.push({
+      check:   'hand-typed-range',
+      message: `${handTyped.length} sibling range(s) in this release are typed by hand rather than written by the packer`,
+      because: 'a typed floor stays where it was written while the sibling grows exports, so npm installs a pair that fails at import (FJS-D766)',
+      fix:     'write each as `workspace:^` (or `workspace:*` for an exact pin) and run `bun install`',
+      override: null,
+      detail:  handTyped.map(h => `${h.by} → ${h.dep} ${h.spec}`),
+    })
+  }
+
+  if (unshipped.length) {
+    // No override: the read is ENOENT on every install, at a request rather
+    // than at import, so nothing before a user notices it.
+    out.push({
+      check:   'unshipped-read',
+      message: `${unshipped.length} shipped module read(s) name a path the tarball leaves out`,
+      because: 'run from the repository the file is there, so the tests pass and only an install finds it missing',
+      fix:     'add the path to `files` in the package manifest, or move what it reads under a path that ships',
+      override: null,
+      detail:  unshipped.map(u => `${u.by} ${u.file} reads ${u.reads}`),
+    })
+  }
 
   if (heldOut.length) {
     // No override: no host carries a held connector, so the published

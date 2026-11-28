@@ -160,7 +160,7 @@ own (§ *When a factor is lost*, below).
 | `POST` | `/account/me` + `X-Service-Method: reauthenticate` | `{ password, code? }` — the code where a factor is on. Confirms THIS session for `reauthenticationWindow` (default 1 hour); answers `{ until }` |
 | `POST` | `/account/me` + `X-Service-Method: changePassword` | `{ newPassword }`. Replace it and sign out every other session |
 | `POST` | `/account/me` + `X-Service-Method: requestEmailChange` | `{ newEmail }`. Mail a link to the new address through `onEmailVerificationRequested`; the address changes, verified, when `/auth/email/verify` spends that link, and the OLD address is told (`email.changed`) |
-| `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked |
+| `GET`  | `/sessions` | Where else this caller is signed in; the current one is marked, each row with the `userAgent` it signed in from (never the IP address or token) |
 | `DELETE` | `/sessions/{id}` | End one of them |
 | `POST` | `/sessions` + `X-Service-Method: revokeOthers` | Sign out everywhere else |
 | `GET`  | `/apiKeys` | The caller's keys — never the key itself |

@@ -147,9 +147,9 @@
     "directory": "packages/sierra"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "^0.1.0",
-    "@frontierjs/junction": "^0.1.0",
-    "@frontierjs/litestone": "^1.1.0",
+    "@frontierjs/mesa": "workspace:^",
+    "@frontierjs/junction": "workspace:^",
+    "@frontierjs/litestone": "workspace:^",
     "vite": "^8.3.2"
   },
   "peerDependenciesMeta": {

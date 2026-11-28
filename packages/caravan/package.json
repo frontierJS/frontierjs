@@ -48,7 +48,7 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "peerDependencies": {
-    "@frontierjs/junction": "^0.1.0"
+    "@frontierjs/junction": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@frontierjs/junction": {

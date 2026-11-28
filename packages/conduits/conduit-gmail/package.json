@@ -22,7 +22,7 @@
     "typecheck": "node ../../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/conduit": "^0.1.0",
+    "@frontierjs/conduit": "workspace:^",
     "@frontierjs/conduit-oidc": "workspace:*"
   },
   "devDependencies": {

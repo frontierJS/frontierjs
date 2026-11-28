@@ -1806,6 +1806,13 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 
 
+@media (min-width: 768px) {
+  .topbar:has(> .cluster:only-child > .sidebar-toggle:only-child) {
+    display: none;
+  }
+}
+
+
 @media (hover: none) {
   .shell:has(> .sidebar.rail) .sidebar-toggle {
     display: revert;

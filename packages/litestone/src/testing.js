@@ -3412,7 +3412,7 @@ function _columnPayload(schema, model, row) {
   for (const field of model.fields) {
     if (field.type.array || field.type.kind === 'relation') continue
     const attrs = field.attributes
-    if (attrs.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'from' || a.kind === 'version' || (a.kind === 'zoned' && a.sources?.length))) continue
+    if (attrs.some(a => a.kind === 'computed' || a.kind === 'generated' || a.kind === 'derived' || a.kind === 'from' || a.kind === 'version' || (a.kind === 'zoned' && a.sources?.length))) continue
     if (attrs.some(a => a.kind === 'id') && attrs.some(a => a.kind === 'default')) continue
     if (row[field.name] === undefined || row[field.name] === null) continue
     data[field.name] = row[field.name]

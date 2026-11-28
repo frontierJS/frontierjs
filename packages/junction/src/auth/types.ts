@@ -498,6 +498,12 @@ export interface AuthSessionInfo {
    * for a browser session.
    */
   client?:    { id: string, host: string } | null
+  /**
+   * The User-Agent header the sign-in arrived with, as sent; null where none
+   * was. The IP address beside it on the row is left out: behind a proxy it is
+   * the proxy's, and it says more about the person than a browser name does.
+   */
+  userAgent?: string | null
 }
 
 export interface ApiKeyInfo {

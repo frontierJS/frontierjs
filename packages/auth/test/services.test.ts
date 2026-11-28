@@ -305,6 +305,24 @@ describe('sessions', () => {
     for (const s of (bob.body as any).data) expect(mine.has(s.id)).toBe(false)
   })
 
+  // FJS-4677: without it a person's browser sessions differ only by date, and
+  // an app read Session as the system to tell them apart.
+  test('each row names the browser it signed in from, and never the IP address', async () => {
+    const probe = ((await request(app).post('/auth/login').set('user-agent', 'ProbeBrowser/1.0')
+      .send({ email: ALICE, password: PW })).body as any).token
+
+    const rows = ((await request(app).get('/sessions').auth(probe)).body as any).data
+    expect(rows.find((s: any) => s.current).userAgent).toBe('ProbeBrowser/1.0')
+    for (const s of rows) {
+      expect(s).toHaveProperty('userAgent')
+      expect(s.ipAddress).toBeUndefined()
+      expect(s.token).toBeUndefined()
+    }
+
+    const bobs = ((await request(app).get('/sessions').auth(bobToken)).body as any).data
+    expect(bobs.some((s: any) => s.userAgent === 'ProbeBrowser/1.0')).toBe(false)
+  })
+
   test('revoking somebody else\'s session by id does nothing to it', async () => {
     const bobs = await request(app).get('/sessions').auth(bobToken)
     const victim = (bobs.body as any).data[0].id

@@ -128,6 +128,67 @@ describe('a broadcast is graded per recipient', () => {
     expect(owner.sent()).toEqual([])
   })
 
+  // FJS-4673: forgetting a subscriber put their @personal email on every admin
+  // socket, in the removal of the row that held it.
+  describe('a removed frame carries the key alone (FJS-4673)', () => {
+    const ERASED = { id: 7, email: 'ana@example.test', name: 'Ana', userId: 'u-owner' }
+    const onlyKey = [{ type: 'event', event: 'orders removed', data: { id: 7 } }]
+
+    test('graded: the admitted reader gets the id, the refused one nothing', async () => {
+      const manager  = createChannelManager()
+      const owner    = subscriber(manager, 'orders', { id: 'u-owner' })
+      const stranger = subscriber(manager, 'orders', { id: 'u-other' })
+      const { db }   = boundary((p, row) => (p?.id === row.userId ? row : null))
+
+      await manager.announce('orders removed', ERASED, ctxFor(db), () => manager.channel('orders'))
+
+      expect(owner.sent()).toEqual(onlyKey)
+      expect(JSON.stringify(owner.frames)).not.toContain('ana@example.test')
+      expect(stranger.sent()).toEqual([])
+    })
+
+    test('ungraded, with no Data boundary to ask', async () => {
+      const manager = createChannelManager()
+      const anyone  = subscriber(manager, 'orders', null)
+
+      await manager.announce('orders removed', ERASED, ctxFor(undefined), () => manager.channel('orders'))
+
+      expect(anyone.sent()).toEqual(onlyKey)
+    })
+
+    test('a write outside any service, graded and ungraded', async () => {
+      const manager = createChannelManager()
+      const owner   = subscriber(manager, 'orders', { id: 'u-owner' })
+      const { db }  = boundary((p, row) => (p?.id === row.userId ? row : null))
+
+      await manager.sendGraded('orders', 'orders removed', ERASED, { db, accessor: 'order' })
+      await manager.sendGraded('orders', 'orders removed', ERASED, { db: undefined, accessor: 'order' })
+
+      expect(owner.sent()).toEqual([...onlyKey, ...onlyKey])
+    })
+
+    test('a composite key goes whole, from $primaryKey', async () => {
+      const manager = createChannelManager()
+      const owner   = subscriber(manager, 'orders', { id: 'u-owner' })
+      const { db }  = boundary((p, row) => (p?.id === row.userId ? row : null))
+      const keyed   = { ...db, $primaryKey: () => ['tenantId', 'id'] }
+
+      await manager.sendGraded('orders', 'orders removed', { ...ERASED, tenantId: 't1' }, { db: keyed, accessor: 'order' })
+
+      expect(owner.rows()).toEqual([{ tenantId: 't1', id: 7 }])
+    })
+
+    test('another kind of frame still carries the row', async () => {
+      const manager = createChannelManager()
+      const owner   = subscriber(manager, 'orders', { id: 'u-owner' })
+      const { db }  = boundary((p, row) => (p?.id === row.userId ? row : null))
+
+      await manager.announce('orders patched', ERASED, ctxFor(db), () => manager.channel('orders'))
+
+      expect(owner.rows()).toEqual([ERASED])
+    })
+  })
+
   test('and the control — a connection it admits receives the row', async () => {
     const manager = createChannelManager()
     const staff   = subscriber(manager, 'orders', { id: 'u-staff', isStaff: true })

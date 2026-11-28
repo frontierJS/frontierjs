@@ -38,6 +38,11 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
  */
 export const REMOVAL_EVENTS: ReadonlySet<string> = new Set([AUTO_EVENT_MAP.remove])
 
+/** Is this wire event (`orders removed`) one of REMOVAL_EVENTS, by its last word? */
+export function isRemovalEvent(event: string): boolean {
+  return REMOVAL_EVENTS.has(event.slice(event.lastIndexOf(' ') + 1))
+}
+
 // Every hook `announce()` ever produced. A service that declares `channel:` is
 // already announced by callService, so a announce hook on the same service sends
 // the frame a second time — and a name check cannot tell the two apart, because

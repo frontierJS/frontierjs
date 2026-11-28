@@ -124,7 +124,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./user.lite` | `db/user.lite` | yes |
 | main | `main` | `index.ts` | yes |
 
-- peers — `@frontierjs/litestone`: `^1.1.0` · `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/litestone`: `^1.1.22` · `@frontierjs/junction`: `^0.1.17`
 
 ## `@frontierjs/caravan`
 
@@ -136,7 +136,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | bin | `caravan` | `bin/caravan.ts` | yes |
 | main | `main` | `src/index.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/junction`: `^0.1.17`
 
 ## `@frontierjs/claude`
 
@@ -167,18 +167,18 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./stores/sqlite` | `src/stores/sqlite.ts` | yes |
 | exports | `./stores/memory` | `src/stores/memory.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/junction`: `^0.1.17`
 
 ## `@frontierjs/conduit-37signals`
 
-`packages/conduit-37signals` · ships `LICENSE` `README.md` `package.json` `sink.ts` `src/`
+`packages/conduit-37signals` · ships `LICENSE` `README.md` `package.json` `sink.ts` `src/` `test/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0`
+- peers — `@frontierjs/conduit`: `^0.1.11`
 
 ## `@frontierjs/conduit-ahrefs`
 
@@ -189,7 +189,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0`
+- peers — `@frontierjs/conduit`: `^0.1.11`
 
 ## `@frontierjs/conduit-anthropic`
 
@@ -200,7 +200,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0` · `@frontierjs/toolbelt`: `^0.1.15`
+- peers — `@frontierjs/conduit`: `^0.1.11` · `@frontierjs/toolbelt`: `^0.1.15`
 
 ## `@frontierjs/conduit-cloudflare`
 
@@ -211,7 +211,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0`
+- peers — `@frontierjs/conduit`: `^0.1.11`
 
 ## `@frontierjs/conduit-github`
 
@@ -222,7 +222,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0`
+- peers — `@frontierjs/conduit`: `^0.1.11`
 
 ## `@frontierjs/conduit-plausible`
 
@@ -233,7 +233,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./sink` | `sink.ts` | yes |
 
-- peers — `@frontierjs/conduit`: `^0.1.0`
+- peers — `@frontierjs/conduit`: `^0.1.11`
 
 ## `@frontierjs/config`
 
@@ -281,7 +281,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./components/*.mesa (import)` | `components/*.mesa` | 22 files |
 | main | `main` | `index.js` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.14`
 
 ## `@frontierjs/jetty`
 
@@ -306,7 +306,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | bin | `jetty` | `bin/jetty.js` | yes |
 | main | `main` | `src/index.js` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/sierra`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.14` · `@frontierjs/junction`: `^0.1.17` · `@frontierjs/sierra`: `^0.1.15`
 
 ## `@frontierjs/junction`
 
@@ -345,7 +345,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | bin | `junction` | `tools/cli.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
-- peers — `@frontierjs/litestone`: `^1.1.0`
+- peers — `@frontierjs/litestone`: `^1.1.22`
 
 ## `@frontierjs/litestone`
 
@@ -411,7 +411,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./client/build` | `src/client/build.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/junction`: `^0.1.17`
 
 ## `@frontierjs/mesa`
 
@@ -467,7 +467,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./resource/*.mesa` | `resource/*.mesa` | 2 files |
 | main | `main` | `index.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/ui`: `^0.1.0`
+- peers — `@frontierjs/junction`: `^0.1.17` · `@frontierjs/mesa`: `^0.1.14` · `@frontierjs/ui`: `^0.1.13`
 
 ## `@frontierjs/orion`
 
@@ -527,7 +527,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./print.css` | `src/print.css` | yes |
 | exports | `./package.json` | `package.json` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.14` · `@frontierjs/junction`: `^0.1.17`
 
 ## `@frontierjs/sierra`
 
@@ -586,7 +586,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./tui (default)` | `src/tools/tui.js` | yes |
 | bin | `sierra` | `src/tools/cli.js` | yes |
 
-- peers — `@frontierjs/mesa`: `^0.1.0` · `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0`
+- peers — `@frontierjs/mesa`: `^0.1.14` · `@frontierjs/junction`: `^0.1.17` · `@frontierjs/litestone`: `^1.1.22`
 
 ## `@frontierjs/testing`
 
@@ -597,7 +597,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `.` | `src/index.ts` | yes |
 | exports | `./drive` | `src/drive.ts` | yes |
 
-- peers — `@frontierjs/junction`: `^0.1.0` · `@frontierjs/litestone`: `^1.1.0` · `@frontierjs/mesa`: `^0.1.6`
+- peers — `@frontierjs/junction`: `^0.1.17` · `@frontierjs/litestone`: `^1.1.22` · `@frontierjs/mesa`: `^0.1.14`
 
 ## `@frontierjs/toolbelt`
 
@@ -727,7 +727,7 @@ lists the pair, and a rename that removes one drops it on the next write.
 | exports | `./stores/*` | `stores/*.js` | 3 files |
 | exports | `./components/*.mesa` | `components/*.mesa` | 104 files |
 
-- peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
+- peers — `@frontierjs/css`: `^0.16.13` · `@frontierjs/mesa`: `^0.1.14`
 
 ## `create-frontier`
 

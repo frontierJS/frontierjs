@@ -65,7 +65,7 @@
     "verify:otlp": "bun test/verify-otlp.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/litestone": "^1.1.0"
+    "@frontierjs/litestone": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@frontierjs/litestone": {

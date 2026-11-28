@@ -1313,6 +1313,8 @@ export interface AuthSessionInfo {
   createdAt?: string | null
   expiresAt?: string | null
   current:    boolean
+  client?:    { id: string, host: string } | null
+  userAgent?: string | null
 }
 
 export interface ApiKeyInfo {

@@ -22,7 +22,7 @@
     "agent"
   ],
   "peerDependencies": {
-    "@frontierjs/junction": "^0.1.0"
+    "@frontierjs/junction": "workspace:^"
   },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*",

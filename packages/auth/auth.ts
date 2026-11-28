@@ -2798,6 +2798,7 @@ export function createLitestoneAuth(
         expiresAt: s.expiresAt ?? null,
         current:   false,
         client:    s.clientId ? { id: String(s.clientId), host: clientHost(String(s.clientId)) } : null,
+        userAgent: s.userAgent ?? null,
       }))
     },
 

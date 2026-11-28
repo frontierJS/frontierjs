@@ -9594,6 +9594,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d2418"></a>2026-11-28 · `FJS-D2418` — What does a `removed` live-update frame carry — The primary key alone, every column `db.$primaryKey(accessor)` names (`id` without a Data boundary), on every path that encodes one: the graded fan-out, the ungraded fallback and the tap's `sendGraded`. A row the key cannot name sends no frame. Every other frame kind keeps its row.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the row through `$readAs` with `@personal` and every protected column stripped. Keeps the fields a client might filter on, but a removal still tells each reader what was just erased).
+
+The paper's recommendation, taken as written: a client drops a removed row by its key, and a row that is gone owes no reader its contents; the owner ruled A on 2026-11-27.
+
 ### <a id="fjs-d2407"></a>2026-11-26 · `FJS-D2407` — Q2 — The home of the retention job helper (P2) — `@frontierjs/caravan`, a `retentionJob({ cron, client })` beside `defineJob`.
 
 Asked in [`IDEAS/prototype-twins.md`](IDEAS/prototype-twins.md) § Open questions. **A** was picked over **B** (`@frontierjs/junction`, handing back a plain job object).

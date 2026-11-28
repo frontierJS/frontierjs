@@ -23,9 +23,9 @@
     "bun": ">=1.4.0"
   },
   "peerDependencies": {
-    "@frontierjs/junction": "^0.1.0",
-    "@frontierjs/litestone": "^1.1.0",
-    "@frontierjs/mesa": "^0.1.6"
+    "@frontierjs/junction": "workspace:^",
+    "@frontierjs/litestone": "workspace:^",
+    "@frontierjs/mesa": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@frontierjs/mesa": {

@@ -27,7 +27,7 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "^0.1.0",
+    "@frontierjs/mesa": "workspace:^",
     "css-tree": "^2.0.0",
     "happy-dom": "^20.11.6"
   },

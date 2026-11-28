@@ -28,7 +28,7 @@
   export let layout      = 'topbar'
   export let bare        = false
   export let title       = ''
-  export let hide        = false
+  export let hide        = null
   export let withHead    = false
   export let foldable    = false
   export let collapsible = false
@@ -39,7 +39,7 @@
 
   $: groups = [
     { label: null, show: ({ user }) => !!user, entries: [{ href: '/', label: 'Today', exact: true }] },
-    ...(hide || withHead || foldable ? [{ label: 'Reports', hideLabel: hide, entries: [{ href: '/reports/', label: 'Reports' }] }] : []),
+    ...(hide !== null || withHead || foldable ? [{ label: 'Reports', hideLabel: hide === true, entries: [{ href: '/reports/', label: 'Reports' }] }] : []),
   ]
   const isActive = () => true
 </script>

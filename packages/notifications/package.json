@@ -21,9 +21,9 @@
     "junction"
   ],
   "peerDependencies": {
-    "@frontierjs/junction": "^0.1.0",
-    "@frontierjs/mesa": "^0.1.0",
-    "@frontierjs/ui": "^0.1.0"
+    "@frontierjs/junction": "workspace:^",
+    "@frontierjs/mesa": "workspace:^",
+    "@frontierjs/ui": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@frontierjs/mesa": {

@@ -10,7 +10,8 @@ import { describe, test, expect } from 'bun:test'
 
 import { satisfiesRange, peerDrift, movedDependencies, packedPaths, publishOrder, writePins,
          publishRefusals, formatRefusals, matchesSelector, unpublished, untaggedBumps,
-         releaseSet, siblingPins, unheldPins, pinsLeftBehind, heldOutDependencies } from '../core/publish-preflight.js'
+         releaseSet, siblingPins, unheldPins, pinsLeftBehind, heldOutDependencies,
+         handTypedRanges, unshippedReads } from '../core/publish-preflight.js'
 
 describe('a version against a range', () => {
   // The trap this whole check exists for. Below 1.0 a caret pins the MINOR, so
@@ -142,6 +143,50 @@ describe('a workspace dependency that moved past its tag', () => {
     expect(r).toMatchObject({ check: 'held-out-dependency', override: null })
     expect(r.detail).toEqual(['@frontierjs/claude → @frontierjs/conduit-anthropic', '@frontierjs/claude → @frontierjs/conduit-x'])
     expect(heldOutDependencies([claude], new Set(['@frontierjs/conduit-y']))).toEqual([])
+  })
+
+  // FJS-4675: conduit-37signals asked for conduit ^0.1.0 and imported a name
+  // no published conduit held, and movedDependencies never looks at a range.
+  test('a sibling range typed by hand is refused with no override (FJS-D766)', () => {
+    const names = new Set(['@frontierjs/conduit', '@frontierjs/toolbelt'])
+    const bc    = { name: '@frontierjs/conduit-37signals', pkg: {
+      peerDependencies: { '@frontierjs/conduit': '^0.1.0', vite: '^8.0.0' },
+      dependencies:     { '@frontierjs/toolbelt': 'workspace:^' },
+      devDependencies:  { '@frontierjs/conduit': '^0.1.0' } } }
+    const found = handTypedRanges([bc], names)
+    expect(found).toEqual([{ by: '@frontierjs/conduit-37signals', dep: '@frontierjs/conduit', spec: '^0.1.0' }])
+    const [r] = publishRefusals({ handTyped: found })
+    expect(r).toMatchObject({ check: 'hand-typed-range', override: null })
+    expect(r.detail).toEqual(['@frontierjs/conduit-37signals → @frontierjs/conduit ^0.1.0'])
+
+    const generated = { ...bc, pkg: { peerDependencies: { '@frontierjs/conduit': 'workspace:^', vite: '^8.0.0' } } }
+    expect(handTypedRanges([generated], names)).toEqual([])
+  })
+
+  // FJS-4676: the sink read ./test/fixture/*.json and files shipped neither.
+  test('a module read of a path the tarball leaves out is refused', () => {
+    const sink  = 'const fixture = n => readFileSync(new URL(`./test/fixture/${n}`, import.meta.url))'
+    const left  = { name: '@frontierjs/conduit-37signals', pkg: { files: ['src', 'sink.ts'] }, sources: [{ path: 'sink.ts', text: sink }] }
+    const found = unshippedReads([left])
+    expect(found).toEqual([{ by: '@frontierjs/conduit-37signals', file: 'sink.ts', reads: 'test/fixture' }])
+    const [r] = publishRefusals({ unshipped: found })
+    expect(r).toMatchObject({ check: 'unshipped-read', override: null })
+
+    expect(unshippedReads([{ ...left, pkg: { files: ['src', 'sink.ts', 'test/fixture'] } }])).toEqual([])
+    expect(unshippedReads([{ ...left, pkg: {} }])).toEqual([])
+  })
+
+  test('a read of its own directory, a shipped file or outside the package is not an unshipped read', () => {
+    const pkg = { files: ['src'] }
+    const sources = [
+      { path: 'src/core/db-path.js', text: "new URL('./', import.meta.url)" },
+      { path: 'src/core/a.js',       text: "new URL('../schema.lite', import.meta.url)" },
+      { path: 'src/b.js',            text: "new URL('../../toolbelt/x.js', import.meta.url)" },
+      { path: 'src/c.js',            text: "new URL('./templates/${name}.html', import.meta.url)" },
+    ]
+    expect(unshippedReads([{ name: 'x', pkg, sources }])).toEqual([])
+    expect(unshippedReads([{ name: 'x', pkg, sources: [{ path: 'src/d.js', text: "new URL('../docs/spec.md', import.meta.url)" }] }]))
+      .toEqual([{ by: 'x', file: 'src/d.js', reads: 'docs/spec.md' }])
   })
 
   test('only commits under the packed paths count (FJS-4251)', () => {

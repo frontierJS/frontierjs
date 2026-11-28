@@ -84,9 +84,9 @@
     "@frontierjs/toolbelt": "workspace:*"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "^0.1.0",
-    "@frontierjs/junction": "^0.1.0",
-    "@frontierjs/sierra": "^0.1.0",
+    "@frontierjs/mesa": "workspace:^",
+    "@frontierjs/junction": "workspace:^",
+    "@frontierjs/sierra": "workspace:^",
     "vite": "^8.3.2",
     "ws": "^8.20.0"
   },

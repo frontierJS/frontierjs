@@ -48,8 +48,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/litestone": "^1.1.0",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/litestone": "workspace:^",
       },
     },
     "packages/basecamp": {
@@ -98,7 +98,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
       },
       "optionalPeers": [
         "@frontierjs/junction",
@@ -146,7 +146,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
       },
     },
     "packages/conduits/conduit-37signals": {
@@ -156,7 +156,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-ahrefs": {
@@ -166,7 +166,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-airtable": {
@@ -177,8 +177,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.5",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-anthropic": {
@@ -190,8 +190,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.15",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-apns": {
@@ -201,7 +201,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-cloudflare": {
@@ -211,7 +211,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-dataforseo": {
@@ -222,7 +222,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-digitalocean": {
@@ -233,8 +233,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.5",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-easypost": {
@@ -244,8 +244,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.10",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-esri": {
@@ -255,7 +255,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-github": {
@@ -265,7 +265,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-gmail": {
@@ -275,7 +275,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
         "@frontierjs/conduit-oidc": "workspace:*",
       },
     },
@@ -286,7 +286,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-hetzner": {
@@ -297,8 +297,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.5",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-mailgun": {
@@ -313,8 +313,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.5",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-mattermost": {
@@ -324,7 +324,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-microsoft": {
@@ -334,7 +334,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-n8n": {
@@ -344,7 +344,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-oidc": {
@@ -355,7 +355,7 @@
         "oidc-provider": "^9.12.2",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-openai": {
@@ -365,7 +365,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-plausible": {
@@ -375,7 +375,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-postmark": {
@@ -387,8 +387,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.5",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-quo": {
@@ -398,7 +398,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-resend": {
@@ -408,7 +408,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-s3": {
@@ -418,8 +418,8 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
-        "@frontierjs/toolbelt": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
+        "@frontierjs/toolbelt": "workspace:^",
       },
     },
     "packages/conduits/conduit-sendgrid": {
@@ -430,7 +430,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-slack": {
@@ -440,7 +440,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-stripe": {
@@ -450,7 +450,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-telnyx": {
@@ -460,7 +460,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-turnstile": {
@@ -470,7 +470,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-twilio": {
@@ -480,7 +480,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/conduits/conduit-zapier": {
@@ -490,7 +490,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/conduit": "^0.1.0",
+        "@frontierjs/conduit": "workspace:^",
       },
     },
     "packages/config": {
@@ -534,7 +534,7 @@
         "vitest": "^5.0.3",
       },
       "peerDependencies": {
-        "@frontierjs/mesa": "^0.1.0",
+        "@frontierjs/mesa": "workspace:^",
         "css-tree": "^2.0.0",
         "happy-dom": "^20.11.6",
       },
@@ -598,9 +598,9 @@
         "ws": "^8.20.0",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/mesa": "^0.1.0",
-        "@frontierjs/sierra": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
+        "@frontierjs/sierra": "workspace:^",
         "vite": "^8.3.2",
         "ws": "^8.20.0",
       },
@@ -625,7 +625,7 @@
         "@frontierjs/litestone": "workspace:*",
       },
       "peerDependencies": {
-        "@frontierjs/litestone": "^1.1.0",
+        "@frontierjs/litestone": "workspace:^",
       },
       "optionalPeers": [
         "@frontierjs/litestone",
@@ -673,7 +673,7 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
       },
     },
     "packages/mesa": {
@@ -745,9 +745,9 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/mesa": "^0.1.0",
-        "@frontierjs/ui": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
+        "@frontierjs/ui": "workspace:^",
       },
       "optionalPeers": [
         "@frontierjs/mesa",
@@ -806,8 +806,8 @@
         "@frontierjs/mesa": "workspace:*",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/mesa": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
       },
       "optionalPeers": [
         "@frontierjs/junction",
@@ -832,9 +832,9 @@
         "vitest": "^5.0.3",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/litestone": "^1.1.0",
-        "@frontierjs/mesa": "^0.1.0",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/litestone": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
         "vite": "^8.3.2",
       },
       "optionalPeers": [
@@ -897,9 +897,9 @@
         "bun-types": "^1.3.14",
       },
       "peerDependencies": {
-        "@frontierjs/junction": "^0.1.0",
-        "@frontierjs/litestone": "^1.1.0",
-        "@frontierjs/mesa": "^0.1.6",
+        "@frontierjs/junction": "workspace:^",
+        "@frontierjs/litestone": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
       },
       "optionalPeers": [
         "@frontierjs/mesa",
@@ -919,8 +919,8 @@
         "acorn": "^8.0.0",
       },
       "peerDependencies": {
-        "@frontierjs/css": "^0.16.0",
-        "@frontierjs/mesa": "^0.1.0",
+        "@frontierjs/css": "workspace:^",
+        "@frontierjs/mesa": "workspace:^",
         "@xterm/addon-fit": "0.11.0",
         "@xterm/addon-web-links": "0.12.0",
         "@xterm/xterm": "6.0.0",

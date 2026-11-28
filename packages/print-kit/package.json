@@ -16,8 +16,8 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "peerDependencies": {
-    "@frontierjs/mesa": "^0.1.0",
-    "@frontierjs/junction": "^0.1.0"
+    "@frontierjs/mesa": "workspace:^",
+    "@frontierjs/junction": "workspace:^"
   },
   "peerDependenciesMeta": {
     "@frontierjs/junction": {

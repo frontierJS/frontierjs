@@ -34,7 +34,7 @@
 
 import { DEV_ENV }            from '@frontierjs/toolbelt/devline'
 import { createPresenceTracker } from './presence.ts'
-import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markAnnounceHook } from '../core/events.ts'
+import { AUTO_EVENT_MAP, REMOVAL_EVENTS, isRemovalEvent, markAnnounceHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders, resolverClaimsFor, PRINCIPAL_RESOLVER, type PrincipalSetting } from '../core/litestone.ts'
 import { PROTOCOL_CALL_HEADERS, acceptedRequestId, callDb, callSlots } from '../core/context.ts'
@@ -560,15 +560,34 @@ function principalKey(user: unknown): unknown {
 const UPDATE_SUFFIX = new RegExp(`\\b(${AUTO_EVENT_MAP.update}|${AUTO_EVENT_MAP.patch})$`)
 function removalFrameFor(db: object, accessor: string, event: string, payload: object): string | null {
   if (!UPDATE_SUFFIX.test(event)) return null
+  const id = rowKeyOf(db, accessor, payload)
+  return id && encodeEventFrame(event.replace(UPDATE_SUFFIX, AUTO_EVENT_MAP.remove), id)
+}
+
+// The row's primary key and nothing else, or null when the row does not carry
+// all of it. A client drops a removed row by its key alone.
+function rowKeyOf(db: unknown, accessor: string, payload: unknown): Record<string, unknown> | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
   let keys: string[] = ['id']
-  if ('$primaryKey' in db && typeof (db as { $primaryKey?: unknown }).$primaryKey === 'function') {
-    const pk = (db as { $primaryKey: (a: string) => string[] }).$primaryKey(accessor)
-    if (Array.isArray(pk) && pk.length) keys = pk
+  if (db && typeof db === 'object' && '$primaryKey' in db &&
+      typeof (db as { $primaryKey?: unknown }).$primaryKey === 'function') {
+    try {
+      const pk = (db as { $primaryKey: (a: string) => string[] }).$primaryKey(accessor)
+      if (Array.isArray(pk) && pk.length) keys = pk
+    } catch { /* an accessor the client does not know: `id` */ }
   }
   const row = payload as Record<string, unknown>
   if (keys.some(k => row[k] == null)) return null
-  const id = Object.fromEntries(keys.map(k => [k, row[k]]))
-  return encodeEventFrame(event.replace(UPDATE_SUFFIX, AUTO_EVENT_MAP.remove), id)
+  return Object.fromEntries(keys.map(k => [k, row[k]]))
+}
+
+// What a frame of this event carries. A `removed` frame carries the key alone
+// (`FJS-4673`): the row it names is gone, so its before-image told every reader
+// what an erasure had just taken away — a forgotten subscriber's `@personal`
+// email went to every admin socket. Null is a removal the key cannot name, and
+// it is not sent.
+function wireData(event: string, data: unknown, db: unknown, accessor: string): unknown {
+  return isRemovalEvent(event) ? rowKeyOf(db, accessor, data) : data
 }
 
 /**
@@ -748,6 +767,7 @@ export async function gradeRecipients(
     return seen
   }
   let admitted = 0
+  const removing = isRemovalEvent(event)
 
   const out: Cohort[] = []
   for (const [key, group] of byPrincipal) for (const { claims, conns } of group.byClaims.values()) {
@@ -797,7 +817,8 @@ export async function gradeRecipients(
     }
     if (removalsOnly) continue
     admitted++
-    out.push({ conns, frame: encodeEventFrame(event, visible) })
+    const data = removing ? rowKeyOf(db, accessor, payload) : visible
+    if (data) out.push({ conns, frame: encodeEventFrame(event, data) })
   }
 
   if (live > 0 && admitted === 0 && !removalsOnly && src.label)
@@ -1185,7 +1206,8 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       if (!graded) {
         // Ungraded means "no boundary to ask", which is a reason to send a row
         // and none to send a removal nobody was shown to be owed.
-        if (!src.removalsOnly) for (const ch of targets) ch.send(event, payload)
+        const data = src.removalsOnly ? null : wireData(event, payload, src.db, src.accessor)
+        if (data) for (const ch of targets) ch.send(event, data)
         return
       }
       for (const { conns, frame } of graded)
@@ -1425,23 +1447,24 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
       // silence, for every service whose name maps to no model — `orders2` over
       // `Order`, a modelless service, any Invariant-19 irregular (`FJS-700`).
       const svc = ctx.app?.services?.get?.(ctx.service ?? '') as { model?: string | null } | undefined
-      const graded = await gradeRecipients(targets, event, payload, {
+      const src: GradingSource = {
         db:       callDb(ctx),
         // A method that declared `answers:` states the accessor itself: the
         // row it answers belongs to another model (`FJS-D914`).
         accessor: accessor ?? serviceAccessor({ name: (ctx as { service?: string }).service ?? '', model: svc?.model }) ?? '',
         label:    (ctx as { service?: string }).service,
-      }, 'row', claimsFor, channelsOf, resolverFor)
+      }
+      const graded = await gradeRecipients(targets, event, payload, src, 'row', claimsFor, channelsOf, resolverFor)
+      // Serialized ONCE for every target channel and for telemetry's size.
+      let frame: string | null = null
       if (graded) {
         for (const { conns, frame } of graded)
           for (const conn of conns)
             if (conn.socket.readyState === 1) wsSend(conn.socket, frame)
       } else {
-        // Serialize ONCE for all target channels — multi-channel publishes
-        // previously re-stringified the payload per channel, and telemetry
-        // stringified it a second time just to measure its size.
-        const frame = encodeEventFrame(event, payload)
-        for (const ch of targets) ch.sendRaw(frame)
+        const data = wireData(event, payload, src.db, src.accessor)
+        frame = data ? encodeEventFrame(event, data) : null
+        if (frame) for (const ch of targets) ch.sendRaw(frame)
       }
 
       // ── Telemetry ──────────────────────────────────────────────
@@ -1460,7 +1483,7 @@ export function createChannelManager(presenceOptions?: PresenceOptions, claimsFo
           recipientCount,
           refusedCount:   inChannel - recipientCount,
           graded:         !!graded,
-          payloadSize:    graded ? (graded[0]?.frame.length ?? 0) : encodeEventFrame(event, payload).length,
+          payloadSize:    graded ? (graded[0]?.frame.length ?? 0) : (frame?.length ?? 0),
         })
       }
     },

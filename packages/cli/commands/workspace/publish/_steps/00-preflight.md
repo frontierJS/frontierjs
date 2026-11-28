@@ -4,9 +4,9 @@ description: Every reason this release must not go to npm, before a version is s
 ---
 
 <script>
-import { resolve, relative } from 'path'
+import { resolve, relative, join } from 'path'
 import { execSync } from 'child_process'
-import { existsSync, realpathSync } from 'fs'
+import { existsSync, realpathSync, readFileSync, readdirSync, statSync } from 'fs'
 
 // The manifests each npm-bound tarball will be packed from. A release in flight
 // packs its tag's checkout, so its siblings are read on that commit; a fresh
@@ -41,6 +41,22 @@ async function heldConnectors(wsRoot) {
   return new Set(packageMembers(wsRoot).filter(isHeldOut).map(m => m.manifest.name))
 }
 
+// Every module a package's tarball carries, as `unshippedReads` reads them.
+function packedSources(dir, paths) {
+  const out  = []
+  const walk = rel => {
+    const abs = join(dir, rel)
+    if (!existsSync(abs)) return
+    if (statSync(abs).isFile()) {
+      if (/\.(m?[jt]s|mesa)$/.test(rel)) out.push({ path: rel, text: readFileSync(abs, 'utf8') })
+      return
+    }
+    for (const e of readdirSync(abs)) if (e !== 'node_modules') walk(rel === '.' ? e : `${rel}/${e}`)
+  }
+  for (const p of paths) walk(p.replace(/\/$/, ''))
+  return out
+}
+
 // npm's answer for each pinned version this run does not publish itself.
 async function npmHolds(pins, received, hosts) {
   const keys = [...new Set(pins.map(p => `${p.dep}@${p.version}`))].filter(k => !received.has(k))
@@ -56,7 +72,7 @@ async function npmHolds(pins, received, hosts) {
 const { planned, members } = $.config
 if (!planned?.length) return
 
-const { peerDrift, movedDependencies, heldOutDependencies, siblingPins, unheldPins, pinsLeftBehind, publishOrder, publishRefusals, formatRefusals } =
+const { peerDrift, movedDependencies, heldOutDependencies, handTypedRanges, unshippedReads, packedPaths, siblingPins, unheldPins, pinsLeftBehind, publishOrder, publishRefusals, formatRefusals } =
   await import(new URL('file://' + global.fliRoot + '/core/publish-preflight.js'))
 const { hosts } = await import(new URL('file://' + global.fliRoot + '/core/publish-hosts.js'))
 
@@ -64,7 +80,11 @@ const stateOf = (name, dir, paths, opts) => $.git.pkgState(name, dir, paths, opt
 const drift  = peerDrift((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })), planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
 const moved  = movedDependencies(packedFrom(planned, members ?? [], $.config),
                                  (members ?? []).map(m => ({ name: m.pkg.name, dir: m.dir, pkg: m.pkg })), stateOf)
-const heldOut = heldOutDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })), await heldConnectors($.config.wsRoot))
+const held    = await heldConnectors($.config.wsRoot)
+const heldOut = heldOutDependencies(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })), held)
+const handTyped = handTypedRanges(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg })),
+                                  new Set([...(members ?? []).map(m => m.pkg.name), ...held]))
+const unshipped = unshippedReads(planned.map(p => ({ name: p.pkg.name, pkg: p.pkg, sources: packedSources(p.dir, packedPaths(p.pkg)) })))
 const sorted = publishOrder(planned.map(p => ({ ...p, name: p.pkg.name })))
 const behind = pinsLeftBehind((members ?? []).map(m => ({ name: m.pkg.name, pkg: m.pkg })),
                               planned.map(p => ({ name: p.pkg.name, newVersion: p.newVersion })))
@@ -87,7 +107,7 @@ if (existsSync(siteData)) {
 }
 
 const refusals = publishRefusals({
-  drift, moved, heldOut, unheld, cycles: sorted.cycles, heldBack, leftBehind: behind,
+  drift, moved, heldOut, handTyped, unshipped, unheld, cycles: sorted.cycles, heldBack, leftBehind: behind,
   force: { peers: flag['allow-peer-drift'] },
 })
 
